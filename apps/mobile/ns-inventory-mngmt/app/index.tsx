@@ -10,6 +10,10 @@ import { TextInput } from "@/components/ThemedTextInput"
 import { Colors } from "@/constants/Colors"
 import { Translations } from "@/constants/Translations"
 import { useColorScheme } from "@/hooks/useColorScheme"
+import { z } from "zod/v4";
+
+
+
 
 export default function LoginScreen() {
     const [email, setEmail] = useState("")
