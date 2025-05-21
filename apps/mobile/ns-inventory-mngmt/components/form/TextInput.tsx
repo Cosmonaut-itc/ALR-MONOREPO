@@ -13,8 +13,6 @@ export function TextInputForm({ style, lightColor, darkColor, ...otherProps }: T
 
     const error = field.state.meta.errors[0]
 
-    console.log(error)
-
     const placeholderTextColor = colorScheme === "dark" ? Colors.dark.placeholder : Colors.light.placeholder
 
     return (
