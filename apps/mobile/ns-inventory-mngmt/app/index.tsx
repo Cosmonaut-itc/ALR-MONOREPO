@@ -10,7 +10,6 @@ import { ThemedView } from "@/components/ThemedView"
 import { Colors } from "@/constants/Colors"
 import { Translations } from "@/constants/Translations"
 import { useAppForm } from "@/hooks/form"
-import { useColorScheme } from "@/hooks/useColorScheme"
 import { LoginFormSchema } from "@/types/types"
 
 export default function Login() {
@@ -24,7 +23,6 @@ export default function Login() {
         }
     })
     const [isLoading, setIsLoading] = useState(false)
-    const colorScheme = useColorScheme()
     const router = useRouter()
 
     // Get translations for login screen
@@ -38,8 +36,6 @@ export default function Login() {
             setIsLoading(false)
         }, 1000)
     }
-
-    console.log("Login form state:", form.state)
 
     return (
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
@@ -60,49 +56,40 @@ export default function Login() {
                                 <ThemedText type="defaultSemiBold" style={styles.label}>
                                     {t.emailLabel}
                                 </ThemedText>
-                                <ThemedView
-                                    style={[
-                                        styles.input,
-                                        {
-                                            borderColor: colorScheme === "dark" ? Colors.dark.border : Colors.light.border,
-                                            backgroundColor: colorScheme === "dark" ? Colors.dark.surface : Colors.light.surface,
-                                        },
-                                    ]}
-                                >
-                                    {/* biome-ignore lint/correctness/noChildrenProp: <explanation> */}
-                                    <form.AppField name={'email'} children={(field) =>
-                                        <field.TextInputForm placeholder={t.emailPlaceholder}
-                                            value={field.state.value}
-                                            onChangeText={field.handleChange}
-                                            keyboardType="email-address"
-                                            autoCapitalize="none" />
-                                    }
-                                    />
-                                </ThemedView>
+
+                                {/* biome-ignore lint/correctness/noChildrenProp: <explanation> */}
+                                <form.AppField name={'email'} children={(field) => {
+                                    return (
+                                        <>
+                                            <field.TextInputForm placeholder={t.emailPlaceholder}
+                                                value={field.state.value}
+                                                onChangeText={field.handleChange}
+                                                keyboardType="email-address"
+                                                autoCapitalize="none" />
+                                        </>
+                                    )
+                                }
+                                }
+
+                                />
+
+
                             </ThemedView>
 
                             <ThemedView style={styles.inputContainer}>
                                 <ThemedText type="defaultSemiBold" style={styles.label}>
                                     {t.passwordLabel}
                                 </ThemedText>
-                                <ThemedView
-                                    style={[
-                                        styles.input,
-                                        {
-                                            borderColor: colorScheme === "dark" ? Colors.dark.border : Colors.light.border,
-                                            backgroundColor: colorScheme === "dark" ? Colors.dark.surface : Colors.light.surface,
-                                        },
-                                    ]}
-                                >
-                                    {/* biome-ignore lint/correctness/noChildrenProp: <explanation> */}
-                                    <form.AppField name={'password'} children={(field) =>
-                                        <field.TextInputForm placeholder={t.passwordPlaceholder}
-                                            value={field.state.value}
-                                            onChangeText={field.handleChange}
-                                            secureTextEntry />
-                                    }
-                                    />
-                                </ThemedView>
+
+                                {/* biome-ignore lint/correctness/noChildrenProp: <explanation> */}
+                                <form.AppField name={'password'} children={(field) =>
+                                    <field.TextInputForm placeholder={t.passwordPlaceholder}
+                                        value={field.state.value}
+                                        onChangeText={field.handleChange}
+                                        secureTextEntry />
+                                }
+                                />
+
                             </ThemedView>
 
                             <ThemedButton
@@ -129,7 +116,7 @@ export default function Login() {
                     </ThemedView>
                 </ScrollView>
             </form.AppForm>
-        </KeyboardAvoidingView>
+        </KeyboardAvoidingView >
     )
 }
 
