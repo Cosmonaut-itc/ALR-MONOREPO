@@ -28,3 +28,11 @@ export const ThemedFormErrorPropsArk = t({
 });
 
 export type ThemedFormErrorProps = typeof ThemedFormErrorPropsArk.infer;
+
+// TextInput Component
+export const ThemedTextInputPropsArkType = t({
+	lightColor: "string?",
+	darkColor: "string?",
+}); //Intersection is done in the component
+
+export type ThemedTextInputProps = typeof ThemedTextInputPropsArkType.infer;

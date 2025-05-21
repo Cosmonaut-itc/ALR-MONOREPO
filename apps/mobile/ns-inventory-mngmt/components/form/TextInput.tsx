@@ -1,17 +1,12 @@
 import { Colors } from "@/constants/Colors";
 import { useFieldContext } from "@/hooks/form-context";
 import { useColorScheme } from "@/hooks/useColorScheme";
+import { ThemedTextInputProps } from "@/types/types";
 import { TextInput as RNTextInput, StyleSheet, type TextInputProps, View } from "react-native";
 import { ThemedView } from "../ThemedView";
 import { ThemedFormError } from "./ErrorMessage";
 
-type ThemedTextInputProps = TextInputProps & {
-    lightColor?: string
-    darkColor?: string
-}
-
-
-export function TextInputForm({ style, lightColor, darkColor, ...otherProps }: ThemedTextInputProps) {
+export function TextInputForm({ style, lightColor, darkColor, ...otherProps }: ThemedTextInputProps & TextInputProps) {
     const field = useFieldContext<string>()
     const colorScheme = useColorScheme()
     const color = colorScheme === "dark" ? darkColor || Colors.dark.text : lightColor || Colors.light.text

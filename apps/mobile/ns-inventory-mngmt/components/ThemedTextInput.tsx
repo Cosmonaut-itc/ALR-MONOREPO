@@ -1,14 +1,11 @@
-import { TextInput as RNTextInput, StyleSheet, type TextInputProps } from "react-native"
-
 import { Colors } from "@/constants/Colors"
 import { useColorScheme } from "@/hooks/useColorScheme"
+import type { ThemedTextInputProps } from "@/types/types"
+import { TextInput as RNTextInput, StyleSheet, type TextInputProps } from "react-native"
 
-export type ThemedTextInputProps = TextInputProps & {
-    lightColor?: string
-    darkColor?: string
-}
 
-export function TextInput({ style, lightColor, darkColor, ...otherProps }: ThemedTextInputProps) {
+
+export function TextInput({ style, lightColor, darkColor, ...otherProps }: ThemedTextInputProps & TextInputProps) {
     const colorScheme = useColorScheme()
     const color = colorScheme === "dark" ? darkColor || Colors.dark.text : lightColor || Colors.light.text
 
