@@ -10,12 +10,20 @@ import { TextInput } from "@/components/ThemedTextInput"
 import { Colors } from "@/constants/Colors"
 import { Translations } from "@/constants/Translations"
 import { useColorScheme } from "@/hooks/useColorScheme"
-import { z } from "zod/v4";
+import { ThemedButton } from "@/components/ThemedButton"
+import { useAppForm } from "@/hooks/form"
+import { LoginFormSchema } from "@/types/types"
 
-
-
-
-export default function LoginScreen() {
+export default function Login() {
+    const formLogin = useAppForm({
+        defaultValues: {
+            email: "",
+            password: "",
+        },
+        validators: {
+            onChange: LoginFormSchema,
+        }
+    })
     const [email, setEmail] = useState("")
     const [password, setPassword] = useState("")
     const [isLoading, setIsLoading] = useState(false)
@@ -36,100 +44,87 @@ export default function LoginScreen() {
 
     return (
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
-            <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
-                <ThemedView style={styles.container}>
-                    <ThemedView style={styles.logoContainer}>
-                        <ThemedText type="title" style={styles.title}>
-                            {t.title}
-                        </ThemedText>
-                        <ThemedText type="default" style={styles.subtitle}>
-                            {t.subtitle}
-                        </ThemedText>
-                    </ThemedView>
-
-                    <ThemedView style={styles.formContainer}>
-                        <ThemedView style={styles.inputContainer}>
-                            <ThemedText type="defaultSemiBold" style={styles.label}>
-                                {t.emailLabel}
+            <form>
+                <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
+                    <ThemedView style={styles.container}>
+                        <ThemedView style={styles.logoContainer}>
+                            <ThemedText type="title" style={styles.title}>
+                                {t.title}
                             </ThemedText>
-                            <ThemedView
-                                style={[
-                                    styles.input,
-                                    {
-                                        borderColor: colorScheme === "dark" ? Colors.dark.border : Colors.light.border,
-                                        backgroundColor: colorScheme === "dark" ? Colors.dark.surface : Colors.light.surface,
-                                    },
-                                ]}
-                            >
-                                <TextInput
-                                    placeholder={t.emailPlaceholder}
-                                    value={email}
-                                    onChangeText={setEmail}
-                                    keyboardType="email-address"
-                                    autoCapitalize="none"
-                                />
-                            </ThemedView>
+                            <ThemedText type="default" style={styles.subtitle}>
+                                {t.subtitle}
+                            </ThemedText>
                         </ThemedView>
-
-                        <ThemedView style={styles.inputContainer}>
-                            <ThemedText type="defaultSemiBold" style={styles.label}>
-                                {t.passwordLabel}
-                            </ThemedText>
-                            <ThemedView
-                                style={[
-                                    styles.input,
-                                    {
-                                        borderColor: colorScheme === "dark" ? Colors.dark.border : Colors.light.border,
-                                        backgroundColor: colorScheme === "dark" ? Colors.dark.surface : Colors.light.surface,
-                                    },
-                                ]}
-                            >
-                                <TextInput
-                                    placeholder={t.passwordPlaceholder}
-                                    value={password}
-                                    onChangeText={setPassword}
-                                    secureTextEntry
-                                />
-                            </ThemedView>
-                        </ThemedView>
-
-                        <TouchableOpacity
-                            style={[
-                                styles.button,
-                                {
-                                    backgroundColor: isLoading
-                                        ? colorScheme === "dark"
-                                            ? `${Colors.dark.tint}80`
-                                            : `${Colors.light.tint}80`
-                                        : colorScheme === "dark"
-                                            ? Colors.dark.tint
-                                            : Colors.light.tint,
-                                },
-                            ]}
-                            onPress={handleLogin}
-                            disabled={isLoading}
-                            activeOpacity={0.8}
-                        >
-                            <ThemedText type="defaultSemiBold" style={styles.buttonText} lightColor="#fff" darkColor="#fff">
-                                {isLoading ? t.loggingIn : t.loginButton}
-                            </ThemedText>
-                        </TouchableOpacity>
-
-                        <ThemedView style={styles.forgotPasswordContainer}>
-                            <TouchableOpacity>
-                                <ThemedText
-                                    type="default"
-                                    style={styles.forgotPassword}
-                                    lightColor={Colors.light.tint}
-                                    darkColor={Colors.dark.tint}
-                                >
-                                    {t.forgotPassword}
+                        <ThemedView style={styles.formContainer}>
+                            <ThemedView style={styles.inputContainer}>
+                                <ThemedText type="defaultSemiBold" style={styles.label}>
+                                    {t.emailLabel}
                                 </ThemedText>
-                            </TouchableOpacity>
+                                <ThemedView
+                                    style={[
+                                        styles.input,
+                                        {
+                                            borderColor: colorScheme === "dark" ? Colors.dark.border : Colors.light.border,
+                                            backgroundColor: colorScheme === "dark" ? Colors.dark.surface : Colors.light.surface,
+                                        },
+                                    ]}
+                                >
+                                    <TextInput
+                                        placeholder={t.emailPlaceholder}
+                                        value={email}
+                                        onChangeText={setEmail}
+                                        keyboardType="email-address"
+                                        autoCapitalize="none"
+                                    />
+                                </ThemedView>
+                            </ThemedView>
+
+                            <ThemedView style={styles.inputContainer}>
+                                <ThemedText type="defaultSemiBold" style={styles.label}>
+                                    {t.passwordLabel}
+                                </ThemedText>
+                                <ThemedView
+                                    style={[
+                                        styles.input,
+                                        {
+                                            borderColor: colorScheme === "dark" ? Colors.dark.border : Colors.light.border,
+                                            backgroundColor: colorScheme === "dark" ? Colors.dark.surface : Colors.light.surface,
+                                        },
+                                    ]}
+                                >
+                                    <TextInput
+                                        placeholder={t.passwordPlaceholder}
+                                        value={password}
+                                        onChangeText={setPassword}
+                                        secureTextEntry
+                                    />
+                                </ThemedView>
+                            </ThemedView>
+
+                            <ThemedButton
+                                title="Login"
+                                onPress={handleLogin}
+                                isLoading={isLoading}
+                                loadingText="Logging in..."
+                                style={styles.buttonContainer}
+                            />
+
+                            <ThemedView style={styles.forgotPasswordContainer}>
+                                <TouchableOpacity>
+                                    <ThemedText
+                                        type="default"
+                                        style={styles.forgotPassword}
+                                        lightColor={Colors.light.tint}
+                                        darkColor={Colors.dark.tint}
+                                    >
+                                        {t.forgotPassword}
+                                    </ThemedText>
+                                </TouchableOpacity>
+                            </ThemedView>
                         </ThemedView>
                     </ThemedView>
-                </ThemedView>
-            </ScrollView>
+                </ScrollView>
+            </form>
         </KeyboardAvoidingView>
     )
 }
@@ -182,6 +177,9 @@ const styles = StyleSheet.create({
         borderRadius: 8,
         justifyContent: "center",
         alignItems: "center",
+        marginTop: 10,
+    },
+    buttonContainer: {
         marginTop: 10,
     },
     buttonText: {
