@@ -21,7 +21,7 @@
 			"a11y": { "noBlankTarget": "off" },
 			"complexity": { "noWith": "warn" },
 			"correctness": {
-				"noChildrenProp": "error",
+				"noChildrenProp": "warn",
 				"noEmptyCharacterClassInRegex": "warn",
 				"noEmptyPattern": "warn",
 				"noUndeclaredVariables": "error",

@@ -1,21 +1,20 @@
 "use client"
 
-import { useState } from "react"
-import { StyleSheet, TouchableOpacity, Image, KeyboardAvoidingView, Platform, ScrollView } from "react-native"
 import { useRouter } from "expo-router"
+import { useState } from "react"
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TouchableOpacity } from "react-native"
 
-import { ThemedView } from "@/components/ThemedView"
+import { ThemedButton } from "@/components/ThemedButton"
 import { ThemedText } from "@/components/ThemedText"
-import { TextInput } from "@/components/ThemedTextInput"
+import { ThemedView } from "@/components/ThemedView"
 import { Colors } from "@/constants/Colors"
 import { Translations } from "@/constants/Translations"
-import { useColorScheme } from "@/hooks/useColorScheme"
-import { ThemedButton } from "@/components/ThemedButton"
 import { useAppForm } from "@/hooks/form"
+import { useColorScheme } from "@/hooks/useColorScheme"
 import { LoginFormSchema } from "@/types/types"
 
 export default function Login() {
-    const formLogin = useAppForm({
+    const form = useAppForm({
         defaultValues: {
             email: "",
             password: "",
@@ -24,8 +23,6 @@ export default function Login() {
             onChange: LoginFormSchema,
         }
     })
-    const [email, setEmail] = useState("")
-    const [password, setPassword] = useState("")
     const [isLoading, setIsLoading] = useState(false)
     const colorScheme = useColorScheme()
     const router = useRouter()
@@ -42,9 +39,11 @@ export default function Login() {
         }, 1000)
     }
 
+    console.log("Login form state:", form.state)
+
     return (
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
-            <form>
+            <form.AppForm>
                 <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
                     <ThemedView style={styles.container}>
                         <ThemedView style={styles.logoContainer}>
@@ -56,6 +55,7 @@ export default function Login() {
                             </ThemedText>
                         </ThemedView>
                         <ThemedView style={styles.formContainer}>
+
                             <ThemedView style={styles.inputContainer}>
                                 <ThemedText type="defaultSemiBold" style={styles.label}>
                                     {t.emailLabel}
@@ -69,12 +69,14 @@ export default function Login() {
                                         },
                                     ]}
                                 >
-                                    <TextInput
-                                        placeholder={t.emailPlaceholder}
-                                        value={email}
-                                        onChangeText={setEmail}
-                                        keyboardType="email-address"
-                                        autoCapitalize="none"
+                                    {/* biome-ignore lint/correctness/noChildrenProp: <explanation> */}
+                                    <form.AppField name={'email'} children={(field) =>
+                                        <field.TextInputForm placeholder={t.emailPlaceholder}
+                                            value={field.state.value}
+                                            onChangeText={field.handleChange}
+                                            keyboardType="email-address"
+                                            autoCapitalize="none" />
+                                    }
                                     />
                                 </ThemedView>
                             </ThemedView>
@@ -92,11 +94,13 @@ export default function Login() {
                                         },
                                     ]}
                                 >
-                                    <TextInput
-                                        placeholder={t.passwordPlaceholder}
-                                        value={password}
-                                        onChangeText={setPassword}
-                                        secureTextEntry
+                                    {/* biome-ignore lint/correctness/noChildrenProp: <explanation> */}
+                                    <form.AppField name={'password'} children={(field) =>
+                                        <field.TextInputForm placeholder={t.passwordPlaceholder}
+                                            value={field.state.value}
+                                            onChangeText={field.handleChange}
+                                            secureTextEntry />
+                                    }
                                     />
                                 </ThemedView>
                             </ThemedView>
@@ -124,7 +128,7 @@ export default function Login() {
                         </ThemedView>
                     </ThemedView>
                 </ScrollView>
-            </form>
+            </form.AppForm>
         </KeyboardAvoidingView>
     )
 }

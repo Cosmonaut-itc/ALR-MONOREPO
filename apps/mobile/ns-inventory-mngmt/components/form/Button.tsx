@@ -1,14 +1,7 @@
-import { ThemedText } from "@/components/ThemedText"
-import { Colors } from "@/constants/Colors"
-import { useColorScheme } from "@/hooks/useColorScheme"
-import {
-    ActivityIndicator,
-    type StyleProp,
-    StyleSheet,
-    type TextStyle,
-    TouchableOpacity,
-    type ViewStyle,
-} from "react-native"
+import { useFormContext } from "@/hooks/form-context"
+import { ActivityIndicator, type StyleProp, StyleSheet, type TextStyle, TouchableOpacity, ViewStyle, useColorScheme } from "react-native"
+import { Colors } from "react-native/Libraries/NewAppScreen"
+import { ThemedText } from "../ThemedText"
 
 type ThemedButtonProps = {
     onPress: () => void
@@ -22,7 +15,7 @@ type ThemedButtonProps = {
     loadingText?: string
 }
 
-export function ThemedButton({
+export function ThemedButtonForm({
     onPress,
     title,
     isLoading = false,
@@ -33,6 +26,7 @@ export function ThemedButton({
     textStyle,
     loadingText,
 }: ThemedButtonProps) {
+    const form = useFormContext()
     const colorScheme = useColorScheme()
     const isDark = colorScheme === "dark"
 
@@ -105,29 +99,49 @@ export function ThemedButton({
     }
 
     return (
-        <TouchableOpacity
-            style={[getButtonStyles(), style]}
-            onPress={onPress}
-            disabled={disabled || isLoading}
-            activeOpacity={0.7}
-        >
-            {isLoading && (
-                <>
-                    <ActivityIndicator size="small" color={getTextColor()} style={styles.loader} />
-                    {loadingText ? (
-                        <ThemedText type="defaultSemiBold" style={[{ color: getTextColor(), fontSize: getTextSize() }, textStyle]}>
-                            {loadingText}
-                        </ThemedText>
-                    ) : null}
-                </>
-            )}
+        <form.Subscribe selector={(state) => state.isSubmitting}>
+            {(isSubmitting) =>
+                <TouchableOpacity
+                    style={[getButtonStyles(), style]}
+                    onPress={onPress}
+                    disabled={disabled || isSubmitting || isLoading}
+                    activeOpacity={0.7}
+                >
+                    {isLoading || isSubmitting && (
+                        <>
+                            <ActivityIndicator
+                                size="small"
+                                color={getTextColor()}
+                                style={styles.loader}
+                            />
+                            {loadingText ? (
+                                <ThemedText
+                                    type="defaultSemiBold"
+                                    style={[
+                                        { color: getTextColor(), fontSize: getTextSize() },
+                                        textStyle
+                                    ]}
+                                >
+                                    {loadingText}
+                                </ThemedText>
+                            ) : null}
+                        </>
+                    )}
 
-            {!isLoading && (
-                <ThemedText type="defaultSemiBold" style={[{ color: getTextColor(), fontSize: getTextSize() }, textStyle]}>
-                    {title}
-                </ThemedText>
-            )}
-        </TouchableOpacity>
+                    {!isLoading || !isSubmitting && (
+                        <ThemedText
+                            type="defaultSemiBold"
+                            style={[
+                                { color: getTextColor(), fontSize: getTextSize() },
+                                textStyle
+                            ]}
+                        >
+                            {title}
+                        </ThemedText>
+                    )}
+                </TouchableOpacity>
+            }
+        </form.Subscribe>
     )
 }
 
