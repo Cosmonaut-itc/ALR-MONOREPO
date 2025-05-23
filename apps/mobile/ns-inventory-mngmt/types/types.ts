@@ -36,3 +36,17 @@ export const ThemedTextInputPropsArkType = t({
 }); //Intersection is done in the component
 
 export type ThemedTextInputProps = typeof ThemedTextInputPropsArkType.infer;
+
+// Button Component
+export const ThemedButtonPropsArk = t({
+	onPress: "string?" as t.cast<() => void>, // Corresponds to: () => void
+	title: "string",
+	isLoading: "boolean?",
+	disabled: "boolean?",
+	variant: t.enumerated("primary", "outline", "ghost"),
+	size: t.enumerated("small", "medium", "large"),
+	style: "object?", // Corresponds to: StyleProp<ViewStyle> | undefined
+	loadingText: "string?", // Corresponds to: string | undefined
+});
+
+export type ThemedButtonProps = typeof ThemedButtonPropsArk.infer;

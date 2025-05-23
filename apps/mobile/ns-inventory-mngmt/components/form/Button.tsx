@@ -1,19 +1,8 @@
 import { useFormContext } from "@/hooks/form-context"
-import { ActivityIndicator, type StyleProp, StyleSheet, type TextStyle, TouchableOpacity, ViewStyle, useColorScheme } from "react-native"
+import type { ThemedButtonProps } from "@/types/types"
+import { ActivityIndicator, StyleSheet, TouchableOpacity, ViewStyle, useColorScheme } from "react-native"
 import { Colors } from "react-native/Libraries/NewAppScreen"
 import { ThemedText } from "../ThemedText"
-
-type ThemedButtonProps = {
-    onPress: () => void
-    title: string
-    isLoading?: boolean
-    disabled?: boolean
-    variant?: "primary" | "outline" | "ghost"
-    size?: "small" | "medium" | "large"
-    style?: StyleProp<ViewStyle>
-    textStyle?: StyleProp<TextStyle>
-    loadingText?: string
-}
 
 export function ThemedButtonForm({
     onPress,
@@ -23,7 +12,6 @@ export function ThemedButtonForm({
     variant = "primary",
     size = "medium",
     style,
-    textStyle,
     loadingText,
 }: ThemedButtonProps) {
     const form = useFormContext()
@@ -119,7 +107,7 @@ export function ThemedButtonForm({
                                     type="defaultSemiBold"
                                     style={[
                                         { color: getTextColor(), fontSize: getTextSize() },
-                                        textStyle
+
                                     ]}
                                 >
                                     {loadingText}
@@ -133,7 +121,7 @@ export function ThemedButtonForm({
                             type="defaultSemiBold"
                             style={[
                                 { color: getTextColor(), fontSize: getTextSize() },
-                                textStyle
+
                             ]}
                         >
                             {title}

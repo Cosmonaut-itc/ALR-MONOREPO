@@ -91,12 +91,14 @@ export default function Login() {
                                 />
 
                             </ThemedView>
-
+                        
                             <ThemedButton
                                 title="Login"
                                 onPress={handleLogin}
                                 isLoading={isLoading}
                                 loadingText="Logging in..."
+                                variant="primary"
+                                size="medium"
                                 style={styles.buttonContainer}
                             />
 

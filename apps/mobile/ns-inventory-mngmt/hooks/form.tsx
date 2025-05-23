@@ -10,10 +10,10 @@ export const { useAppForm } = createFormHook({
 	formContext,
 	fieldComponents: {
 		TextInputForm,
-		ThemedButtonForm,
 	},
 	formComponents: {
 		ThemedText,
-		ThemedFormError
+		ThemedFormError,
+		ThemedButtonForm,
 	},
 });

@@ -1,26 +1,14 @@
 import { ThemedText } from "@/components/ThemedText"
 import { Colors } from "@/constants/Colors"
 import { useColorScheme } from "@/hooks/useColorScheme"
+import type { ThemedButtonProps } from "@/types/types"
 import {
     ActivityIndicator,
-    type StyleProp,
     StyleSheet,
-    type TextStyle,
     TouchableOpacity,
-    type ViewStyle,
+    type ViewStyle
 } from "react-native"
 
-type ThemedButtonProps = {
-    onPress: () => void
-    title: string
-    isLoading?: boolean
-    disabled?: boolean
-    variant?: "primary" | "outline" | "ghost"
-    size?: "small" | "medium" | "large"
-    style?: StyleProp<ViewStyle>
-    textStyle?: StyleProp<TextStyle>
-    loadingText?: string
-}
 
 export function ThemedButton({
     onPress,
@@ -30,7 +18,6 @@ export function ThemedButton({
     variant = "primary",
     size = "medium",
     style,
-    textStyle,
     loadingText,
 }: ThemedButtonProps) {
     const colorScheme = useColorScheme()
@@ -115,7 +102,7 @@ export function ThemedButton({
                 <>
                     <ActivityIndicator size="small" color={getTextColor()} style={styles.loader} />
                     {loadingText ? (
-                        <ThemedText type="defaultSemiBold" style={[{ color: getTextColor(), fontSize: getTextSize() }, textStyle]}>
+                        <ThemedText type="defaultSemiBold" style={[{ color: getTextColor(), fontSize: getTextSize() }]}>
                             {loadingText}
                         </ThemedText>
                     ) : null}
@@ -123,7 +110,7 @@ export function ThemedButton({
             )}
 
             {!isLoading && (
-                <ThemedText type="defaultSemiBold" style={[{ color: getTextColor(), fontSize: getTextSize() }, textStyle]}>
+                <ThemedText type="defaultSemiBold" style={[{ color: getTextColor(), fontSize: getTextSize() }]}>
                     {title}
                 </ThemedText>
             )}
