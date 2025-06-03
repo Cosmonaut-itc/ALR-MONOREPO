@@ -1,3 +1,4 @@
+//index.tsx
 "use client"
 
 import { useRouter } from "expo-router"
@@ -11,6 +12,10 @@ import { Colors } from "@/constants/Colors"
 import { Translations } from "@/constants/Translations"
 import { useAppForm } from "@/hooks/form"
 import { LoginFormSchema } from "@/types/types"
+import { authClient } from "@/lib/auth";
+import NetInfo from '@react-native-community/netinfo';
+
+
 
 export default function Login() {
     const form = useAppForm({
@@ -29,12 +34,34 @@ export default function Login() {
     const t = Translations.login
 
     const handleLogin = async () => {
-        setIsLoading(true)
-        // This would be where you handle authentication
-        // For now, we'll just simulate a login
-        setTimeout(() => {
-            setIsLoading(false)
-        }, 1000)
+
+        const currentSession = await authClient.getSession()
+        console.log("Current session:", currentSession)
+        try {
+            const result = await authClient.signUp.email({
+                email: 'felixddhs@outlook.com',
+                password: 'Diajgucy6Qs7k6M',
+                name: 'Felix David',
+            })
+
+            console.log("Sign in result:", result)
+
+            // Get session after login
+            const newSession = await authClient.getSession()
+            console.log("New session:", newSession)
+        } catch (error) {
+            console.error("Login error:", error)
+        }
+    }
+
+    const testConnection = async () => {
+        try {
+            const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL || 'http://100.89.145.51:3000/'}`)
+            const data = await response.json()
+            console.log("API connection test:", data)
+        } catch (error) {
+            console.error("Connection test failed:", error)
+        }
     }
 
     return (
@@ -91,7 +118,7 @@ export default function Login() {
                                 />
 
                             </ThemedView>
-                        
+
                             <ThemedButton
                                 title="Login"
                                 onPress={handleLogin}
