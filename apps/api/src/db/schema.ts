@@ -81,3 +81,13 @@ export const apikey = pgTable("apikey", {
 	permissions: text("permissions"),
 	metadata: text("metadata"),
 });
+
+//Create a health check table
+export const healthCheck = pgTable("health_check", {
+	id: text("id").primaryKey(),
+	status: text("status").notNull(),
+	timestamp: timestamp("timestamp")
+		.$defaultFn(() => /* @__PURE__ */ new Date())
+		.notNull(),
+	message: text("message"),
+});

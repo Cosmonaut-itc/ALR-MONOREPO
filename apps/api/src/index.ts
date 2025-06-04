@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { auth } from "./lib/auth";
 import { cors } from "hono/cors";
 import { db } from "./db/index"; // Ensure this is the correct path to your db module
+import * as schemas from "./db/schema";
 
 const app = new Hono<{
 	Variables: {
@@ -14,7 +15,12 @@ const app = new Hono<{
 app.use(
 	"/api/auth/*",
 	cors({
-		origin: ["http://localhost:3000", "http://100.89.145.51:3000", "nsinventorymngmt://", "http://100.111.159.14:3000"], // Add your actual IP
+		origin: [
+			"http://localhost:3000",
+			"http://100.89.145.51:3000",
+			"nsinventorymngmt://",
+			"http://100.111.159.14:3000",
+		], // Add your actual IP
 		allowHeaders: ["Content-Type", "Authorization"],
 		allowMethods: ["POST", "GET", "OPTIONS"],
 		exposeHeaders: ["Content-Length"],
@@ -57,15 +63,17 @@ app.on(["POST", "GET"], "/api/auth/*", (c) => {
 });
 
 app.get("/", (c) => c.json("Hello Bun!"));
-// app.get("/db/health", async (c) => {
-// 	try {
-// 		await db.;
-// 		return c.json({ status: "ok" });
-// 	} catch (error) {
-// 		console.error("Database health check failed:", error);
-// 		return c.json({ status: "error", message: "Database connection failed" }, 500);
-// 	}
-// });
+
+// Health check endpoint for the auth service only in development
+app.get("/db/health", async (c) => {
+	try {
+		await db.select().from(schemas.healthCheck);
+		return c.json({ status: "ok" });
+	} catch (error) {
+		console.error("Database health check failed:", error);
+		return c.json({ status: "error", message: "Database connection failed" }, 500);
+	}
+});
 
 export default {
 	port: 3000,
