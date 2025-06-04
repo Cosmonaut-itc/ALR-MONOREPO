@@ -19,6 +19,7 @@ export const auth = betterAuth({
 		"https://localhost:3000",
 		"exp://192.168.15.188:8081",
 		"http://100.89.145.51:3000",
+		"exp://192.168.0.205:8081"
 		// Add your production domains when you deploy
 	],
 });
