@@ -4,7 +4,6 @@
 import { useRouter } from "expo-router"
 import { useState } from "react"
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TouchableOpacity } from "react-native"
-
 import { ThemedButton } from "@/components/ThemedButton"
 import { ThemedText } from "@/components/ThemedText"
 import { ThemedView } from "@/components/ThemedView"
@@ -13,9 +12,8 @@ import { Translations } from "@/constants/Translations"
 import { useAppForm } from "@/hooks/form"
 import { LoginFormSchema } from "@/types/types"
 import { authClient } from "@/lib/auth";
-import NetInfo from '@react-native-community/netinfo';
-
-
+import { useMutation } from "@tanstack/react-query"
+import { toast } from 'sonner-native';
 
 export default function Login() {
     const form = useAppForm({
@@ -33,35 +31,38 @@ export default function Login() {
     // Get translations for login screen
     const t = Translations.login
 
-    const handleLogin = async () => {
-
-        const currentSession = await authClient.getSession()
-        console.log("Current session:", currentSession)
-        try {
-            const result = await authClient.signUp.email({
-                email: 'felixddhs@outlook.com',
-                password: 'Diajgucy6Qs7k6M',
-                name: 'Felix David',
+    const signUpMutation = useMutation({
+        mutationFn: async (formData: { email: string; password: string; }) => {
+            const result = await authClient.signIn.email({
+                email: formData.email,
+                password: formData.password,
             })
 
-            console.log("Sign in result:", result)
+            if (result.error) {
+                throw new Error(` Error al inicar sesion - ${result.error.message}`)
+            }
 
-            // Get session after login
-            const newSession = await authClient.getSession()
-            console.log("New session:", newSession)
-        } catch (error) {
-            console.error("Login error:", error)
+            return result
+        },
+        onSuccess: (data) => {
+            // Handle success - maybe redirect or show success message
+            console.log("Sign up successful:", data)
+            router.replace("/(tabs)/explore") // Redirect to explore page on successful login
+        },
+        onError: (error) => {
+            console.error("Sign up error:", error)
+            toast.error(`${error}`) // Show error message to user
+            // Handle error - show error message to user
         }
-    }
+    })
 
-    const testConnection = async () => {
-        try {
-            const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL || 'http://100.89.145.51:3000/'}`)
-            const data = await response.json()
-            console.log("API connection test:", data)
-        } catch (error) {
-            console.error("Connection test failed:", error)
-        }
+    const handleLogin = () => {
+        const formValues = form.state.values
+
+        signUpMutation.mutate({
+            email: formValues.email,
+            password: formValues.password,
+        })
     }
 
     return (

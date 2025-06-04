@@ -14,7 +14,10 @@ import { Platform } from "react-native";
 import 'react-native-gesture-handler';
 import 'react-native-reanimated';
 import { useSyncQueriesExternal } from "react-query-external-sync";
-
+import { Toaster } from 'sonner-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { NavigationContainer } from '@react-navigation/native';
 
 
 
@@ -73,10 +76,14 @@ export default function RootLayout() {
   }
 
   return (
-
-    <QueryClientProvider client={queryClient}>
-      <AppContent />
-    </QueryClientProvider>
+    <SafeAreaProvider>
+      <GestureHandlerRootView>
+        <QueryClientProvider client={queryClient}>
+          <Toaster richColors />
+          <AppContent />
+        </QueryClientProvider>
+      </GestureHandlerRootView>
+    </SafeAreaProvider>
   );
 }
 
