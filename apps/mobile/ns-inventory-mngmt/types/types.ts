@@ -50,3 +50,17 @@ export const ThemedButtonPropsArk = t({
 });
 
 export type ThemedButtonProps = typeof ThemedButtonPropsArk.infer;
+
+
+
+// UI component types
+//ThemedNumpad Component 
+export const ThemedNumpadPropsArk = t({
+	onNumberPress: "function" as t.cast<(num: string) => void>,
+	onDelete: "function" as t.cast<() => void>,
+	onClear: "function" as t.cast<() => void>,
+	buttonSize: "number?", // Corresponds to: number | undefined
+	style: "object?", // Corresponds to: StyleProp<ViewStyle> | undefined
+});
+
+export type ThemedNumpadProps = typeof ThemedNumpadPropsArk.infer;

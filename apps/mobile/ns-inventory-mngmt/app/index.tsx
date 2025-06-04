@@ -47,7 +47,7 @@ export default function Login() {
         onSuccess: (data) => {
             // Handle success - maybe redirect or show success message
             console.log("Sign up successful:", data)
-            router.replace("/(tabs)/explore") // Redirect to explore page on successful login
+            router.replace("/entry") // Redirect to explore page on successful login
         },
         onError: (error) => {
             console.error("Sign up error:", error)
@@ -57,12 +57,14 @@ export default function Login() {
     })
 
     const handleLogin = () => {
-        const formValues = form.state.values
+        // const formValues = form.state.values
 
-        signUpMutation.mutate({
-            email: formValues.email,
-            password: formValues.password,
-        })
+        // signUpMutation.mutate({
+        //     email: formValues.email,
+        //     password: formValues.password,
+        // })
+
+        router.replace("/entry")
     }
 
     return (
@@ -123,7 +125,7 @@ export default function Login() {
                             <ThemedButton
                                 title="Login"
                                 onPress={handleLogin}
-                                isLoading={isLoading}
+                                isLoading={signUpMutation.isPending}
                                 loadingText="Logging in..."
                                 variant="primary"
                                 size="medium"
