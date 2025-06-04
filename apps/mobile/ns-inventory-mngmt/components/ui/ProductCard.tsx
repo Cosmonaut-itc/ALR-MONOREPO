@@ -29,8 +29,15 @@ export function ProductCard({ product, onRemove, onUpdateQuantity, style }: Prod
                 style,
             ]}
         >
-            <ThemedView style={styles.cardHeader}>
-                <ThemedView style={styles.productInfo}>
+            <ThemedView
+                style={[
+                    styles.cardHeader,
+                    {
+                        backgroundColor: isDark ? Colors.dark.highlight : Colors.light.highlight,
+                    },
+                ]}
+            >
+                <ThemedView style={styles.productInfo} darkColor={Colors.dark.highlight} lightColor={Colors.light.highlight}>
                     <ThemedText style={styles.productName}>{product.name}</ThemedText>
                     <ThemedText style={styles.productBrand}>{product.brand}</ThemedText>
                 </ThemedView>
@@ -39,15 +46,17 @@ export function ProductCard({ product, onRemove, onUpdateQuantity, style }: Prod
                 </TouchableOpacity>
             </ThemedView>
 
-            <ThemedView style={styles.cardBody}>
-                <ThemedView style={styles.priceContainer}>
-                    <ThemedText style={styles.priceLabel}>Precio:</ThemedText>
-                    <ThemedText style={styles.price}>${product.price}</ThemedText>
-                </ThemedView>
-
-                <ThemedView style={styles.quantityContainer}>
+            <ThemedView
+                style={[
+                    styles.cardBody,
+                    {
+                        backgroundColor: isDark ? Colors.dark.surface : Colors.light.surface,
+                    },
+                ]}
+            >
+                <ThemedView style={styles.quantityContainer} darkColor={Colors.dark.surface} lightColor={Colors.light.surface}>
                     <ThemedText style={styles.quantityLabel}>Cantidad:</ThemedText>
-                    <ThemedView style={styles.quantityControls}>
+                    <ThemedView style={styles.quantityControls} darkColor={Colors.dark.surface} lightColor={Colors.light.surface}>
                         <TouchableOpacity
                             style={[
                                 styles.quantityButton,
@@ -77,9 +86,17 @@ export function ProductCard({ product, onRemove, onUpdateQuantity, style }: Prod
                 </ThemedView>
             </ThemedView>
 
-            <ThemedView style={styles.cardFooter}>
+            <ThemedView
+                style={[
+                    styles.cardFooter,
+                    {
+                        backgroundColor: isDark ? Colors.dark.highlight : Colors.light.highlight,
+                        borderTopColor: isDark ? Colors.dark.border : Colors.light.border,
+                    },
+                ]}
+            >
                 <ThemedText style={styles.totalLabel}>Total:</ThemedText>
-                <ThemedText style={styles.totalPrice}>${(product.price * product.quantity).toFixed(2)}</ThemedText>
+                <ThemedText style={styles.totalPrice}>{(product.quantity).toFixed(2)}</ThemedText>
             </ThemedView>
         </ThemedView>
     )
@@ -89,50 +106,51 @@ const styles = StyleSheet.create({
     card: {
         borderWidth: 1,
         borderRadius: 12,
-        padding: 16,
-        marginBottom: 8,
+        marginBottom: 12,
+        overflow: "hidden",
     },
     cardHeader: {
         flexDirection: "row",
         justifyContent: "space-between",
         alignItems: "flex-start",
-        marginBottom: 12,
+        padding: 18,
     },
     productInfo: {
         flex: 1,
     },
     productName: {
-        fontSize: 16,
-        fontWeight: "600",
-        marginBottom: 4,
+        fontSize: 20,
+        fontWeight: "700",
+        marginBottom: 6,
     },
     productBrand: {
-        fontSize: 14,
-        opacity: 0.7,
+        fontSize: 16,
+        opacity: 0.8,
     },
     removeButton: {
-        padding: 4,
+        padding: 8,
     },
     removeButtonText: {
-        fontSize: 18,
+        fontSize: 22,
         fontWeight: "bold",
     },
     cardBody: {
-        marginBottom: 12,
+        padding: 18,
     },
     priceContainer: {
         flexDirection: "row",
         justifyContent: "space-between",
         alignItems: "center",
-        marginBottom: 8,
+        marginBottom: 16,
     },
     priceLabel: {
-        fontSize: 14,
+        fontSize: 16,
         opacity: 0.7,
+        fontWeight: "500",
     },
     price: {
-        fontSize: 16,
-        fontWeight: "500",
+        fontSize: 20,
+        fontWeight: "600",
     },
     quantityContainer: {
         flexDirection: "row",
@@ -140,45 +158,45 @@ const styles = StyleSheet.create({
         alignItems: "center",
     },
     quantityLabel: {
-        fontSize: 14,
+        fontSize: 16,
         opacity: 0.7,
+        fontWeight: "500",
     },
     quantityControls: {
         flexDirection: "row",
         alignItems: "center",
-        gap: 12,
+        gap: 16,
     },
     quantityButton: {
-        width: 32,
-        height: 32,
-        borderRadius: 16,
+        width: 40,
+        height: 40,
+        borderRadius: 20,
         justifyContent: "center",
         alignItems: "center",
     },
     quantityButtonText: {
-        fontSize: 18,
+        fontSize: 22,
         fontWeight: "bold",
     },
     quantityText: {
-        fontSize: 16,
-        fontWeight: "600",
-        minWidth: 30,
+        fontSize: 20,
+        fontWeight: "700",
+        minWidth: 40,
         textAlign: "center",
     },
     cardFooter: {
         flexDirection: "row",
         justifyContent: "space-between",
         alignItems: "center",
-        paddingTop: 12,
+        padding: 18,
         borderTopWidth: 1,
-        borderTopColor: "#e0e0e0",
     },
     totalLabel: {
-        fontSize: 16,
+        fontSize: 18,
         fontWeight: "600",
     },
     totalPrice: {
-        fontSize: 18,
+        fontSize: 22,
         fontWeight: "bold",
     },
 })

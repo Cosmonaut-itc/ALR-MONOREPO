@@ -39,10 +39,16 @@ export function PendingInventoryCard({ item, style }: PendingInventoryCardProps)
                 style,
             ]}
         >
-            <ThemedView style={styles.cardHeader}>
-                <ThemedView style={styles.productInfo}>
+            <ThemedView
+                style={[
+                    styles.cardHeader,
+                    {
+                        backgroundColor: isDark ? Colors.dark.highlight : Colors.light.highlight,
+                    },
+                ]}
+            >
+                <ThemedView style={styles.productInfo} darkColor={Colors.dark.highlight} lightColor={Colors.light.highlight}>
                     <ThemedText style={styles.productName}>{item.productName}</ThemedText>
-                    <ThemedText style={styles.takenBy}>Tomado por: {item.takenBy}</ThemedText>
                 </ThemedView>
                 <ThemedView
                     style={[
@@ -56,12 +62,19 @@ export function PendingInventoryCard({ item, style }: PendingInventoryCardProps)
                 </ThemedView>
             </ThemedView>
 
-            <ThemedView style={styles.cardBody}>
-                <ThemedView style={styles.detailRow}>
+            <ThemedView
+                style={[
+                    styles.cardBody,
+                    {
+                        backgroundColor: isDark ? Colors.dark.surface : Colors.light.surface,
+                    },
+                ]}
+            >
+                <ThemedView style={styles.detailRow} darkColor={Colors.dark.surface} lightColor={Colors.light.surface}>
                     <ThemedText style={styles.detailLabel}>Cantidad:</ThemedText>
                     <ThemedText style={styles.detailValue}>{item.quantity}</ThemedText>
                 </ThemedView>
-                <ThemedView style={styles.detailRow}>
+                <ThemedView style={styles.detailRow} darkColor={Colors.dark.surface} lightColor={Colors.light.surface}>
                     <ThemedText style={styles.detailLabel}>Tiempo:</ThemedText>
                     <ThemedText style={styles.detailValue}>{formatTimeAgo(item.takenAt)}</ThemedText>
                 </ThemedView>
@@ -74,39 +87,42 @@ const styles = StyleSheet.create({
     card: {
         borderWidth: 2,
         borderRadius: 12,
-        padding: 16,
-        marginBottom: 8,
+        padding: 18,
+        marginBottom: 12,
+        overflow: "hidden",
     },
     cardHeader: {
         flexDirection: "row",
         justifyContent: "space-between",
         alignItems: "flex-start",
-        marginBottom: 12,
+        marginBottom: 16,
+        padding: 16,
+        marginHorizontal: -18,
+        marginTop: -18,
     },
     productInfo: {
         flex: 1,
     },
     productName: {
-        fontSize: 16,
-        fontWeight: "600",
-        marginBottom: 4,
-    },
-    takenBy: {
-        fontSize: 14,
-        opacity: 0.7,
+        fontSize: 20,
+        fontWeight: "700",
     },
     badge: {
-        paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: 12,
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 16,
     },
     badgeText: {
         color: "white",
-        fontSize: 10,
+        fontSize: 12,
         fontWeight: "bold",
+        letterSpacing: 0.5,
     },
     cardBody: {
-        gap: 8,
+        gap: 12,
+        padding: 16,
+        marginHorizontal: -18,
+        marginBottom: -18,
     },
     detailRow: {
         flexDirection: "row",
@@ -114,11 +130,12 @@ const styles = StyleSheet.create({
         alignItems: "center",
     },
     detailLabel: {
-        fontSize: 14,
+        fontSize: 16,
         opacity: 0.7,
+        fontWeight: "500",
     },
     detailValue: {
-        fontSize: 14,
-        fontWeight: "500",
+        fontSize: 18,
+        fontWeight: "600",
     },
 })

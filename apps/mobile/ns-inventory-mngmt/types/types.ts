@@ -79,7 +79,6 @@ export const PendingItemInventoryCardArk = t({
 	productName: "string",
 	quantity: "number",
 	takenAt: "string.date.iso.parse",
-	takenBy: "string",
 });
 
 export const pendingInventoryCardPropsArk = t({
@@ -95,7 +94,6 @@ export const SelectedProductCardArk = t({
 	id: "string",
 	name: "string",
 	brand: "string",
-	price: "number",
 	stock: "number",
 	quantity: "number",
 	selectedAt: "string.date.iso.parse",

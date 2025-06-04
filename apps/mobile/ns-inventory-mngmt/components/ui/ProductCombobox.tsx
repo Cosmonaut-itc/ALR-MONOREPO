@@ -43,15 +43,16 @@ export function ProductCombobox({ products, onProductSelect, placeholder }: Prod
                 styles.productItem,
                 {
                     borderBottomColor: isDark ? Colors.dark.border : Colors.light.border,
+                    backgroundColor: isDark ? Colors.dark.surface : Colors.light.surface,
                 },
             ]}
             onPress={() => handleProductSelect(item)}
         >
-            <ThemedView style={styles.productInfo}>
+            <ThemedView style={styles.productInfo} darkColor={Colors.dark.surface} lightColor={Colors.light.surface}>
                 <ThemedText style={styles.productName}>{item.name}</ThemedText>
                 <ThemedText style={styles.productBrand}>{item.brand}</ThemedText>
             </ThemedView>
-            <ThemedView style={styles.productDetails}>
+            <ThemedView style={styles.productDetails} darkColor={Colors.dark.surface} lightColor={Colors.light.surface}>
                 <ThemedText style={styles.productPrice}>${item.price}</ThemedText>
                 <ThemedText style={styles.productStock}>Stock: {item.stock}</ThemedText>
             </ThemedView>
@@ -94,7 +95,15 @@ export function ProductCombobox({ products, onProductSelect, placeholder }: Prod
 
             <Modal visible={isOpen} animationType="slide" presentationStyle="pageSheet">
                 <ThemedView style={styles.modalContainer}>
-                    <ThemedView style={styles.modalHeader}>
+                    <ThemedView
+                        style={[
+                            styles.modalHeader,
+                            {
+                                backgroundColor: isDark ? Colors.dark.highlight : Colors.light.highlight,
+                                borderBottomColor: isDark ? Colors.dark.border : Colors.light.border,
+                            },
+                        ]}
+                    >
                         <ThemedText type="title" style={styles.modalTitle}>
                             Seleccionar Producto
                         </ThemedText>
@@ -120,7 +129,6 @@ export function ProductCombobox({ products, onProductSelect, placeholder }: Prod
                             </ThemedText>
                         </ThemedView>
                     </ThemedView>
-
                     <FlatList
                         data={filteredProducts}
                         renderItem={renderProductItem}
@@ -140,6 +148,7 @@ const styles = StyleSheet.create({
     },
     label: {
         marginBottom: 8,
+        fontSize: 16,
     },
     input: {
         flexDirection: "row",
@@ -147,35 +156,33 @@ const styles = StyleSheet.create({
         justifyContent: "space-between",
         borderWidth: 1,
         borderRadius: 8,
-        padding: 12,
-        minHeight: 50,
+        padding: 16,
+        minHeight: 56,
     },
     inputText: {
-        fontSize: 16,
+        fontSize: 18,
         flex: 1,
     },
     dropdownIcon: {
-        fontSize: 12,
+        fontSize: 14,
         opacity: 0.6,
     },
     modalContainer: {
         flex: 1,
-        paddingTop: 20,
     },
     modalHeader: {
         flexDirection: "row",
         justifyContent: "space-between",
         alignItems: "center",
-        padding: 16,
+        padding: 20,
         borderBottomWidth: 1,
-        borderBottomColor: "#e0e0e0",
     },
     modalTitle: {
-        fontSize: 18,
+        fontSize: 20,
     },
     closeButton: {
         padding: 8,
-        fontSize: 18,
+        fontSize: 20,
     },
     searchContainer: {
         padding: 16,
@@ -183,10 +190,10 @@ const styles = StyleSheet.create({
     searchInput: {
         borderWidth: 1,
         borderRadius: 8,
-        padding: 12,
+        padding: 16,
     },
     searchInputText: {
-        fontSize: 16,
+        fontSize: 18,
     },
     productList: {
         flex: 1,
@@ -195,31 +202,31 @@ const styles = StyleSheet.create({
         flexDirection: "row",
         justifyContent: "space-between",
         alignItems: "center",
-        padding: 16,
+        padding: 20,
         borderBottomWidth: 1,
     },
     productInfo: {
         flex: 1,
     },
     productName: {
-        fontSize: 16,
-        fontWeight: "500",
+        fontSize: 18,
+        fontWeight: "600",
         marginBottom: 4,
     },
     productBrand: {
-        fontSize: 14,
+        fontSize: 16,
         opacity: 0.7,
     },
     productDetails: {
         alignItems: "flex-end",
     },
     productPrice: {
-        fontSize: 16,
+        fontSize: 18,
         fontWeight: "600",
         marginBottom: 2,
     },
     productStock: {
-        fontSize: 12,
+        fontSize: 14,
         opacity: 0.7,
     },
 })
