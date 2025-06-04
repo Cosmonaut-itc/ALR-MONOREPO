@@ -56,11 +56,77 @@ export type ThemedButtonProps = typeof ThemedButtonPropsArk.infer;
 // UI component types
 //ThemedNumpad Component 
 export const ThemedNumpadPropsArk = t({
-	onNumberPress: "function" as t.cast<(num: string) => void>,
-	onDelete: "function" as t.cast<() => void>,
-	onClear: "function" as t.cast<() => void>,
+	onNumberPress: "string?" as t.cast<(num: string) => void>,
+	onDelete: "string?" as t.cast<() => void>,
+	onClear: "string?" as t.cast<() => void>,
 	buttonSize: "number?", // Corresponds to: number | undefined
 	style: "object?", // Corresponds to: StyleProp<ViewStyle> | undefined
 });
 
 export type ThemedNumpadProps = typeof ThemedNumpadPropsArk.infer;
+
+// BarcodeScanner Component
+export const BarcodeScannerPropsArk = t({
+	onBarcodeScanned: "string?" as t.cast<(data: string) => void>,
+	onClose: "string?" as t.cast<() => void>,
+});
+
+export type BarcodeScannerProps = typeof BarcodeScannerPropsArk.infer;
+
+// Pending Inventory Card Component and its types
+export const PendingItemInventoryCardArk = t({
+	id: "string",
+	productName: "string",
+	quantity: "number",
+	takenAt: "string.date.iso.parse",
+	takenBy: "string",
+});
+
+export const pendingInventoryCardPropsArk = t({
+	item: PendingItemInventoryCardArk,
+	style: "object?", // Corresponds to: StyleProp<ViewStyle> | undefined
+});
+
+export type PendingItemInventoryCard = typeof PendingItemInventoryCardArk.infer;
+export type PendingInventoryCardProps = typeof pendingInventoryCardPropsArk.infer;
+
+// Product Card Component and its types
+export const SelectedProductCardArk = t({
+	id: "string",
+	name: "string",
+	brand: "string",
+	price: "number",
+	stock: "number",
+	quantity: "number",
+	selectedAt: "string.date.iso.parse",
+});
+
+export const productCardPropsArk = t({
+	product: SelectedProductCardArk,
+	onRemove: "string?" as t.cast<(id: string) => void>,
+	onUpdateQuantity: "string?" as t.cast<(id: string, quantity: number) => void>,
+	style: "object?", // Corresponds to: StyleProp<ViewStyle> | undefined
+});
+
+export type SelectedProduct = typeof SelectedProductCardArk.infer;
+export type ProductCardProps = typeof productCardPropsArk.infer;
+
+// Product Combobox Component and its types
+export const Product = t({
+	id: "string",
+	name: "string",
+	brand: "string",
+	price: "number",
+	stock: "number",
+	barcode: "string?",
+});
+
+
+export const productComboboxPropsArk = t({
+	products: t(Product, "[]"),
+	onProductSelect: "string?" as t.cast<(product: typeof Product.infer) => void>,
+	placeholder: "string?",
+});
+
+export type Product = typeof Product.infer;
+export type ProductComboboxProps = typeof productComboboxPropsArk.infer;

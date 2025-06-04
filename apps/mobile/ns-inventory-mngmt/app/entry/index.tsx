@@ -41,7 +41,7 @@ export default function NumpadScreen() {
         // Handle submission logic here
         console.log("Submitted value:", value)
         // Navigate back or to another screen
-        // router.back()
+        router.push('/entry/baseUser')
     }
 
     return (
