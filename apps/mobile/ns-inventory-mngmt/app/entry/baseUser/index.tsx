@@ -4,7 +4,6 @@ import { useState } from "react"
 import { StyleSheet, TouchableOpacity, Platform, ScrollView, Alert } from "react-native"
 import { StatusBar } from "expo-status-bar"
 import { router } from "expo-router"
-
 import { ThemedText } from "@/components/ThemedText"
 import { ThemedView } from "@/components/ThemedView"
 import { ThemedButton } from "@/components/ThemedButton"
@@ -340,7 +339,7 @@ const styles = StyleSheet.create({
     },
     inputRow: {
         flexDirection: "row",
-        alignItems: "flex-end",
+        alignItems: "center",
         gap: 12,
     },
     comboboxContainer: {
@@ -351,6 +350,7 @@ const styles = StyleSheet.create({
         height: 56,
         borderRadius: 8,
         borderWidth: 1,
+        top: 8,
         justifyContent: "center",
         alignItems: "center",
     },
