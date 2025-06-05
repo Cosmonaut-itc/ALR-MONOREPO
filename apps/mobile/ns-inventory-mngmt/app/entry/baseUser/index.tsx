@@ -20,6 +20,7 @@ import { ArrowLeft, Camera } from "lucide-react-native"
 import type { PendingOrder, SelectedProduct, OrderItem } from "@/types/types"
 
 // Mock data for nail salon products
+// biome-ignore lint/suspicious/noExplicitAny: Demo Data
 const NAIL_PRODUCTS: any[] = [
     { id: "1", name: "Esmalte Rojo Clásico", brand: "OPI", price: 15.99, stock: 25, barcode: "123456789" },
     { id: "2", name: "Base Coat Fortalecedora", brand: "Essie", price: 12.5, stock: 18 },
@@ -86,6 +87,7 @@ export default function InventoryScannerScreen() {
     const colorScheme = useColorScheme()
     const isDark = colorScheme === "dark"
 
+    // biome-ignore lint/suspicious/noExplicitAny: demo data select
     const handleProductSelect = (product: any, quantity = 1) => {
         const existingIndex = selectedProducts.findIndex((p) => p.id === product.id)
 

@@ -43,8 +43,8 @@ export default function RootLayout() {
   }
 
   const hostIP =
-    Constants.expoGoConfig?.debuggerHost?.split(`:`)[0] ||
-    Constants.expoConfig?.hostUri?.split(`:`)[0];
+    Constants.expoGoConfig?.debuggerHost?.split(":")[0] ||
+    Constants.expoConfig?.hostUri?.split(":")[0];
 
   function AppContent() {
     const colorScheme = useColorScheme();
@@ -70,7 +70,8 @@ export default function RootLayout() {
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="index" />
           <Stack.Screen name="(tabs)" />
-          <Stack.Screen name="entry" />
+          <Stack.Screen name="entry/index" />
+          <Stack.Screen name="entry/baseUser/index" />
           <Stack.Screen name="+not-found" options={{ title: Translations.navigation.notFound }} />
         </Stack>
         <StatusBar style="auto" />

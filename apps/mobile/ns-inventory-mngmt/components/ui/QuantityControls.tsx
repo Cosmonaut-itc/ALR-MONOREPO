@@ -15,6 +15,7 @@ export interface QuantityControlsProps {
     max?: number
     disabled?: boolean
     size?: "small" | "medium" | "large"
+    // biome-ignore lint/suspicious/noExplicitAny: Allow any for custom styles without need to do ts sorcery
     style?: any
 }
 

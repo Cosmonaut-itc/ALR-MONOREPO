@@ -17,13 +17,13 @@ export function PendingOrderCard({ order, onOrderClick, style }: PendingOrderCar
 
         if (diffInMinutes < 60) {
             return `hace ${diffInMinutes} min`
-        } else if (diffInMinutes < 1440) {
+        } if (diffInMinutes < 1440) {
             const hours = Math.floor(diffInMinutes / 60)
             return `hace ${hours} hora${hours > 1 ? "s" : ""}`
-        } else {
-            const days = Math.floor(diffInMinutes / 1440)
-            return `hace ${days} día${days > 1 ? "s" : ""}`
         }
+        const days = Math.floor(diffInMinutes / 1440)
+        return `hace ${days} día${days > 1 ? "s" : ""}`
+
     }
 
     const getTotalItems = () => {
@@ -40,7 +40,6 @@ export function PendingOrderCard({ order, onOrderClick, style }: PendingOrderCar
                 return isDark ? "#4ade80" : "#16a34a"
             case "partial":
                 return isDark ? "#fbbf24" : "#d97706"
-            case "pending":
             default:
                 return isDark ? "#ffd166" : "#f57c00"
         }
@@ -52,7 +51,6 @@ export function PendingOrderCard({ order, onOrderClick, style }: PendingOrderCar
                 return "COMPLETADO"
             case "partial":
                 return "PARCIAL"
-            case "pending":
             default:
                 return "PENDIENTE"
         }
