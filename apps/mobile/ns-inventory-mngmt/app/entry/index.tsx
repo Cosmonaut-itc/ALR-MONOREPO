@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { StyleSheet, TouchableOpacity, Platform, KeyboardAvoidingView } from "react-native"
+import { StyleSheet, Platform } from "react-native"
 import { StatusBar } from "expo-status-bar"
 import { router } from "expo-router"
 import { ThemedText } from "@/components/ThemedText"
@@ -10,36 +10,29 @@ import { ThemedButton } from "@/components/ThemedButton"
 import { Colors } from "@/constants/Colors"
 import { useColorScheme } from "@/hooks/useColorScheme"
 import { ThemedNumpad } from "@/components/ui/ThemedNumpad"
+import { create } from "zustand"
+import { devtools } from '@csark0812/zustand-expo-devtools';
+import type { NumpadValueType } from "@/types/types"
+
 
 export default function NumpadScreen() {
-    const [value, setValue] = useState("")
-    const [displayValue, setDisplayValue] = useState("")
+    const numpadValueStore = create<NumpadValueType>()(devtools((set) => ({
+        value: "",
+        setValue: (newValue: string) => set({ value: newValue }),
+        deleteValue: () => set((state) => ({ value: state.value.slice(0, -1) })),
+        clearValue: () => set({ value: "" }),
+    }), {
+        name: 'numpad-value', // Optional: name your store for better debugging
+    }))
     const colorScheme = useColorScheme()
     const isDark = colorScheme === "dark"
+    const { value: storedValue, setValue, deleteValue, clearValue } = numpadValueStore()
 
-    // Update display value when value changes
-    useEffect(() => {
-        setDisplayValue(value)
-    }, [value])
 
-    const handleNumPress = (num: string) => {
-        if (value.length < 12) {
-            // Limit to 12 digits
-            setValue((prev) => prev + num)
-        }
-    }
-
-    const handleDelete = () => {
-        setValue((prev) => prev.slice(0, -1))
-    }
-
-    const handleClear = () => {
-        setValue("")
-    }
 
     const handleSubmit = () => {
         // Handle submission logic here
-        console.log("Submitted value:", value)
+        console.log("Submitted value:", storedValue)
         // Navigate back or to another screen
         router.push('/entry/baseUser')
     }
@@ -58,19 +51,19 @@ export default function NumpadScreen() {
                         },
                     ]}
                 >
-                    <ThemedText style={styles.inputText}>{displayValue}</ThemedText>
+                    <ThemedText style={styles.inputText}>{storedValue}</ThemedText>
                 </ThemedView>
             </ThemedView>
 
             <ThemedNumpad
-                onNumberPress={handleNumPress}
-                onDelete={handleDelete}
-                onClear={handleClear}
+                onNumberPress={setValue}
+                onDelete={deleteValue}
+                onClear={clearValue}
                 style={styles.numpad}
             />
 
             <ThemedView style={styles.buttonContainer}>
-                <ThemedButton title="Submit" onPress={handleSubmit} disabled={value.length === 0} style={styles.submitButton} variant={"primary"} size={"medium"} />
+                <ThemedButton title="Submit" onPress={handleSubmit} disabled={storedValue.length === 0} style={styles.submitButton} variant={"primary"} size={"medium"} />
             </ThemedView>
         </ThemedView>
 

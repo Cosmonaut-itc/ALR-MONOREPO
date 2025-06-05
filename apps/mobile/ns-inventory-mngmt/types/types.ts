@@ -16,7 +16,11 @@ export type LoginForm = typeof LoginFormSchema.infer;
 //Components types and its location in the project
 //Form Components
 //Error Message Component
-export const ThemedFormErrorSeverityArk = t.enumerated("error", "warning", "info");
+export const ThemedFormErrorSeverityArk = t.enumerated(
+	"error",
+	"warning",
+	"info",
+);
 export type ThemedFormErrorSeverity = typeof ThemedFormErrorSeverityArk.infer;
 
 export const ThemedFormErrorPropsArk = t({
@@ -51,10 +55,19 @@ export const ThemedButtonPropsArk = t({
 
 export type ThemedButtonProps = typeof ThemedButtonPropsArk.infer;
 
+// Page types
+// Numpad Page types
+export const NumpadValueArk = t({
+	value: "string", // Corresponds to: string | undefined
+	setValue: "string" as t.cast<(newValue: string) => void>, // Corresponds to: (newValue: string) => void
+	deleteValue: "string" as t.cast<() => void>, // Corresponds to: () => void
+	clearValue: "string" as t.cast<() => void>, // Corresponds to: () => void
+});
 
+export type NumpadValueType = typeof NumpadValueArk.infer;
 
 // UI component types
-//ThemedNumpad Component 
+//ThemedNumpad Component
 export const ThemedNumpadPropsArk = t({
 	onNumberPress: "string?" as t.cast<(num: string) => void>,
 	onDelete: "string?" as t.cast<() => void>,
@@ -103,7 +116,6 @@ export const Product = t({
 	barcode: "string?",
 });
 
-
 export const productComboboxPropsArk = t({
 	products: t(Product, "[]"),
 	onProductSelect: "string?" as t.cast<(product: typeof Product.infer) => void>,
@@ -121,37 +133,42 @@ export const OrderItem = t({
 	quantityTaken: "number",
 	quantityReturned: "number",
 	price: "number",
-  })
-  
-  export type OrderItem = typeof OrderItem.infer
-  
-  // Pending Order (replaces PendingItem)
-  export const PendingOrder = t({
+});
+
+export type OrderItem = typeof OrderItem.infer;
+
+// Pending Order (replaces PendingItem)
+export const PendingOrder = t({
 	id: "string",
 	orderNumber: "string",
 	items: t(OrderItem, "[]"),
 	takenAt: "string.date.iso.parse",
 	takenBy: "string",
 	status: t.enumerated("pending", "partial", "completed"),
-  })
-  
-  export type PendingOrder = typeof PendingOrder.infer
-  
-  // Pending Order Card Component
-  export const pendingOrderCardPropsArk = t({
+});
+
+export type PendingOrder = typeof PendingOrder.infer;
+
+// Pending Order Card Component
+export const pendingOrderCardPropsArk = t({
 	order: PendingOrder,
 	onOrderClick: "string?" as t.cast<(order: typeof PendingOrder.infer) => void>,
 	style: "object?", // Corresponds to: StyleProp<ViewStyle> | undefined
-  })
-  
-  export type PendingOrderCardProps = typeof pendingOrderCardPropsArk.infer
+});
+
+export type PendingOrderCardProps = typeof pendingOrderCardPropsArk.infer;
 
 // Return Order Modal types
 export const returnOrderModalPropsArk = t({
-  order: PendingOrder,
-  visible: "boolean",
-  onClose: "string?" as t.cast<() => void>,
-  onSubmit: "string?" as t.cast<(order: typeof PendingOrder.infer, returnedItems: (typeof OrderItem.infer)[]) => void>,
-})
+	order: PendingOrder,
+	visible: "boolean",
+	onClose: "string?" as t.cast<() => void>,
+	onSubmit: "string?" as t.cast<
+		(
+			order: typeof PendingOrder.infer,
+			returnedItems: (typeof OrderItem.infer)[],
+		) => void
+	>,
+});
 
-export type ReturnOrderModalProps = typeof returnOrderModalPropsArk.infer
+export type ReturnOrderModalProps = typeof returnOrderModalPropsArk.infer;

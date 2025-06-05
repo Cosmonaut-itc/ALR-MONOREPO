@@ -18,11 +18,13 @@
   },
   "dependencies": {
     "@better-auth/expo": "^1.2.8",
+    "@csark0812/zustand-expo-devtools": "^2.0.2",
     "@expo/vector-icons": "^14.1.0",
     "@react-native-community/netinfo": "11.4.1",
     "@react-navigation/bottom-tabs": "^7.3.10",
     "@react-navigation/elements": "^2.3.8",
     "@react-navigation/native": "^7.1.6",
+    "@redux-devtools/extension": "^3.3.0",
     "@tanstack/react-form": "^1.11.2",
     "@tanstack/react-query": "^5.76.2",
     "arktype": "^2.1.20",
@@ -59,7 +61,8 @@
     "react-native-svg": "15.11.2",
     "react-native-web": "~0.20.0",
     "react-native-webview": "13.13.5",
-    "sonner-native": "^0.20.0"
+    "sonner-native": "^0.20.0",
+    "zustand": "^5.0.5"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
