@@ -1,6 +1,5 @@
 "use client"
 
-import { useState, useEffect } from "react"
 import { StyleSheet, Platform } from "react-native"
 import { StatusBar } from "expo-status-bar"
 import { router } from "expo-router"
@@ -10,24 +9,13 @@ import { ThemedButton } from "@/components/ThemedButton"
 import { Colors } from "@/constants/Colors"
 import { useColorScheme } from "@/hooks/useColorScheme"
 import { ThemedNumpad } from "@/components/ui/ThemedNumpad"
-import { create } from "zustand"
-import { devtools } from '@csark0812/zustand-expo-devtools';
-import type { NumpadValueType } from "@/types/types"
+import { useNumpadStore } from "@/stores/baseUserStores"
 
 
 export default function NumpadScreen() {
-    const numpadValueStore = create<NumpadValueType>()(devtools((set) => ({
-        value: "",
-        setValue: (newValue: string) => set({ value: newValue }),
-        deleteValue: () => set((state) => ({ value: state.value.slice(0, -1) })),
-        clearValue: () => set({ value: "" }),
-    }), {
-        name: 'numpad-value', // Optional: name your store for better debugging
-    }))
     const colorScheme = useColorScheme()
     const isDark = colorScheme === "dark"
-    const { value: storedValue, setValue, deleteValue, clearValue } = numpadValueStore()
-
+    const { value: storedValue, setValue, deleteValue, clearValue } = useNumpadStore()
 
 
     const handleSubmit = () => {
