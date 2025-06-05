@@ -6,9 +6,8 @@ import { ThemedView } from "@/components/ThemedView"
 import { Colors } from "@/constants/Colors"
 import { useColorScheme } from "@/hooks/useColorScheme"
 import type { ProductCardProps } from "@/types/types"
+import { Trash2 } from 'lucide-react-native'
 
-
-// Create the component with ArkType
 export function ProductCard({ product, onRemove, onUpdateQuantity, style }: ProductCardProps) {
     const colorScheme = useColorScheme()
     const isDark = colorScheme === "dark"
@@ -37,12 +36,23 @@ export function ProductCard({ product, onRemove, onUpdateQuantity, style }: Prod
                     },
                 ]}
             >
-                <ThemedView style={styles.productInfo} darkColor={Colors.dark.highlight} lightColor={Colors.light.highlight}>
+                <ThemedView style={styles.productInfo} lightColor={Colors.light.highlight} darkColor={Colors.dark.highlight}>
                     <ThemedText style={styles.productName}>{product.name}</ThemedText>
                     <ThemedText style={styles.productBrand}>{product.brand}</ThemedText>
                 </ThemedView>
-                <TouchableOpacity onPress={() => onRemove(product.id)} style={styles.removeButton}>
-                    <ThemedText style={[styles.removeButtonText, { color: isDark ? "#ff6b6b" : "#d32f2f" }]}>✕</ThemedText>
+                <TouchableOpacity
+                    onPress={() => onRemove(product.id)}
+                    style={[
+                        styles.deleteButton,
+                        {
+                            backgroundColor: isDark ? "#ff6b6b" : "#d32f2f",
+                        },
+                    ]}
+                    activeOpacity={0.7}
+                >
+                    <ThemedText style={styles.deleteButtonText}>
+                        <Trash2 />
+                    </ThemedText>
                 </TouchableOpacity>
             </ThemedView>
 
@@ -54,9 +64,9 @@ export function ProductCard({ product, onRemove, onUpdateQuantity, style }: Prod
                     },
                 ]}
             >
-                <ThemedView style={styles.quantityContainer} darkColor={Colors.dark.surface} lightColor={Colors.light.surface}>
+                <ThemedView style={styles.quantityContainer} lightColor={Colors.light.surface} darkColor={Colors.dark.surface}>
                     <ThemedText style={styles.quantityLabel}>Cantidad:</ThemedText>
-                    <ThemedView style={styles.quantityControls} darkColor={Colors.dark.surface} lightColor={Colors.light.surface}>
+                    <ThemedView style={styles.quantityControls} lightColor={Colors.light.surface} darkColor={Colors.dark.surface}>
                         <TouchableOpacity
                             style={[
                                 styles.quantityButton,
@@ -96,7 +106,7 @@ export function ProductCard({ product, onRemove, onUpdateQuantity, style }: Prod
                 ]}
             >
                 <ThemedText style={styles.totalLabel}>Total:</ThemedText>
-                <ThemedText style={styles.totalPrice}>{(product.quantity).toFixed(2)}</ThemedText>
+                <ThemedText style={styles.totalValue}>{product.quantity}</ThemedText>
             </ThemedView>
         </ThemedView>
     )
@@ -127,30 +137,19 @@ const styles = StyleSheet.create({
         fontSize: 16,
         opacity: 0.8,
     },
-    removeButton: {
-        padding: 8,
+    deleteButton: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        justifyContent: "center",
+        alignItems: "center",
+        marginLeft: 12,
     },
-    removeButtonText: {
-        fontSize: 22,
-        fontWeight: "bold",
+    deleteButtonText: {
+        fontSize: 18,
     },
     cardBody: {
         padding: 18,
-    },
-    priceContainer: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-        marginBottom: 16,
-    },
-    priceLabel: {
-        fontSize: 16,
-        opacity: 0.7,
-        fontWeight: "500",
-    },
-    price: {
-        fontSize: 20,
-        fontWeight: "600",
     },
     quantityContainer: {
         flexDirection: "row",
@@ -195,7 +194,7 @@ const styles = StyleSheet.create({
         fontSize: 18,
         fontWeight: "600",
     },
-    totalPrice: {
+    totalValue: {
         fontSize: 22,
         fontWeight: "bold",
     },

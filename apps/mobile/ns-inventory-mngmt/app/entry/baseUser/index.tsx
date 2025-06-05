@@ -4,41 +4,22 @@ import { useState } from "react"
 import { StyleSheet, TouchableOpacity, Platform, ScrollView, Alert } from "react-native"
 import { StatusBar } from "expo-status-bar"
 import { router } from "expo-router"
+
 import { ThemedText } from "@/components/ThemedText"
 import { ThemedView } from "@/components/ThemedView"
 import { ThemedButton } from "@/components/ThemedButton"
 import { BarcodeScanner } from "@/components/ui/BarcodeScanner"
 import { ProductCombobox } from "@/components/ui/ProductCombobox"
 import { ProductCard } from "@/components/ui/ProductCard"
-import { PendingInventoryCard } from "@/components/ui/PendingInventoryCard"
+import { PendingOrderCard } from "@/components/ui/PendingOrderCard"
+import { ReturnOrderModal } from "@/components/ui/ReturnOrderModal"
+import { Collapsible } from "@/components/Collapsible"
 import { Colors } from "@/constants/Colors"
 import { useColorScheme } from "@/hooks/useColorScheme"
-
-// Types for our data
-type Product = {
-    id: string
-    name: string
-    brand: string
-    price: number
-    stock: number
-    barcode?: string
-}
-
-type SelectedProduct = Product & {
-    quantity: number
-    selectedAt: Date
-}
-
-type PendingItem = {
-    id: string
-    productName: string
-    quantity: number
-    takenAt: Date
-    takenBy: string
-}
+import type { PendingOrder, SelectedProduct, OrderItem } from "@/types/types"
 
 // Mock data for nail salon products
-const NAIL_PRODUCTS: Product[] = [
+const NAIL_PRODUCTS: any[] = [
     { id: "1", name: "Esmalte Rojo Clásico", brand: "OPI", price: 15.99, stock: 25, barcode: "123456789" },
     { id: "2", name: "Base Coat Fortalecedora", brand: "Essie", price: 12.5, stock: 18 },
     { id: "3", name: "Top Coat Brillo", brand: "Sally Hansen", price: 10.99, stock: 30 },
@@ -49,32 +30,62 @@ const NAIL_PRODUCTS: Product[] = [
     { id: "8", name: "Lámpara LED", brand: "Makartt", price: 45.99, stock: 5 },
 ]
 
-// Mock pending items
-const PENDING_ITEMS: PendingItem[] = [
+// Mock pending orders
+const PENDING_ORDERS: PendingOrder[] = [
     {
-        id: "p1",
-        productName: "Esmalte Rojo Clásico",
-        quantity: 3,
+        id: "o1",
+        orderNumber: "ORD-001",
+        items: [
+            {
+                productId: "1",
+                productName: "Esmalte Rojo Clásico",
+                brand: "OPI",
+                quantityTaken: 3,
+                quantityReturned: 0,
+                price: 15.99,
+            },
+            {
+                productId: "2",
+                productName: "Base Coat Fortalecedora",
+                brand: "Essie",
+                quantityTaken: 2,
+                quantityReturned: 1,
+                price: 12.5,
+            },
+        ],
         takenAt: new Date(Date.now() - 2 * 60 * 60 * 1000), // 2 hours ago
         takenBy: "María García",
+        status: "partial",
     },
     {
-        id: "p2",
-        productName: "Base Coat Fortalecedora",
-        quantity: 1,
+        id: "o2",
+        orderNumber: "ORD-002",
+        items: [
+            {
+                productId: "3",
+                productName: "Top Coat Brillo",
+                brand: "Sally Hansen",
+                quantityTaken: 1,
+                quantityReturned: 0,
+                price: 10.99,
+            },
+        ],
         takenAt: new Date(Date.now() - 30 * 60 * 1000), // 30 minutes ago
         takenBy: "Ana López",
+        status: "pending",
     },
 ]
 
 export default function BaseUserEntry() {
     const [selectedProducts, setSelectedProducts] = useState<SelectedProduct[]>([])
-    const [pendingItems] = useState<PendingItem[]>(PENDING_ITEMS)
+    const [pendingOrders, setPendingOrders] = useState<PendingOrder[]>(PENDING_ORDERS)
     const [showScanner, setShowScanner] = useState(false)
+    const [selectedOrder, setSelectedOrder] = useState<PendingOrder | null>(null)
+    const [showReturnModal, setShowReturnModal] = useState(false)
     const colorScheme = useColorScheme()
     const isDark = colorScheme === "dark"
 
-    const handleProductSelect = (product: Product, quantity = 1) => {
+    const handleProductSelect = (product: any, quantity = 1) => {
         const existingIndex = selectedProducts.findIndex((p) => p.id === product.id)
 
         if (existingIndex >= 0) {
@@ -119,6 +130,45 @@ export default function BaseUserEntry() {
         setSelectedProducts(selectedProducts.map((p) => (p.id === productId ? { ...p, quantity: newQuantity } : p)))
     }
 
+    const handleOrderClick = (order: PendingOrder) => {
+        setSelectedOrder(order)
+        setShowReturnModal(true)
+    }
+
+    const handleReturnSubmit = (order: PendingOrder, returnedItems: OrderItem[]) => {
+        // Update the order with returned items
+        const updatedOrders = pendingOrders.map((o) => {
+            if (o.id === order.id) {
+                const updatedItems = o.items.map((item) => {
+                    const returnedItem = returnedItems.find((ri) => ri.productId === item.productId)
+                    if (returnedItem) {
+                        return {
+                            ...item,
+                            quantityReturned: item.quantityReturned + returnedItem.quantityReturned,
+                        }
+                    }
+                    return item
+                })
+
+                // Update status based on returned quantities
+                const allReturned = updatedItems.every((item) => item.quantityReturned >= item.quantityTaken)
+                const someReturned = updatedItems.some((item) => item.quantityReturned > 0)
+
+                const newStatus: PendingOrder['status'] = allReturned ? "completed" : someReturned ? "partial" : "pending"
+
+                return {
+                    ...o,
+                    items: updatedItems,
+                    status: newStatus,
+                }
+            }
+            return o
+        })
+
+        setPendingOrders(updatedOrders)
+        Alert.alert("Éxito", "Devolución procesada correctamente")
+    }
+
     const handleSubmit = () => {
         if (selectedProducts.length === 0) {
             Alert.alert("Sin Productos", "Agrega al menos un producto antes de continuar")
@@ -155,15 +205,19 @@ export default function BaseUserEntry() {
             </ThemedView>
 
             <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-                {/* Pending Items Section */}
-                {pendingItems.length > 0 && (
+                {/* Pending Orders Section - Collapsible */}
+                {pendingOrders.length > 0 && (
                     <ThemedView style={styles.section}>
-                        <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
-                            Productos Pendientes ({pendingItems.length})
-                        </ThemedText>
-                        {pendingItems.map((item) => (
-                            <PendingInventoryCard key={item.id} item={item} style={styles.pendingCard} />
-                        ))}
+                        <Collapsible title={`Órdenes Pendientes (${pendingOrders.length})`}>
+                            {pendingOrders.map((order) => (
+                                <PendingOrderCard
+                                    key={order.id}
+                                    order={order}
+                                    onOrderClick={handleOrderClick}
+                                    style={styles.pendingCard}
+                                />
+                            ))}
+                        </Collapsible>
                     </ThemedView>
                 )}
 
@@ -205,6 +259,19 @@ export default function BaseUserEntry() {
 
             {/* Barcode Scanner Modal */}
             {showScanner && <BarcodeScanner onBarcodeScanned={handleBarcodeScanned} onClose={() => setShowScanner(false)} />}
+
+            {/* Return Order Modal */}
+            {selectedOrder && (
+                <ReturnOrderModal
+                    order={selectedOrder}
+                    visible={showReturnModal}
+                    onClose={() => {
+                        setShowReturnModal(false)
+                        setSelectedOrder(null)
+                    }}
+                    onSubmit={handleReturnSubmit}
+                />
+            )}
         </ThemedView>
     )
 }

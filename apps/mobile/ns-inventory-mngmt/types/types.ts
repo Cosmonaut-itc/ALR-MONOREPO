@@ -73,22 +73,6 @@ export const BarcodeScannerPropsArk = t({
 
 export type BarcodeScannerProps = typeof BarcodeScannerPropsArk.infer;
 
-// Pending Inventory Card Component and its types
-export const PendingItemInventoryCardArk = t({
-	id: "string",
-	productName: "string",
-	quantity: "number",
-	takenAt: "string.date.iso.parse",
-});
-
-export const pendingInventoryCardPropsArk = t({
-	item: PendingItemInventoryCardArk,
-	style: "object?", // Corresponds to: StyleProp<ViewStyle> | undefined
-});
-
-export type PendingItemInventoryCard = typeof PendingItemInventoryCardArk.infer;
-export type PendingInventoryCardProps = typeof pendingInventoryCardPropsArk.infer;
-
 // Product Card Component and its types
 export const SelectedProductCardArk = t({
 	id: "string",
@@ -128,3 +112,46 @@ export const productComboboxPropsArk = t({
 
 export type Product = typeof Product.infer;
 export type ProductComboboxProps = typeof productComboboxPropsArk.infer;
+
+// Order Item type for pending orders
+export const OrderItem = t({
+	productId: "string",
+	productName: "string",
+	brand: "string",
+	quantityTaken: "number",
+	quantityReturned: "number",
+	price: "number",
+  })
+  
+  export type OrderItem = typeof OrderItem.infer
+  
+  // Pending Order (replaces PendingItem)
+  export const PendingOrder = t({
+	id: "string",
+	orderNumber: "string",
+	items: t(OrderItem, "[]"),
+	takenAt: "string.date.iso.parse",
+	takenBy: "string",
+	status: t.enumerated("pending", "partial", "completed"),
+  })
+  
+  export type PendingOrder = typeof PendingOrder.infer
+  
+  // Pending Order Card Component
+  export const pendingOrderCardPropsArk = t({
+	order: PendingOrder,
+	onOrderClick: "string?" as t.cast<(order: typeof PendingOrder.infer) => void>,
+	style: "object?", // Corresponds to: StyleProp<ViewStyle> | undefined
+  })
+  
+  export type PendingOrderCardProps = typeof pendingOrderCardPropsArk.infer
+
+// Return Order Modal types
+export const returnOrderModalPropsArk = t({
+  order: PendingOrder,
+  visible: "boolean",
+  onClose: "string?" as t.cast<() => void>,
+  onSubmit: "string?" as t.cast<(order: typeof PendingOrder.infer, returnedItems: (typeof OrderItem.infer)[]) => void>,
+})
+
+export type ReturnOrderModalProps = typeof returnOrderModalPropsArk.infer
