@@ -45,35 +45,35 @@ export default function NumpadScreen() {
     }
 
     return (
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
-            <ThemedView style={styles.container}>
-                <StatusBar style={isDark ? "light" : "dark"} />
-                <ThemedView style={styles.inputContainer}>
-                    <ThemedView
-                        style={[
-                            styles.input,
-                            {
-                                borderColor: isDark ? Colors.dark.border : Colors.light.border,
-                                backgroundColor: isDark ? Colors.dark.surface : Colors.light.surface,
-                            },
-                        ]}
-                    >
-                        <ThemedText style={styles.inputText}>{displayValue}</ThemedText>
-                    </ThemedView>
-                </ThemedView>
 
-                <ThemedNumpad
-                    onNumberPress={handleNumPress}
-                    onDelete={handleDelete}
-                    onClear={handleClear}
-                    style={styles.numpad}
-                />
-
-                <ThemedView style={styles.buttonContainer}>
-                    <ThemedButton title="Submit" onPress={handleSubmit} disabled={value.length === 0} style={styles.submitButton} variant={"primary"} size={"medium"} />
+        <ThemedView style={styles.container}>
+            <StatusBar style={isDark ? "light" : "dark"} />
+            <ThemedView style={styles.inputContainer}>
+                <ThemedView
+                    style={[
+                        styles.input,
+                        {
+                            borderColor: isDark ? Colors.dark.border : Colors.light.border,
+                            backgroundColor: isDark ? Colors.dark.surface : Colors.light.surface,
+                        },
+                    ]}
+                >
+                    <ThemedText style={styles.inputText}>{displayValue}</ThemedText>
                 </ThemedView>
             </ThemedView>
-        </KeyboardAvoidingView>
+
+            <ThemedNumpad
+                onNumberPress={handleNumPress}
+                onDelete={handleDelete}
+                onClear={handleClear}
+                style={styles.numpad}
+            />
+
+            <ThemedView style={styles.buttonContainer}>
+                <ThemedButton title="Submit" onPress={handleSubmit} disabled={value.length === 0} style={styles.submitButton} variant={"primary"} size={"medium"} />
+            </ThemedView>
+        </ThemedView>
+
     )
 }
 

@@ -7,9 +7,9 @@ import { ThemedView } from "@/components/ThemedView"
 import { ThemedButton } from "@/components/ThemedButton"
 import { Colors } from "@/constants/Colors"
 import { useColorScheme } from "@/hooks/useColorScheme"
+import { X, Camera } from "lucide-react-native"
 import type { BarcodeScannerProps } from "@/types/types"
 
-// Create the component with ArkType
 export function BarcodeScanner({ onBarcodeScanned, onClose }: BarcodeScannerProps) {
     const [hasPermission, setHasPermission] = useState<boolean | null>(null)
     const [scanned, setScanned] = useState(false)
@@ -49,7 +49,7 @@ export function BarcodeScanner({ onBarcodeScanned, onClose }: BarcodeScannerProp
             <Modal visible={true} animationType="slide">
                 <ThemedView style={styles.container}>
                     <ThemedText style={styles.noPermissionText}>Sin acceso a la cámara</ThemedText>
-                    <ThemedButton title="Cerrar" onPress={onClose} variant={"outline"} size={"small"} />
+                    <ThemedButton title="Cerrar" onPress={onClose} variant="primary" size="medium" />
                 </ThemedView>
             </Modal>
         )
@@ -61,7 +61,10 @@ export function BarcodeScanner({ onBarcodeScanned, onClose }: BarcodeScannerProp
                 {/* Header */}
                 <ThemedView style={styles.header}>
                     <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-                        <ThemedText style={{ color: isDark ? Colors.dark.tint : Colors.light.tint }}>✕ Cerrar</ThemedText>
+                        <X size={24} color={isDark ? Colors.dark.tint : Colors.light.tint} />
+                        <ThemedText style={{ color: isDark ? Colors.dark.tint : Colors.light.tint, marginLeft: 8 }}>
+                            Cerrar
+                        </ThemedText>
                     </TouchableOpacity>
                 </ThemedView>
 
@@ -76,6 +79,7 @@ export function BarcodeScanner({ onBarcodeScanned, onClose }: BarcodeScannerProp
                             },
                         ]}
                     >
+                        <Camera size={48} color={isDark ? Colors.dark.tint : Colors.light.tint} />
                         <ThemedText style={styles.scannerText}>
                             {scanned ? "Código escaneado!" : "Apunta la cámara al código de barras"}
                         </ThemedText>
@@ -102,12 +106,14 @@ export function BarcodeScanner({ onBarcodeScanned, onClose }: BarcodeScannerProp
                         title="Simular Escaneo (Demo)"
                         onPress={simulateBarcodeScan}
                         variant="outline"
-                        disabled={scanned} size={"small"} />
+                        size="medium"
+                        disabled={scanned}
+                    />
                 </ThemedView>
 
                 {scanned && (
                     <ThemedView style={styles.scannedContainer}>
-                        <ThemedButton title="Escanear Otro" onPress={() => setScanned(false)} variant={"outline"} size={"small"} />
+                        <ThemedButton title="Escanear Otro" onPress={() => setScanned(false)} variant="primary" size="medium" />
                     </ThemedView>
                 )}
             </ThemedView>
@@ -126,6 +132,8 @@ const styles = StyleSheet.create({
         padding: 16,
     },
     closeButton: {
+        flexDirection: "row",
+        alignItems: "center",
         padding: 8,
     },
     scannerContainer: {
@@ -147,7 +155,7 @@ const styles = StyleSheet.create({
     scannerText: {
         textAlign: "center",
         fontSize: 16,
-        marginBottom: 20,
+        marginTop: 20,
     },
     scannerOverlay: {
         position: "absolute",

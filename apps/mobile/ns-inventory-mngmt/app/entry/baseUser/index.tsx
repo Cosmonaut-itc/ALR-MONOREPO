@@ -16,6 +16,7 @@ import { ReturnOrderModal } from "@/components/ui/ReturnOrderModal"
 import { Collapsible } from "@/components/Collapsible"
 import { Colors } from "@/constants/Colors"
 import { useColorScheme } from "@/hooks/useColorScheme"
+import { ArrowLeft, Camera } from "lucide-react-native"
 import type { PendingOrder, SelectedProduct, OrderItem } from "@/types/types"
 
 // Mock data for nail salon products
@@ -76,7 +77,7 @@ const PENDING_ORDERS: PendingOrder[] = [
     },
 ]
 
-export default function BaseUserEntry() {
+export default function InventoryScannerScreen() {
     const [selectedProducts, setSelectedProducts] = useState<SelectedProduct[]>([])
     const [pendingOrders, setPendingOrders] = useState<PendingOrder[]>(PENDING_ORDERS)
     const [showScanner, setShowScanner] = useState(false)
@@ -154,7 +155,7 @@ export default function BaseUserEntry() {
                 const allReturned = updatedItems.every((item) => item.quantityReturned >= item.quantityTaken)
                 const someReturned = updatedItems.some((item) => item.quantityReturned > 0)
 
-                const newStatus: PendingOrder['status'] = allReturned ? "completed" : someReturned ? "partial" : "pending"
+                const newStatus: PendingOrder["status"] = allReturned ? "completed" : someReturned ? "partial" : "pending"
 
                 return {
                     ...o,
@@ -196,7 +197,10 @@ export default function BaseUserEntry() {
             {/* Header */}
             <ThemedView style={styles.header}>
                 <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                    <ThemedText style={{ color: isDark ? Colors.dark.tint : Colors.light.tint }}>← Atrás</ThemedText>
+                    <ArrowLeft size={20} color={isDark ? Colors.dark.tint : Colors.light.tint} />
+                    <ThemedText style={[styles.backText, { color: isDark ? Colors.dark.tint : Colors.light.tint }]}>
+                        Atrás
+                    </ThemedText>
                 </TouchableOpacity>
                 <ThemedText type="title" style={styles.title}>
                     Escáner de Inventario
@@ -227,7 +231,19 @@ export default function BaseUserEntry() {
                         <ThemedView style={styles.comboboxContainer}>
                             <ProductCombobox products={NAIL_PRODUCTS} onProductSelect={handleProductSelect} />
                         </ThemedView>
-                        <ThemedButton title="📷" onPress={() => setShowScanner(true)} variant="outline" style={styles.scanButton} size={"small"} />
+                        <TouchableOpacity
+                            onPress={() => setShowScanner(true)}
+                            style={[
+                                styles.scanButton,
+                                {
+                                    backgroundColor: isDark ? Colors.dark.surface : Colors.light.surface,
+                                    borderColor: isDark ? Colors.dark.border : Colors.light.border,
+                                },
+                            ]}
+                            activeOpacity={0.7}
+                        >
+                            <Camera size={24} color={isDark ? Colors.dark.tint : Colors.light.tint} />
+                        </TouchableOpacity>
                     </ThemedView>
                 </ThemedView>
 
@@ -252,7 +268,13 @@ export default function BaseUserEntry() {
                 {/* Submit Button */}
                 {selectedProducts.length > 0 && (
                     <ThemedView style={styles.submitContainer}>
-                        <ThemedButton title="Procesar Inventario" onPress={handleSubmit} style={styles.submitButton} variant={"outline"} size={"small"} />
+                        <ThemedButton
+                            title="Procesar Inventario"
+                            onPress={handleSubmit}
+                            style={styles.submitButton}
+                            variant="primary"
+                            size="medium"
+                        />
                     </ThemedView>
                 )}
             </ScrollView>
@@ -288,7 +310,13 @@ const styles = StyleSheet.create({
         paddingTop: Platform.OS === "ios" ? 50 : 16,
     },
     backButton: {
+        flexDirection: "row",
+        alignItems: "center",
         padding: 8,
+    },
+    backText: {
+        marginLeft: 4,
+        fontSize: 16,
     },
     title: {
         fontSize: 20,
@@ -317,9 +345,12 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     scanButton: {
-        width: 50,
-        height: 50,
+        width: 56,
+        height: 56,
         borderRadius: 8,
+        borderWidth: 1,
+        justifyContent: "center",
+        alignItems: "center",
     },
     pendingCard: {
         marginBottom: 8,

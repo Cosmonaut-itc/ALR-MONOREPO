@@ -5,8 +5,10 @@ import { StyleSheet, Modal, TouchableOpacity, ScrollView, Alert } from "react-na
 import { ThemedText } from "@/components/ThemedText"
 import { ThemedView } from "@/components/ThemedView"
 import { ThemedButton } from "@/components/ThemedButton"
+import { QuantityControls } from "@/components/ui/QuantityControls"
 import { Colors } from "@/constants/Colors"
 import { useColorScheme } from "@/hooks/useColorScheme"
+import { X } from "lucide-react-native"
 import type { ReturnOrderModalProps, OrderItem } from "@/types/types"
 
 export function ReturnOrderModal({ order, visible, onClose, onSubmit }: ReturnOrderModalProps) {
@@ -14,14 +16,25 @@ export function ReturnOrderModal({ order, visible, onClose, onSubmit }: ReturnOr
     const colorScheme = useColorScheme()
     const isDark = colorScheme === "dark"
 
-    const handleQuantityChange = (itemIndex: number, change: number) => {
+    const handleQuantityIncrease = (itemIndex: number) => {
         const newItems = [...returnItems]
         const currentReturned = newItems[itemIndex].quantityReturned
         const maxReturn = newItems[itemIndex].quantityTaken - currentReturned
-        const newReturned = Math.max(0, Math.min(maxReturn, currentReturned + change))
 
-        newItems[itemIndex].quantityReturned = newReturned
-        setReturnItems(newItems)
+        if (currentReturned < maxReturn) {
+            newItems[itemIndex].quantityReturned = currentReturned + 1
+            setReturnItems(newItems)
+        }
+    }
+
+    const handleQuantityDecrease = (itemIndex: number) => {
+        const newItems = [...returnItems]
+        const currentReturned = newItems[itemIndex].quantityReturned
+
+        if (currentReturned > 0) {
+            newItems[itemIndex].quantityReturned = currentReturned - 1
+            setReturnItems(newItems)
+        }
     }
 
     const handleSubmit = () => {
@@ -48,43 +61,6 @@ export function ReturnOrderModal({ order, visible, onClose, onSubmit }: ReturnOr
         return returnItems.reduce((total, item) => total + item.quantityReturned, 0)
     }
 
-    const renderQuantityControls = (item: OrderItem, index: number) => {
-        const maxReturn = item.quantityTaken - item.quantityReturned
-        const currentReturning = returnItems[index].quantityReturned
-
-        return (
-            <ThemedView style={styles.quantityControls} >
-                <TouchableOpacity
-                    style={[
-                        styles.quantityButton,
-                        {
-                            backgroundColor: isDark ? Colors.dark.border : Colors.light.border,
-                            opacity: currentReturning <= 0 ? 0.5 : 1,
-                        },
-                    ]}
-                    onPress={() => handleQuantityChange(index, -1)}
-                    disabled={currentReturning <= 0}
-                >
-                    <ThemedText style={styles.quantityButtonText}>-</ThemedText>
-                </TouchableOpacity>
-                <ThemedText style={styles.quantityText}>{currentReturning}</ThemedText>
-                <TouchableOpacity
-                    style={[
-                        styles.quantityButton,
-                        {
-                            backgroundColor: isDark ? Colors.dark.border : Colors.light.border,
-                            opacity: currentReturning >= maxReturn ? 0.5 : 1,
-                        },
-                    ]}
-                    onPress={() => handleQuantityChange(index, 1)}
-                    disabled={currentReturning >= maxReturn}
-                >
-                    <ThemedText style={styles.quantityButtonText}>+</ThemedText>
-                </TouchableOpacity>
-            </ThemedView>
-        )
-    }
-
     return (
         <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
             <ThemedView style={styles.container}>
@@ -102,9 +78,7 @@ export function ReturnOrderModal({ order, visible, onClose, onSubmit }: ReturnOr
                         Gestionar Devolución
                     </ThemedText>
                     <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-                        <ThemedText style={[styles.closeButtonText, { color: isDark ? Colors.dark.tint : Colors.light.tint }]}>
-                            ✕
-                        </ThemedText>
+                        <X size={24} color={isDark ? Colors.dark.tint : Colors.light.tint} />
                     </TouchableOpacity>
                 </ThemedView>
 
@@ -155,7 +129,14 @@ export function ReturnOrderModal({ order, visible, onClose, onSubmit }: ReturnOr
                                     {maxReturn > 0 && (
                                         <ThemedView style={styles.returnSection}>
                                             <ThemedText style={styles.returnLabel}>Devolver ahora:</ThemedText>
-                                            {renderQuantityControls(item, index)}
+                                            <QuantityControls
+                                                value={currentReturning}
+                                                onIncrease={() => handleQuantityIncrease(index)}
+                                                onDecrease={() => handleQuantityDecrease(index)}
+                                                min={0}
+                                                max={maxReturn}
+                                                size="medium"
+                                            />
                                         </ThemedView>
                                     )}
                                 </ThemedView>
@@ -182,7 +163,10 @@ export function ReturnOrderModal({ order, visible, onClose, onSubmit }: ReturnOr
                         title="Procesar Devolución"
                         onPress={handleSubmit}
                         disabled={getTotalReturning() === 0}
-                        style={styles.submitButton} variant={"primary"} size={"small"} />
+                        style={styles.submitButton}
+                        variant="primary"
+                        size="medium"
+                    />
                 </ThemedView>
             </ThemedView>
         </Modal>
@@ -205,10 +189,6 @@ const styles = StyleSheet.create({
     },
     closeButton: {
         padding: 8,
-    },
-    closeButtonText: {
-        fontSize: 20,
-        fontWeight: "bold",
     },
     orderInfo: {
         padding: 20,
@@ -269,34 +249,12 @@ const styles = StyleSheet.create({
         paddingTop: 12,
         borderTopWidth: 1,
         borderTopColor: "#e0e0e0",
+        alignItems: "center",
     },
     returnLabel: {
         fontSize: 16,
         fontWeight: "600",
         marginBottom: 12,
-    },
-    quantityControls: {
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 16,
-    },
-    quantityButton: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        justifyContent: "center",
-        alignItems: "center",
-    },
-    quantityButtonText: {
-        fontSize: 22,
-        fontWeight: "bold",
-    },
-    quantityText: {
-        fontSize: 20,
-        fontWeight: "700",
-        minWidth: 40,
-        textAlign: "center",
     },
     footer: {
         padding: 20,
