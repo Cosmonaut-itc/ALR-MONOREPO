@@ -149,7 +149,7 @@ const styles = StyleSheet.create({
     badge: {
         paddingHorizontal: 12,
         paddingVertical: 6,
-        borderRadius: 16,
+        borderRadius: 10,
     },
     badgeText: {
         color: "white",

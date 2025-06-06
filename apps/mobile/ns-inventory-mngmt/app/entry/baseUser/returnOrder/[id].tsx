@@ -16,6 +16,7 @@ import type { Product, PendingOrder, SelectedProduct, OrderItem } from "@/types/
 import { ThemedHeader } from "@/components/ThemedHeader"
 import { ScannerComboboxSection } from "@/components/ui/ScannerComboboxSection"
 import { useBaseUserStore, useReturnOrderStore } from "@/app/stores/baseUserStores"
+import { Collapsible } from "@/components/Collapsible"
 
 export default function OrderDetailsScreen() {
     const { id } = useLocalSearchParams<{ id: string }>()
@@ -105,6 +106,28 @@ export default function OrderDetailsScreen() {
         )
     }
 
+    const getStatusColor = () => {
+        switch (order.status) {
+            case "completed":
+                return isDark ? "#4ade80" : "#16a34a"
+            case "partial":
+                return isDark ? "#fbbf24" : "#d97706"
+            default:
+                return isDark ? "#ffd166" : "#f57c00"
+        }
+    }
+
+    const getStatusText = () => {
+        switch (order.status) {
+            case "completed":
+                return "COMPLETADO"
+            case "partial":
+                return "SIN DEVOLVER"
+            default:
+                return "PENDIENTE"
+        }
+    }
+
     return (
         <ThemedView style={styles.container}>
             <StatusBar style={isDark ? "light" : "dark"} />
@@ -130,49 +153,50 @@ export default function OrderDetailsScreen() {
 
                 {/* Order Items Overview */}
                 <ThemedView style={styles.section}>
-                    <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
-                        Productos de la Orden
-                    </ThemedText>
-                    {order.items.map((item: OrderItem) => {
-                        const status = getOrderItemStatus(item.productId)
-                        const statusColor =
-                            status === "completed"
-                                ? isDark
-                                    ? "#4ade80"
-                                    : "#16a34a"
-                                : status === "partial"
-                                    ? isDark
-                                        ? "#fbbf24"
-                                        : "#d97706"
-                                    : isDark
-                                        ? "#ffd166"
-                                        : "#f57c00"
+                    <Collapsible title={`Productos de la Orden (${order.items.length})`}>
+                        <ScrollView
+                            horizontal
+                            showsHorizontalScrollIndicator={false}
+                            contentContainerStyle={styles.orderItemsGrid}
+                        >
+                            {order.items.map((item: OrderItem) => {
+                                const status = getOrderItemStatus(item.productId)
+                                const statusColor = isDark ? "#fbbf24" : "#d97706"
+                                return (
+                                    <ThemedView
+                                        key={item.productId}
+                                        style={[
+                                            styles.orderItemCard,
+                                            {
+                                                backgroundColor: isDark ? Colors.dark.surface : Colors.light.surface,
+                                                borderColor: statusColor,
+                                            },
+                                        ]}
+                                    >
 
-                        return (
-                            <ThemedView
-                                key={item.productId}
-                                style={[
-                                    styles.orderItemOverview,
-                                    {
-                                        backgroundColor: isDark ? Colors.dark.surface : Colors.light.surface,
-                                        borderColor: statusColor,
-                                    },
-                                ]}
-                            >
-                                <ThemedView style={styles.itemInfo}>
-                                    <ThemedText style={styles.itemName}>{item.productName}</ThemedText>
-                                    <ThemedText style={styles.itemBrand}>{item.brand}</ThemedText>
-                                </ThemedView>
-                                <ThemedView style={styles.itemStats}>
-                                    <ThemedText style={styles.itemStat}>Tomado: {item.quantityTaken}</ThemedText>
-                                    <ThemedText style={styles.itemStat}>Devuelto: {item.quantityReturned}</ThemedText>
-                                    <ThemedText style={styles.itemStat}>
-                                        Disponible: {item.quantityTaken - item.quantityReturned}
-                                    </ThemedText>
-                                </ThemedView>
-                            </ThemedView>
-                        )
-                    })}
+                                        <ThemedView
+                                            style={styles.itemInfo}
+                                            lightColor={Colors.light.surface}
+                                            darkColor={Colors.dark.surface}
+                                        >
+                                            <ThemedText style={styles.itemName}>{item.productName}</ThemedText>
+                                            <ThemedView
+                                                style={[
+                                                    styles.badge,
+                                                    {
+                                                        backgroundColor: getStatusColor(),
+                                                    },
+                                                ]}
+                                            >
+                                                <ThemedText style={styles.badgeText}>{getStatusText()}</ThemedText>
+                                            </ThemedView>
+                                            <ThemedText style={styles.itemBrand}>{item.brand}</ThemedText>
+                                        </ThemedView>
+                                    </ThemedView>
+                                )
+                            })}
+                        </ScrollView>
+                    </Collapsible>
                 </ThemedView>
 
                 {/* Scanner and Combobox Section */}
@@ -293,34 +317,36 @@ const styles = StyleSheet.create({
         justifyContent: "center",
         alignItems: "center",
     },
-    orderItemOverview: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-        padding: 16,
-        marginBottom: 8,
-        borderRadius: 8,
+    orderItemsGrid: {
+        paddingVertical: 8,
+        gap: 12,
+    },
+    orderItemCard: {
+        width: 280,
+        borderRadius: 12,
         borderWidth: 2,
+        padding: 16,
+        marginRight: 12,
     },
     itemInfo: {
         flex: 1,
     },
     itemName: {
-        fontSize: 16,
+        fontSize: 20,
         fontWeight: "600",
         marginBottom: 4,
     },
     itemBrand: {
         fontSize: 14,
         opacity: 0.7,
+        marginBottom: 12,
     },
     itemStats: {
-        alignItems: "flex-end",
+        gap: 4,
     },
     itemStat: {
-        fontSize: 12,
+        fontSize: 14,
         opacity: 0.8,
-        marginBottom: 2,
     },
     productCard: {
         marginBottom: 8,
@@ -347,5 +373,17 @@ const styles = StyleSheet.create({
     },
     submitButton: {
         width: "100%",
+    },
+    badge: {
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 10,
+        width: 120,
+    },
+    badgeText: {
+        color: "white",
+        fontSize: 12,
+        fontWeight: "bold",
+        letterSpacing: 0.5,
     },
 })
