@@ -79,7 +79,6 @@ export function PendingOrderCard({ order, onOrderClick, style }: PendingOrderCar
             >
                 <ThemedView style={styles.orderInfo} lightColor={Colors.light.highlight} darkColor={Colors.dark.highlight}>
                     <ThemedText style={styles.orderNumber}>Orden #{order.orderNumber}</ThemedText>
-                    <ThemedText style={styles.takenBy}>Tomado por: {order.takenBy}</ThemedText>
                 </ThemedView>
                 <ThemedView
                     style={[

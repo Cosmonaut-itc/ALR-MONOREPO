@@ -11,13 +11,14 @@ import { BarcodeScanner } from "@/components/ui/BarcodeScanner"
 import { ProductCombobox } from "@/components/ui/ProductCombobox"
 import { ProductCard } from "@/components/ui/ProductCard"
 import { PendingOrderCard } from "@/components/ui/PendingOrderCard"
-import { ReturnOrderModal } from "@/components/ui/ReturnOrderModal"
 import { Collapsible } from "@/components/Collapsible"
 import { Colors } from "@/constants/Colors"
 import { useColorScheme } from "@/hooks/useColorScheme"
 import { ArrowLeft, Camera } from "lucide-react-native"
 import type { PendingOrder, SelectedProduct } from "@/types/types"
 import { useBaseUserStore } from "@/app/stores/baseUserStores"
+import { ThemedHeader } from "@/components/ThemedHeader"
+import { ScannerComboboxSection } from "@/components/ui/ScannerComboboxSection"
 
 /**
  * Product type definition
@@ -119,36 +120,20 @@ export default function InventoryScannerScreen() {
         pendingOrders,
         showScanner,
         selectedOrder,
-        showReturnModal,
         handleProductSelect,
         handleBarcodeScanned,
         handleRemoveProduct,
         handleUpdateQuantity,
         handleOrderClick,
-        handleReturnSubmit,
         handleSubmit,
         setShowScanner,
-        setShowReturnModal,
-        setSelectedOrder,
     } = useBaseUserStore()
 
     return (
         <ThemedView style={styles.container}>
             <StatusBar style={isDark ? "light" : "dark"} />
 
-            {/* Header */}
-            <ThemedView style={styles.header}>
-                <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                    <ArrowLeft size={20} color={isDark ? Colors.dark.tint : Colors.light.tint} />
-                    <ThemedText style={[styles.backText, { color: isDark ? Colors.dark.tint : Colors.light.tint }]}>
-                        Atrás
-                    </ThemedText>
-                </TouchableOpacity>
-                <ThemedText type="title" style={styles.title}>
-                    Escáner de Inventario
-                </ThemedText>
-                <ThemedView style={styles.placeholder} />
-            </ThemedView>
+            <ThemedHeader title="Escáner de Inventario" />
 
             <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
                 {/* Pending Orders Section - Collapsible */}
@@ -159,7 +144,7 @@ export default function InventoryScannerScreen() {
                                 <PendingOrderCard
                                     key={order.id}
                                     order={order}
-                                    onOrderClick={handleOrderClick}
+                                    onOrderClick={(order) => handleOrderClick(order, router)}
                                     style={styles.pendingCard}
                                 />
                             ))}
@@ -168,29 +153,11 @@ export default function InventoryScannerScreen() {
                 )}
 
                 {/* Scanner and Combobox Section */}
-                <ThemedView style={styles.section}>
-                    <ThemedView style={styles.inputRow}>
-                        <ThemedView style={styles.comboboxContainer}>
-                            <ProductCombobox
-                                products={NAIL_PRODUCTS}
-                                onProductSelect={(product: Product) => handleProductSelect(product)}
-                            />
-                        </ThemedView>
-                        <TouchableOpacity
-                            onPress={() => setShowScanner(true)}
-                            style={[
-                                styles.scanButton,
-                                {
-                                    backgroundColor: isDark ? Colors.dark.surface : Colors.light.surface,
-                                    borderColor: isDark ? Colors.dark.border : Colors.light.border,
-                                },
-                            ]}
-                            activeOpacity={0.7}
-                        >
-                            <Camera size={24} color={isDark ? Colors.dark.tint : Colors.light.tint} />
-                        </TouchableOpacity>
-                    </ThemedView>
-                </ThemedView>
+                <ScannerComboboxSection
+                    products={NAIL_PRODUCTS}
+                    onProductSelect={handleProductSelect}
+                    onScanPress={() => setShowScanner(true)}
+                />
 
                 {/* Selected Products Section */}
                 {selectedProducts.length > 0 && (
@@ -226,19 +193,6 @@ export default function InventoryScannerScreen() {
 
             {/* Barcode Scanner Modal */}
             {showScanner && <BarcodeScanner onBarcodeScanned={handleBarcodeScanned} onClose={() => setShowScanner(false)} />}
-
-            {/* Return Order Modal */}
-            {selectedOrder && (
-                <ReturnOrderModal
-                    order={selectedOrder}
-                    visible={showReturnModal}
-                    onClose={() => {
-                        setShowReturnModal(false)
-                        setSelectedOrder(null)
-                    }}
-                    onSubmit={handleReturnSubmit}
-                />
-            )}
         </ThemedView>
     )
 }
@@ -280,23 +234,6 @@ const styles = StyleSheet.create({
     sectionTitle: {
         fontSize: 16,
         marginBottom: 12,
-    },
-    inputRow: {
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 12,
-    },
-    comboboxContainer: {
-        flex: 1,
-    },
-    scanButton: {
-        width: 56,
-        height: 56,
-        borderRadius: 8,
-        borderWidth: 1,
-        top: 8,
-        justifyContent: "center",
-        alignItems: "center",
     },
     pendingCard: {
         marginBottom: 8,

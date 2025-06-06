@@ -4,10 +4,10 @@ import { type } from "arktype";
 import type {
 	PendingOrder,
 	SelectedProduct,
-	OrderItem,
 	NumpadValueType,
 } from "@/types/types";
 import { devtools } from "@csark0812/zustand-expo-devtools";
+import type { useRouter } from "expo-router";
 
 /**
  * Product type definition using ArkType
@@ -32,8 +32,8 @@ interface BaseUserState {
 	pendingOrders: PendingOrder[]; // Orders that need to be processed
 	showScanner: boolean; // Controls visibility of barcode scanner
 	selectedOrder: PendingOrder | null; // Currently selected order for return processing
-	showReturnModal: boolean; // Controls visibility of return modal
 	availableProducts: Array<typeof Product.infer>; // Available products in the system
+	isReceivingOrder: boolean; // Indicates if we are currently processing a return order
 
 	// Action Methods
 	/**
@@ -68,15 +68,12 @@ interface BaseUserState {
 	/**
 	 * Handles the selection of an order for return processing
 	 * @param order - The selected order
+	 * @param router - The router instance for navigation
 	 */
-	handleOrderClick: (order: PendingOrder) => void;
-
-	/**
-	 * Processes the return of items for a specific order
-	 * @param order - The order being processed
-	 * @param returnedItems - List of items being returned
-	 */
-	handleReturnSubmit: (order: PendingOrder, returnedItems: OrderItem[]) => void;
+	handleOrderClick: (
+		order: PendingOrder,
+		router: ReturnType<typeof useRouter>,
+	) => void;
 
 	/**
 	 * Submits the current inventory selection for processing
@@ -88,12 +85,6 @@ interface BaseUserState {
 	 * @param show - Whether to show or hide the scanner
 	 */
 	setShowScanner: (show: boolean) => void;
-
-	/**
-	 * Controls the visibility of the return modal
-	 * @param show - Whether to show or hide the modal
-	 */
-	setShowReturnModal: (show: boolean) => void;
 
 	/**
 	 * Sets the currently selected order
@@ -124,8 +115,8 @@ export const useBaseUserStore = create<BaseUserState>()(
 			pendingOrders: [],
 			showScanner: false,
 			selectedOrder: null,
-			showReturnModal: false,
 			availableProducts: [],
+			isReceivingOrder: false,
 
 			// Action Implementations
 			handleProductSelect: (product, quantity = 1) => {
@@ -194,53 +185,12 @@ export const useBaseUserStore = create<BaseUserState>()(
 				});
 			},
 
-			handleOrderClick: (order) => {
-				set({ selectedOrder: order, showReturnModal: true });
-			},
-
-			handleReturnSubmit: (order, returnedItems) => {
-				const { pendingOrders } = get();
-				const updatedOrders = pendingOrders.map((o) => {
-					if (o.id === order.id) {
-						const updatedItems = o.items.map((item) => {
-							const returnedItem = returnedItems.find(
-								(ri) => ri.productId === item.productId,
-							);
-							if (returnedItem) {
-								return {
-									...item,
-									quantityReturned:
-										item.quantityReturned + returnedItem.quantityReturned,
-								};
-							}
-							return item;
-						});
-
-						// Update order status based on return quantities
-						const allReturned = updatedItems.every(
-							(item) => item.quantityReturned >= item.quantityTaken,
-						);
-						const someReturned = updatedItems.some(
-							(item) => item.quantityReturned > 0,
-						);
-
-						const newStatus: PendingOrder["status"] = allReturned
-							? "completed"
-							: someReturned
-								? "partial"
-								: "pending";
-
-						return {
-							...o,
-							items: updatedItems,
-							status: newStatus,
-						};
-					}
-					return o;
+			handleOrderClick: (order, router) => {
+				set({
+					selectedOrder: order,
+					isReceivingOrder: true,
 				});
-
-				set({ pendingOrders: updatedOrders });
-				Alert.alert("Éxito", "Devolución procesada correctamente");
+				router.push(`/entry/baseUser/returnOrder/${order.id}`);
 			},
 
 			handleSubmit: () => {
@@ -263,7 +213,11 @@ export const useBaseUserStore = create<BaseUserState>()(
 							onPress: () => {
 								// Process inventory and clear selection
 								console.log("Processing inventory:", selectedProducts);
-								set({ selectedProducts: [] });
+								set({
+									selectedProducts: [],
+									isReceivingOrder: false,
+									selectedOrder: null,
+								});
 								Alert.alert("Éxito", "Inventario procesado correctamente");
 							},
 						},
@@ -272,13 +226,18 @@ export const useBaseUserStore = create<BaseUserState>()(
 			},
 
 			setShowScanner: (show) => set({ showScanner: show }),
-			setShowReturnModal: (show) => set({ showReturnModal: show }),
-			setSelectedOrder: (order) => set({ selectedOrder: order }),
+			setSelectedOrder: (order) =>
+				set({
+					selectedOrder: order,
+					isReceivingOrder: order !== null,
+				}),
 
 			initializeStore: (products, orders) => {
 				set({
 					availableProducts: products,
 					pendingOrders: orders,
+					isReceivingOrder: false,
+					selectedOrder: null,
 				});
 			},
 		}),
