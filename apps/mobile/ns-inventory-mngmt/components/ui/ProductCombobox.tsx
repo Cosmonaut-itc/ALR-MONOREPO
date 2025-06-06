@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import React, { useEffect } from "react"
 import { StyleSheet, TouchableOpacity, Modal, ScrollView } from "react-native"
 import { ThemedText } from "@/components/ThemedText"
 import { ThemedView } from "@/components/ThemedView"
@@ -9,47 +9,33 @@ import { Colors } from "@/constants/Colors"
 import { useColorScheme } from "@/hooks/useColorScheme"
 import type { Product, ProductComboboxProps } from "@/types/types"
 import { Collapsible } from "@/components/Collapsible"
+import { useProductComboboxStore } from "@/app/stores/baseUserStores"
 
 // Create the component with ArkType
 export function ProductCombobox({ products, onProductSelect, placeholder }: ProductComboboxProps) {
-    const [searchText, setSearchText] = useState("")
-    const [isOpen, setIsOpen] = useState(false)
-    const [filteredProducts, setFilteredProducts] = useState<Product[]>(products)
     const colorScheme = useColorScheme()
     const isDark = colorScheme === "dark"
 
-    // Group products by name and barcode
-    const groupedProducts = filteredProducts.reduce(
-        (groups, product) => {
-            const key = `${product.name}-${product.barcode || "no-barcode"}`
-            if (!groups[key]) {
-                groups[key] = []
-            }
-            groups[key].push(product)
-            return groups
-        },
-        {} as Record<string, Product[]>,
-    )
+    // Get store state and actions
+    const {
+        searchText,
+        isOpen,
+        filteredProducts,
+        groupedProducts,
+        handleSearch,
+        setIsOpen,
+        resetSearch
+    } = useProductComboboxStore()
 
-    const handleSearch = (text: string) => {
-        setSearchText(text)
-        if (text.trim() === "") {
-            setFilteredProducts(products)
-        } else {
-            const filtered = products.filter(
-                (product: Product) =>
-                    product.name.toLowerCase().includes(text.toLowerCase()) ||
-                    product.brand.toLowerCase().includes(text.toLowerCase()),
-            )
-            setFilteredProducts(filtered)
-        }
-    }
+    // Initialize store with products when component mounts
+    useEffect(() => {
+        resetSearch(products)
+    }, [products, resetSearch])
 
     const handleProductSelect = (product: Product) => {
         onProductSelect(product)
-        setSearchText("")
+        resetSearch(products)
         setIsOpen(false)
-        setFilteredProducts(products)
     }
 
     const renderProductGroup = (groupKey: string, groupProducts: Product[]) => {
@@ -175,7 +161,7 @@ export function ProductCombobox({ products, onProductSelect, placeholder }: Prod
                     <ThemedView style={styles.searchContainer}>
                         <TextInput
                             value={searchText}
-                            onChangeText={handleSearch}
+                            onChangeText={(text) => handleSearch(text, products)}
                             placeholder="Buscar producto..."
                             autoFocus
                             style={styles.searchInputText}

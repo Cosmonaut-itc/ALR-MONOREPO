@@ -302,3 +302,111 @@ export const useNumpadStore = create<NumpadValueType>()(
 		},
 	),
 );
+
+/**
+ * ProductComboboxState interface defines the shape of the store
+ * Contains all state properties and their corresponding action methods for the ProductCombobox component
+ */
+interface ProductComboboxState {
+	// State Properties
+	searchText: string; // Current search text in the combobox
+	isOpen: boolean; // Controls visibility of the product selection modal
+	filteredProducts: Array<typeof Product.infer>; // Products filtered by search text
+	groupedProducts: Record<string, Array<typeof Product.infer>>; // Products grouped by name and barcode
+
+	// Action Methods
+	/**
+	 * Updates the search text and filters products accordingly
+	 * @param text - The new search text
+	 * @param products - The full list of products to filter from
+	 */
+	handleSearch: (text: string, products: Array<typeof Product.infer>) => void;
+
+	/**
+	 * Controls the visibility of the product selection modal
+	 * @param isOpen - Whether to show or hide the modal
+	 */
+	setIsOpen: (isOpen: boolean) => void;
+
+	/**
+	 * Resets the search state and filtered products
+	 * @param products - The full list of products to reset to
+	 */
+	resetSearch: (products: Array<typeof Product.infer>) => void;
+}
+
+/**
+ * ProductComboboxStore - Zustand store for managing ProductCombobox state
+ * Handles search functionality, modal visibility, and product filtering
+ */
+export const useProductComboboxStore = create<ProductComboboxState>()(
+	devtools(
+		(set) => ({
+			// Initial State
+			searchText: "",
+			isOpen: false,
+			filteredProducts: [],
+			groupedProducts: {},
+
+			// Action Implementations
+			handleSearch: (text, products) => {
+				set({ searchText: text });
+
+				let filtered: Array<typeof Product.infer>;
+				if (text.trim() === "") {
+					filtered = products;
+				} else {
+					filtered = products.filter(
+						(product) =>
+							product.name.toLowerCase().includes(text.toLowerCase()) ||
+							product.brand.toLowerCase().includes(text.toLowerCase()),
+					);
+				}
+				set({ filteredProducts: filtered });
+
+				// Update grouped products
+				const grouped = filtered.reduce(
+					(
+						groups: Record<string, Array<typeof Product.infer>>,
+						product: typeof Product.infer,
+					) => {
+						const key = `${product.name}-${product.barcode || "no-barcode"}`;
+						if (!groups[key]) {
+							groups[key] = [];
+						}
+						groups[key].push(product);
+						return groups;
+					},
+					{},
+				);
+				set({ groupedProducts: grouped });
+			},
+
+			setIsOpen: (isOpen) => set({ isOpen }),
+
+			resetSearch: (products) => {
+				set({
+					searchText: "",
+					filteredProducts: products,
+					groupedProducts: products.reduce(
+						(
+							groups: Record<string, Array<typeof Product.infer>>,
+							product: typeof Product.infer,
+						) => {
+							const key = `${product.name}-${product.barcode || "no-barcode"}`;
+							if (!groups[key]) {
+								groups[key] = [];
+							}
+							groups[key].push(product);
+							return groups;
+						},
+						{},
+					),
+				});
+			},
+		}),
+		{
+			name: "product-combobox-store",
+		},
+	),
+);
