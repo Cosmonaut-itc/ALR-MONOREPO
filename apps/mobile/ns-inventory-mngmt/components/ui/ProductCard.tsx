@@ -13,12 +13,20 @@ export function ProductCard({ product, onRemove, onUpdateQuantity, style }: Prod
     const colorScheme = useColorScheme()
     const isDark = colorScheme === "dark"
 
+    // Check if this product should show quantity controls
+    // Products with unique IDs (selected from variants) don't show quantity controls
+    const showQuantityControls = onUpdateQuantity !== undefined
+
     const handleQuantityIncrease = () => {
-        onUpdateQuantity(product.id, product.quantity + 1)
+        if (onUpdateQuantity) {
+            onUpdateQuantity(product.id, product.quantity + 1)
+        }
     }
 
     const handleQuantityDecrease = () => {
-        onUpdateQuantity(product.id, product.quantity - 1)
+        if (onUpdateQuantity) {
+            onUpdateQuantity(product.id, product.quantity - 1)
+        }
     }
 
     return (
@@ -43,6 +51,7 @@ export function ProductCard({ product, onRemove, onUpdateQuantity, style }: Prod
                 <ThemedView style={styles.productInfo} lightColor={Colors.light.highlight} darkColor={Colors.dark.highlight}>
                     <ThemedText style={styles.productName}>{product.name}</ThemedText>
                     <ThemedText style={styles.productBrand}>{product.brand}</ThemedText>
+                    <ThemedText style={styles.productId}>ID: {product.id}</ThemedText>
                 </ThemedView>
                 <TouchableOpacity
                     onPress={() => onRemove(product.id)}
@@ -66,17 +75,32 @@ export function ProductCard({ product, onRemove, onUpdateQuantity, style }: Prod
                     },
                 ]}
             >
-                <ThemedView style={styles.quantityContainer} lightColor={Colors.light.surface} darkColor={Colors.dark.surface}>
-                    <ThemedText style={styles.quantityLabel}>Cantidad:</ThemedText>
-                    <QuantityControls
-                        value={product.quantity}
-                        onIncrease={handleQuantityIncrease}
-                        onDecrease={handleQuantityDecrease}
-                        min={1}
-                        max={product.stock}
-                        size="medium"
-                    />
-                </ThemedView>
+                {showQuantityControls ? (
+                    <ThemedView
+                        style={styles.quantityContainer}
+                        lightColor={Colors.light.surface}
+                        darkColor={Colors.dark.surface}
+                    >
+                        <ThemedText style={styles.quantityLabel}>Cantidad:</ThemedText>
+                        <QuantityControls
+                            value={product.quantity}
+                            onIncrease={handleQuantityIncrease}
+                            onDecrease={handleQuantityDecrease}
+                            min={1}
+                            max={product.stock}
+                            size="medium"
+                        />
+                    </ThemedView>
+                ) : (
+                    <ThemedView
+                        style={styles.selectedContainer}
+                        lightColor={Colors.light.surface}
+                        darkColor={Colors.dark.surface}
+                    >
+                        <ThemedText style={styles.selectedLabel}>Producto Seleccionado</ThemedText>
+                        <ThemedText style={styles.selectedBadge}>✓ ÚNICO</ThemedText>
+                    </ThemedView>
+                )}
             </ThemedView>
 
             <ThemedView
@@ -88,8 +112,17 @@ export function ProductCard({ product, onRemove, onUpdateQuantity, style }: Prod
                     },
                 ]}
             >
-                <ThemedText style={styles.totalLabel}>Total:</ThemedText>
-                <ThemedText style={styles.totalValue}>{product.quantity}</ThemedText>
+                {showQuantityControls ? (
+                    <>
+                        <ThemedText style={styles.totalLabel}>Total:</ThemedText>
+                        <ThemedText style={styles.totalValue}>{product.quantity}</ThemedText>
+                    </>
+                ) : (
+                    <>
+                        <ThemedText style={styles.totalLabel}>Stock Disponible:</ThemedText>
+                        <ThemedText style={styles.totalValue}>{product.stock}</ThemedText>
+                    </>
+                )}
             </ThemedView>
         </ThemedView>
     )
@@ -155,5 +188,26 @@ const styles = StyleSheet.create({
     totalValue: {
         fontSize: 22,
         fontWeight: "bold",
+    },
+    productId: {
+        fontSize: 14,
+        opacity: 0.6,
+        marginTop: 2,
+        fontFamily: "monospace",
+    },
+    selectedContainer: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+    },
+    selectedLabel: {
+        fontSize: 16,
+        opacity: 0.7,
+        fontWeight: "500",
+    },
+    selectedBadge: {
+        fontSize: 14,
+        fontWeight: "bold",
+        color: "#4ade80",
     },
 })

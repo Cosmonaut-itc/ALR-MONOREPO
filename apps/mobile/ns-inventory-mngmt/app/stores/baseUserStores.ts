@@ -136,22 +136,23 @@ export const useBaseUserStore = create<BaseUserState>()(
 
 				if (existingIndex >= 0) {
 					// Update existing product quantity
-					const updated = [...selectedProducts];
-					updated[existingIndex].quantity += quantity;
-					set({ selectedProducts: updated });
-				} else {
-					// Add new product with timestamp
-					set({
-						selectedProducts: [
-							...selectedProducts,
-							{
-								...product,
-								quantity,
-								selectedAt: new Date(),
-							},
-						],
-					});
+					Alert.alert(
+						"Producto Ya Seleccionado",
+						"Este producto ya está en la lista",
+					);
+					return;
 				}
+				// Add new product with timestamp
+				set({
+					selectedProducts: [
+						...selectedProducts,
+						{
+							...product,
+							quantity,
+							selectedAt: new Date(),
+						},
+					],
+				});
 			},
 
 			handleBarcodeScanned: (barcode) => {

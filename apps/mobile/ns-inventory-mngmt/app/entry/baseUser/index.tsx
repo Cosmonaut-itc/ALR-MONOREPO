@@ -38,13 +38,21 @@ interface Product {
  */
 const NAIL_PRODUCTS: Product[] = [
     { id: "1", name: "Esmalte Rojo Clásico", brand: "OPI", price: 15.99, stock: 25, barcode: "123456789" },
-    { id: "2", name: "Base Coat Fortalecedora", brand: "Essie", price: 12.5, stock: 18 },
-    { id: "3", name: "Top Coat Brillo", brand: "Sally Hansen", price: 10.99, stock: 30 },
-    { id: "4", name: "Removedor de Esmalte", brand: "Zoya", price: 8.75, stock: 12 },
-    { id: "5", name: "Lima de Uñas Profesional", brand: "Revlon", price: 5.99, stock: 40 },
-    { id: "6", name: "Aceite Cuticular", brand: "CND", price: 18.5, stock: 15 },
-    { id: "7", name: "Esmalte Gel UV", brand: "Gelish", price: 22.0, stock: 20 },
-    { id: "8", name: "Lámpara LED", brand: "Makartt", price: 45.99, stock: 5 },
+    { id: "2", name: "Base Coat Fortalecedora", brand: "Essie", price: 12.5, stock: 18, barcode: "123456789" },
+    { id: "3", name: "Top Coat Brillo", brand: "Sally Hansen", price: 10.99, stock: 30, barcode: "123456789" },
+    { id: "4", name: "Removedor de Esmalte", brand: "Zoya", price: 8.75, stock: 12, barcode: "123456789" },
+    { id: "5", name: "Lima de Uñas Profesional", brand: "Revlon", price: 5.99, stock: 40, barcode: "123456789" },
+    { id: "6", name: "Aceite Cuticular", brand: "CND", price: 18.5, stock: 15, barcode: "123456789" },
+    { id: "7", name: "Esmalte Gel UV", brand: "Gelish", price: 22.0, stock: 20, barcode: "123456789" },
+    { id: "8", name: "Lámpara LED", brand: "Makartt", price: 45.99, stock: 5, barcode: "123456789" },
+    { id: "9", name: "Esmalte Rojo Clásico", brand: "OPI", price: 15.99, stock: 25, barcode: "123456789" },
+    { id: "10", name: "Base Coat Fortalecedora", brand: "Essie", price: 12.5, stock: 18, barcode: "123456789" },
+    { id: "11", name: "Top Coat Brillo", brand: "Sally Hansen", price: 10.99, stock: 30, barcode: "123456789" },
+    { id: "12", name: "Removedor de Esmalte", brand: "Zoya", price: 8.75, stock: 12, barcode: "123456789" },
+    { id: "13", name: "Lima de Uñas Profesional", brand: "Revlon", price: 5.99, stock: 40, barcode: "123456789" },
+    { id: "14", name: "Aceite Cuticular", brand: "CND", price: 18.5, stock: 15, barcode: "123456789" },
+    { id: "15", name: "Esmalte Gel UV", brand: "Gelish", price: 22.0, stock: 20, barcode: "123456789" },
+    { id: "16", name: "Lámpara LED", brand: "Makartt", price: 45.99, stock: 5, barcode: "123456789" },
 ]
 
 /**

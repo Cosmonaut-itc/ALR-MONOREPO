@@ -1,12 +1,13 @@
 "use client"
 
 import { useState } from "react"
-import { StyleSheet, TouchableOpacity, FlatList, Modal } from "react-native"
+import { StyleSheet, TouchableOpacity, Modal, ScrollView } from "react-native"
 import { ThemedText } from "@/components/ThemedText"
 import { ThemedView } from "@/components/ThemedView"
 import { Colors } from "@/constants/Colors"
 import { useColorScheme } from "@/hooks/useColorScheme"
 import type { Product, ProductComboboxProps } from "@/types/types"
+import { Collapsible } from "@/components/Collapsible"
 
 // Create the component with ArkType
 export function ProductCombobox({ products, onProductSelect, placeholder }: ProductComboboxProps) {
@@ -15,6 +16,19 @@ export function ProductCombobox({ products, onProductSelect, placeholder }: Prod
     const [filteredProducts, setFilteredProducts] = useState<Product[]>(products)
     const colorScheme = useColorScheme()
     const isDark = colorScheme === "dark"
+
+    // Group products by name and barcode
+    const groupedProducts = filteredProducts.reduce(
+        (groups, product) => {
+            const key = `${product.name}-${product.barcode || "no-barcode"}`
+            if (!groups[key]) {
+                groups[key] = []
+            }
+            groups[key].push(product)
+            return groups
+        },
+        {} as Record<string, Product[]>,
+    )
 
     const handleSearch = (text: string) => {
         setSearchText(text)
@@ -37,27 +51,72 @@ export function ProductCombobox({ products, onProductSelect, placeholder }: Prod
         setFilteredProducts(products)
     }
 
-    const renderProductItem = ({ item }: { item: Product }) => (
-        <TouchableOpacity
-            style={[
-                styles.productItem,
-                {
-                    borderBottomColor: isDark ? Colors.dark.border : Colors.light.border,
-                    backgroundColor: isDark ? Colors.dark.surface : Colors.light.surface,
-                },
-            ]}
-            onPress={() => handleProductSelect(item)}
-        >
-            <ThemedView style={styles.productInfo} darkColor={Colors.dark.surface} lightColor={Colors.light.surface}>
-                <ThemedText style={styles.productName}>{item.name}</ThemedText>
-                <ThemedText style={styles.productBrand}>{item.brand}</ThemedText>
+    const renderProductGroup = (groupKey: string, groupProducts: Product[]) => {
+        // If only one product in group, render directly
+        if (groupProducts.length === 1) {
+            return (
+                <TouchableOpacity
+                    key={groupProducts[0].id}
+                    style={[
+                        styles.productItem,
+                        {
+                            borderBottomColor: isDark ? Colors.dark.border : Colors.light.border,
+                            backgroundColor: isDark ? Colors.dark.surface : Colors.light.surface,
+                        },
+                    ]}
+                    onPress={() => handleProductSelect(groupProducts[0])}
+                >
+                    <ThemedView style={styles.productInfo} darkColor={Colors.dark.surface} lightColor={Colors.light.surface}>
+                        <ThemedText style={styles.productName}>{groupProducts[0].name}</ThemedText>
+                        <ThemedText style={styles.productBrand}>{groupProducts[0].brand}</ThemedText>
+                        <ThemedText style={styles.productDetails}>Stock: {groupProducts[0].stock}</ThemedText>
+                    </ThemedView>
+                </TouchableOpacity>
+            )
+        }
+
+        // Multiple products with same name/barcode - render collapsible
+        const mainProduct = groupProducts[0]
+        return (
+            <ThemedView
+                key={groupKey}
+                style={[
+                    styles.productGroupContainer,
+                    {
+                        borderBottomColor: isDark ? Colors.dark.border : Colors.light.border,
+                        backgroundColor: isDark ? Colors.dark.background : Colors.light.background,
+                    },
+                ]}
+            >
+                <Collapsible title={`${mainProduct.name} (${groupProducts.length} variantes)`} titleStyle={{ fontSize: 22, fontWeight: "bold" }}>
+                    {groupProducts.map((product, index) => (
+                        <TouchableOpacity
+                            key={product.id}
+                            style={[
+                                styles.subProductItem,
+                                {
+                                    backgroundColor: isDark ? Colors.dark.highlight : Colors.light.highlight,
+                                    borderColor: isDark ? Colors.dark.border : Colors.light.border,
+                                },
+                            ]}
+                            onPress={() => handleProductSelect(product)}
+                        >
+                            <ThemedView
+                                style={styles.subProductInfo}
+                                darkColor={Colors.dark.highlight}
+                                lightColor={Colors.light.highlight}
+                            >
+                                <ThemedText style={styles.subProductBrand}>{product.brand}</ThemedText>
+                                <ThemedText style={styles.subProductDetails}>
+                                    ID: {product.id}
+                                </ThemedText>
+                            </ThemedView>
+                        </TouchableOpacity>
+                    ))}
+                </Collapsible>
             </ThemedView>
-            <ThemedView style={styles.productDetails} darkColor={Colors.dark.surface} lightColor={Colors.light.surface}>
-                <ThemedText style={styles.productPrice}>${item.price}</ThemedText>
-                <ThemedText style={styles.productStock}>Stock: {item.stock}</ThemedText>
-            </ThemedView>
-        </TouchableOpacity>
-    )
+        )
+    }
 
     return (
         <ThemedView style={styles.container}>
@@ -129,13 +188,12 @@ export function ProductCombobox({ products, onProductSelect, placeholder }: Prod
                             </ThemedText>
                         </ThemedView>
                     </ThemedView>
-                    <FlatList
-                        data={filteredProducts}
-                        renderItem={renderProductItem}
-                        keyExtractor={(item) => item.id}
-                        style={styles.productList}
-                        showsVerticalScrollIndicator={false}
-                    />
+
+                    <ScrollView style={styles.productList} showsVerticalScrollIndicator={false}>
+                        {Object.entries(groupedProducts).map(([groupKey, groupProducts]) =>
+                            renderProductGroup(groupKey, groupProducts),
+                        )}
+                    </ScrollView>
                 </ThemedView>
             </Modal>
         </ThemedView>
@@ -219,6 +277,9 @@ const styles = StyleSheet.create({
     },
     productDetails: {
         alignItems: "flex-end",
+        fontSize: 14,
+        opacity: 0.7,
+        marginTop: 4,
     },
     productPrice: {
         fontSize: 18,
@@ -229,4 +290,28 @@ const styles = StyleSheet.create({
         fontSize: 14,
         opacity: 0.7,
     },
+    productGroupContainer: {
+        borderBottomWidth: 1,
+        padding: 25,
+    },
+    subProductItem: {
+        padding: 12,
+        marginVertical: 4,
+        marginLeft: 16,
+        borderRadius: 8,
+        borderWidth: 1,
+    },
+    subProductInfo: {
+        flex: 1,
+    },
+    subProductBrand: {
+        fontSize: 16,
+        fontWeight: "600",
+        marginBottom: 4,
+    },
+    subProductDetails: {
+        fontSize: 14,
+        opacity: 0.7,
+    },
+
 })
