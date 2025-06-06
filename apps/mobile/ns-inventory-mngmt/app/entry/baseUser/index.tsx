@@ -1,7 +1,7 @@
 "use client"
 
-import { useState } from "react"
-import { StyleSheet, TouchableOpacity, Platform, ScrollView, Alert } from "react-native"
+import { useEffect } from "react"
+import { StyleSheet, TouchableOpacity, Platform, ScrollView } from "react-native"
 import { StatusBar } from "expo-status-bar"
 import { router } from "expo-router"
 import { ThemedText } from "@/components/ThemedText"
@@ -16,11 +16,27 @@ import { Collapsible } from "@/components/Collapsible"
 import { Colors } from "@/constants/Colors"
 import { useColorScheme } from "@/hooks/useColorScheme"
 import { ArrowLeft, Camera } from "lucide-react-native"
-import type { PendingOrder, SelectedProduct, OrderItem } from "@/types/types"
+import type { PendingOrder, SelectedProduct } from "@/types/types"
+import { useBaseUserStore } from "@/app/stores/baseUserStores"
 
-// Mock data for nail salon products
-// biome-ignore lint/suspicious/noExplicitAny: Demo Data
-const NAIL_PRODUCTS: any[] = [
+/**
+ * Product type definition
+ * Represents a nail salon product with its essential properties
+ */
+interface Product {
+    id: string
+    name: string
+    brand: string
+    price: number
+    stock: number
+    barcode?: string
+}
+
+/**
+ * Mock data for nail salon products
+ * This data simulates a product database with common nail salon items
+ */
+const NAIL_PRODUCTS: Product[] = [
     { id: "1", name: "Esmalte Rojo Clásico", brand: "OPI", price: 15.99, stock: 25, barcode: "123456789" },
     { id: "2", name: "Base Coat Fortalecedora", brand: "Essie", price: 12.5, stock: 18 },
     { id: "3", name: "Top Coat Brillo", brand: "Sally Hansen", price: 10.99, stock: 30 },
@@ -31,7 +47,10 @@ const NAIL_PRODUCTS: any[] = [
     { id: "8", name: "Lámpara LED", brand: "Makartt", price: 45.99, stock: 5 },
 ]
 
-// Mock pending orders
+/**
+ * Mock pending orders data
+ * Represents orders that have been taken but not fully returned
+ */
 const PENDING_ORDERS: PendingOrder[] = [
     {
         id: "o1",
@@ -78,118 +97,32 @@ const PENDING_ORDERS: PendingOrder[] = [
 ]
 
 export default function InventoryScannerScreen() {
-    const [selectedProducts, setSelectedProducts] = useState<SelectedProduct[]>([])
-    const [pendingOrders, setPendingOrders] = useState<PendingOrder[]>(PENDING_ORDERS)
-    const [showScanner, setShowScanner] = useState(false)
-    const [selectedOrder, setSelectedOrder] = useState<PendingOrder | null>(null)
-    const [showReturnModal, setShowReturnModal] = useState(false)
     const colorScheme = useColorScheme()
     const isDark = colorScheme === "dark"
 
-    // biome-ignore lint/suspicious/noExplicitAny: demo data select
-    const handleProductSelect = (product: any, quantity = 1) => {
-        const existingIndex = selectedProducts.findIndex((p) => p.id === product.id)
+    // Initialize store with demo data
+    useEffect(() => {
+        useBaseUserStore.getState().initializeStore(NAIL_PRODUCTS, PENDING_ORDERS)
+    }, [])
 
-        if (existingIndex >= 0) {
-            // Update existing product quantity
-            const updated = [...selectedProducts]
-            updated[existingIndex].quantity += quantity
-            setSelectedProducts(updated)
-        } else {
-            // Add new product
-            setSelectedProducts([
-                ...selectedProducts,
-                {
-                    ...product,
-                    quantity,
-                    selectedAt: new Date(),
-                },
-            ])
-        }
-    }
-
-    const handleBarcodeScanned = (barcode: string) => {
-        const product = NAIL_PRODUCTS.find((p) => p.barcode === barcode)
-        if (product) {
-            handleProductSelect(product)
-            setShowScanner(false)
-            Alert.alert("Producto Encontrado", `${product.name} agregado al inventario`)
-        } else {
-            Alert.alert("Producto No Encontrado", "El código escaneado no corresponde a ningún producto")
-        }
-    }
-
-    const handleRemoveProduct = (productId: string) => {
-        setSelectedProducts(selectedProducts.filter((p) => p.id !== productId))
-    }
-
-    const handleUpdateQuantity = (productId: string, newQuantity: number) => {
-        if (newQuantity <= 0) {
-            handleRemoveProduct(productId)
-            return
-        }
-
-        setSelectedProducts(selectedProducts.map((p) => (p.id === productId ? { ...p, quantity: newQuantity } : p)))
-    }
-
-    const handleOrderClick = (order: PendingOrder) => {
-        setSelectedOrder(order)
-        setShowReturnModal(true)
-    }
-
-    const handleReturnSubmit = (order: PendingOrder, returnedItems: OrderItem[]) => {
-        // Update the order with returned items
-        const updatedOrders = pendingOrders.map((o) => {
-            if (o.id === order.id) {
-                const updatedItems = o.items.map((item) => {
-                    const returnedItem = returnedItems.find((ri) => ri.productId === item.productId)
-                    if (returnedItem) {
-                        return {
-                            ...item,
-                            quantityReturned: item.quantityReturned + returnedItem.quantityReturned,
-                        }
-                    }
-                    return item
-                })
-
-                // Update status based on returned quantities
-                const allReturned = updatedItems.every((item) => item.quantityReturned >= item.quantityTaken)
-                const someReturned = updatedItems.some((item) => item.quantityReturned > 0)
-
-                const newStatus: PendingOrder["status"] = allReturned ? "completed" : someReturned ? "partial" : "pending"
-
-                return {
-                    ...o,
-                    items: updatedItems,
-                    status: newStatus,
-                }
-            }
-            return o
-        })
-
-        setPendingOrders(updatedOrders)
-        Alert.alert("Éxito", "Devolución procesada correctamente")
-    }
-
-    const handleSubmit = () => {
-        if (selectedProducts.length === 0) {
-            Alert.alert("Sin Productos", "Agrega al menos un producto antes de continuar")
-            return
-        }
-
-        Alert.alert("Confirmar Inventario", `¿Deseas procesar ${selectedProducts.length} producto(s)?`, [
-            { text: "Cancelar", style: "cancel" },
-            {
-                text: "Confirmar",
-                onPress: () => {
-                    // Process inventory
-                    console.log("Processing inventory:", selectedProducts)
-                    setSelectedProducts([])
-                    Alert.alert("Éxito", "Inventario procesado correctamente")
-                },
-            },
-        ])
-    }
+    // Get store state and actions
+    const {
+        selectedProducts,
+        pendingOrders,
+        showScanner,
+        selectedOrder,
+        showReturnModal,
+        handleProductSelect,
+        handleBarcodeScanned,
+        handleRemoveProduct,
+        handleUpdateQuantity,
+        handleOrderClick,
+        handleReturnSubmit,
+        handleSubmit,
+        setShowScanner,
+        setShowReturnModal,
+        setSelectedOrder,
+    } = useBaseUserStore()
 
     return (
         <ThemedView style={styles.container}>
@@ -214,7 +147,7 @@ export default function InventoryScannerScreen() {
                 {pendingOrders.length > 0 && (
                     <ThemedView style={styles.section}>
                         <Collapsible title={`Órdenes Pendientes (${pendingOrders.length})`}>
-                            {pendingOrders.map((order) => (
+                            {pendingOrders.map((order: PendingOrder) => (
                                 <PendingOrderCard
                                     key={order.id}
                                     order={order}
@@ -230,7 +163,10 @@ export default function InventoryScannerScreen() {
                 <ThemedView style={styles.section}>
                     <ThemedView style={styles.inputRow}>
                         <ThemedView style={styles.comboboxContainer}>
-                            <ProductCombobox products={NAIL_PRODUCTS} onProductSelect={handleProductSelect} />
+                            <ProductCombobox
+                                products={NAIL_PRODUCTS}
+                                onProductSelect={(product: Product) => handleProductSelect(product)}
+                            />
                         </ThemedView>
                         <TouchableOpacity
                             onPress={() => setShowScanner(true)}
@@ -254,7 +190,7 @@ export default function InventoryScannerScreen() {
                         <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
                             Productos Seleccionados ({selectedProducts.length})
                         </ThemedText>
-                        {selectedProducts.map((product) => (
+                        {selectedProducts.map((product: SelectedProduct) => (
                             <ProductCard
                                 key={product.id}
                                 product={product}

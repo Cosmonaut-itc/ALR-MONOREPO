@@ -9,7 +9,7 @@ import { ThemedButton } from "@/components/ThemedButton"
 import { Colors } from "@/constants/Colors"
 import { useColorScheme } from "@/hooks/useColorScheme"
 import { ThemedNumpad } from "@/components/ui/ThemedNumpad"
-import { useNumpadStore } from "@/stores/baseUserStores"
+import { useNumpadStore } from "@/app/stores/baseUserStores"
 
 
 export default function NumpadScreen() {
