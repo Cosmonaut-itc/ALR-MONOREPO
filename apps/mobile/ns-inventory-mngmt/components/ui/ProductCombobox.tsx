@@ -4,6 +4,7 @@ import { useState } from "react"
 import { StyleSheet, TouchableOpacity, Modal, ScrollView } from "react-native"
 import { ThemedText } from "@/components/ThemedText"
 import { ThemedView } from "@/components/ThemedView"
+import { TextInput } from "@/components/ThemedTextInput"
 import { Colors } from "@/constants/Colors"
 import { useColorScheme } from "@/hooks/useColorScheme"
 import type { Product, ProductComboboxProps } from "@/types/types"
@@ -172,21 +173,13 @@ export function ProductCombobox({ products, onProductSelect, placeholder }: Prod
                     </ThemedView>
 
                     <ThemedView style={styles.searchContainer}>
-                        <ThemedView
-                            style={[
-                                styles.searchInput,
-                                {
-                                    borderColor: isDark ? Colors.dark.border : Colors.light.border,
-                                    backgroundColor: isDark ? Colors.dark.surface : Colors.light.surface,
-                                },
-                            ]}
-                        >
-                            <ThemedText
-                                style={styles.searchInputText}
-                            >
-                                {searchText}
-                            </ThemedText>
-                        </ThemedView>
+                        <TextInput
+                            value={searchText}
+                            onChangeText={handleSearch}
+                            placeholder="Buscar producto..."
+                            autoFocus
+                            style={styles.searchInputText}
+                        />
                     </ThemedView>
 
                     <ScrollView style={styles.productList} showsVerticalScrollIndicator={false}>
@@ -243,11 +236,6 @@ const styles = StyleSheet.create({
         fontSize: 20,
     },
     searchContainer: {
-        padding: 16,
-    },
-    searchInput: {
-        borderWidth: 1,
-        borderRadius: 8,
         padding: 16,
     },
     searchInputText: {
