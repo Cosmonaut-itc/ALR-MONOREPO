@@ -369,3 +369,164 @@ export const useProductComboboxStore = create<ProductComboboxState>()(
 		},
 	),
 );
+
+/**
+ * ReturnOrderState interface defines the shape of the store
+ * Contains all state properties and their corresponding action methods for return order processing
+ */
+interface ReturnOrderState {
+	// State Properties
+	returnProducts: SelectedProduct[]; // Products selected for return
+	showScanner: boolean; // Controls visibility of barcode scanner
+
+	// Action Methods
+	/**
+	 * Adds or updates a product in the return products list
+	 * @param product - The product to add/update
+	 * @param maxReturn - Maximum quantity that can be returned
+	 */
+	handleProductSelect: (
+		product: typeof Product.infer,
+		maxReturn: number,
+	) => void;
+
+	/**
+	 * Processes a scanned barcode and adds the corresponding product
+	 * @param barcode - The scanned barcode string
+	 * @param orderProducts - Available products in the order
+	 */
+	handleBarcodeScanned: (
+		barcode: string,
+		orderProducts: Array<typeof Product.infer>,
+	) => void;
+
+	/**
+	 * Removes a product from the return products list
+	 * @param productId - ID of the product to remove
+	 */
+	handleRemoveProduct: (productId: string) => void;
+
+	/**
+	 * Updates the quantity of a selected product for return
+	 * @param productId - ID of the product to update
+	 * @param newQuantity - New quantity value
+	 * @param maxReturn - Maximum quantity that can be returned
+	 */
+	handleUpdateQuantity: (
+		productId: string,
+		newQuantity: number,
+		maxReturn: number,
+	) => void;
+
+	/**
+	 * Controls the visibility of the barcode scanner
+	 * @param show - Whether to show or hide the scanner
+	 */
+	setShowScanner: (show: boolean) => void;
+
+	/**
+	 * Clears all return products and resets the state
+	 */
+	clearReturnProducts: () => void;
+}
+
+/**
+ * ReturnOrderStore - Zustand store for managing return order processing
+ * Handles product selection, quantity management, and barcode scanning for returns
+ */
+export const useReturnOrderStore = create<ReturnOrderState>()(
+	devtools(
+		(set, get) => ({
+			// Initial State
+			returnProducts: [],
+			showScanner: false,
+
+			// Action Implementations
+			handleProductSelect: (product, maxReturn) => {
+				const { returnProducts } = get();
+				const existingIndex = returnProducts.findIndex(
+					(p) => p.id === product.id,
+				);
+
+				if (existingIndex >= 0) {
+					// Update existing product quantity
+					const updated = [...returnProducts];
+					if (updated[existingIndex].quantity < maxReturn) {
+						updated[existingIndex].quantity += 1;
+						set({ returnProducts: updated });
+					} else {
+						Alert.alert(
+							"Límite Alcanzado",
+							"No puedes devolver más de lo que se tomó",
+						);
+					}
+				} else {
+					// Add new product for return
+					set({
+						returnProducts: [
+							...returnProducts,
+							{
+								...product,
+								stock: maxReturn,
+								quantity: 1,
+								selectedAt: new Date(),
+							},
+						],
+					});
+				}
+			},
+
+			handleBarcodeScanned: (barcode, orderProducts) => {
+				const product = orderProducts.find(
+					(product) => product.barcode === barcode,
+				);
+				if (product) {
+					const orderItem = orderProducts.find((p) => p.id === product.id);
+					if (orderItem) {
+						get().handleProductSelect(product, orderItem.stock);
+						set({ showScanner: false });
+						Alert.alert(
+							"Producto Encontrado",
+							`${product.name} agregado para devolución`,
+						);
+					}
+				} else {
+					Alert.alert(
+						"Producto No Encontrado",
+						"El código escaneado no corresponde a ningún producto de esta orden",
+					);
+				}
+			},
+
+			handleRemoveProduct: (productId) => {
+				const { returnProducts } = get();
+				set({
+					returnProducts: returnProducts.filter((p) => p.id !== productId),
+				});
+			},
+
+			handleUpdateQuantity: (productId, newQuantity, maxReturn) => {
+				if (newQuantity <= 0) {
+					get().handleRemoveProduct(productId);
+					return;
+				}
+
+				const clampedQuantity = Math.min(newQuantity, maxReturn);
+				const { returnProducts } = get();
+				set({
+					returnProducts: returnProducts.map((p) =>
+						p.id === productId ? { ...p, quantity: clampedQuantity } : p,
+					),
+				});
+			},
+
+			setShowScanner: (show) => set({ showScanner: show }),
+
+			clearReturnProducts: () =>
+				set({ returnProducts: [], showScanner: false }),
+		}),
+		{
+			name: "return-order-store",
+		},
+	),
+);

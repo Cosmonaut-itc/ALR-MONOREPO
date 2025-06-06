@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { StyleSheet, TouchableOpacity, Platform, ScrollView, Alert } from "react-native"
+import { useEffect } from "react"
+import { StyleSheet, ScrollView, Alert } from "react-native"
 import { StatusBar } from "expo-status-bar"
 import { router, useLocalSearchParams } from "expo-router"
 
@@ -9,90 +9,48 @@ import { ThemedText } from "@/components/ThemedText"
 import { ThemedView } from "@/components/ThemedView"
 import { ThemedButton } from "@/components/ThemedButton"
 import { BarcodeScanner } from "@/components/ui/BarcodeScanner"
-import { ProductCombobox } from "@/components/ui/ProductCombobox"
 import { ProductCard } from "@/components/ui/ProductCard"
 import { Colors } from "@/constants/Colors"
 import { useColorScheme } from "@/hooks/useColorScheme"
-import { ArrowLeft, Camera } from "lucide-react-native"
-import type { PendingOrder, Product, SelectedProduct } from "@/types/types"
+import type { Product, PendingOrder, SelectedProduct, OrderItem } from "@/types/types"
 import { ThemedHeader } from "@/components/ThemedHeader"
 import { ScannerComboboxSection } from "@/components/ui/ScannerComboboxSection"
-
-// Mock pending orders data (in a real app, this would come from a store/API)
-const PENDING_ORDERS: PendingOrder[] = [
-    {
-        id: "o1",
-        orderNumber: "ORD-001",
-        items: [
-            {
-                productId: "1",
-                productName: "Esmalte Rojo Clásico",
-                brand: "OPI",
-                quantityTaken: 3,
-                quantityReturned: 0,
-                price: 15.99,
-            },
-            {
-                productId: "2",
-                productName: "Base Coat Fortalecedora",
-                brand: "Essie",
-                quantityTaken: 2,
-                quantityReturned: 1,
-                price: 12.5,
-            },
-        ],
-        takenAt: new Date(Date.now() - 2 * 60 * 60 * 1000), // 2 hours ago
-        takenBy: "María García",
-        status: "partial",
-    },
-    {
-        id: "o2",
-        orderNumber: "ORD-002",
-        items: [
-            {
-                productId: "3",
-                productName: "Top Coat Brillo",
-                brand: "Sally Hansen",
-                quantityTaken: 1,
-                quantityReturned: 0,
-                price: 10.99,
-            },
-            {
-                productId: "4",
-                productName: "Removedor de Esmalte",
-                brand: "Zoya",
-                quantityTaken: 2,
-                quantityReturned: 0,
-                price: 8.75,
-            },
-        ],
-        takenAt: new Date(Date.now() - 30 * 60 * 1000), // 30 minutes ago
-        takenBy: "Ana López",
-        status: "pending",
-    },
-]
+import { useBaseUserStore, useReturnOrderStore } from "@/app/stores/baseUserStores"
 
 export default function OrderDetailsScreen() {
     const { id } = useLocalSearchParams<{ id: string }>()
-    const [order, setOrder] = useState<PendingOrder | null>(null)
-    const [returnProducts, setReturnProducts] = useState<SelectedProduct[]>([])
-    const [showScanner, setShowScanner] = useState(false)
     const colorScheme = useColorScheme()
     const isDark = colorScheme === "dark"
 
+    // Get order from baseUserStore
+    const { selectedOrder, pendingOrders } = useBaseUserStore()
+    const order = selectedOrder || pendingOrders.find((o: PendingOrder) => o.id === id)
+
+    // Get return order state and actions
+    const {
+        returnProducts,
+        showScanner,
+        handleProductSelect,
+        handleBarcodeScanned,
+        handleRemoveProduct,
+        handleUpdateQuantity,
+        setShowScanner,
+        clearReturnProducts,
+    } = useReturnOrderStore()
+
     useEffect(() => {
-        // Find the order by ID
-        const foundOrder = PENDING_ORDERS.find((o) => o.id === id)
-        if (foundOrder) {
-            setOrder(foundOrder)
-        } else {
+        if (!order) {
             Alert.alert("Error", "Orden no encontrada", [{ text: "OK", onPress: () => router.back() }])
         }
-    }, [id])
+        // Clear return products when component unmounts
+        return () => {
+            clearReturnProducts()
+        }
+    }, [order, clearReturnProducts])
 
     // Convert order items to products for the combobox
     const orderAsProducts: Product[] =
-        order?.items.map((item) => ({
+        order?.items.map((item: OrderItem) => ({
             id: item.productId,
             name: item.productName,
             brand: item.brand,
@@ -101,81 +59,13 @@ export default function OrderDetailsScreen() {
             barcode: item.productId, // Use productId as barcode for scanning
         })) || []
 
-    const handleProductSelect = (product: Product) => {
-        const orderItem = order?.items.find((item) => item.productId === product.id)
-        if (!orderItem) return
-
-        const maxReturn = orderItem.quantityTaken - orderItem.quantityReturned
-        if (maxReturn <= 0) {
-            Alert.alert("Sin Stock", "No hay productos disponibles para devolver")
-            return
-        }
-
-        const existingIndex = returnProducts.findIndex((p) => p.id === product.id)
-        if (existingIndex >= 0) {
-            // Update existing product quantity
-            const updated = [...returnProducts]
-            if (updated[existingIndex].quantity < maxReturn) {
-                updated[existingIndex].quantity += 1
-                setReturnProducts(updated)
-            } else {
-                Alert.alert("Límite Alcanzado", "No puedes devolver más de lo que se tomó")
-            }
-        } else {
-            // Add new product for return
-            setReturnProducts([
-                ...returnProducts,
-                {
-                    id: product.id,
-                    name: product.name,
-                    brand: product.brand,
-                    stock: maxReturn,
-                    quantity: 1,
-                    selectedAt: new Date(),
-                },
-            ])
-        }
-    }
-
-    const handleBarcodeScanned = (barcode: string) => {
-        // Find item by barcode (productId)
-        const product = orderAsProducts.find((product) => product.barcode === barcode)
-
-        if (product) {
-            handleProductSelect(product)
-            setShowScanner(false)
-            Alert.alert("Producto Encontrado", `${product.name} agregado para devolución`)
-        } else {
-            Alert.alert("Producto No Encontrado", "El código escaneado no corresponde a ningún producto de esta orden")
-        }
-    }
-
-    const handleRemoveProduct = (productId: string) => {
-        setReturnProducts(returnProducts.filter((p) => p.id !== productId))
-    }
-
-    const handleUpdateQuantity = (productId: string, newQuantity: number) => {
-        if (newQuantity <= 0) {
-            handleRemoveProduct(productId)
-            return
-        }
-
-        const orderItem = order?.items.find((item) => item.productId === productId)
-        if (!orderItem) return
-
-        const maxReturn = orderItem.quantityTaken - orderItem.quantityReturned
-        const clampedQuantity = Math.min(newQuantity, maxReturn)
-
-        setReturnProducts(returnProducts.map((p) => (p.id === productId ? { ...p, quantity: clampedQuantity } : p)))
-    }
-
     const handleSubmitReturn = () => {
         if (returnProducts.length === 0) {
             Alert.alert("Sin Devoluciones", "Selecciona al menos un producto para devolver")
             return
         }
 
-        const totalReturning = returnProducts.reduce((total, product) => total + product.quantity, 0)
+        const totalReturning = returnProducts.reduce((total: number, product: SelectedProduct) => total + product.quantity, 0)
 
         Alert.alert("Confirmar Devolución", `¿Deseas procesar la devolución de ${totalReturning} producto(s)?`, [
             { text: "Cancelar", style: "cancel" },
@@ -184,6 +74,7 @@ export default function OrderDetailsScreen() {
                 onPress: () => {
                     // Process return
                     console.log("Processing return:", returnProducts)
+                    clearReturnProducts()
                     Alert.alert("Éxito", "Devolución procesada correctamente", [{ text: "OK", onPress: () => router.back() }])
                 },
             },
@@ -191,11 +82,11 @@ export default function OrderDetailsScreen() {
     }
 
     const getTotalReturning = () => {
-        return returnProducts.reduce((total, product) => total + product.quantity, 0)
+        return returnProducts.reduce((total: number, product: SelectedProduct) => total + product.quantity, 0)
     }
 
     const getOrderItemStatus = (productId: string) => {
-        const orderItem = order?.items.find((item) => item.productId === productId)
+        const orderItem = order?.items.find((item: OrderItem) => item.productId === productId)
         if (!orderItem) return "unknown"
 
         if (orderItem.quantityReturned >= orderItem.quantityTaken) {
@@ -204,7 +95,6 @@ export default function OrderDetailsScreen() {
             return "partial"
         }
         return "pending"
-
     }
 
     if (!order) {
@@ -243,7 +133,7 @@ export default function OrderDetailsScreen() {
                     <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
                         Productos de la Orden
                     </ThemedText>
-                    {order.items.map((item) => {
+                    {order.items.map((item: OrderItem) => {
                         const status = getOrderItemStatus(item.productId)
                         const statusColor =
                             status === "completed"
@@ -288,7 +178,12 @@ export default function OrderDetailsScreen() {
                 {/* Scanner and Combobox Section */}
                 <ScannerComboboxSection
                     products={orderAsProducts}
-                    onProductSelect={handleProductSelect}
+                    onProductSelect={(product: Product) => {
+                        const orderItem = order.items.find((item: OrderItem) => item.productId === product.id)
+                        if (orderItem) {
+                            handleProductSelect(product, orderItem.quantityTaken - orderItem.quantityReturned)
+                        }
+                    }}
                     onScanPress={() => setShowScanner(true)}
                     title="Seleccionar Productos para Devolución"
                     placeholder="Seleccionar producto de la orden..."
@@ -300,15 +195,19 @@ export default function OrderDetailsScreen() {
                         <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
                             Productos para Devolver ({returnProducts.length})
                         </ThemedText>
-                        {returnProducts.map((product) => (
-                            <ProductCard
-                                key={product.id}
-                                product={product}
-                                onRemove={handleRemoveProduct}
-                                onUpdateQuantity={handleUpdateQuantity}
-                                style={styles.productCard}
-                            />
-                        ))}
+                        {returnProducts.map((product: SelectedProduct) => {
+                            const orderItem = order.items.find((item: OrderItem) => item.productId === product.id)
+                            const maxReturn = orderItem ? orderItem.quantityTaken - orderItem.quantityReturned : 0
+                            return (
+                                <ProductCard
+                                    key={product.id}
+                                    product={product}
+                                    onRemove={handleRemoveProduct}
+                                    onUpdateQuantity={(id: string, quantity: number) => handleUpdateQuantity(id, quantity, maxReturn)}
+                                    style={styles.productCard}
+                                />
+                            )
+                        })}
                     </ThemedView>
                 )}
 
@@ -338,7 +237,12 @@ export default function OrderDetailsScreen() {
             </ScrollView>
 
             {/* Barcode Scanner Modal */}
-            {showScanner && <BarcodeScanner onBarcodeScanned={handleBarcodeScanned} onClose={() => setShowScanner(false)} />}
+            {showScanner && (
+                <BarcodeScanner
+                    onBarcodeScanned={(barcode) => handleBarcodeScanned(barcode, orderAsProducts)}
+                    onClose={() => setShowScanner(false)}
+                />
+            )}
         </ThemedView>
     )
 }
