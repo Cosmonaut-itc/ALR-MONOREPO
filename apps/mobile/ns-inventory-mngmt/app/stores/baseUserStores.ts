@@ -148,7 +148,15 @@ export const useBaseUserStore = create<BaseUserState>()(
 
 			handleBarcodeScanned: (barcode) => {
 				const { availableProducts } = get();
-				const product = availableProducts.find((p) => p.barcode === barcode);
+
+				// First try to find product by exact barcode match
+				let product = availableProducts.find((p) => p.barcode === barcode);
+
+				// If no exact match, try to find by product ID (in case QR contains product ID)
+				if (!product) {
+					product = availableProducts.find((p) => p.id === barcode);
+				}
+
 				if (product) {
 					get().handleProductSelect(product);
 					set({ showScanner: false });
@@ -159,7 +167,7 @@ export const useBaseUserStore = create<BaseUserState>()(
 				} else {
 					Alert.alert(
 						"Producto No Encontrado",
-						"El código escaneado no corresponde a ningún producto",
+						"El código escaneado no corresponde a ningún producto conocido",
 					);
 				}
 			},
@@ -477,9 +485,16 @@ export const useReturnOrderStore = create<ReturnOrderState>()(
 			},
 
 			handleBarcodeScanned: (barcode, orderProducts) => {
-				const product = orderProducts.find(
+				// First try to find product by exact barcode match
+				let product = orderProducts.find(
 					(product) => product.barcode === barcode,
 				);
+
+				// If no exact match, try to find by product ID (in case QR contains product ID)
+				if (!product) {
+					product = orderProducts.find((product) => product.id === barcode);
+				}
+
 				if (product) {
 					const orderItem = orderProducts.find((p) => p.id === product.id);
 					if (orderItem) {

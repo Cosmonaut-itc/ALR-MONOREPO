@@ -87,6 +87,29 @@ export const BarcodeScannerPropsArk = t({
 
 export type BarcodeScannerProps = typeof BarcodeScannerPropsArk.infer;
 
+// QR Code data structure for inventory items
+export const QRCodeData = t({
+	barcode: "string", // The product's barcode identifier
+	productId: "string", // Unique product ID in the system
+	name: "string?", // Optional product name for verification
+	type: t.enumerated("product", "inventory"), // QR code type identifier
+});
+
+export type QRCodeData = typeof QRCodeData.infer;
+
+// Enhanced BarcodeScanner props with QR data
+export const EnhancedBarcodeScannerPropsArk = t({
+	onQRCodeScanned: "string?" as t.cast<
+		(qrData: typeof QRCodeData.infer) => void
+	>,
+	onBarcodeScanned: "string?" as t.cast<(data: string) => void>,
+	onClose: "string?" as t.cast<() => void>,
+	focusOnQRCodes: "boolean?", // Whether to prioritize QR code scanning
+});
+
+export type EnhancedBarcodeScannerProps =
+	typeof EnhancedBarcodeScannerPropsArk.infer;
+
 // Product Card Component and its types
 export const SelectedProductCardArk = t({
 	id: "string",

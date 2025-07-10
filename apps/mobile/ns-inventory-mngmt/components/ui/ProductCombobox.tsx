@@ -56,7 +56,6 @@ export function ProductCombobox({ products, onProductSelect, placeholder }: Prod
                     <ThemedView style={styles.productInfo} darkColor={Colors.dark.surface} lightColor={Colors.light.surface}>
                         <ThemedText style={styles.productName}>{groupProducts[0].name}</ThemedText>
                         <ThemedText style={styles.productBrand}>{groupProducts[0].brand}</ThemedText>
-                        <ThemedText style={styles.productDetails}>Stock: {groupProducts[0].stock}</ThemedText>
                     </ThemedView>
                 </TouchableOpacity>
             )
