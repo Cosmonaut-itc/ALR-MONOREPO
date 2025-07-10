@@ -17,7 +17,8 @@ import { useSyncQueriesExternal } from "react-query-external-sync";
 import { Toaster } from 'sonner-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { NavigationContainer } from '@react-navigation/native';
+import * as SecureStore from "expo-secure-store";
+
 
 
 
@@ -42,8 +43,8 @@ export default function RootLayout() {
   }
 
   const hostIP =
-    Constants.expoGoConfig?.debuggerHost?.split(`:`)[0] ||
-    Constants.expoConfig?.hostUri?.split(`:`)[0];
+    Constants.expoGoConfig?.debuggerHost?.split(":")[0] ||
+    Constants.expoConfig?.hostUri?.split(":")[0];
 
   function AppContent() {
     const colorScheme = useColorScheme();
@@ -59,15 +60,18 @@ export default function RootLayout() {
         appVersion: "1.0.0",
         // Add any relevant platform info
       },
+      secureStorage: SecureStore, // SecureStore for ['#storage', 'secure', 'key'] queries + monitoring
       enableLogs: false,
     });
 
     // Your app content
     return (
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-        <Stack initialRouteName="index" screenOptions={{ headerShown: false }}>
+        <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="index" />
           <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="entry/index" />
+          <Stack.Screen name="entry/baseUser/index" />
           <Stack.Screen name="+not-found" options={{ title: Translations.navigation.notFound }} />
         </Stack>
         <StatusBar style="auto" />

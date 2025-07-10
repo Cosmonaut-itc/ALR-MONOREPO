@@ -5,7 +5,9 @@ import { ThemedText } from "@/components/ThemedText"
 import { ThemedView } from "@/components/ThemedView"
 import { Colors } from "@/constants/Colors"
 import { useColorScheme } from "@/hooks/useColorScheme"
+import { useStore } from "zustand"
 import type { ThemedNumpadProps } from "@/types/types"
+
 
 
 // Create the component with ArkType
