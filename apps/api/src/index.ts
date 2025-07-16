@@ -5,6 +5,8 @@ import { cors } from 'hono/cors';
 import { db } from './db/index'; // Ensure this is the correct path to your db module
 import * as schemas from './db/schema';
 import { auth } from './lib/auth';
+import { apiResponseSchema, articulosAllParamsSchema } from '../types';
+import { zValidator } from '@hono/zod-validator';
 
 const app = new Hono<{
 	Variables: {
@@ -57,6 +59,24 @@ app.on(['POST', 'GET'], '/api/auth/*', (c) => {
 });
 
 app.get('/', (c) => c.json('Hello Bun!'));
+
+app.get('/api/auth/products/all', zValidator('query', articulosAllParamsSchema), async (c) => {
+	const { company_id } = c.req.valid('query');
+
+	const response = await fetch(`https://api.alteg.io/api/v1/goods/${company_id}`);
+	const data = await response.json();
+
+	if (!response.ok) {
+		return c.json({ error: 'Failed to fetch products' }, 500);
+	}
+
+	const parsedData = apiResponseSchema.parse(data);
+
+	return c.json({
+		message: 'Success',
+		data: parsedData,
+	});
+});
 
 // Health check endpoint for the auth service only in development
 app.get('/db/health', async (c) => {
