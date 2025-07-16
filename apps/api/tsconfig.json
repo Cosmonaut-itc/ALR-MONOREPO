@@ -4,9 +4,7 @@
     "skipLibCheck": true,
     "exactOptionalPropertyTypes": true,
     "paths": {
-      "@/*": [
-        "./*"
-      ]
+      "@/*": ["./*"]
     },
     "strictNullChecks": true
   }

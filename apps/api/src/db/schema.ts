@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, integer } from 'drizzle-orm/pg-core';
+import { boolean, integer, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
 
 export const user = pgTable('user', {
 	id: text('id').primaryKey(),
@@ -70,7 +70,7 @@ export const apikey = pgTable('apikey', {
 	lastRefillAt: timestamp('last_refill_at'),
 	enabled: boolean('enabled').default(true),
 	rateLimitEnabled: boolean('rate_limit_enabled').default(true),
-	rateLimitTimeWindow: integer('rate_limit_time_window').default(86400000),
+	rateLimitTimeWindow: integer('rate_limit_time_window').default(86_400_000),
 	rateLimitMax: integer('rate_limit_max').default(10),
 	requestCount: integer('request_count'),
 	remaining: integer('remaining'),
