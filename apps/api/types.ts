@@ -20,7 +20,7 @@ export const dataItemSchema = z.object({
 	unit_actual_cost: z.coerce.number(),
 	unit_actual_cost_format: z.string(),
 	unit_equals: z.coerce.number(),
-	barcode: z.string(),
+	barcode: z.coerce.number(),
 	loyalty_abonement_type_id: z.number(),
 	loyalty_certificate_type_id: z.number(),
 	loyalty_allow_empty_code: z.number(),
