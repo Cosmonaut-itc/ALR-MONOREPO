@@ -6,20 +6,20 @@ const actualAmountSchema = z.object({
 	amount: z.string(),
 });
 
-const dataItemSchema = z.object({
+export const dataItemSchema = z.object({
 	title: z.string(),
-	value: z.string(),
+	value: z.coerce.number(),
 	label: z.string(),
 	good_id: z.string(),
-	cost: z.string(),
+	cost: z.coerce.number(),
 	unit_id: z.string(),
 	unit_short_title: z.string(),
 	service_unit_id: z.string(),
 	service_unit_short_title: z.string(),
-	actual_cost: z.string(),
-	unit_actual_cost: z.string(),
+	actual_cost: z.coerce.number(),
+	unit_actual_cost: z.coerce.number(),
 	unit_actual_cost_format: z.string(),
-	unit_equals: z.string(),
+	unit_equals: z.coerce.number(),
 	barcode: z.string(),
 	loyalty_abonement_type_id: z.number(),
 	loyalty_certificate_type_id: z.number(),
@@ -39,3 +39,7 @@ export const apiResponseSchema = z.object({
 export const articulosAllParamsSchema = z.object({
 	company_id: z.string(),
 });
+
+export type DataItemArticulosType = z.infer<typeof dataItemSchema>;
+
+// --- Generate the Mock Data using the correct library ---

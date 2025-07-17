@@ -7,6 +7,7 @@ import * as schemas from './db/schema';
 import { auth } from './lib/auth';
 import { apiResponseSchema, articulosAllParamsSchema } from '../types';
 import { zValidator } from '@hono/zod-validator';
+import { mockDataArticulos } from './lib/mock-data';
 
 const app = new Hono<{
 	Variables: {
@@ -60,21 +61,22 @@ app.on(['POST', 'GET'], '/api/auth/*', (c) => {
 
 app.get('/', (c) => c.json('Hello Bun!'));
 
-app.get('/api/auth/products/all', zValidator('query', articulosAllParamsSchema), async (c) => {
-	const { company_id } = c.req.valid('query');
+app.get('/api/products/all', async (c) => {
+	//const { company_id } = c.req.valid('query');
 
-	const response = await fetch(`https://api.alteg.io/api/v1/goods/${company_id}`);
-	const data = await response.json();
+	//const response = await fetch(`https://api.alteg.io/api/v1/goods/${company_id}`);
+	//const data = await response.json();
 
-	if (!response.ok) {
-		return c.json({ error: 'Failed to fetch products' }, 500);
-	}
+	const data = await mockDataArticulos();
 
-	const parsedData = apiResponseSchema.parse(data);
+	//if (!response.ok) {
+	//	return c.json({ error: 'Failed to fetch products' }, 500);
+	//}
+	console.log(data);
 
 	return c.json({
 		message: 'Success',
-		data: parsedData,
+		data,
 	});
 });
 
