@@ -144,6 +144,7 @@ export const productComboboxPropsArk = t({
 	products: t(Product, "[]"),
 	onProductSelect: "string?" as t.cast<(product: typeof Product.infer) => void>,
 	placeholder: "string?",
+	disabled: "boolean?",
 });
 
 export type Product = typeof Product.infer;

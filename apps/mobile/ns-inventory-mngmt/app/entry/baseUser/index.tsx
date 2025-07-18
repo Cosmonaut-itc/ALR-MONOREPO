@@ -22,10 +22,12 @@ import { ScannerComboboxSection } from "@/components/ui/ScannerComboboxSection"
 import { getProducts } from "@/lib/fetch-functions"
 import { QUERY_KEYS } from "@/lib/query-keys"
 import { useQuery } from "@tanstack/react-query"
+import type { DataItemArticulosType } from "@/types/types"
 
 /**
  * Product type definition
  * Represents a nail salon product with its essential properties
+ * This interface is used throughout the application for product-related operations
  */
 interface Product {
     id: string
@@ -37,29 +39,72 @@ interface Product {
 }
 
 /**
- * Mock data for nail salon products
- * This data simulates a product database with common nail salon items
- * QR codes should be in JSON format: {"barcode":"123456789","productId":"1","name":"Esmalte Rojo Clásico","type":"product"}
- * Or in pipe-delimited format: BARCODE:123456789|PRODUCT:1|NAME:Esmalte Rojo Clásico|TYPE:product
+ * Transforms API product data to the application's Product interface
+ * This mapping function ensures type safety and data consistency throughout the app
+ * @param apiProduct - Raw product data from the API endpoint
+ * @returns Transformed product following the local Product interface
  */
-const NAIL_PRODUCTS: Product[] = [
-    { id: "1", name: "Esmalte Rojo Clásico", brand: "OPI", price: 15.99, stock: 25, barcode: "123456789001" },
-    { id: "2", name: "Base Coat Fortalecedora", brand: "Essie", price: 12.5, stock: 18, barcode: "123456789002" },
-    { id: "3", name: "Top Coat Brillo", brand: "Sally Hansen", price: 10.99, stock: 30, barcode: "123456789003" },
-    { id: "4", name: "Removedor de Esmalte", brand: "Zoya", price: 8.75, stock: 12, barcode: "123456789004" },
-    { id: "5", name: "Lima de Uñas Profesional", brand: "Revlon", price: 5.99, stock: 40, barcode: "123456789005" },
-    { id: "6", name: "Aceite Cuticular", brand: "CND", price: 18.5, stock: 15, barcode: "123456789006" },
-    { id: "7", name: "Esmalte Gel UV", brand: "Gelish", price: 22.0, stock: 20, barcode: "123456789007" },
-    { id: "8", name: "Lámpara LED", brand: "Makartt", price: 45.99, stock: 5, barcode: "123456789008" },
-    { id: "9", name: "Esmalte Rojo Clásico", brand: "OPI", price: 15.99, stock: 25, barcode: "123456789009" },
-    { id: "10", name: "Base Coat Fortalecedora", brand: "Essie", price: 12.5, stock: 18, barcode: "123456789010" },
-    { id: "11", name: "Top Coat Brillo", brand: "Sally Hansen", price: 10.99, stock: 30, barcode: "123456789011" },
-    { id: "12", name: "Removedor de Esmalte", brand: "Zoya", price: 8.75, stock: 12, barcode: "123456789012" },
-    { id: "13", name: "Lima de Uñas Profesional", brand: "Revlon", price: 5.99, stock: 40, barcode: "123456789013" },
-    { id: "14", name: "Aceite Cuticular", brand: "CND", price: 18.5, stock: 15, barcode: "123456789014" },
-    { id: "15", name: "Esmalte Gel UV", brand: "Gelish", price: 22.0, stock: 20, barcode: "123456789015" },
-    { id: "16", name: "Lámpara LED", brand: "Makartt", price: 45.99, stock: 5, barcode: "123456789016" },
-]
+const transformApiProductToProduct = (apiProduct: DataItemArticulosType): Product => {
+    return {
+        id: apiProduct.good_id,
+        name: apiProduct.title,
+        brand: apiProduct.unit_short_title, // Using unit short title as brand fallback
+        price: apiProduct.cost,
+        stock: apiProduct.value, // Using value as stock amount
+        barcode: apiProduct.barcode?.toString(), // Convert number to string, handle optional
+    }
+}
+
+/**
+ * Custom hook to manage product data with proper error handling and loading states
+ * Follows TanStack Query best practices for data fetching and state management
+ * @returns Object containing products data, loading state, error state, and utility functions
+ */
+interface UseProductsQueryResult {
+    /** Array of transformed products ready for UI consumption */
+    products: Product[]
+    /** Boolean indicating if the initial data fetch is in progress */
+    isLoading: boolean
+    /** Boolean indicating if there's an error in the query */
+    isError: boolean
+    /** Error object containing details about any query failures */
+    error: Error | null
+    /** Boolean indicating if a background refetch is in progress */
+    isFetching: boolean
+    /** Function to manually trigger a refetch of products */
+    refetch: () => void
+}
+
+const useProductsQuery = (): UseProductsQueryResult => {
+    const {
+        data: apiProducts,
+        isLoading,
+        isError,
+        error,
+        isFetching,
+        refetch,
+    } = useQuery({
+        queryKey: [QUERY_KEYS.PRODUCTS],
+        queryFn: getProducts,
+        staleTime: 5 * 60 * 1000, // 5 minutes - data considered fresh for this duration
+        gcTime: 10 * 60 * 1000, // 10 minutes - cache garbage collection time
+        retry: 3, // Retry failed requests up to 3 times
+        retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // Exponential backoff
+    })
+
+    // Transform API data to local Product interface
+    // Only transform if data is available to avoid runtime errors
+    const products: Product[] = apiProducts?.map(transformApiProductToProduct) ?? []
+
+    return {
+        products,
+        isLoading,
+        isError,
+        error,
+        isFetching,
+        refetch,
+    }
+}
 
 /**
  * Mock pending orders data
@@ -114,9 +159,20 @@ export default function InventoryScannerScreen() {
     const colorScheme = useColorScheme()
     const isDark = colorScheme === "dark"
 
-    // Initialize store with demo data
+    // Fetch products using TanStack Query with proper error handling and loading states
+    const {
+        products,
+        isLoading: isLoadingProducts,
+        isError: isProductsError,
+        error: productsError,
+        isFetching: isFetchingProducts,
+        refetch: refetchProducts,
+    } = useProductsQuery()
+
+    // Initialize store with demo data for pending orders
+    // In a real application, this would also be fetched from an API
     useEffect(() => {
-        useBaseUserStore.getState().initializeStore(NAIL_PRODUCTS, PENDING_ORDERS)
+        useBaseUserStore.getState().initializeStore([], PENDING_ORDERS)
     }, [])
 
     // Get store state and actions
@@ -134,10 +190,71 @@ export default function InventoryScannerScreen() {
         setShowScanner,
     } = useBaseUserStore()
 
-    const products = useQuery({
-        queryKey: [QUERY_KEYS.PRODUCTS],
-        queryFn: getProducts,
-    })
+    /**
+     * Enhanced barcode scan handler that works with API product data
+     * Searches through the fetched products to find matches by barcode
+     * @param barcode - Scanned barcode string to match against products
+     */
+    const handleEnhancedBarcodeScanned = (barcode: string) => {
+        const foundProduct = products.find(
+            (product) => product.barcode === barcode || product.id === barcode
+        )
+
+        if (foundProduct) {
+            handleBarcodeScanned(barcode)
+        } else {
+            // Show user-friendly error message when product not found
+            console.warn(`Product with barcode ${barcode} not found in inventory`)
+            // You could show a toast notification here
+        }
+    }
+
+    // Early return pattern for loading state
+    // This prevents rendering the main UI while data is still being fetched
+    if (isLoadingProducts) {
+        return (
+            <ThemedView style={styles.container}>
+                <StatusBar style={isDark ? "light" : "dark"} />
+                <ThemedHeader title="Escáner de Inventario" />
+                <ThemedView style={styles.loadingContainer}>
+                    <ThemedText style={styles.loadingText}>
+                        Cargando productos...
+                    </ThemedText>
+                    {isFetchingProducts && (
+                        <ThemedText style={styles.subLoadingText}>
+                            Actualizando datos...
+                        </ThemedText>
+                    )}
+                </ThemedView>
+            </ThemedView>
+        )
+    }
+
+    // Early return pattern for error state
+    // Provides user with clear error messaging and recovery options
+    if (isProductsError) {
+        return (
+            <ThemedView style={styles.container}>
+                <StatusBar style={isDark ? "light" : "dark"} />
+                <ThemedHeader title="Escáner de Inventario" />
+                <ThemedView style={styles.errorContainer}>
+                    <ThemedText style={styles.errorTitle}>
+                        Error al Cargar Productos
+                    </ThemedText>
+                    <ThemedText style={styles.errorMessage}>
+                        {productsError?.message || "Ocurrió un error inesperado"}
+                    </ThemedText>
+                    <ThemedButton
+                        title="Reintentar"
+                        onPress={() => refetchProducts()}
+                        variant="primary"
+                        size="medium"
+                        style={styles.retryButton}
+                    />
+                </ThemedView>
+            </ThemedView>
+        )
+    }
 
     return (
         <ThemedView style={styles.container}>
@@ -162,11 +279,13 @@ export default function InventoryScannerScreen() {
                     </ThemedView>
                 )}
 
-                {/* Scanner and Combobox Section */}
+                {/* Scanner and Combobox Section - Now using fetched products */}
                 <ScannerComboboxSection
-                    products={NAIL_PRODUCTS}
+                    products={products}
                     onProductSelect={handleProductSelect}
                     onScanPress={() => setShowScanner(true)}
+                    isLoading={isFetchingProducts}
+                    productCount={products.length}
                 />
 
                 {/* Selected Products Section */}
@@ -201,8 +320,13 @@ export default function InventoryScannerScreen() {
                 )}
             </ScrollView>
 
-            {/* Barcode Scanner Modal */}
-            {showScanner && <BarcodeScanner onBarcodeScanned={handleBarcodeScanned} onClose={() => setShowScanner(false)} />}
+            {/* Barcode Scanner Modal - Enhanced with better error handling */}
+            {showScanner && (
+                <BarcodeScanner
+                    onBarcodeScanned={handleEnhancedBarcodeScanned}
+                    onClose={() => setShowScanner(false)}
+                />
+            )}
         </ThemedView>
     )
 }
@@ -257,5 +381,45 @@ const styles = StyleSheet.create({
     },
     submitButton: {
         width: "100%",
+    },
+    // Loading state styles
+    loadingContainer: {
+        flex: 1,
+        justifyContent: "center",
+        alignItems: "center",
+        padding: 20,
+    },
+    loadingText: {
+        fontSize: 18,
+        textAlign: "center",
+        marginBottom: 8,
+    },
+    subLoadingText: {
+        fontSize: 14,
+        textAlign: "center",
+        opacity: 0.7,
+    },
+    // Error state styles
+    errorContainer: {
+        flex: 1,
+        justifyContent: "center",
+        alignItems: "center",
+        padding: 20,
+    },
+    errorTitle: {
+        fontSize: 20,
+        fontWeight: "600",
+        textAlign: "center",
+        marginBottom: 12,
+    },
+    errorMessage: {
+        fontSize: 16,
+        textAlign: "center",
+        marginBottom: 24,
+        opacity: 0.8,
+        lineHeight: 22,
+    },
+    retryButton: {
+        paddingHorizontal: 32,
     },
 })

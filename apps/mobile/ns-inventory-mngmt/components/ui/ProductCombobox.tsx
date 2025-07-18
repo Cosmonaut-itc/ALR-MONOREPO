@@ -12,7 +12,7 @@ import { Collapsible } from "@/components/Collapsible"
 import { useProductComboboxStore } from "@/app/stores/baseUserStores"
 
 // Create the component with ArkType
-export function ProductCombobox({ products, onProductSelect, placeholder }: ProductComboboxProps) {
+export function ProductCombobox({ products, onProductSelect, placeholder, disabled = false }: ProductComboboxProps) {
     const colorScheme = useColorScheme()
     const isDark = colorScheme === "dark"
 
@@ -116,8 +116,10 @@ export function ProductCombobox({ products, onProductSelect, placeholder }: Prod
                         borderColor: isDark ? Colors.dark.border : Colors.light.border,
                         backgroundColor: isDark ? Colors.dark.surface : Colors.light.surface,
                     },
+                    disabled && styles.inputDisabled,
                 ]}
-                onPress={() => setIsOpen(true)}
+                onPress={() => !disabled && setIsOpen(true)}
+                disabled={disabled}
             >
                 <ThemedText
                     style={[
@@ -198,6 +200,9 @@ const styles = StyleSheet.create({
     inputText: {
         fontSize: 18,
         flex: 1,
+    },
+    inputDisabled: {
+        opacity: 0.5,
     },
     dropdownIcon: {
         fontSize: 14,
