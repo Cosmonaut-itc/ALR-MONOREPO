@@ -19,6 +19,9 @@ import type { PendingOrder, SelectedProduct } from "@/types/types"
 import { useBaseUserStore } from "@/app/stores/baseUserStores"
 import { ThemedHeader } from "@/components/ThemedHeader"
 import { ScannerComboboxSection } from "@/components/ui/ScannerComboboxSection"
+import { getProducts } from "@/lib/fetch-functions"
+import { QUERY_KEYS } from "@/lib/query-keys"
+import { useQuery } from "@tanstack/react-query"
 
 /**
  * Product type definition
@@ -130,6 +133,11 @@ export default function InventoryScannerScreen() {
         handleSubmit,
         setShowScanner,
     } = useBaseUserStore()
+
+    const products = useQuery({
+        queryKey: [QUERY_KEYS.PRODUCTS],
+        queryFn: getProducts,
+    })
 
     return (
         <ThemedView style={styles.container}>
