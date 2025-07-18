@@ -196,3 +196,107 @@ export const returnOrderModalPropsArk = t({
 });
 
 export type ReturnOrderModalProps = typeof returnOrderModalPropsArk.infer;
+
+
+/**
+ * API Types for Hono RPC Client using ArkType
+ * Generated from the API server for type-safe client-server communication
+ */
+
+
+// ===== API Response Schemas =====
+
+const actualAmountSchema = t({
+	storage_id: "string",
+	amount: "string",
+});
+
+export const dataItemSchema = t({
+	title: "string",
+	value: "number",
+	label: "string",
+	good_id: "string",
+	cost: "number",
+	unit_id: "string",
+	unit_short_title: "string",
+	service_unit_id: "string",
+	service_unit_short_title: "string",
+	actual_cost: "number",
+	unit_actual_cost: "number",
+	unit_actual_cost_format: "string",
+	unit_equals: "number",
+	barcode: "number",
+	loyalty_abonement_type_id: "number",
+	loyalty_certificate_type_id: "number",
+	loyalty_allow_empty_code: "number",
+	critical_amount: "number",
+	desired_amount: "number",
+	actual_amounts: t(actualAmountSchema, "[]"),
+	last_change_date: "string.date.iso.parse",
+});
+
+export const apiResponseSchema = t({
+	success: "boolean",
+	data: t(dataItemSchema, "[]"),
+	meta: t("unknown", "[]"),
+});
+
+// ===== Inferred Types =====
+
+export type DataItemArticulosType = typeof dataItemSchema.infer;
+export type ApiResponseType = typeof apiResponseSchema.infer;
+
+// Generic API Response interface (for endpoints that don't return products)
+export interface ApiResponse<T = unknown> {
+	success: boolean;
+	data?: T;
+	message?: string;
+	meta?: unknown[];
+}
+
+// ===== API Route Types =====
+
+/**
+ * Main API route type for Hono RPC client
+ * This structure matches how Hono RPC client organizes routes
+ */
+export interface AppType {
+	api: {
+		products: {
+			all: {
+				$get: () => Promise<Response>;
+			};
+		};
+	};
+	db: {
+		health: {
+			$get: () => Promise<Response>;
+		};
+	};
+	$get: () => Promise<Response>;
+}
+
+// ===== Runtime Validation Helpers =====
+
+/**
+ * Validate API response data at runtime
+ * Use this when you want to ensure the API response matches expected structure
+ */
+export const validateProductsResponse = (data: unknown) => {
+	const result = apiResponseSchema(data);
+	if (result instanceof t.errors) {
+		throw new Error(`API response validation failed: ${result.summary}`);
+	}
+	return result;
+};
+
+/**
+ * Validate individual product data
+ */
+export const validateProduct = (data: unknown) => {
+	const result = dataItemSchema(data);
+	if (result instanceof t.errors) {
+		throw new Error(`Product validation failed: ${result.summary}`);
+	}
+	return result;
+};
