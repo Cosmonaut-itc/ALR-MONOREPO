@@ -140,15 +140,7 @@ export const Product = t({
 	barcode: "string?",
 });
 
-export const productComboboxPropsArk = t({
-	products: t(Product, "[]"),
-	onProductSelect: "string?" as t.cast<(product: typeof Product.infer) => void>,
-	placeholder: "string?",
-	disabled: "boolean?",
-});
-
 export type Product = typeof Product.infer;
-export type ProductComboboxProps = typeof productComboboxPropsArk.infer;
 
 // Order Item type for pending orders
 export const OrderItem = t({
@@ -273,6 +265,47 @@ export type ApiResponseType = typeof articulosResponseSchema.infer;
 export type ProductStockItem = typeof productStockItemSchema.infer;
 export type ProductStockResponse = typeof productStockResponseSchema.infer;
 
+// ===== Warehouse Inventory Types =====
+
+// New interface for warehouse inventory item (individual stock item with product info)
+export const WarehouseInventoryItem = t({
+	id: "string", // Stock item UUID
+	productId: "string", // Product ID from products
+	productName: "string", // Product name
+	brand: "string", // Product brand
+	barcode: "number", // Product barcode
+	shortId: "string", // Last digits of UUID for display
+	isBeingUsed: "boolean",
+	lastUsed: "string.date.iso.parse?",
+	firstUsed: "string.date.iso.parse?",
+});
+
+// Interface for grouped warehouse inventory (products grouped by barcode/name)
+export const WarehouseInventoryGroup = t({
+	barcode: "number",
+	productName: "string",
+	brand: "string",
+	items: t(WarehouseInventoryItem, "[]"), // Individual stock items in this group
+	totalCount: "number", // Total number of items in this group
+});
+
+export type WarehouseInventoryItem = typeof WarehouseInventoryItem.infer;
+export type WarehouseInventoryGroup = typeof WarehouseInventoryGroup.infer;
+
+// Updated ProductCombobox props with warehouse support
+export const productComboboxPropsArk = t({
+	products: t(Product, "[]"),
+	productStock: t(productStockItemSchema, "[]").optional(), // New: product stock data
+	targetWarehouse: "number?", // New: warehouse to filter by (defaults to 1)
+	onProductSelect: "string?" as t.cast<(product: typeof Product.infer) => void>,
+	onStockItemSelect: "string?" as t.cast<(item: typeof WarehouseInventoryItem.infer) => void>, // New: for selecting specific stock items
+	placeholder: "string?",
+	disabled: "boolean?",
+	mode: t.enumerated("product", "warehouse").optional(), // New: toggle between old product mode and new warehouse mode
+});
+
+export type ProductComboboxProps = typeof productComboboxPropsArk.infer;
+
 // Generic API Response interface (for endpoints that don't return products)
 export interface ApiResponse<T = unknown> {
 	success: boolean;
@@ -295,12 +328,12 @@ export interface AppType {
 			};
 		};
 		"product-stock": {
-		all: {
-			$get: () => Promise<Response>;
+			all: {
+				$get: () => Promise<Response>;
+			};
 		};
 	};
-	};
-	
+
 	db: {
 		health: {
 			$get: () => Promise<Response>;

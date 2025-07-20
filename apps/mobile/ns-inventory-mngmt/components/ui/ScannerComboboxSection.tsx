@@ -5,7 +5,7 @@ import { ProductCombobox } from "@/components/ui/ProductCombobox"
 import { Colors } from "@/constants/Colors"
 import { useColorScheme } from "@/hooks/useColorScheme"
 import { Camera } from "lucide-react-native"
-import type { Product } from "@/types/types"
+import type { Product, ProductStockItem, WarehouseInventoryItem } from "@/types/types"
 
 /**
  * Props interface for the ScannerComboboxSection component
@@ -14,8 +14,16 @@ import type { Product } from "@/types/types"
 interface ScannerComboboxSectionProps {
     /** Array of available products to display in the combobox */
     products: Product[]
+    /** Array of product stock items for warehouse mode */
+    productStock?: ProductStockItem[]
+    /** Target warehouse to filter inventory by */
+    targetWarehouse?: number
+    /** Mode for the ProductCombobox: 'product' or 'warehouse' */
+    mode?: "product" | "warehouse"
     /** Callback function when a product is selected from the combobox */
     onProductSelect: (product: Product) => void
+    /** Callback function when a warehouse inventory item is selected */
+    onStockItemSelect?: (item: WarehouseInventoryItem) => void
     /** Callback function when the scan button is pressed */
     onScanPress: () => void
     /** Optional placeholder text for the combobox input */
@@ -33,9 +41,11 @@ interface ScannerComboboxSectionProps {
  * 
  * A comprehensive section that combines product selection via combobox and barcode scanning
  * functionality. This component handles both manual product selection and camera-based scanning.
+ * Now supports both regular product mode and warehouse inventory mode.
  * 
  * Features:
  * - Product combobox with search and selection capabilities
+ * - Warehouse inventory mode for stock-specific selection
  * - Camera scan button with visual feedback
  * - Loading states for better user experience
  * - Product count display for inventory awareness
@@ -46,7 +56,11 @@ interface ScannerComboboxSectionProps {
  */
 export function ScannerComboboxSection({
     products,
+    productStock = [],
+    targetWarehouse = 1,
+    mode = "product",
     onProductSelect,
+    onStockItemSelect,
     onScanPress,
     placeholder = "Seleccionar producto...",
     title,
@@ -57,16 +71,20 @@ export function ScannerComboboxSection({
     const isDark = colorScheme === "dark"
 
     /**
-     * Determines the appropriate placeholder text based on loading state
+     * Determines the appropriate placeholder text based on loading state and mode
      * Provides user feedback during data fetching operations
      * @returns Localized placeholder string
      */
     const getPlaceholderText = (): string => {
         if (isLoading) {
-            return "Cargando productos..."
+            return mode === "warehouse" ? "Cargando inventario..." : "Cargando productos..."
         }
 
-        if (products.length === 0 && !isLoading) {
+        if (mode === "warehouse" && productStock.length === 0 && !isLoading) {
+            return "No hay elementos en el almacén"
+        }
+
+        if (mode === "product" && products.length === 0 && !isLoading) {
             return "No hay productos disponibles"
         }
 
@@ -84,14 +102,45 @@ export function ScannerComboboxSection({
         }
 
         if (title && productCount > 0) {
-            return `${title} (${productCount} productos)`
+            return `${title} (${productCount} ${mode === "warehouse" ? "elementos" : "productos"})`
         }
 
         if (title) {
             return title
         }
 
+        if (mode === "warehouse") {
+            return `Inventario Almacén ${targetWarehouse} (${productCount} elementos)`
+        }
+
         return `Productos Disponibles (${productCount})`
+    }
+
+    /**
+     * Determines if the scan button should be disabled based on current state
+     * @returns Boolean indicating if scan button should be disabled
+     */
+    const isScanDisabled = (): boolean => {
+        if (mode === "warehouse") {
+            return productStock.length === 0 && !isLoading
+        }
+        return products.length === 0 && !isLoading
+    }
+
+    /**
+     * Gets the appropriate helper text to display below the controls
+     * @returns Helper text string or undefined
+     */
+    const getHelperText = (): string | undefined => {
+        if (mode === "warehouse" && productStock.length === 0 && !isLoading) {
+            return `No se encontraron elementos en el almacén ${targetWarehouse}`
+        }
+
+        if (mode === "product" && products.length === 0 && !isLoading) {
+            return "No se encontraron productos en el inventario"
+        }
+
+        return undefined
     }
 
     return (
@@ -116,9 +165,13 @@ export function ScannerComboboxSection({
                 <ThemedView style={styles.comboboxContainer}>
                     <ProductCombobox
                         products={products}
+                        productStock={productStock}
+                        targetWarehouse={targetWarehouse}
+                        mode={mode}
                         onProductSelect={onProductSelect}
+                        onStockItemSelect={onStockItemSelect || (() => { })} // Provide default empty handler
                         placeholder={getPlaceholderText()}
-                        disabled={isLoading || products.length === 0}
+                        disabled={isLoading || (mode === "warehouse" ? productStock.length === 0 : products.length === 0)}
                     />
                 </ThemedView>
 
@@ -132,17 +185,17 @@ export function ScannerComboboxSection({
                             borderColor: isDark ? Colors.dark.border : Colors.light.border,
                         },
                         // Apply disabled styling when no products are available
-                        (products.length === 0 && !isLoading) && styles.scanButtonDisabled,
+                        isScanDisabled() && styles.scanButtonDisabled,
                     ]}
                     activeOpacity={0.7}
-                    disabled={products.length === 0 && !isLoading}
+                    disabled={isScanDisabled()}
                     accessibilityLabel="Abrir escáner de códigos de barras"
                     accessibilityHint="Toca para abrir la cámara y escanear códigos de barras"
                 >
                     <Camera
                         size={24}
                         color={
-                            (products.length === 0 && !isLoading)
+                            isScanDisabled()
                                 ? (isDark ? Colors.dark.tabIconDefault : Colors.light.tabIconDefault)
                                 : (isDark ? Colors.dark.tint : Colors.light.tint)
                         }
@@ -151,9 +204,9 @@ export function ScannerComboboxSection({
             </ThemedView>
 
             {/* Helper Text for User Guidance */}
-            {products.length === 0 && !isLoading && (
+            {getHelperText() && (
                 <ThemedText style={styles.helperText}>
-                    No se encontraron productos en el inventario
+                    {getHelperText()}
                 </ThemedText>
             )}
         </ThemedView>

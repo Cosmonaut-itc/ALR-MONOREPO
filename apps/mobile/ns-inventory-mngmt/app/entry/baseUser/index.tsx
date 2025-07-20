@@ -15,7 +15,7 @@ import { Collapsible } from "@/components/Collapsible"
 import { Colors } from "@/constants/Colors"
 import { useColorScheme } from "@/hooks/useColorScheme"
 import { ArrowLeft, Camera } from "lucide-react-native"
-import type { PendingOrder, ProductStockItem, SelectedProduct } from "@/types/types"
+import type { PendingOrder, ProductStockItem, SelectedProduct, WarehouseInventoryItem } from "@/types/types"
 import { useBaseUserStore } from "@/app/stores/baseUserStores"
 import { ThemedHeader } from "@/components/ThemedHeader"
 import { ScannerComboboxSection } from "@/components/ui/ScannerComboboxSection"
@@ -261,18 +261,43 @@ export default function InventoryScannerScreen() {
         }
     }
 
+    /**
+     * Enhanced handler for warehouse inventory item selection
+     * Converts warehouse inventory item to selected product format
+     * @param item - The selected warehouse inventory item
+     */
+    const handleWarehouseItemSelect = (item: WarehouseInventoryItem) => {
+        // Find the full product information
+        const fullProduct = products.find(p => p.id === item.productId)
+
+        if (fullProduct) {
+            handleProductSelect(fullProduct, 1)
+        } else {
+            // Create a basic product object if full product not found
+            const basicProduct: Product = {
+                id: item.productId,
+                name: item.productName,
+                brand: item.brand,
+                price: 0, // Default price since we don't have it in warehouse inventory
+                stock: 1, // Set to 1 since we know this specific item exists
+                barcode: item.barcode.toString(),
+            }
+            handleProductSelect(basicProduct, 1)
+        }
+    }
+
     // Early return pattern for loading state
     // This prevents rendering the main UI while data is still being fetched
-    if (isLoadingProducts) {
+    if (isLoadingProducts || isLoadingProductStock) {
         return (
             <ThemedView style={styles.container}>
                 <StatusBar style={isDark ? "light" : "dark"} />
                 <ThemedHeader title="Escáner de Inventario" />
                 <ThemedView style={styles.loadingContainer}>
                     <ThemedText style={styles.loadingText}>
-                        Cargando productos...
+                        Cargando inventario...
                     </ThemedText>
-                    {isFetchingProducts && (
+                    {(isFetchingProducts || isFetchingProductStock) && (
                         <ThemedText style={styles.subLoadingText}>
                             Actualizando datos...
                         </ThemedText>
@@ -284,21 +309,24 @@ export default function InventoryScannerScreen() {
 
     // Early return pattern for error state
     // Provides user with clear error messaging and recovery options
-    if (isProductsError) {
+    if (isProductsError || isProductStockError) {
         return (
             <ThemedView style={styles.container}>
                 <StatusBar style={isDark ? "light" : "dark"} />
                 <ThemedHeader title="Escáner de Inventario" />
                 <ThemedView style={styles.errorContainer}>
                     <ThemedText style={styles.errorTitle}>
-                        Error al Cargar Productos
+                        Error al Cargar Inventario
                     </ThemedText>
                     <ThemedText style={styles.errorMessage}>
-                        {productsError?.message || "Ocurrió un error inesperado"}
+                        {productsError?.message || productStockError?.message || "Ocurrió un error inesperado"}
                     </ThemedText>
                     <ThemedButton
                         title="Reintentar"
-                        onPress={() => refetchProducts()}
+                        onPress={() => {
+                            refetchProducts()
+                            refetchProductStock()
+                        }}
                         variant="primary"
                         size="medium"
                         style={styles.retryButton}
@@ -331,13 +359,17 @@ export default function InventoryScannerScreen() {
                     </ThemedView>
                 )}
 
-                {/* Scanner and Combobox Section - Now using fetched products */}
+                {/* Warehouse Inventory Section - Now using warehouse mode */}
                 <ScannerComboboxSection
                     products={products}
+                    productStock={productStock}
+                    targetWarehouse={1} // Default to warehouse 1
+                    mode="warehouse"
                     onProductSelect={handleProductSelect}
+                    onStockItemSelect={handleWarehouseItemSelect}
                     onScanPress={() => setShowScanner(true)}
-                    isLoading={isFetchingProducts}
-                    productCount={products.length}
+                    isLoading={isFetchingProducts || isFetchingProductStock}
+                    productCount={productStock.filter(item => item.currentWarehouse === 1 && !item.isBeingUsed).length}
                 />
 
                 {/* Selected Products Section */}
