@@ -1,4 +1,4 @@
-import { boolean, integer, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { boolean, date, integer, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
 export const user = pgTable('user', {
 	id: text('id').primaryKey(),
@@ -90,4 +90,15 @@ export const healthCheck = pgTable('health_check', {
 		.$defaultFn(() => /* @__PURE__ */ new Date())
 		.notNull(),
 	message: text('message'),
+});
+
+export const productStock = pgTable('product_stock', {
+	id: uuid('id').defaultRandom().primaryKey().notNull(),
+	barcode: integer('barcode').default(0).notNull(),
+	lastUsed: date('last_used'),
+	lastUsedBy: integer('last_used_by'),
+	numberOfUses: integer('number_of_uses').default(0).notNull(),
+	currentWarehouse: integer('current_warehouse').default(0).notNull(),
+	isBeingUsed: boolean('is_being_used').default(false).notNull(),
+	firstUsed: date('first_used'),
 });

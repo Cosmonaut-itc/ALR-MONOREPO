@@ -19,6 +19,7 @@ import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
 import { logger } from 'hono/logger';
 import type { z } from 'zod';
+import { productStockData } from '@/constants';
 import type { apiResponseSchema, DataItemArticulosType } from '@/types';
 import { db } from './db/index';
 import * as schemas from './db/schema';
@@ -255,6 +256,57 @@ const route = app
 				{
 					success: false,
 					message: 'Database connection failed',
+				} satisfies ApiResponse,
+				500,
+			);
+		}
+	})
+
+	/**
+	 * GET /api/product-stock - Retrieve product stock data
+	 *
+	 * This endpoint fetches all product stock records from the database.
+	 * If the database table is empty (e.g., in development or test environments),
+	 * it returns mock product stock data instead. This ensures the frontend
+	 * always receives a valid response structure for development and testing.
+	 *
+	 * @returns {ApiResponse} Success response with product stock data (from DB or mock)
+	 * @throws {500} If an unexpected error occurs during data retrieval
+	 */
+	.get('/api/product-stock/all', async (c) => {
+		try {
+			// Query the productStock table for all records
+			const productStock = await db.select().from(schemas.productStock);
+
+			// If no records exist, return mock data for development/testing
+			if (productStock.length === 0) {
+				return c.json(
+					{
+						success: true,
+						message: 'Fetching test data',
+						data: productStockData,
+					} satisfies ApiResponse,
+					200,
+				);
+			}
+
+			// Return actual product stock data from the database
+			return c.json(
+				{
+					success: true,
+					message: 'Fetching db data',
+					data: productStock,
+				} satisfies ApiResponse,
+				200,
+			);
+		} catch (error) {
+			// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
+			console.error('Error fetching product stock:', error);
+
+			return c.json(
+				{
+					success: false,
+					message: 'Failed to fetch product stock',
 				} satisfies ApiResponse,
 				500,
 			);
