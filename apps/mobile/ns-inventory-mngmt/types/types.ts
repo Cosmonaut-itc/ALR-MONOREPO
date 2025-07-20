@@ -267,41 +267,25 @@ export type ProductStockResponse = typeof productStockResponseSchema.infer;
 
 // ===== Warehouse Inventory Types =====
 
-// New interface for warehouse inventory item (individual stock item with product info)
-export const WarehouseInventoryItem = t({
-	id: "string", // Stock item UUID
-	productId: "string", // Product ID from products
-	productName: "string", // Product name
-	brand: "string", // Product brand
-	barcode: "number", // Product barcode
-	shortId: "string", // Last digits of UUID for display
-	isBeingUsed: "boolean",
-	lastUsed: "string.date.iso.parse?",
-	firstUsed: "string.date.iso.parse?",
-});
-
-// Interface for grouped warehouse inventory (products grouped by barcode/name)
-export const WarehouseInventoryGroup = t({
+// Grouped warehouse inventory (ProductStockItems grouped by barcode/product name)
+export const WarehouseStockGroup = t({
 	barcode: "number",
 	productName: "string",
 	brand: "string",
-	items: t(WarehouseInventoryItem, "[]"), // Individual stock items in this group
-	totalCount: "number", // Total number of items in this group
+	items: t(productStockItemSchema, "[]"), // Direct use of ProductStockItem schema
+	totalCount: "number",
 });
 
-export type WarehouseInventoryItem = typeof WarehouseInventoryItem.infer;
-export type WarehouseInventoryGroup = typeof WarehouseInventoryGroup.infer;
+export type WarehouseStockGroup = typeof WarehouseStockGroup.infer;
 
-// Updated ProductCombobox props with warehouse support
+// Updated ProductCombobox props - warehouse only
 export const productComboboxPropsArk = t({
-	products: t(Product, "[]"),
-	productStock: t(productStockItemSchema, "[]").optional(), // New: product stock data
-	targetWarehouse: "number?", // New: warehouse to filter by (defaults to 1)
-	onProductSelect: "string?" as t.cast<(product: typeof Product.infer) => void>,
-	onStockItemSelect: "string?" as t.cast<(item: typeof WarehouseInventoryItem.infer) => void>, // New: for selecting specific stock items
+	products: t(Product, "[]"), // For product metadata lookup
+	productStock: t(productStockItemSchema, "[]"), // Stock items to display
+	targetWarehouse: "number?", // Warehouse to filter by (defaults to 1)
+	onStockItemSelect: "string?" as t.cast<(item: typeof productStockItemSchema.infer) => void>, // Select ProductStockItem directly
 	placeholder: "string?",
 	disabled: "boolean?",
-	mode: t.enumerated("product", "warehouse").optional(), // New: toggle between old product mode and new warehouse mode
 });
 
 export type ProductComboboxProps = typeof productComboboxPropsArk.infer;

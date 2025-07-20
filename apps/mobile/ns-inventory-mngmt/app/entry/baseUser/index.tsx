@@ -15,7 +15,7 @@ import { Collapsible } from "@/components/Collapsible"
 import { Colors } from "@/constants/Colors"
 import { useColorScheme } from "@/hooks/useColorScheme"
 import { ArrowLeft, Camera } from "lucide-react-native"
-import type { PendingOrder, ProductStockItem, SelectedProduct, WarehouseInventoryItem } from "@/types/types"
+import type { PendingOrder, ProductStockItem, SelectedProduct } from "@/types/types"
 import { useBaseUserStore } from "@/app/stores/baseUserStores"
 import { ThemedHeader } from "@/components/ThemedHeader"
 import { ScannerComboboxSection } from "@/components/ui/ScannerComboboxSection"
@@ -262,25 +262,26 @@ export default function InventoryScannerScreen() {
     }
 
     /**
-     * Enhanced handler for warehouse inventory item selection
-     * Converts warehouse inventory item to selected product format
-     * @param item - The selected warehouse inventory item
+     * Handler for warehouse stock item selection
+     * Converts ProductStockItem to SelectedProduct format for the existing workflow
+     * @param stockItem - The selected warehouse stock item
      */
-    const handleWarehouseItemSelect = (item: WarehouseInventoryItem) => {
-        // Find the full product information
-        const fullProduct = products.find(p => p.id === item.productId)
+    const handleStockItemSelect = (stockItem: ProductStockItem) => {
+        // Find the full product information by barcode
+        const fullProduct = products.find(p => Number(p.barcode) === stockItem.barcode)
 
         if (fullProduct) {
+            // Use existing handleProductSelect with the full product data
             handleProductSelect(fullProduct, 1)
         } else {
             // Create a basic product object if full product not found
             const basicProduct: Product = {
-                id: item.productId,
-                name: item.productName,
-                brand: item.brand,
-                price: 0, // Default price since we don't have it in warehouse inventory
+                id: stockItem.id, // Use stock item ID as product ID
+                name: `Producto ${stockItem.barcode}`, // Fallback name
+                brand: "Sin marca", // Default brand
+                price: 0, // Default price since we don't have it in stock data
                 stock: 1, // Set to 1 since we know this specific item exists
-                barcode: item.barcode.toString(),
+                barcode: stockItem.barcode.toString(),
             }
             handleProductSelect(basicProduct, 1)
         }
@@ -336,6 +337,11 @@ export default function InventoryScannerScreen() {
         )
     }
 
+    // Filter available stock for the target warehouse
+    const availableStock = productStock.filter(
+        item => item.currentWarehouse === 1 && !item.isBeingUsed
+    )
+
     return (
         <ThemedView style={styles.container}>
             <StatusBar style={isDark ? "light" : "dark"} />
@@ -359,17 +365,15 @@ export default function InventoryScannerScreen() {
                     </ThemedView>
                 )}
 
-                {/* Warehouse Inventory Section - Now using warehouse mode */}
+                {/* Warehouse Inventory Section */}
                 <ScannerComboboxSection
                     products={products}
-                    productStock={productStock}
-                    targetWarehouse={1} // Default to warehouse 1
-                    mode="warehouse"
-                    onProductSelect={handleProductSelect}
-                    onStockItemSelect={handleWarehouseItemSelect}
+                    productStock={availableStock}
+                    targetWarehouse={1}
+                    onStockItemSelect={handleStockItemSelect}
                     onScanPress={() => setShowScanner(true)}
                     isLoading={isFetchingProducts || isFetchingProductStock}
-                    productCount={productStock.filter(item => item.currentWarehouse === 1 && !item.isBeingUsed).length}
+                    itemCount={availableStock.length}
                 />
 
                 {/* Selected Products Section */}
