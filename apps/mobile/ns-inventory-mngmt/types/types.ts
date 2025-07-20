@@ -236,16 +236,42 @@ export const dataItemSchema = t({
 	last_change_date: "string.date.iso.parse",
 });
 
-export const apiResponseSchema = t({
+// Generic API Response Schema Factory
+// This function creates a response schema for any data type
+export const createApiResponseSchema = (dataSchema: any) => t({
 	success: "boolean",
-	data: t(dataItemSchema, "[]"),
-	meta: t("unknown", "[]"),
+	data: dataSchema.optional(),
+	message: "string?",
+	meta: t("unknown", "[]").optional(),
 });
+
+
+// Product Stock Schemas
+export const productStockItemSchema = t({
+	id: "string",
+	barcode: "number",
+	lastUsed: "string.date.iso.parse?",
+	lastUsedBy: "number?",
+	numberOfUses: "number",
+	currentWarehouse: "number",
+	isBeingUsed: "boolean",
+	firstUsed: "string.date.iso.parse?",
+});
+
+// Specific response schemas using the factory
+export const productStockArraySchema = t(productStockItemSchema, "[]");
+export const productStockResponseSchema = createApiResponseSchema(productStockArraySchema);
+
+// Create the articulos response schema for type inference
+export const articulosArraySchema = t(dataItemSchema, "[]");
+export const articulosResponseSchema = createApiResponseSchema(articulosArraySchema);
 
 // ===== Inferred Types =====
 
 export type DataItemArticulosType = typeof dataItemSchema.infer;
-export type ApiResponseType = typeof apiResponseSchema.infer;
+export type ApiResponseType = typeof articulosResponseSchema.infer;
+export type ProductStockItem = typeof productStockItemSchema.infer;
+export type ProductStockResponse = typeof productStockResponseSchema.infer;
 
 // Generic API Response interface (for endpoints that don't return products)
 export interface ApiResponse<T = unknown> {
@@ -268,7 +294,13 @@ export interface AppType {
 				$get: () => Promise<Response>;
 			};
 		};
+		"product-stock": {
+		all: {
+			$get: () => Promise<Response>;
+		};
 	};
+	};
+	
 	db: {
 		health: {
 			$get: () => Promise<Response>;
@@ -284,7 +316,7 @@ export interface AppType {
  * Use this when you want to ensure the API response matches expected structure
  */
 export const validateProductsResponse = (data: unknown) => {
-	const result = apiResponseSchema(data);
+	const result = articulosResponseSchema(data);
 	if (result instanceof t.errors) {
 		throw new Error(`API response validation failed: ${result.summary}`);
 	}

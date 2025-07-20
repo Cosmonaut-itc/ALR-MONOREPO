@@ -1,5 +1,5 @@
 import client from "./hono-client";
-import { validateProductsResponse, type ApiResponse, type DataItemArticulosType } from "../types/types";
+import { validateProductsResponse, type ApiResponse, type DataItemArticulosType, type ProductStockItem } from "../types/types";
 
 /**
  * Fetches all products from the API
@@ -41,6 +41,24 @@ export const getProducts = async (): Promise<DataItemArticulosType[]> => {
         );
     }
 };
+
+export const getProductStock = async (): Promise<ProductStockItem[]> => {
+    try {
+        const response = await client.api["product-stock"].all.$get();
+        if (!response.ok) {
+            throw new Error(`API request failed with status: ${response.status}`);
+        }
+        const data: ApiResponse<ProductStockItem[]> = await response.json();
+        return data.data || [];
+    } catch (error) {
+        console.error('Error fetching product stock:', error);
+        throw new Error(
+            error instanceof Error 
+                ? `Failed to fetch product stock: ${error.message}`
+                : 'Failed to fetch product stock: Unknown error'
+        );
+    }
+}
 
 /**
  * Checks the health of the database connection

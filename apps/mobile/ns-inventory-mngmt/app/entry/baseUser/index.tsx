@@ -15,11 +15,11 @@ import { Collapsible } from "@/components/Collapsible"
 import { Colors } from "@/constants/Colors"
 import { useColorScheme } from "@/hooks/useColorScheme"
 import { ArrowLeft, Camera } from "lucide-react-native"
-import type { PendingOrder, SelectedProduct } from "@/types/types"
+import type { PendingOrder, ProductStockItem, SelectedProduct } from "@/types/types"
 import { useBaseUserStore } from "@/app/stores/baseUserStores"
 import { ThemedHeader } from "@/components/ThemedHeader"
 import { ScannerComboboxSection } from "@/components/ui/ScannerComboboxSection"
-import { getProducts } from "@/lib/fetch-functions"
+import { getProducts, getProductStock } from "@/lib/fetch-functions"
 import { QUERY_KEYS } from "@/lib/query-keys"
 import { useQuery } from "@tanstack/react-query"
 import type { DataItemArticulosType } from "@/types/types"
@@ -107,6 +107,49 @@ const useProductsQuery = (): UseProductsQueryResult => {
 }
 
 /**
+ * Custom hook to manage product stock data with proper error handling and loading states
+ * Follows TanStack Query best practices for data fetching and state management
+ * @returns Object containing product stock data, loading state, error state, and utility functions
+ */
+interface UseProductStockQueryResult {
+    /** Array of product stock items ready for UI consumption */
+    productStock: ProductStockItem[]
+    /** Boolean indicating if the initial data fetch is in progress */
+    isLoading: boolean
+    /** Boolean indicating if there's an error in the query */
+    isError: boolean
+    /** Error object containing details about any query failures */
+    error: Error | null
+    /** Boolean indicating if a background refetch is in progress */
+    isFetching: boolean
+    /** Function to manually trigger a refetch of product stock */
+    refetch: () => void
+}
+
+const useProductStockQuery = (): UseProductStockQueryResult => {
+    // Fetch product stock data using TanStack Query with proper error handling and loading states
+    const { data, isLoading, isError, error, isFetching, refetch } = useQuery({
+        queryKey: [QUERY_KEYS.PRODUCT_STOCK],
+        queryFn: getProductStock,
+        staleTime: 5 * 60 * 1000, // 5 minutes - data considered fresh for this duration
+        gcTime: 10 * 60 * 1000, // 10 minutes - cache garbage collection time
+        retry: 3, // Retry failed requests up to 3 times
+        retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // Exponential backoff
+    })
+
+    // Transform API data to local ProductStockItem interface
+    // Only transform if data is available to avoid runtime errors
+    return {
+        productStock: data || [],
+        isLoading,
+        isError,
+        error,
+        isFetching,
+        refetch,
+    }
+}
+
+/**
  * Mock pending orders data
  * Represents orders that have been taken but not fully returned
  */
@@ -168,6 +211,15 @@ export default function InventoryScannerScreen() {
         isFetching: isFetchingProducts,
         refetch: refetchProducts,
     } = useProductsQuery()
+
+    const {
+        productStock,
+        isLoading: isLoadingProductStock,
+        isError: isProductStockError,
+        error: productStockError,
+        isFetching: isFetchingProductStock,
+        refetch: refetchProductStock,
+    } = useProductStockQuery()
 
     // Initialize store with demo data for pending orders
     // In a real application, this would also be fetched from an API
