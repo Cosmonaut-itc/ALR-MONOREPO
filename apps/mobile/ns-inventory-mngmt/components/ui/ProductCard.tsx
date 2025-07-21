@@ -7,6 +7,7 @@ import { Colors } from "@/constants/Colors"
 import { useColorScheme } from "@/hooks/useColorScheme"
 import { Trash2 } from "lucide-react-native"
 import type { ProductCardProps } from "@/types/types"
+import { getShortId } from "@/lib/functions"
 
 export function ProductCard({ product, onRemove, style }: ProductCardProps) {
     const colorScheme = useColorScheme()
@@ -62,7 +63,7 @@ export function ProductCard({ product, onRemove, style }: ProductCardProps) {
                     lightColor={Colors.light.surface}
                     darkColor={Colors.dark.surface}
                 >
-                    <ThemedText style={styles.productId}>ID: {product.id}</ThemedText>
+                    <ThemedText style={styles.productId}>ID: {getShortId(product.id)}</ThemedText>
                 </ThemedView>
 
             </ThemedView>

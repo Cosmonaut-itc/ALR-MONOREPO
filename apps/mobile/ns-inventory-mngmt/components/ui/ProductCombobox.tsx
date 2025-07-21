@@ -15,15 +15,7 @@ import type {
 } from "@/types/types"
 import { Collapsible } from "@/components/Collapsible"
 import { useProductComboboxStore } from "@/app/stores/baseUserStores"
-
-/**
- * Utility function to get the last 6 characters of a UUID for display
- * @param uuid - The full UUID string
- * @returns The last 6 characters of the UUID
- */
-const getShortId = (uuid: string): string => {
-    return uuid.slice(-6).toUpperCase()
-}
+import { getShortId } from "@/lib/functions"
 
 /**
  * Groups ProductStockItems by barcode, enriching with product information

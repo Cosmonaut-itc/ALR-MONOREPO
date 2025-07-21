@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect } from "react"
+import { useEffect, useMemo, useRef } from "react"
 import { StyleSheet, Platform, ScrollView } from "react-native"
 import { StatusBar } from "expo-status-bar"
 import { router } from "expo-router"
@@ -89,9 +89,13 @@ const useProductsQuery = (): UseProductsQueryResult => {
         retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // Exponential backoff
     })
 
-    // Transform API data to local Product interface
+    // Transform API data to local Product interface with memoization
     // Only transform if data is available to avoid runtime errors
-    const products: Product[] = apiProducts?.map(transformApiProductToProduct) ?? []
+    const products: Product[] = useMemo(() => {
+        // Return empty array only if there's an error or no data
+        if (isError || !apiProducts) return []
+        return apiProducts.map(transformApiProductToProduct)
+    }, [apiProducts, isError])
 
     return {
         products,
@@ -218,25 +222,30 @@ export default function InventoryScannerScreen() {
         refetch: refetchProductStock,
     } = useProductStockQuery()
 
-    // Initialize store with demo data for pending orders
-    // In a real application, this would also be fetched from an API
+    // Track if store has been initialized to prevent infinite loops
+    const isInitialized = useRef(false)
+
+    // Initialize store with fetched data only once when data becomes available
     useEffect(() => {
-        useBaseUserStore.getState().initializeStore([], PENDING_ORDERS)
-    }, [])
+        // Only initialize if we have data and haven't initialized yet
+        if ((products.length > 0 || productStock.length > 0) && !isInitialized.current) {
+            useBaseUserStore.getState().initializeStore(products, productStock, PENDING_ORDERS)
+            isInitialized.current = true
+        }
+    }, [products, productStock])
 
     // Get store state and actions
     const {
         selectedProducts,
         pendingOrders,
         showScanner,
-        selectedOrder,
-        handleProductSelect,
+        handleProductStockSelect,
         handleBarcodeScanned,
         handleRemoveProduct,
-        handleUpdateQuantity,
         handleOrderClick,
         handleSubmit,
         setShowScanner,
+        getAvailableStockItems,
     } = useBaseUserStore()
 
     /**
@@ -260,7 +269,7 @@ export default function InventoryScannerScreen() {
 
     /**
      * Handler for warehouse stock item selection
-     * Converts ProductStockItem to SelectedProduct format for the existing workflow
+     * Uses the new stock-based selection system that tracks individual items
      * @param stockItem - The selected warehouse stock item
      */
     const handleStockItemSelect = (stockItem: ProductStockItem) => {
@@ -268,19 +277,19 @@ export default function InventoryScannerScreen() {
         const fullProduct = products.find(p => Number(p.barcode) === stockItem.barcode)
 
         if (fullProduct) {
-            // Use existing handleProductSelect with the full product data
-            handleProductSelect(fullProduct, 1)
+            // Use the new stock-based selection method
+            handleProductStockSelect(stockItem, fullProduct)
         } else {
             // Create a basic product object if full product not found
             const basicProduct: Product = {
-                id: stockItem.id, // Use stock item ID as product ID
+                id: `product-${stockItem.barcode}`, // Use product prefix + barcode as product ID
                 name: `Producto ${stockItem.barcode}`, // Fallback name
                 brand: "Sin marca", // Default brand
                 price: 0, // Default price since we don't have it in stock data
                 stock: 1, // Set to 1 since we know this specific item exists
                 barcode: stockItem.barcode.toString(),
             }
-            handleProductSelect(basicProduct, 1)
+            handleProductStockSelect(stockItem, basicProduct)
         }
     }
 
@@ -334,10 +343,8 @@ export default function InventoryScannerScreen() {
         )
     }
 
-    // Filter available stock for the target warehouse
-    const availableStock = productStock.filter(
-        item => item.currentWarehouse === 1 && !item.isBeingUsed
-    )
+    // Get available stock items from the store (filters by warehouse and availability)
+    const availableStock = getAvailableStockItems(1)
 
     return (
         <ThemedView style={styles.container}>

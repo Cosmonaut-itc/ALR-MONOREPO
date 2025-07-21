@@ -55,9 +55,7 @@ export function ScannerComboboxSection({
     onStockItemSelect,
     onScanPress,
     placeholder = "Buscar en inventario...",
-    title,
     isLoading = false,
-    itemCount = 0,
 }: ScannerComboboxSectionProps) {
     const colorScheme = useColorScheme()
     const isDark = colorScheme === "dark"
