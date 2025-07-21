@@ -123,7 +123,6 @@ export const SelectedProductCardArk = t({
 export const productCardPropsArk = t({
 	product: SelectedProductCardArk,
 	onRemove: "string?" as t.cast<(id: string) => void>,
-	onUpdateQuantity: "string?" as t.cast<(id: string, quantity: number) => void>,
 	style: "object?", // Corresponds to: StyleProp<ViewStyle> | undefined
 });
 

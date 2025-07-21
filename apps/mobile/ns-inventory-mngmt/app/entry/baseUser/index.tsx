@@ -1,20 +1,17 @@
 "use client"
 
 import { useEffect } from "react"
-import { StyleSheet, TouchableOpacity, Platform, ScrollView } from "react-native"
+import { StyleSheet, Platform, ScrollView } from "react-native"
 import { StatusBar } from "expo-status-bar"
 import { router } from "expo-router"
 import { ThemedText } from "@/components/ThemedText"
 import { ThemedView } from "@/components/ThemedView"
 import { ThemedButton } from "@/components/ThemedButton"
 import { BarcodeScanner } from "@/components/ui/BarcodeScanner"
-import { ProductCombobox } from "@/components/ui/ProductCombobox"
 import { ProductCard } from "@/components/ui/ProductCard"
 import { PendingOrderCard } from "@/components/ui/PendingOrderCard"
 import { Collapsible } from "@/components/Collapsible"
-import { Colors } from "@/constants/Colors"
 import { useColorScheme } from "@/hooks/useColorScheme"
-import { ArrowLeft, Camera } from "lucide-react-native"
 import type { PendingOrder, ProductStockItem, SelectedProduct } from "@/types/types"
 import { useBaseUserStore } from "@/app/stores/baseUserStores"
 import { ThemedHeader } from "@/components/ThemedHeader"
@@ -387,7 +384,6 @@ export default function InventoryScannerScreen() {
                                 key={product.id}
                                 product={product}
                                 onRemove={handleRemoveProduct}
-                                onUpdateQuantity={handleUpdateQuantity}
                                 style={styles.productCard}
                             />
                         ))}

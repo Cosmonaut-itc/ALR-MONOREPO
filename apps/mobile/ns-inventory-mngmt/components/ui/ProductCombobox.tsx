@@ -184,7 +184,7 @@ export function ProductCombobox({
     return (
         <ThemedView style={styles.container}>
             <ThemedText type="defaultSemiBold" style={styles.label}>
-                Inventario de Almacén
+                Productos
             </ThemedText>
             <TouchableOpacity
                 style={[
@@ -229,7 +229,7 @@ export function ProductCombobox({
                         ]}
                     >
                         <ThemedText type="title" style={styles.modalTitle}>
-                            Inventario Almacén {targetWarehouse}
+                            Productos en Almacén {targetWarehouse}
                         </ThemedText>
                         <TouchableOpacity onPress={() => setIsOpen(false)} style={styles.closeButton}>
                             <ThemedText style={{ color: isDark ? Colors.dark.tint : Colors.light.tint }}>✕</ThemedText>

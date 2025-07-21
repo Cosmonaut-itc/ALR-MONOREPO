@@ -80,27 +80,6 @@ export function ScannerComboboxSection({
     }
 
     /**
-     * Generates the section title with stock item count
-     * Enhances user awareness of available inventory
-     * @returns Formatted title string or undefined
-     */
-    const getSectionTitle = (): string | undefined => {
-        if (!title && itemCount === 0) {
-            return undefined
-        }
-
-        if (title && itemCount > 0) {
-            return `${title} (${itemCount} elementos)`
-        }
-
-        if (title) {
-            return title
-        }
-
-        return `Inventario Almacén ${targetWarehouse} (${itemCount} elementos)`
-    }
-
-    /**
      * Determines if the scan button should be disabled based on current state
      * @returns Boolean indicating if scan button should be disabled
      */
@@ -122,20 +101,6 @@ export function ScannerComboboxSection({
 
     return (
         <ThemedView style={styles.section}>
-            {/* Section Title with Item Count */}
-            {getSectionTitle() && (
-                <ThemedView style={styles.titleContainer}>
-                    <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
-                        {getSectionTitle()}
-                    </ThemedText>
-                    {isLoading && (
-                        <ThemedText style={styles.loadingIndicator}>
-                            Actualizando...
-                        </ThemedText>
-                    )}
-                </ThemedView>
-            )}
-
             {/* Main Input Row - Combobox and Scan Button */}
             <ThemedView style={styles.inputRow}>
                 {/* Product Combobox Container */}
