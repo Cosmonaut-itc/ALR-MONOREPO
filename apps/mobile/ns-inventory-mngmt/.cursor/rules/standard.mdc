@@ -1,0 +1,10 @@
+---
+description: STANDARD NS APP RULES
+globs: "**/*.{ts,tsx,js,jsx}"
+alwaysApply: true
+---
+
+- Dont keep code for compatibility unless it is specifically stated.
+- Always comment the code using the best practices for the lenguage being used.
+- Variable names should be in english
+- Dont assume anything in the conversation, If you need more information ask followup questions and dont begin coding until those questions are answered or unless I explicitly state it.

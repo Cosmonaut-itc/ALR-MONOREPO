@@ -18,6 +18,7 @@ import { Toaster } from 'sonner-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as SecureStore from "expo-secure-store";
+import * as ExpoDevice from "expo-device";
 
 
 
@@ -55,6 +56,8 @@ export default function RootLayout() {
       deviceName: Platform?.OS || "web", // Platform detection
       platform: Platform?.OS || "web", // Use appropriate platform identifier
       deviceId: Platform?.OS || "web", // Use a PERSISTENT identifier (see note below)
+      isDevice: ExpoDevice.isDevice, // Automatically detects real devices vs emulators
+
       extraDeviceInfo: {
         // Optional additional info about your device
         appVersion: "1.0.0",

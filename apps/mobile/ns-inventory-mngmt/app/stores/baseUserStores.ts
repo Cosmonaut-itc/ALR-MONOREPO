@@ -5,6 +5,8 @@ import type {
 	PendingOrder,
 	SelectedProduct,
 	NumpadValueType,
+	ProductStockItem,
+	Product as ProductType,
 } from "@/types/types";
 import { devtools } from "@csark0812/zustand-expo-devtools";
 import type { useRouter } from "expo-router";
@@ -33,11 +35,23 @@ interface BaseUserState {
 	showScanner: boolean; // Controls visibility of barcode scanner
 	selectedOrder: PendingOrder | null; // Currently selected order for return processing
 	availableProducts: Array<typeof Product.infer>; // Available products in the system
+	productStock: ProductStockItem[]; // Available product stock items
 	isReceivingOrder: boolean; // Indicates if we are currently processing a return order
 
 	// Action Methods
 	/**
-	 * Adds or updates a product in the selected products list
+	 * Adds a product stock item to the selected products list
+	 * Marks the stock item as being used and creates a selected product entry
+	 * @param stockItem - The product stock item to select
+	 * @param productInfo - The product information (name, brand, etc.)
+	 */
+	handleProductStockSelect: (
+		stockItem: ProductStockItem,
+		productInfo: ProductType,
+	) => void;
+
+	/**
+	 * Legacy method for backward compatibility - converts Product to stock selection
 	 * @param product - The product to add/update
 	 * @param quantity - Optional quantity to add (defaults to 1)
 	 */
@@ -47,14 +61,14 @@ interface BaseUserState {
 	) => void;
 
 	/**
-	 * Processes a scanned barcode and adds the corresponding product
+	 * Processes a scanned barcode and finds the corresponding stock item
 	 * @param barcode - The scanned barcode string
 	 */
 	handleBarcodeScanned: (barcode: string) => void;
 
 	/**
-	 * Removes a product from the selected products list
-	 * @param productId - ID of the product to remove
+	 * Removes a product from the selected products list and marks stock item as available
+	 * @param productId - ID of the product to remove (matches stock item ID)
 	 */
 	handleRemoveProduct: (productId: string) => void;
 
@@ -93,12 +107,21 @@ interface BaseUserState {
 	setSelectedOrder: (order: PendingOrder | null) => void;
 
 	/**
-	 * Initializes the store with available products and pending orders
+	 * Gets available stock items (not being used) for the product combobox
+	 * @param targetWarehouse - Optional warehouse filter
+	 * @returns Array of available ProductStockItem objects
+	 */
+	getAvailableStockItems: (targetWarehouse?: number) => ProductStockItem[];
+
+	/**
+	 * Initializes the store with available products, product stock, and pending orders
 	 * @param products - Array of available products
+	 * @param productStock - Array of product stock items
 	 * @param orders - Array of pending orders
 	 */
 	initializeStore: (
 		products: Array<typeof Product.infer>,
+		productStock: ProductStockItem[],
 		orders: PendingOrder[],
 	) => void;
 }
@@ -116,67 +139,140 @@ export const useBaseUserStore = create<BaseUserState>()(
 			showScanner: false,
 			selectedOrder: null,
 			availableProducts: [],
+			productStock: [],
 			isReceivingOrder: false,
 
 			// Action Implementations
-			handleProductSelect: (product, quantity = 1) => {
-				const { selectedProducts } = get();
+			handleProductStockSelect: (stockItem, productInfo) => {
+				const { selectedProducts, productStock } = get();
+
+				// Check if this specific stock item is already selected
 				const existingIndex = selectedProducts.findIndex(
-					(p) => p.id === product.id,
+					(p) => p.id === stockItem.id,
 				);
 
 				if (existingIndex >= 0) {
-					// Update existing product quantity
 					Alert.alert(
 						"Producto Ya Seleccionado",
-						"Este producto ya está en la lista",
+						"Este item específico ya está en la lista",
 					);
 					return;
 				}
-				// Add new product with timestamp
+
+				// Mark the stock item as being used
+				const updatedStock = productStock.map(item =>
+					item.id === stockItem.id
+						? { ...item, isBeingUsed: true, lastUsed: new Date(), numberOfUses: item.numberOfUses + 1 }
+						: item
+				);
+
+				// Create a selected product entry
+				const selectedProduct: SelectedProduct = {
+					id: stockItem.id, // Use stock item ID
+					name: productInfo.name,
+					brand: productInfo.brand,
+					stock: 1, // Individual stock item
+					quantity: 1, // Always 1 for individual items
+					selectedAt: new Date(),
+				};
+
 				set({
-					selectedProducts: [
-						...selectedProducts,
-						{
-							...product,
-							quantity,
-							selectedAt: new Date(),
-						},
-					],
+					selectedProducts: [...selectedProducts, selectedProduct],
+					productStock: updatedStock,
 				});
 			},
 
+			handleProductSelect: (product, quantity = 1) => {
+				const { productStock, availableProducts } = get();
+
+				// Find an available stock item for this product
+				const availableStockItem = productStock.find(
+					item => item.barcode === Number(product.barcode) && !item.isBeingUsed
+				);
+
+				if (availableStockItem) {
+					// Use the new stock-based method
+					get().handleProductStockSelect(availableStockItem, product);
+				} else {
+					Alert.alert(
+						"Sin Stock Disponible",
+						"No hay items disponibles de este producto en el almacén",
+					);
+				}
+			},
+
 			handleBarcodeScanned: (barcode) => {
-				const { availableProducts } = get();
+				const { availableProducts, productStock } = get();
 
-				// First try to find product by exact barcode match
-				let product = availableProducts.find((p) => p.barcode === barcode);
+				// First try to find an available stock item by exact barcode match
+				let stockItem = productStock.find(
+					(item) => item.barcode.toString() === barcode && !item.isBeingUsed
+				);
 
-				// If no exact match, try to find by product ID (in case QR contains product ID)
-				if (!product) {
-					product = availableProducts.find((p) => p.id === barcode);
+				// If no stock item found, try to find by stock item ID
+				if (!stockItem) {
+					stockItem = productStock.find(
+						(item) => item.id === barcode && !item.isBeingUsed
+					);
 				}
 
-				if (product) {
-					get().handleProductSelect(product);
-					set({ showScanner: false });
-					Alert.alert(
-						"Producto Encontrado",
-						`${product.name} agregado al inventario`,
+				if (stockItem) {
+					// Find the corresponding product information
+					const product = availableProducts.find(
+						(p) => Number(p.barcode) === stockItem.barcode
 					);
+
+					if (product) {
+						get().handleProductStockSelect(stockItem, product);
+						set({ showScanner: false });
+						Alert.alert(
+							"Producto Encontrado",
+							`${product.name} agregado al inventario`,
+						);
+					} else {
+						// Fallback: create basic product info
+						const basicProduct: ProductType = {
+							id: `product-${stockItem.barcode}`,
+							name: `Producto ${stockItem.barcode}`,
+							brand: "Sin marca",
+							price: 0,
+							stock: 1,
+							barcode: stockItem.barcode.toString(),
+						};
+						get().handleProductStockSelect(stockItem, basicProduct);
+						set({ showScanner: false });
+						Alert.alert(
+							"Producto Encontrado",
+							`Producto ${stockItem.barcode} agregado al inventario`,
+						);
+					}
 				} else {
 					Alert.alert(
 						"Producto No Encontrado",
-						"El código escaneado no corresponde a ningún producto conocido",
+						"El código escaneado no corresponde a ningún producto disponible en el almacén",
 					);
 				}
 			},
 
 			handleRemoveProduct: (productId) => {
-				const { selectedProducts } = get();
-				set({
-					selectedProducts: selectedProducts.filter((p) => p.id !== productId),
-				});
+				const { selectedProducts, productStock } = get();
+
+				// Find the selected product to get the stock item ID
+				const selectedProduct = selectedProducts.find(p => p.id === productId);
+
+				if (selectedProduct) {
+					// Mark the corresponding stock item as available again
+					const updatedStock = productStock.map(item =>
+						item.id === selectedProduct.id
+							? { ...item, isBeingUsed: false }
+							: item
+					);
+
+					set({
+						selectedProducts: selectedProducts.filter((p) => p.id !== productId),
+						productStock: updatedStock,
+					});
+				}
 			},
 
 			handleUpdateQuantity: (productId, newQuantity) => {
@@ -240,9 +336,28 @@ export const useBaseUserStore = create<BaseUserState>()(
 					isReceivingOrder: order !== null,
 				}),
 
-			initializeStore: (products, orders) => {
+			getAvailableStockItems: (targetWarehouse = 1) => {
+				const { productStock } = get();
+
+
+				if (productStock.length === 0) {
+					console.log('⚠️ ProductStock is empty - store may not be initialized yet');
+					return [];
+				}
+
+				const filtered = productStock.filter(item => {
+					const isAvailable = !item.isBeingUsed;
+					const isCorrectWarehouse = item.currentWarehouse === targetWarehouse;
+					return isAvailable && isCorrectWarehouse;
+				});
+
+				return filtered;
+			},
+
+			initializeStore: (products, productStock, orders) => {
 				set({
 					availableProducts: products,
+					productStock: productStock,
 					pendingOrders: orders,
 					isReceivingOrder: false,
 					selectedOrder: null,

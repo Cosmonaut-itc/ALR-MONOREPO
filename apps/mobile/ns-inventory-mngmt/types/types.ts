@@ -123,7 +123,6 @@ export const SelectedProductCardArk = t({
 export const productCardPropsArk = t({
 	product: SelectedProductCardArk,
 	onRemove: "string?" as t.cast<(id: string) => void>,
-	onUpdateQuantity: "string?" as t.cast<(id: string, quantity: number) => void>,
 	style: "object?", // Corresponds to: StyleProp<ViewStyle> | undefined
 });
 
@@ -140,14 +139,7 @@ export const Product = t({
 	barcode: "string?",
 });
 
-export const productComboboxPropsArk = t({
-	products: t(Product, "[]"),
-	onProductSelect: "string?" as t.cast<(product: typeof Product.infer) => void>,
-	placeholder: "string?",
-});
-
 export type Product = typeof Product.infer;
-export type ProductComboboxProps = typeof productComboboxPropsArk.infer;
 
 // Order Item type for pending orders
 export const OrderItem = t({
@@ -196,3 +188,164 @@ export const returnOrderModalPropsArk = t({
 });
 
 export type ReturnOrderModalProps = typeof returnOrderModalPropsArk.infer;
+
+
+/**
+ * API Types for Hono RPC Client using ArkType
+ * Generated from the API server for type-safe client-server communication
+ */
+
+
+// ===== API Response Schemas =====
+
+const actualAmountSchema = t({
+	storage_id: "string",
+	amount: "string",
+});
+
+export const dataItemSchema = t({
+	title: "string",
+	value: "number",
+	label: "string",
+	good_id: "string",
+	cost: "number",
+	unit_id: "string",
+	unit_short_title: "string",
+	service_unit_id: "string",
+	service_unit_short_title: "string",
+	actual_cost: "number",
+	unit_actual_cost: "number",
+	unit_actual_cost_format: "string",
+	unit_equals: "number",
+	barcode: "number",
+	loyalty_abonement_type_id: "number",
+	loyalty_certificate_type_id: "number",
+	loyalty_allow_empty_code: "number",
+	critical_amount: "number",
+	desired_amount: "number",
+	actual_amounts: t(actualAmountSchema, "[]"),
+	last_change_date: "string.date.iso.parse",
+});
+
+// Generic API Response Schema Factory
+// This function creates a response schema for any data type
+export const createApiResponseSchema = (dataSchema: any) => t({
+	success: "boolean",
+	data: dataSchema.optional(),
+	message: "string?",
+	meta: t("unknown", "[]").optional(),
+});
+
+
+// Product Stock Schemas
+export const productStockItemSchema = t({
+	id: "string",
+	barcode: "number",
+	lastUsed: "string.date.iso.parse?",
+	lastUsedBy: "number?",
+	numberOfUses: "number",
+	currentWarehouse: "number",
+	isBeingUsed: "boolean",
+	firstUsed: "string.date.iso.parse?",
+});
+
+// Specific response schemas using the factory
+export const productStockArraySchema = t(productStockItemSchema, "[]");
+export const productStockResponseSchema = createApiResponseSchema(productStockArraySchema);
+
+// Create the articulos response schema for type inference
+export const articulosArraySchema = t(dataItemSchema, "[]");
+export const articulosResponseSchema = createApiResponseSchema(articulosArraySchema);
+
+// ===== Inferred Types =====
+
+export type DataItemArticulosType = typeof dataItemSchema.infer;
+export type ApiResponseType = typeof articulosResponseSchema.infer;
+export type ProductStockItem = typeof productStockItemSchema.infer;
+export type ProductStockResponse = typeof productStockResponseSchema.infer;
+
+// ===== Warehouse Inventory Types =====
+
+// Grouped warehouse inventory (ProductStockItems grouped by barcode/product name)
+export const WarehouseStockGroup = t({
+	barcode: "number",
+	productName: "string",
+	brand: "string",
+	items: t(productStockItemSchema, "[]"), // Direct use of ProductStockItem schema
+	totalCount: "number",
+});
+
+export type WarehouseStockGroup = typeof WarehouseStockGroup.infer;
+
+// Updated ProductCombobox props - warehouse only
+export const productComboboxPropsArk = t({
+	products: t(Product, "[]"), // For product metadata lookup
+	productStock: t(productStockItemSchema, "[]"), // Stock items to display
+	targetWarehouse: "number?", // Warehouse to filter by (defaults to 1)
+	onStockItemSelect: "string?" as t.cast<(item: typeof productStockItemSchema.infer) => void>, // Select ProductStockItem directly
+	placeholder: "string?",
+	disabled: "boolean?",
+});
+
+export type ProductComboboxProps = typeof productComboboxPropsArk.infer;
+
+// Generic API Response interface (for endpoints that don't return products)
+export interface ApiResponse<T = unknown> {
+	success: boolean;
+	data?: T;
+	message?: string;
+	meta?: unknown[];
+}
+
+// ===== API Route Types =====
+
+/**
+ * Main API route type for Hono RPC client
+ * This structure matches how Hono RPC client organizes routes
+ */
+export interface AppType {
+	api: {
+		products: {
+			all: {
+				$get: () => Promise<Response>;
+			};
+		};
+		"product-stock": {
+			all: {
+				$get: () => Promise<Response>;
+			};
+		};
+	};
+
+	db: {
+		health: {
+			$get: () => Promise<Response>;
+		};
+	};
+	$get: () => Promise<Response>;
+}
+
+// ===== Runtime Validation Helpers =====
+
+/**
+ * Validate API response data at runtime
+ * Use this when you want to ensure the API response matches expected structure
+ */
+export const validateProductsResponse = (data: unknown) => {
+	const result = articulosResponseSchema(data);
+	if (result instanceof t.errors) {
+		throw new Error(`API response validation failed: ${result.summary}`);
+	}
+	return result;
+};
+
+/**
+ * Validate individual product data
+ */
+export const validateProduct = (data: unknown) => {
+	const result = dataItemSchema(data);
+	if (result instanceof t.errors) {
+		throw new Error(`Product validation failed: ${result.summary}`);
+	}
+	return result;
+};

@@ -1,71 +1,137 @@
 "use client"
 
-import React, { useEffect } from "react"
+import React, { useEffect, useMemo } from "react"
 import { StyleSheet, TouchableOpacity, Modal, ScrollView } from "react-native"
 import { ThemedText } from "@/components/ThemedText"
 import { ThemedView } from "@/components/ThemedView"
 import { TextInput } from "@/components/ThemedTextInput"
 import { Colors } from "@/constants/Colors"
 import { useColorScheme } from "@/hooks/useColorScheme"
-import type { Product, ProductComboboxProps } from "@/types/types"
+import type {
+    Product,
+    ProductComboboxProps,
+    ProductStockItem,
+    WarehouseStockGroup
+} from "@/types/types"
 import { Collapsible } from "@/components/Collapsible"
 import { useProductComboboxStore } from "@/app/stores/baseUserStores"
+import { getShortId } from "@/lib/functions"
 
-// Create the component with ArkType
-export function ProductCombobox({ products, onProductSelect, placeholder }: ProductComboboxProps) {
+/**
+ * Groups ProductStockItems by barcode, enriching with product information
+ * Creates groups for warehouse inventory display
+ */
+const groupProductStock = (
+    productStock: ProductStockItem[],
+    products: Product[],
+    targetWarehouse: number = 1
+): WarehouseStockGroup[] => {
+    // Filter stock by warehouse and availability
+    const availableStock = productStock.filter(
+        stock => stock.currentWarehouse === targetWarehouse && !stock.isBeingUsed
+    )
+
+    // Group by barcode
+    const groups = new Map<number, ProductStockItem[]>()
+
+    for (const item of availableStock) {
+        const existing = groups.get(item.barcode) || []
+        existing.push(item)
+        groups.set(item.barcode, existing)
+    }
+
+    // Convert to WarehouseStockGroup objects with product information
+    return Array.from(groups.entries()).map(([barcode, items]) => {
+        // Find matching product by barcode for metadata
+        const product = products.find(p => Number(p.barcode) === barcode)
+
+        return {
+            barcode,
+            productName: product?.name || `Producto ${barcode}`,
+            brand: product?.brand || "Sin marca",
+            items,
+            totalCount: items.length,
+        }
+    })
+}
+
+/**
+ * Filters warehouse stock groups based on search text
+ */
+const filterStockGroups = (
+    groups: WarehouseStockGroup[],
+    searchText: string
+): WarehouseStockGroup[] => {
+    if (!searchText.trim()) return groups
+
+    const normalizedSearch = searchText.toLowerCase().trim()
+
+    return groups.filter(group => {
+        // Search in product name, brand, and barcode
+        const matchesName = group.productName.toLowerCase().includes(normalizedSearch)
+        const matchesBrand = group.brand.toLowerCase().includes(normalizedSearch)
+        const matchesBarcode = group.barcode.toString().includes(normalizedSearch)
+
+        // Search in individual item UUIDs (short IDs)
+        const matchesItemId = group.items.some(item =>
+            getShortId(item.id).toLowerCase().includes(normalizedSearch)
+        )
+
+        return matchesName || matchesBrand || matchesBarcode || matchesItemId
+    })
+}
+
+// Warehouse-only ProductCombobox Component
+export function ProductCombobox({
+    products,
+    productStock = [],
+    targetWarehouse = 1,
+    onStockItemSelect,
+    placeholder = "Buscar en inventario...",
+    disabled = false,
+}: ProductComboboxProps) {
     const colorScheme = useColorScheme()
     const isDark = colorScheme === "dark"
 
-    // Get store state and actions
+    // Get store state and actions for search functionality
     const {
         searchText,
         isOpen,
-        filteredProducts,
-        groupedProducts,
         handleSearch,
         setIsOpen,
         resetSearch
     } = useProductComboboxStore()
 
-    // Initialize store with products when component mounts
-    useEffect(() => {
-        resetSearch(products)
-    }, [products, resetSearch])
+    // Group and filter warehouse stock
+    const stockGroups = useMemo(() => {
+        return groupProductStock(productStock, products, targetWarehouse)
+    }, [productStock, products, targetWarehouse])
 
-    const handleProductSelect = (product: Product) => {
-        onProductSelect(product)
-        resetSearch(products)
+    const filteredStockGroups = useMemo(() => {
+        return filterStockGroups(stockGroups, searchText)
+    }, [stockGroups, searchText])
+
+    // Reset search when component mounts or stock changes
+    useEffect(() => {
+        resetSearch([]) // We don't use the products array anymore
+    }, [productStock, resetSearch])
+
+    const handleStockItemSelection = (item: ProductStockItem) => {
+        if (onStockItemSelect) {
+            onStockItemSelect(item)
+        }
         setIsOpen(false)
     }
 
-    const renderProductGroup = (groupKey: string, groupProducts: Product[]) => {
-        // If only one product in group, render directly
-        if (groupProducts.length === 1) {
-            return (
-                <TouchableOpacity
-                    key={groupProducts[0].id}
-                    style={[
-                        styles.productItem,
-                        {
-                            borderBottomColor: isDark ? Colors.dark.border : Colors.light.border,
-                            backgroundColor: isDark ? Colors.dark.surface : Colors.light.surface,
-                        },
-                    ]}
-                    onPress={() => handleProductSelect(groupProducts[0])}
-                >
-                    <ThemedView style={styles.productInfo} darkColor={Colors.dark.surface} lightColor={Colors.light.surface}>
-                        <ThemedText style={styles.productName}>{groupProducts[0].name}</ThemedText>
-                        <ThemedText style={styles.productBrand}>{groupProducts[0].brand}</ThemedText>
-                    </ThemedView>
-                </TouchableOpacity>
-            )
-        }
+    const handleSearchInput = (text: string) => {
+        // Just update the search text - filtering is handled in useMemo
+        handleSearch(text, [])
+    }
 
-        // Multiple products with same name/barcode - render collapsible
-        const mainProduct = groupProducts[0]
+    const renderStockGroup = (group: WarehouseStockGroup) => {
         return (
             <ThemedView
-                key={groupKey}
+                key={`group-${group.barcode}`}
                 style={[
                     styles.productGroupContainer,
                     {
@@ -74,10 +140,13 @@ export function ProductCombobox({ products, onProductSelect, placeholder }: Prod
                     },
                 ]}
             >
-                <Collapsible title={`${mainProduct.name} (${groupProducts.length} variantes)`} titleStyle={{ fontSize: 22, fontWeight: "bold" }}>
-                    {groupProducts.map((product, index) => (
+                <Collapsible
+                    title={`${group.productName} (${group.totalCount} disponibles)`}
+                    titleStyle={{ fontSize: 22, fontWeight: "bold" }}
+                >
+                    {group.items.map((item) => (
                         <TouchableOpacity
-                            key={product.id}
+                            key={item.id}
                             style={[
                                 styles.subProductItem,
                                 {
@@ -85,16 +154,16 @@ export function ProductCombobox({ products, onProductSelect, placeholder }: Prod
                                     borderColor: isDark ? Colors.dark.border : Colors.light.border,
                                 },
                             ]}
-                            onPress={() => handleProductSelect(product)}
+                            onPress={() => handleStockItemSelection(item)}
                         >
                             <ThemedView
                                 style={styles.subProductInfo}
                                 darkColor={Colors.dark.highlight}
                                 lightColor={Colors.light.highlight}
                             >
-                                <ThemedText style={styles.subProductBrand}>{product.brand}</ThemedText>
+                                <ThemedText style={styles.subProductBrand}>{group.brand}</ThemedText>
                                 <ThemedText style={styles.subProductDetails}>
-                                    ID: {product.id}
+                                    ID: {getShortId(item.id)}
                                 </ThemedText>
                             </ThemedView>
                         </TouchableOpacity>
@@ -107,7 +176,7 @@ export function ProductCombobox({ products, onProductSelect, placeholder }: Prod
     return (
         <ThemedView style={styles.container}>
             <ThemedText type="defaultSemiBold" style={styles.label}>
-                Producto
+                Productos
             </ThemedText>
             <TouchableOpacity
                 style={[
@@ -116,8 +185,10 @@ export function ProductCombobox({ products, onProductSelect, placeholder }: Prod
                         borderColor: isDark ? Colors.dark.border : Colors.light.border,
                         backgroundColor: isDark ? Colors.dark.surface : Colors.light.surface,
                     },
+                    disabled && styles.inputDisabled,
                 ]}
-                onPress={() => setIsOpen(true)}
+                onPress={() => !disabled && setIsOpen(true)}
+                disabled={disabled}
             >
                 <ThemedText
                     style={[
@@ -150,7 +221,7 @@ export function ProductCombobox({ products, onProductSelect, placeholder }: Prod
                         ]}
                     >
                         <ThemedText type="title" style={styles.modalTitle}>
-                            Seleccionar Producto
+                            Productos en Almacén {targetWarehouse}
                         </ThemedText>
                         <TouchableOpacity onPress={() => setIsOpen(false)} style={styles.closeButton}>
                             <ThemedText style={{ color: isDark ? Colors.dark.tint : Colors.light.tint }}>✕</ThemedText>
@@ -160,16 +231,33 @@ export function ProductCombobox({ products, onProductSelect, placeholder }: Prod
                     <ThemedView style={styles.searchContainer}>
                         <TextInput
                             value={searchText}
-                            onChangeText={(text) => handleSearch(text, products)}
-                            placeholder="Buscar producto..."
+                            onChangeText={handleSearchInput}
+                            placeholder="Buscar en inventario..."
                             autoFocus
                             style={styles.searchInputText}
                         />
                     </ThemedView>
 
                     <ScrollView style={styles.productList} showsVerticalScrollIndicator={false}>
-                        {Object.entries(groupedProducts).map(([groupKey, groupProducts]) =>
-                            renderProductGroup(groupKey, groupProducts),
+                        {filteredStockGroups.map(group =>
+                            renderStockGroup(group)
+                        )}
+
+                        {/* No results message */}
+                        {filteredStockGroups.length === 0 && searchText && (
+                            <ThemedView style={styles.noResultsContainer}>
+                                <ThemedText style={styles.noResultsText}>
+                                    No se encontraron elementos en el almacén {targetWarehouse}
+                                </ThemedText>
+                            </ThemedView>
+                        )}
+
+                        {filteredStockGroups.length === 0 && !searchText && stockGroups.length === 0 && (
+                            <ThemedView style={styles.noResultsContainer}>
+                                <ThemedText style={styles.noResultsText}>
+                                    No hay elementos disponibles en el almacén {targetWarehouse}
+                                </ThemedText>
+                            </ThemedView>
                         )}
                     </ScrollView>
                 </ThemedView>
@@ -198,6 +286,9 @@ const styles = StyleSheet.create({
     inputText: {
         fontSize: 18,
         flex: 1,
+    },
+    inputDisabled: {
+        opacity: 0.5,
     },
     dropdownIcon: {
         fontSize: 14,
@@ -229,40 +320,6 @@ const styles = StyleSheet.create({
     productList: {
         flex: 1,
     },
-    productItem: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-        padding: 20,
-        borderBottomWidth: 1,
-    },
-    productInfo: {
-        flex: 1,
-    },
-    productName: {
-        fontSize: 18,
-        fontWeight: "600",
-        marginBottom: 4,
-    },
-    productBrand: {
-        fontSize: 16,
-        opacity: 0.7,
-    },
-    productDetails: {
-        alignItems: "flex-end",
-        fontSize: 14,
-        opacity: 0.7,
-        marginTop: 4,
-    },
-    productPrice: {
-        fontSize: 18,
-        fontWeight: "600",
-        marginBottom: 2,
-    },
-    productStock: {
-        fontSize: 14,
-        opacity: 0.7,
-    },
     productGroupContainer: {
         borderBottomWidth: 1,
         padding: 25,
@@ -286,5 +343,13 @@ const styles = StyleSheet.create({
         fontSize: 14,
         opacity: 0.7,
     },
-
+    noResultsContainer: {
+        padding: 40,
+        alignItems: "center",
+    },
+    noResultsText: {
+        fontSize: 16,
+        opacity: 0.6,
+        textAlign: "center",
+    },
 })
