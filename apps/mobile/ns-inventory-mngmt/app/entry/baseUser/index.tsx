@@ -225,14 +225,22 @@ export default function InventoryScannerScreen() {
     // Track if store has been initialized to prevent infinite loops
     const isInitialized = useRef(false)
 
-    // Initialize store with fetched data only once when data becomes available
+    // Initialize store with fetched data only when BOTH datasets are available
     useEffect(() => {
-        // Only initialize if we have data and haven't initialized yet
-        if ((products.length > 0 || productStock.length > 0) && !isInitialized.current) {
+        // Wait for both datasets to have data and not be in loading state
+        const hasProducts = products.length > 0
+        const hasProductStock = productStock.length > 0
+        const bothLoaded = !isLoadingProducts && !isLoadingProductStock
+
+        if (hasProducts && hasProductStock && bothLoaded && !isInitialized.current) {
+            console.log('🚀 Initializing store with:', {
+                productsCount: products.length,
+                productStockCount: productStock.length
+            })
             useBaseUserStore.getState().initializeStore(products, productStock, PENDING_ORDERS)
             isInitialized.current = true
         }
-    }, [products, productStock])
+    }, [products, productStock, isLoadingProducts, isLoadingProductStock])
 
     // Get store state and actions
     const {
@@ -247,6 +255,10 @@ export default function InventoryScannerScreen() {
         setShowScanner,
         getAvailableStockItems,
     } = useBaseUserStore()
+
+
+    // Get available stock items from the store (filters by warehouse and availability) 
+    const availableStock = getAvailableStockItems(1)
 
     /**
      * Enhanced barcode scan handler that works with API product data
@@ -343,8 +355,6 @@ export default function InventoryScannerScreen() {
         )
     }
 
-    // Get available stock items from the store (filters by warehouse and availability)
-    const availableStock = getAvailableStockItems(1)
 
     return (
         <ThemedView style={styles.container}>
