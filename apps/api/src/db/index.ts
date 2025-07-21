@@ -1,4 +1,4 @@
-/** biome-ignore-all lint/performance/noNamespaceImport: <explanation> */
+/** biome-ignore-all lint/performance/noNamespaceImport: Required for schema imports */
 import 'dotenv/config';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import * as schema from './schema';

@@ -87,3 +87,104 @@ export const productStockData = [
 		firstUsed: new Date('2023-01-15'),
 	},
 ];
+
+export const withdrawOrderData = [
+	{
+		id: '650e8400-e29b-41d4-a716-446655440001',
+		dateWithdraw: new Date('2024-12-15'),
+		dateReturn: new Date('2024-12-22'),
+		userId: 101,
+		numItems: 2,
+		isComplete: true,
+	},
+	{
+		id: '650e8400-e29b-41d4-a716-446655440002',
+		dateWithdraw: new Date('2024-12-18'),
+		dateReturn: null,
+		userId: 102,
+		numItems: 3,
+		isComplete: false,
+	},
+	{
+		id: '650e8400-e29b-41d4-a716-446655440003',
+		dateWithdraw: new Date('2024-12-19'),
+		dateReturn: new Date('2024-12-20'),
+		userId: 103,
+		numItems: 1,
+		isComplete: true,
+	},
+	{
+		id: '650e8400-e29b-41d4-a716-446655440004',
+		dateWithdraw: new Date('2024-12-20'),
+		dateReturn: null,
+		userId: 104,
+		numItems: 2,
+		isComplete: false,
+	},
+];
+
+export const withdrawOrderDetailsData = [
+	// Order 1 - 2 items (completed) - Nail technician finished client services
+	{
+		id: '750e8400-e29b-41d4-a716-446655440001',
+		productId: '550e8400-e29b-41d4-a716-446655440001', // Red Gelish #1
+		withdrawOrderId: '650e8400-e29b-41d4-a716-446655440001',
+		dateWithdraw: new Date('2024-12-15'),
+		dateReturn: new Date('2024-12-22'),
+	},
+	{
+		id: '750e8400-e29b-41d4-a716-446655440002',
+		productId: '550e8400-e29b-41d4-a716-446655440004', // Blue Gelish #1
+		withdrawOrderId: '650e8400-e29b-41d4-a716-446655440001',
+		dateWithdraw: new Date('2024-12-15'),
+		dateReturn: new Date('2024-12-22'),
+	},
+
+	// Order 2 - 3 items (ongoing) - Currently being used by nail technician
+	{
+		id: '750e8400-e29b-41d4-a716-446655440003',
+		productId: '550e8400-e29b-41d4-a716-446655440002', // Red Gelish #2
+		withdrawOrderId: '650e8400-e29b-41d4-a716-446655440002',
+		dateWithdraw: new Date('2024-12-18'),
+		dateReturn: null,
+	},
+	{
+		id: '750e8400-e29b-41d4-a716-446655440004',
+		productId: '550e8400-e29b-41d4-a716-446655440005', // Blue Gelish #2
+		withdrawOrderId: '650e8400-e29b-41d4-a716-446655440002',
+		dateWithdraw: new Date('2024-12-18'),
+		dateReturn: null,
+	},
+	{
+		id: '750e8400-e29b-41d4-a716-446655440005',
+		productId: '550e8400-e29b-41d4-a716-446655440008', // Yellow Gelish #2
+		withdrawOrderId: '650e8400-e29b-41d4-a716-446655440002',
+		dateWithdraw: new Date('2024-12-18'),
+		dateReturn: null,
+	},
+
+	// Order 3 - 1 item (completed) - Quick touch-up service
+	{
+		id: '750e8400-e29b-41d4-a716-446655440006',
+		productId: '550e8400-e29b-41d4-a716-446655440006', // Green Gelish
+		withdrawOrderId: '650e8400-e29b-41d4-a716-446655440003',
+		dateWithdraw: new Date('2024-12-19'),
+		dateReturn: new Date('2024-12-20'),
+	},
+
+	// Order 4 - 2 items (ongoing) - Active nail service session
+	{
+		id: '750e8400-e29b-41d4-a716-446655440007',
+		productId: '550e8400-e29b-41d4-a716-446655440003', // Red Gelish #3
+		withdrawOrderId: '650e8400-e29b-41d4-a716-446655440004',
+		dateWithdraw: new Date('2024-12-20'),
+		dateReturn: null,
+	},
+	{
+		id: '750e8400-e29b-41d4-a716-446655440008',
+		productId: '550e8400-e29b-41d4-a716-446655440007', // Yellow Gelish #1 (new bottle)
+		withdrawOrderId: '650e8400-e29b-41d4-a716-446655440004',
+		dateWithdraw: new Date('2024-12-20'),
+		dateReturn: null,
+	},
+];

@@ -12,14 +12,16 @@
  * @author NS Inventory Management Team
  * @version 1.0.0
  */
+/** biome-ignore-all lint/performance/noNamespaceImport: Required for zod */
 
-/** biome-ignore-all lint/performance/noNamespaceImport: Required for schema imports */
+import { zValidator } from '@hono/zod-validator';
+import { eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
 import { logger } from 'hono/logger';
-import type { z } from 'zod';
-import { productStockData } from '@/constants';
+import { z } from 'zod';
+import { productStockData, withdrawOrderData, withdrawOrderDetailsData } from '@/constants';
 import type { apiResponseSchema, DataItemArticulosType } from '@/types';
 import { db } from './db/index';
 import * as schemas from './db/schema';
@@ -311,7 +313,119 @@ const route = app
 				500,
 			);
 		}
-	});
+	})
+
+	/**
+	 * GET /api/withdraw-orders - Retrieve withdraw orders data
+	 *
+	 * This endpoint fetches all withdraw orders records from the database.
+	 * If the database table is empty (e.g., in development or test environments),
+	 * it returns mock withdraw orders data instead. This ensures the frontend
+	 * always receives a valid response structure for development and testing.
+	 *
+	 * @returns {ApiResponse} Success response with withdraw orders data (from DB or mock)
+	 * @throws {500} If an unexpected error occurs during data retrieval
+	 */
+	.get('/api/withdraw-orders/all', async (c) => {
+		try {
+			// Query the withdrawOrder table for all records
+			const withdrawOrder = await db.select().from(schemas.withdrawOrder);
+
+			// If no records exist, return mock data for development/testing
+			if (withdrawOrder.length === 0) {
+				return c.json(
+					{
+						success: true,
+						message: 'Fetching test data',
+						data: withdrawOrderData,
+					} satisfies ApiResponse,
+					200,
+				);
+			}
+
+			// Return actual withdraw orders data from the database
+			return c.json(
+				{
+					success: true,
+					message: 'Fetching db data',
+					data: withdrawOrder,
+				} satisfies ApiResponse,
+				200,
+			);
+		} catch (error) {
+			// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
+			console.error('Error fetching withdraw orders:', error);
+
+			return c.json(
+				{
+					success: false,
+					message: 'Failed to fetch withdraw orders',
+				} satisfies ApiResponse,
+				500,
+			);
+		}
+	})
+
+	/**
+	 * GET /api/withdraw-orders/details - Retrieve withdraw orders details data
+	 *
+	 * This endpoint fetches all withdraw orders details records from the database.
+	 * If the database table is empty (e.g., in development or test environments),
+	 * it returns mock withdraw orders details data instead. This ensures the frontend
+	 * always receives a valid response structure for development and testing.
+	 *
+	 * @returns {ApiResponse} Success response with withdraw orders details data (from DB or mock)
+	 * @throws {500} If an unexpected error occurs during data retrieval
+	 */
+	.get(
+		'/api/withdraw-orders/details',
+		zValidator('query', z.object({ dateWithdraw: z.string() })),
+		async (c) => {
+			try {
+				const { dateWithdraw } = c.req.valid('query');
+				// Query the withdrawOrderDetails table for all records
+				const withdrawOrderDetails = await db
+					.select()
+					.from(schemas.withdrawOrderDetails)
+					.where(eq(schemas.withdrawOrderDetails.dateWithdraw, dateWithdraw));
+
+				// If no records exist, return mock data for development/testing
+				if (withdrawOrderDetails.length === 0) {
+					return c.json(
+						{
+							success: true,
+							message: 'Fetching test data',
+							data: withdrawOrderDetailsData.filter(
+								(item) => item.dateWithdraw.toISOString() === dateWithdraw,
+							),
+						} satisfies ApiResponse,
+						200,
+					);
+				}
+
+				// Return actual withdraw orders details data from the database
+				return c.json(
+					{
+						success: true,
+						message: 'Fetching db data',
+						data: withdrawOrderDetails,
+					} satisfies ApiResponse,
+					200,
+				);
+			} catch (error) {
+				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
+				console.error('Error fetching withdraw orders details:', error);
+
+				return c.json(
+					{
+						success: false,
+						message: 'Failed to fetch withdraw orders details',
+					} satisfies ApiResponse,
+					500,
+				);
+			}
+		},
+	);
 
 /**
  * Export the complete route type for RPC client generation

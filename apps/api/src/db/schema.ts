@@ -1,3 +1,4 @@
+import { relations } from 'drizzle-orm';
 import { boolean, date, integer, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
 export const user = pgTable('user', {
@@ -102,3 +103,45 @@ export const productStock = pgTable('product_stock', {
 	isBeingUsed: boolean('is_being_used').default(false).notNull(),
 	firstUsed: date('first_used'),
 });
+
+export const withdrawOrder = pgTable('withdraw_order', {
+	id: uuid('id').defaultRandom().primaryKey().notNull(),
+	dateWithdraw: date('date_withdraw').defaultNow().notNull(),
+	dateReturn: date('date_return'),
+	userId: integer('user_id').default(1).notNull(),
+	numItems: integer('num_items').default(1).notNull(),
+	isComplete: boolean('is_complete').default(false),
+});
+
+export const withdrawOrderDetails = pgTable('withdraw_order_details', {
+	id: uuid('id').defaultRandom().primaryKey().notNull(),
+	productId: uuid('product_id')
+		.notNull()
+		.references(() => productStock.id, {
+			onUpdate: 'cascade',
+			onDelete: 'cascade',
+		}),
+	withdrawOrderId: uuid('withdraw_order_id').references(() => withdrawOrder.id),
+	dateWithdraw: date('date_withdraw').defaultNow().notNull(),
+	dateReturn: date('date_return'),
+});
+
+// Relations
+export const withdrawOrderRelations = relations(withdrawOrder, ({ many }) => ({
+	details: many(withdrawOrderDetails),
+}));
+
+export const withdrawOrderDetailsRelations = relations(withdrawOrderDetails, ({ one }) => ({
+	withdrawOrder: one(withdrawOrder, {
+		fields: [withdrawOrderDetails.withdrawOrderId],
+		references: [withdrawOrder.id],
+	}),
+	productStock: one(productStock, {
+		fields: [withdrawOrderDetails.productId],
+		references: [productStock.id],
+	}),
+}));
+
+export const productStockRelations = relations(productStock, ({ many }) => ({
+	withdrawOrderDetails: many(withdrawOrderDetails),
+}));
