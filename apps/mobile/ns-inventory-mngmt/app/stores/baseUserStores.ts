@@ -473,6 +473,18 @@ interface ReturnOrderState {
 	) => void;
 
 	/**
+	 * Adds or updates a product in the return products list
+	 * @param stockItem - The stock item to add/update
+	 * @param productInfo - The product information
+	 * @param productStock - The product stock
+	 */
+	handleProductStockSelect: (
+		stockItem: ProductStockItem,
+		productInfo: ProductType,
+		productStock: ProductStockItem[],
+	) => void;
+
+	/**
 	 * Processes a scanned barcode and adds the corresponding product
 	 * @param barcode - The scanned barcode string
 	 * @param orderProducts - Available products in the order
@@ -557,6 +569,46 @@ export const useReturnOrderStore = create<ReturnOrderState>()(
 				}
 			},
 
+			// Action Implementations
+			handleProductStockSelect: (stockItem: ProductStockItem, productInfo: ProductType, productStock: ProductStockItem[]) => {
+				const { returnProducts } = get();
+
+				// Check if this specific stock item is already selected
+				const existingIndex = returnProducts.findIndex(
+					(p) => p.id === stockItem.id,
+				);
+
+				if (existingIndex >= 0) {
+					Alert.alert(
+						"Producto Ya Seleccionado",
+						"Este item específico ya está en la lista",
+					);
+					return;
+				}
+
+				// Mark the stock item as being used
+				const updatedStock = productStock.map(item =>
+					item.id === stockItem.id
+						? { ...item, isBeingUsed: true, lastUsed: new Date(), numberOfUses: item.numberOfUses + 1 }
+						: item
+				);
+
+				// Create a selected product entry
+				const selectedProduct: SelectedProduct = {
+					id: stockItem.id, // Use stock item ID
+					name: productInfo.name,
+					brand: productInfo.brand,
+					stock: 1, // Individual stock item
+					quantity: 1, // Always 1 for individual items
+					selectedAt: new Date(),
+				};
+
+				set({
+					returnProducts: [...returnProducts, selectedProduct],
+				});
+			},
+
+
 			handleBarcodeScanned: (barcode, orderProducts) => {
 				// First try to find product by exact barcode match
 				let product = orderProducts.find(
@@ -569,15 +621,12 @@ export const useReturnOrderStore = create<ReturnOrderState>()(
 				}
 
 				if (product) {
-					const orderItem = orderProducts.find((p) => p.id === product.id);
-					if (orderItem) {
-						get().handleProductSelect(product);
-						set({ showScanner: false });
-						Alert.alert(
-							"Producto Encontrado",
-							`${product.name} agregado para devolución`,
-						);
-					}
+					get().handleProductSelect(product);
+					set({ showScanner: false });
+					Alert.alert(
+						"Producto Encontrado",
+						`${product.name} agregado para devolución`,
+					);
 				} else {
 					Alert.alert(
 						"Producto No Encontrado",
