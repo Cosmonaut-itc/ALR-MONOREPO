@@ -85,6 +85,7 @@ export default function OrderDetailsScreen() {
         returnProducts,
         showScanner,
         handleProductSelect,
+        handleProductStockSelect: handleProductStockSelectReturn,
         handleBarcodeScanned,
         handleRemoveProduct,
         setShowScanner,
@@ -156,7 +157,7 @@ export default function OrderDetailsScreen() {
 
         if (fullProduct) {
             // Use the new stock-based selection method
-            handleProductSelect(fullProduct)
+            handleProductStockSelectReturn(stockItem, fullProduct, productStock)
         } else {
             // Create a basic product object if full product not found
             const basicProduct: Product = {
@@ -167,7 +168,7 @@ export default function OrderDetailsScreen() {
                 stock: 1, // Set to 1 since we know this specific item exists
                 barcode: stockItem.barcode.toString(),
             }
-            handleProductStockSelect(stockItem, basicProduct)
+            handleProductStockSelectReturn(stockItem, basicProduct, productStock)
         }
     }
 
@@ -245,6 +246,17 @@ export default function OrderDetailsScreen() {
                         <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
                             Productos para Devolver ({returnProducts.length})
                         </ThemedText>
+                        <ThemedView
+                            style={[
+                                styles.totalContainer,
+                                {
+                                    backgroundColor: isDark ? Colors.dark.highlight : Colors.light.highlight,
+                                },
+                            ]}
+                        >
+                            <ThemedText style={styles.totalLabel}>Total a devolver:</ThemedText>
+                            <ThemedText style={styles.totalValue}>{getTotalReturning()}</ThemedText>
+                        </ThemedView>
                         {returnProducts.map((product: SelectedProduct) => (
                             <ProductCard
                                 key={product.id}
@@ -262,17 +274,6 @@ export default function OrderDetailsScreen() {
                 {
                     returnProducts.length > 0 && (
                         <ThemedView style={styles.submitSection}>
-                            <ThemedView
-                                style={[
-                                    styles.totalContainer,
-                                    {
-                                        backgroundColor: isDark ? Colors.dark.highlight : Colors.light.highlight,
-                                    },
-                                ]}
-                            >
-                                <ThemedText style={styles.totalLabel}>Total a devolver:</ThemedText>
-                                <ThemedText style={styles.totalValue}>{getTotalReturning()}</ThemedText>
-                            </ThemedView>
                             <ThemedButton
                                 title="Procesar Devolución"
                                 onPress={handleSubmitReturn}
