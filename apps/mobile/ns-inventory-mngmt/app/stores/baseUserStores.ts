@@ -375,6 +375,12 @@ interface ProductComboboxState {
 	 * @param products - The full list of products to reset to
 	 */
 	resetSearch: (products: Array<typeof Product.infer>) => void;
+
+	/**
+	 * Completely resets the store to its initial state
+	 * Useful for cleaning up state across navigation
+	 */
+	resetToInitialState: () => void;
 }
 
 /**
@@ -444,6 +450,15 @@ export const useProductComboboxStore = create<ProductComboboxState>()(
 						},
 						{},
 					),
+				});
+			},
+
+			resetToInitialState: () => {
+				set({
+					searchText: "",
+					isOpen: false,
+					filteredProducts: [],
+					groupedProducts: {},
 				});
 			},
 		}),
