@@ -99,7 +99,8 @@ export function ProductCombobox({
         isOpen,
         handleSearch,
         setIsOpen,
-        resetSearch
+        resetSearch,
+        resetToInitialState
     } = useProductComboboxStore()
 
     // Group and filter warehouse stock
@@ -111,10 +112,24 @@ export function ProductCombobox({
         return filterStockGroups(stockGroups, searchText)
     }, [stockGroups, searchText])
 
-    // Reset search when component mounts or stock changes
+    // Reset search and ensure proper state when component mounts or when key dependencies change
     useEffect(() => {
-        resetSearch([]) // We don't use the products array anymore
-    }, [productStock, resetSearch])
+        // Reset to initial state first to clear any stale state from previous navigation
+        resetToInitialState()
+
+        // Then reset search with proper products if we have any
+        if (products.length > 0) {
+            resetSearch(products)
+        }
+    }, [productStock, resetSearch, resetToInitialState, products])
+
+    // Cleanup effect to reset state when component unmounts (navigation cleanup)
+    useEffect(() => {
+        return () => {
+            // Reset the store to initial state when component unmounts to prevent state persistence issues
+            resetToInitialState()
+        }
+    }, [resetToInitialState])
 
     const handleStockItemSelection = (item: ProductStockItem) => {
         if (onStockItemSelect) {
@@ -125,7 +140,15 @@ export function ProductCombobox({
 
     const handleSearchInput = (text: string) => {
         // Just update the search text - filtering is handled in useMemo
-        handleSearch(text, [])
+        handleSearch(text, products) // Pass products for consistency
+    }
+
+    const handleOpenModal = () => {
+        if (!disabled) {
+            // Ensure we reset any stale state before opening
+            resetSearch(products)
+            setIsOpen(true)
+        }
     }
 
     const renderStockGroup = (group: WarehouseStockGroup) => {
@@ -187,7 +210,7 @@ export function ProductCombobox({
                     },
                     disabled && styles.inputDisabled,
                 ]}
-                onPress={() => !disabled && setIsOpen(true)}
+                onPress={handleOpenModal}
                 disabled={disabled}
             >
                 <ThemedText

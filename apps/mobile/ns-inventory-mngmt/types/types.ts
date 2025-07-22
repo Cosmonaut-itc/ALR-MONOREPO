@@ -227,6 +227,25 @@ export const dataItemSchema = t({
 	last_change_date: "string.date.iso.parse",
 });
 
+// ===== Withdraw Orders Schemas =====
+
+export const withdrawOrderSchema = t({
+	id: "string", // UUID
+	dateWithdraw: "string.date.iso.parse", // Date field from DB
+	dateReturn: "string.date.iso.parse?", // Nullable date field
+	userId: "number", // Integer with default 1
+	numItems: "number", // Integer with default 1
+	isComplete: "boolean?", // Boolean with default false
+});
+
+export const withdrawOrderDetailsSchema = t({
+	id: "string", // UUID
+	productId: "string", // UUID referencing productStock.id
+	withdrawOrderId: "string?", // UUID referencing withdrawOrder.id (nullable)
+	dateWithdraw: "string.date.iso.parse", // Date field from DB
+	dateReturn: "string.date.iso.parse?", // Nullable date field
+});
+
 // Generic API Response Schema Factory
 // This function creates a response schema for any data type
 export const createApiResponseSchema = (dataSchema: any) => t({
@@ -257,12 +276,39 @@ export const productStockResponseSchema = createApiResponseSchema(productStockAr
 export const articulosArraySchema = t(dataItemSchema, "[]");
 export const articulosResponseSchema = createApiResponseSchema(articulosArraySchema);
 
-// ===== Inferred Types =====
+// Create withdraw orders response schemas
+export const withdrawOrderArraySchema = t(withdrawOrderSchema, "[]");
+export const withdrawOrderResponseSchema = createApiResponseSchema(withdrawOrderArraySchema);
 
+export const withdrawOrderDetailsArraySchema = t(withdrawOrderDetailsSchema, "[]");
+export const withdrawOrderDetailsResponseSchema = createApiResponseSchema(withdrawOrderDetailsArraySchema);
+
+// ===== Enhanced Schemas with Relations (Optional) =====
+
+// If you want to include related data in your API responses
+export const withdrawOrderWithDetailsSchema = withdrawOrderSchema.merge({
+	details: t(withdrawOrderDetailsSchema, "[]").optional(),
+});
+
+export const withdrawOrderDetailsWithRelationsSchema = withdrawOrderDetailsSchema.merge({
+	withdrawOrder: withdrawOrderSchema.optional(),
+	productStock: productStockItemSchema.optional(),
+});
+
+// ===== Inferred Types =====
 export type DataItemArticulosType = typeof dataItemSchema.infer;
 export type ApiResponseType = typeof articulosResponseSchema.infer;
 export type ProductStockItem = typeof productStockItemSchema.infer;
 export type ProductStockResponse = typeof productStockResponseSchema.infer;
+// Withdraw Orders Types
+export type WithdrawOrder = typeof withdrawOrderSchema.infer;
+export type WithdrawOrderDetails = typeof withdrawOrderDetailsSchema.infer;
+export type WithdrawOrderResponse = typeof withdrawOrderResponseSchema.infer;
+export type WithdrawOrderDetailsResponse = typeof withdrawOrderDetailsResponseSchema.infer;
+
+// Enhanced types with relations
+export type WithdrawOrderWithDetails = typeof withdrawOrderWithDetailsSchema.infer;
+export type WithdrawOrderDetailsWithRelations = typeof withdrawOrderDetailsWithRelationsSchema.infer;
 
 // ===== Warehouse Inventory Types =====
 
@@ -315,6 +361,14 @@ export interface AppType {
 				$get: () => Promise<Response>;
 			};
 		};
+		"withdraw-orders": {
+			all: {
+				$get: () => Promise<Response>;
+			};
+			details: {
+				$get: (args: { query: { dateWithdraw: string } }) => Promise<Response>;
+			};
+		};
 	};
 
 	db: {
@@ -346,6 +400,39 @@ export const validateProduct = (data: unknown) => {
 	const result = dataItemSchema(data);
 	if (result instanceof t.errors) {
 		throw new Error(`Product validation failed: ${result.summary}`);
+	}
+	return result;
+};
+
+export const validateWithdrawOrdersResponse = (data: unknown) => {
+	const result = withdrawOrderResponseSchema(data);
+	if (result instanceof t.errors) {
+		throw new Error(`Withdraw orders response validation failed: ${result.summary}`);
+	}
+	return result;
+};
+
+export const validateWithdrawOrderDetailsResponse = (data: unknown) => {
+	const result = withdrawOrderDetailsResponseSchema(data);
+	if (result instanceof t.errors) {
+		throw new Error(`Withdraw order details response validation failed: ${result.summary}`);
+	}
+	return result;
+};
+
+// Individual item validators
+export const validateWithdrawOrder = (data: unknown) => {
+	const result = withdrawOrderSchema(data);
+	if (result instanceof t.errors) {
+		throw new Error(`Withdraw order validation failed: ${result.summary}`);
+	}
+	return result;
+};
+
+export const validateWithdrawOrderDetails = (data: unknown) => {
+	const result = withdrawOrderDetailsSchema(data);
+	if (result instanceof t.errors) {
+		throw new Error(`Withdraw order details validation failed: ${result.summary}`);
 	}
 	return result;
 };

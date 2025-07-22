@@ -9,10 +9,8 @@ import { ThemedView } from "@/components/ThemedView"
 import { ThemedButton } from "@/components/ThemedButton"
 import { BarcodeScanner } from "@/components/ui/BarcodeScanner"
 import { ProductCard } from "@/components/ui/ProductCard"
-import { PendingOrderCard } from "@/components/ui/PendingOrderCard"
-import { Collapsible } from "@/components/Collapsible"
 import { useColorScheme } from "@/hooks/useColorScheme"
-import type { PendingOrder, ProductStockItem, SelectedProduct } from "@/types/types"
+import type { ProductStockItem, SelectedProduct } from "@/types/types"
 import { useBaseUserStore } from "@/app/stores/baseUserStores"
 import { ThemedHeader } from "@/components/ThemedHeader"
 import { ScannerComboboxSection } from "@/components/ui/ScannerComboboxSection"
@@ -150,55 +148,6 @@ const useProductStockQuery = (): UseProductStockQueryResult => {
     }
 }
 
-/**
- * Mock pending orders data
- * Represents orders that have been taken but not fully returned
- */
-const PENDING_ORDERS: PendingOrder[] = [
-    {
-        id: "o1",
-        orderNumber: "ORD-001",
-        items: [
-            {
-                productId: "1",
-                productName: "Esmalte Rojo Clásico",
-                brand: "OPI",
-                quantityTaken: 3,
-                quantityReturned: 0,
-                price: 15.99,
-            },
-            {
-                productId: "2",
-                productName: "Base Coat Fortalecedora",
-                brand: "Essie",
-                quantityTaken: 2,
-                quantityReturned: 1,
-                price: 12.5,
-            },
-        ],
-        takenAt: new Date(Date.now() - 2 * 60 * 60 * 1000), // 2 hours ago
-        takenBy: "María García",
-        status: "partial",
-    },
-    {
-        id: "o2",
-        orderNumber: "ORD-002",
-        items: [
-            {
-                productId: "3",
-                productName: "Top Coat Brillo",
-                brand: "Sally Hansen",
-                quantityTaken: 1,
-                quantityReturned: 0,
-                price: 10.99,
-            },
-        ],
-        takenAt: new Date(Date.now() - 30 * 60 * 1000), // 30 minutes ago
-        takenBy: "Ana López",
-        status: "pending",
-    },
-]
-
 export default function InventoryScannerScreen() {
     const colorScheme = useColorScheme()
     const isDark = colorScheme === "dark"
@@ -225,28 +174,40 @@ export default function InventoryScannerScreen() {
     // Track if store has been initialized to prevent infinite loops
     const isInitialized = useRef(false)
 
-    // Initialize store with fetched data only once when data becomes available
+    const currentDate = useMemo(() => new Date().toISOString().split('T')[0], [])
+
+    // Initialize store with fetched data only when BOTH datasets are available
     useEffect(() => {
-        // Only initialize if we have data and haven't initialized yet
-        if ((products.length > 0 || productStock.length > 0) && !isInitialized.current) {
-            useBaseUserStore.getState().initializeStore(products, productStock, PENDING_ORDERS)
+        // Wait for both datasets to have data and not be in loading state
+        const hasProducts = products.length > 0
+        const hasProductStock = productStock.length > 0
+        const bothLoaded = !isLoadingProducts && !isLoadingProductStock
+
+        if (hasProducts && hasProductStock && bothLoaded && !isInitialized.current) {
+            console.log('🚀 Initializing store with:', {
+                productsCount: products.length,
+                productStockCount: productStock.length
+            })
+            useBaseUserStore.getState().initializeStore(products, productStock)
             isInitialized.current = true
         }
-    }, [products, productStock])
+    }, [products, productStock, isLoadingProducts, isLoadingProductStock])
 
     // Get store state and actions
     const {
         selectedProducts,
-        pendingOrders,
         showScanner,
         handleProductStockSelect,
         handleBarcodeScanned,
         handleRemoveProduct,
-        handleOrderClick,
         handleSubmit,
         setShowScanner,
         getAvailableStockItems,
     } = useBaseUserStore()
+
+
+    // Get available stock items from the store (filters by warehouse and availability) 
+    const availableStock = getAvailableStockItems(1)
 
     /**
      * Enhanced barcode scan handler that works with API product data
@@ -343,31 +304,22 @@ export default function InventoryScannerScreen() {
         )
     }
 
-    // Get available stock items from the store (filters by warehouse and availability)
-    const availableStock = getAvailableStockItems(1)
 
     return (
         <ThemedView style={styles.container}>
             <StatusBar style={isDark ? "light" : "dark"} />
 
-            <ThemedHeader title="Escáner de Inventario" />
+            <ThemedHeader title="Retiro de Productos" />
 
             <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-                {/* Pending Orders Section - Collapsible */}
-                {pendingOrders.length > 0 && (
-                    <ThemedView style={styles.section}>
-                        <Collapsible title={`Órdenes Pendientes (${pendingOrders.length})`}>
-                            {pendingOrders.map((order: PendingOrder) => (
-                                <PendingOrderCard
-                                    key={order.id}
-                                    order={order}
-                                    onOrderClick={(order) => handleOrderClick(order, router)}
-                                    style={styles.pendingCard}
-                                />
-                            ))}
-                        </Collapsible>
-                    </ThemedView>
-                )}
+                {/* Return Order Section, it ius just a button that opens the return order screen */}
+                <ThemedButton
+                    title="Retornar Productos"
+                    onPress={() => router.push(`/entry/baseUser/returnOrder/${currentDate}`)}
+                    variant="primary"
+                    size="medium"
+                    style={styles.returnOrderButton}
+                />
 
                 {/* Warehouse Inventory Section */}
                 <ScannerComboboxSection
@@ -401,7 +353,7 @@ export default function InventoryScannerScreen() {
                 {selectedProducts.length > 0 && (
                     <ThemedView style={styles.submitContainer}>
                         <ThemedButton
-                            title="Procesar Inventario"
+                            title="Procesar Retiro"
                             onPress={handleSubmit}
                             style={styles.submitButton}
                             variant="primary"
@@ -512,5 +464,8 @@ const styles = StyleSheet.create({
     },
     retryButton: {
         paddingHorizontal: 32,
+    },
+    returnOrderButton: {
+        marginBottom: 16,
     },
 })
