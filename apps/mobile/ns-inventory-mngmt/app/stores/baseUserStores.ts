@@ -31,12 +31,9 @@ const Product = type({
 interface BaseUserState {
 	// State Properties
 	selectedProducts: SelectedProduct[]; // Products currently selected for inventory
-	pendingOrders: PendingOrder[]; // Orders that need to be processed
 	showScanner: boolean; // Controls visibility of barcode scanner
-	selectedOrder: PendingOrder | null; // Currently selected order for return processing
 	availableProducts: Array<typeof Product.infer>; // Available products in the system
 	productStock: ProductStockItem[]; // Available product stock items
-	isReceivingOrder: boolean; // Indicates if we are currently processing a return order
 
 	// Action Methods
 	/**
@@ -117,12 +114,10 @@ interface BaseUserState {
 	 * Initializes the store with available products, product stock, and pending orders
 	 * @param products - Array of available products
 	 * @param productStock - Array of product stock items
-	 * @param orders - Array of pending orders
 	 */
 	initializeStore: (
 		products: Array<typeof Product.infer>,
 		productStock: ProductStockItem[],
-		orders: PendingOrder[],
 	) => void;
 }
 
@@ -135,12 +130,9 @@ export const useBaseUserStore = create<BaseUserState>()(
 		(set, get) => ({
 			// Initial State
 			selectedProducts: [],
-			pendingOrders: [],
 			showScanner: false,
-			selectedOrder: null,
 			availableProducts: [],
 			productStock: [],
-			isReceivingOrder: false,
 
 			// Action Implementations
 			handleProductStockSelect: (stockItem, productInfo) => {
@@ -182,8 +174,8 @@ export const useBaseUserStore = create<BaseUserState>()(
 				});
 			},
 
-			handleProductSelect: (product, quantity = 1) => {
-				const { productStock, availableProducts } = get();
+			handleProductSelect: (product) => {
+				const { productStock } = get();
 
 				// Find an available stock item for this product
 				const availableStockItem = productStock.find(
@@ -275,28 +267,6 @@ export const useBaseUserStore = create<BaseUserState>()(
 				}
 			},
 
-			handleUpdateQuantity: (productId, newQuantity) => {
-				const { selectedProducts } = get();
-				if (newQuantity <= 0) {
-					get().handleRemoveProduct(productId);
-					return;
-				}
-
-				set({
-					selectedProducts: selectedProducts.map((p) =>
-						p.id === productId ? { ...p, quantity: newQuantity } : p,
-					),
-				});
-			},
-
-			handleOrderClick: (order, router) => {
-				set({
-					selectedOrder: order,
-					isReceivingOrder: true,
-				});
-				router.push(`/entry/baseUser/returnOrder/${order.id}`);
-			},
-
 			handleSubmit: () => {
 				const { selectedProducts } = get();
 				if (selectedProducts.length === 0) {
@@ -319,8 +289,6 @@ export const useBaseUserStore = create<BaseUserState>()(
 								console.log("Processing inventory:", selectedProducts);
 								set({
 									selectedProducts: [],
-									isReceivingOrder: false,
-									selectedOrder: null,
 								});
 								Alert.alert("Éxito", "Inventario procesado correctamente");
 							},
@@ -330,11 +298,6 @@ export const useBaseUserStore = create<BaseUserState>()(
 			},
 
 			setShowScanner: (show) => set({ showScanner: show }),
-			setSelectedOrder: (order) =>
-				set({
-					selectedOrder: order,
-					isReceivingOrder: order !== null,
-				}),
 
 			getAvailableStockItems: (targetWarehouse = 1) => {
 				const { productStock } = get();
@@ -354,13 +317,10 @@ export const useBaseUserStore = create<BaseUserState>()(
 				return filtered;
 			},
 
-			initializeStore: (products, productStock, orders) => {
+			initializeStore: (products, productStock) => {
 				set({
 					availableProducts: products,
 					productStock: productStock,
-					pendingOrders: orders,
-					isReceivingOrder: false,
-					selectedOrder: null,
 				});
 			},
 		}),
@@ -510,7 +470,6 @@ interface ReturnOrderState {
 	 */
 	handleProductSelect: (
 		product: typeof Product.infer,
-		maxReturn: number,
 	) => void;
 
 	/**
@@ -565,7 +524,7 @@ export const useReturnOrderStore = create<ReturnOrderState>()(
 			showScanner: false,
 
 			// Action Implementations
-			handleProductSelect: (product, maxReturn) => {
+			handleProductSelect: (product) => {
 				const { returnProducts } = get();
 				const existingIndex = returnProducts.findIndex(
 					(p) => p.id === product.id,
@@ -574,7 +533,7 @@ export const useReturnOrderStore = create<ReturnOrderState>()(
 				if (existingIndex >= 0) {
 					// Update existing product quantity
 					const updated = [...returnProducts];
-					if (updated[existingIndex].quantity < maxReturn) {
+					if (updated[existingIndex].quantity < product.stock) {
 						updated[existingIndex].quantity += 1;
 						set({ returnProducts: updated });
 					} else {
@@ -590,7 +549,6 @@ export const useReturnOrderStore = create<ReturnOrderState>()(
 							...returnProducts,
 							{
 								...product,
-								stock: maxReturn,
 								quantity: 1,
 								selectedAt: new Date(),
 							},
@@ -613,7 +571,7 @@ export const useReturnOrderStore = create<ReturnOrderState>()(
 				if (product) {
 					const orderItem = orderProducts.find((p) => p.id === product.id);
 					if (orderItem) {
-						get().handleProductSelect(product, orderItem.stock);
+						get().handleProductSelect(product);
 						set({ showScanner: false });
 						Alert.alert(
 							"Producto Encontrado",

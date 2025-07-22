@@ -1,6 +1,5 @@
 "use client"
 
-import { useEffect } from "react"
 import { StyleSheet, ScrollView, Alert } from "react-native"
 import { StatusBar } from "expo-status-bar"
 import { router, useLocalSearchParams } from "expo-router"
@@ -12,20 +11,74 @@ import { BarcodeScanner } from "@/components/ui/BarcodeScanner"
 import { ProductCard } from "@/components/ui/ProductCard"
 import { Colors } from "@/constants/Colors"
 import { useColorScheme } from "@/hooks/useColorScheme"
-import type { Product, PendingOrder, SelectedProduct, OrderItem } from "@/types/types"
+import type { Product, SelectedProduct, OrderItem, WithdrawOrderDetails, ProductStockItem } from "@/types/types"
 import { ThemedHeader } from "@/components/ThemedHeader"
 import { ScannerComboboxSection } from "@/components/ui/ScannerComboboxSection"
 import { useBaseUserStore, useReturnOrderStore } from "@/app/stores/baseUserStores"
 import { Collapsible } from "@/components/Collapsible"
+import { useQuery } from "@tanstack/react-query"
+import { QUERY_KEYS } from "@/lib/query-keys"
+import { getWithdrawalOrdersDetails } from "@/lib/fetch-functions"
+import { useMemo } from "react"
+
+
+/**
+ * Custom hook to manage product data from a withrawal order with proper error handling and loading states 
+ * Follows TanStack Query best practices for data fetching and state management
+ * @returns Object containing products data, loading state, error state, and utility functions
+ */
+interface UseWithdrawOrderDetailsQueryResult {
+    /** Array of transformed products ready for UI consumption */
+    products: WithdrawOrderDetails[]
+    /** Boolean indicating if the initial data fetch is in progress */
+    isLoading: boolean
+    /** Boolean indicating if there's an error in the query */
+    isError: boolean
+    /** Error object containing details about any query failures */
+    error: Error | null
+    /** Boolean indicating if a background refetch is in progress */
+    isFetching: boolean
+    /** Function to manually trigger a refetch of products */
+    refetch: () => void
+}
+
+const useWithdrawalOrderDetailsQuery = (date: string): UseWithdrawOrderDetailsQueryResult => {
+    const {
+        data: apiProducts,
+        isLoading,
+        isError,
+        error,
+        isFetching,
+        refetch,
+    } = useQuery({
+        queryKey: [QUERY_KEYS.WITHDRAW_ORDER_DETAILS, date],
+        queryFn: () => getWithdrawalOrdersDetails(date),
+        staleTime: 5 * 60 * 1000, // 5 minutes - data considered fresh for this duration
+        gcTime: 10 * 60 * 1000, // 10 minutes - cache garbage collection time
+        retry: 3, // Retry failed requests up to 3 times
+        retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // Exponential backoff
+    })
+
+    return {
+        products: apiProducts || [],
+        isLoading,
+        isError,
+        error,
+        isFetching,
+        refetch,
+    }
+}
+
+
 
 export default function OrderDetailsScreen() {
-    const { id } = useLocalSearchParams<{ id: string }>()
+    const { date } = useLocalSearchParams<{ date: string }>()
     const colorScheme = useColorScheme()
     const isDark = colorScheme === "dark"
 
-    // Get order from baseUserStore
-    const { selectedOrder, pendingOrders } = useBaseUserStore()
-    const order = selectedOrder || pendingOrders.find((o: PendingOrder) => o.id === id)
+    console.log("date", date)
+
+    const { productStock, availableProducts, selectedProducts, handleProductStockSelect } = useBaseUserStore()
 
     // Get return order state and actions
     const {
@@ -34,31 +87,37 @@ export default function OrderDetailsScreen() {
         handleProductSelect,
         handleBarcodeScanned,
         handleRemoveProduct,
-        handleUpdateQuantity,
         setShowScanner,
         clearReturnProducts,
     } = useReturnOrderStore()
 
-    useEffect(() => {
-        if (!order) {
-            Alert.alert("Error", "Orden no encontrada", [{ text: "OK", onPress: () => router.back() }])
-        }
-        // Clear return products when component unmounts
-        return () => {
-            clearReturnProducts()
-        }
-    }, [order, clearReturnProducts])
+    const { products, isLoading, isError, error, isFetching, refetch } = useWithdrawalOrderDetailsQuery(date)
 
-    // Convert order items to products for the combobox
-    const orderAsProducts: Product[] =
-        order?.items.map((item: OrderItem) => ({
-            id: item.productId,
-            name: item.productName,
-            brand: item.brand,
-            price: item.price,
-            stock: item.quantityTaken - item.quantityReturned, // Available to return
-            barcode: item.productId, // Use productId as barcode for scanning
-        })) || []
+    // Filter withdrawal order details that have corresponding products in availableProducts and transform to Product type
+    const renderedProducts = useMemo(() => {
+        return products
+            .filter((orderDetail: WithdrawOrderDetails) =>
+                availableProducts.some((p: Product) => p.id === orderDetail.productId)
+            )
+            .map((orderDetail: WithdrawOrderDetails) => {
+                // Find the corresponding product information using productId
+                const productInfo = availableProducts.find((p: Product) => p.id === orderDetail.productId);
+
+                if (!productInfo) {
+                    // This shouldn't happen due to the filter above, but TypeScript safety
+                    throw new Error(`Product not found for ID: ${orderDetail.productId}`);
+                }
+
+                return {
+                    id: orderDetail.productId,
+                    name: productInfo.name,
+                    brand: productInfo.brand,
+                    price: productInfo.price,
+                    stock: productInfo.stock, // Use available stock from product info
+                };
+            });
+    }, [products, availableProducts])
+
 
     const handleSubmitReturn = () => {
         if (returnProducts.length === 0) {
@@ -86,47 +145,34 @@ export default function OrderDetailsScreen() {
         return returnProducts.reduce((total: number, product: SelectedProduct) => total + product.quantity, 0)
     }
 
-    const getOrderItemStatus = (productId: string) => {
-        const orderItem = order?.items.find((item: OrderItem) => item.productId === productId)
-        if (!orderItem) return "unknown"
+    /**
+ * Handler for warehouse stock item selection
+ * Uses the new stock-based selection system that tracks individual items
+ * @param stockItem - The selected warehouse stock item
+ */
+    const handleStockItemSelect = (stockItem: ProductStockItem) => {
+        // Find the full product information by barcode
+        const fullProduct = availableProducts.find((p: Product) => Number(p.barcode) === stockItem.barcode)
 
-        if (orderItem.quantityReturned >= orderItem.quantityTaken) {
-            return "completed"
-        } if (orderItem.quantityReturned > 0) {
-            return "partial"
-        }
-        return "pending"
-    }
-
-    if (!order) {
-        return (
-            <ThemedView style={styles.container}>
-                <ThemedText>Cargando orden...</ThemedText>
-            </ThemedView>
-        )
-    }
-
-    const getStatusColor = () => {
-        switch (order.status) {
-            case "completed":
-                return isDark ? "#4ade80" : "#16a34a"
-            case "partial":
-                return isDark ? "#fbbf24" : "#d97706"
-            default:
-                return isDark ? "#ffd166" : "#f57c00"
+        if (fullProduct) {
+            // Use the new stock-based selection method
+            handleProductSelect(fullProduct)
+        } else {
+            // Create a basic product object if full product not found
+            const basicProduct: Product = {
+                id: `product-${stockItem.barcode}`, // Use product prefix + barcode as product ID
+                name: `Producto ${stockItem.barcode}`, // Fallback name
+                brand: "Sin marca", // Default brand
+                price: 0, // Default price since we don't have it in stock data
+                stock: 1, // Set to 1 since we know this specific item exists
+                barcode: stockItem.barcode.toString(),
+            }
+            handleProductStockSelect(stockItem, basicProduct)
         }
     }
 
-    const getStatusText = () => {
-        switch (order.status) {
-            case "completed":
-                return "COMPLETADO"
-            case "partial":
-                return "SIN DEVOLVER"
-            default:
-                return "PENDIENTE"
-        }
-    }
+
+
 
     return (
         <ThemedView style={styles.container}>
@@ -136,40 +182,24 @@ export default function OrderDetailsScreen() {
 
             <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
                 {/* Order Info */}
-                <ThemedView
-                    style={[
-                        styles.orderInfoSection,
-                        {
-                            backgroundColor: isDark ? Colors.dark.highlight : Colors.light.highlight,
-                        },
-                    ]}
-                >
-                    <ThemedText style={styles.orderNumber}>Orden #{order.orderNumber}</ThemedText>
-                    <ThemedText style={styles.orderDetails}>Fecha: {order.takenAt.toLocaleDateString()}</ThemedText>
-                    <ThemedText style={styles.orderDetails}>
-                        Estado: {order.status === "pending" ? "Pendiente" : order.status === "partial" ? "Parcial" : "Completado"}
-                    </ThemedText>
-                </ThemedView>
+
 
                 {/* Order Items Overview */}
                 <ThemedView style={styles.section}>
-                    <Collapsible title={`Productos de la Orden (${order.items.length})`}>
+                    <Collapsible title={`Productos de la Orden (${renderedProducts.length})`}>
                         <ScrollView
                             horizontal
                             showsHorizontalScrollIndicator={false}
                             contentContainerStyle={styles.orderItemsGrid}
                         >
-                            {order.items.map((item: OrderItem) => {
-                                const status = getOrderItemStatus(item.productId)
-                                const statusColor = isDark ? "#fbbf24" : "#d97706"
+                            {renderedProducts.map((item: Product) => {
                                 return (
                                     <ThemedView
-                                        key={item.productId}
+                                        key={item.id}
                                         style={[
                                             styles.orderItemCard,
                                             {
                                                 backgroundColor: isDark ? Colors.dark.surface : Colors.light.surface,
-                                                borderColor: statusColor,
                                             },
                                         ]}
                                     >
@@ -179,16 +209,15 @@ export default function OrderDetailsScreen() {
                                             lightColor={Colors.light.surface}
                                             darkColor={Colors.dark.surface}
                                         >
-                                            <ThemedText style={styles.itemName}>{item.productName}</ThemedText>
+                                            <ThemedText style={styles.itemName}>{item.name}</ThemedText>
                                             <ThemedView
                                                 style={[
                                                     styles.badge,
                                                     {
-                                                        backgroundColor: getStatusColor(),
+                                                        backgroundColor: Colors.light.highlight,
                                                     },
                                                 ]}
                                             >
-                                                <ThemedText style={styles.badgeText}>{getStatusText()}</ThemedText>
                                             </ThemedView>
                                             <ThemedText style={styles.itemBrand}>{item.brand}</ThemedText>
                                         </ThemedView>
@@ -201,16 +230,13 @@ export default function OrderDetailsScreen() {
 
                 {/* Scanner and Combobox Section */}
                 <ScannerComboboxSection
-                    products={orderAsProducts}
-                    onProductSelect={(product: Product) => {
-                        const orderItem = order.items.find((item: OrderItem) => item.productId === product.id)
-                        if (orderItem) {
-                            handleProductSelect(product, orderItem.quantityTaken - orderItem.quantityReturned)
-                        }
-                    }}
+                    products={availableProducts}
+                    productStock={productStock}
+                    targetWarehouse={1}
+                    onStockItemSelect={handleStockItemSelect}
                     onScanPress={() => setShowScanner(true)}
-                    title="Seleccionar Productos para Devolución"
-                    placeholder="Seleccionar producto de la orden..."
+                    isLoading={isFetching}
+                    itemCount={selectedProducts.length}
                 />
 
                 {/* Return Products Section */}
@@ -219,55 +245,56 @@ export default function OrderDetailsScreen() {
                         <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
                             Productos para Devolver ({returnProducts.length})
                         </ThemedText>
-                        {returnProducts.map((product: SelectedProduct) => {
-                            const orderItem = order.items.find((item: OrderItem) => item.productId === product.id)
-                            const maxReturn = orderItem ? orderItem.quantityTaken - orderItem.quantityReturned : 0
-                            return (
-                                <ProductCard
-                                    key={product.id}
-                                    product={product}
-                                    onRemove={handleRemoveProduct}
-                                    onUpdateQuantity={(id: string, quantity: number) => handleUpdateQuantity(id, quantity, maxReturn)}
-                                    style={styles.productCard}
-                                />
-                            )
-                        })}
+                        {returnProducts.map((product: SelectedProduct) => (
+                            <ProductCard
+                                key={product.id}
+                                product={product}
+                                onRemove={handleRemoveProduct}
+                                style={styles.productCard}
+                            />
+                        ))}
                     </ThemedView>
                 )}
+
+
 
                 {/* Submit Section */}
-                {returnProducts.length > 0 && (
-                    <ThemedView style={styles.submitSection}>
-                        <ThemedView
-                            style={[
-                                styles.totalContainer,
-                                {
-                                    backgroundColor: isDark ? Colors.dark.highlight : Colors.light.highlight,
-                                },
-                            ]}
-                        >
-                            <ThemedText style={styles.totalLabel}>Total a devolver:</ThemedText>
-                            <ThemedText style={styles.totalValue}>{getTotalReturning()}</ThemedText>
+                {
+                    returnProducts.length > 0 && (
+                        <ThemedView style={styles.submitSection}>
+                            <ThemedView
+                                style={[
+                                    styles.totalContainer,
+                                    {
+                                        backgroundColor: isDark ? Colors.dark.highlight : Colors.light.highlight,
+                                    },
+                                ]}
+                            >
+                                <ThemedText style={styles.totalLabel}>Total a devolver:</ThemedText>
+                                <ThemedText style={styles.totalValue}>{getTotalReturning()}</ThemedText>
+                            </ThemedView>
+                            <ThemedButton
+                                title="Procesar Devolución"
+                                onPress={handleSubmitReturn}
+                                style={styles.submitButton}
+                                variant="primary"
+                                size="medium"
+                            />
                         </ThemedView>
-                        <ThemedButton
-                            title="Procesar Devolución"
-                            onPress={handleSubmitReturn}
-                            style={styles.submitButton}
-                            variant="primary"
-                            size="medium"
-                        />
-                    </ThemedView>
-                )}
-            </ScrollView>
+                    )
+                }
+            </ScrollView >
 
             {/* Barcode Scanner Modal */}
-            {showScanner && (
-                <BarcodeScanner
-                    onBarcodeScanned={(barcode) => handleBarcodeScanned(barcode, orderAsProducts)}
-                    onClose={() => setShowScanner(false)}
-                />
-            )}
-        </ThemedView>
+            {
+                showScanner && (
+                    <BarcodeScanner
+                        onBarcodeScanned={(barcode) => handleBarcodeScanned(barcode, availableProducts)}
+                        onClose={() => setShowScanner(false)}
+                    />
+                )
+            }
+        </ThemedView >
     )
 }
 
