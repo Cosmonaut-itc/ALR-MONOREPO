@@ -103,16 +103,36 @@ app.use('*', async (c, next) => {
 		// Extract session from request headers using Better Auth
 		const session = await auth.api.getSession({ headers: c.req.raw.headers });
 
-		if (session) {
-			// Valid session found, set context variables
-			c.set('user', session.user);
-			c.set('session', session.session);
-		} else {
-			// No active session found
-			c.set('user', null);
-			c.set('session', null);
+		// Always set context variables for all requests
+		c.set('user', session?.user || null);
+		c.set('session', session?.session || null);
+
+		// Define routes that require authentication
+		const protectedRoutes = [
+			'/api/auth/products/',
+			'/api/auth/product-stock/',
+			'/api/auth/cabinet-warehouse/',
+			'/api/auth/employee/',
+			'/api/auth/withdraw-orders/',
+			'/api/auth/withdraw-orders/details',
+		];
+
+		// Check if this is a protected custom route
+		// biome-ignore lint/nursery/noShadow: false flag
+		const isProtectedRoute = protectedRoutes.some((route) => c.req.path.startsWith(route));
+
+		// If it's a protected route and no session, block access
+		if (isProtectedRoute && !session) {
+			return c.json(
+				{
+					success: false,
+					message: 'Authentication required',
+				},
+				401,
+			);
 		}
 
+		// Allow all other routes to proceed (including Better Auth public endpoints)
 		return next();
 	} catch (error) {
 		// Log authentication errors but don't fail the request
@@ -122,15 +142,6 @@ app.use('*', async (c, next) => {
 		c.set('session', null);
 		return next();
 	}
-});
-
-/**
- * Better Auth handler for authentication endpoints
- * Delegates all authentication-related requests to Better Auth
- * Supports POST and GET methods for various auth flows
- */
-app.on(['POST', 'GET'], '/api/auth/*', (c) => {
-	return auth.handler(c.req.raw);
 });
 
 /**
@@ -181,7 +192,7 @@ const route = app
 	 * @returns {ApiResponse<DataItemArticulosType[]>} Success response with products array
 	 * @throws {500} Internal server error if data fetching fails
 	 */
-	.get('/api/products/all', async (c) => {
+	.get('/api/auth/products/all', async (c) => {
 		try {
 			// TODO: Replace with actual API call when ready
 			// const { company_id } = c.req.valid('query');
@@ -275,7 +286,7 @@ const route = app
 	 * @returns {ApiResponse} Success response with product stock data (from DB or mock)
 	 * @throws {500} If an unexpected error occurs during data retrieval
 	 */
-	.get('/api/product-stock/all', async (c) => {
+	.get('/api/auth/product-stock/all', async (c) => {
 		try {
 			// Query the productStock table for all records
 			const productStock = await db.select().from(schemas.productStock);
@@ -326,7 +337,7 @@ const route = app
 	 * @returns {ApiResponse} Success response with cabinet warehouse data (from DB or mock)
 	 * @throws {500} If an unexpected error occurs during data retrieval
 	 */
-	.get('/api/cabinet-warehouse/all', async (c) => {
+	.get('/api/auth/cabinet-warehouse/all', async (c) => {
 		try {
 			// Query the cabinetWarehouse table for all records
 			const cabinetWarehouse = await db.select().from(schemas.cabinetWarehouse);
@@ -383,10 +394,15 @@ const route = app
 		async (c) => {
 			try {
 				const { userId } = c.req.valid('query');
-				// Query the employee table for all records
+
+				// Query the employee table for all records and permissions
 				const employee = await db
 					.select()
 					.from(schemas.employee)
+					.leftJoin(
+						schemas.permissions,
+						eq(schemas.employee.permissions, schemas.permissions.id),
+					)
 					.where(eq(schemas.employee.userId, userId));
 
 				// If no records exist, return mock data for development/testing
@@ -437,7 +453,7 @@ const route = app
 	 * @returns {ApiResponse} Success response with withdraw orders data (from DB or mock)
 	 * @throws {500} If an unexpected error occurs during data retrieval
 	 */
-	.get('/api/withdraw-orders/all', async (c) => {
+	.get('/api/auth/withdraw-orders/all', async (c) => {
 		try {
 			// Query the withdrawOrder table for all records
 			const withdrawOrder = await db.select().from(schemas.withdrawOrder);
@@ -489,7 +505,7 @@ const route = app
 	 * @throws {500} If an unexpected error occurs during data retrieval
 	 */
 	.get(
-		'/api/withdraw-orders/details',
+		'/api/auth/withdraw-orders/details',
 		zValidator('query', z.object({ dateWithdraw: z.string() })),
 		async (c) => {
 			try {
@@ -537,6 +553,18 @@ const route = app
 			}
 		},
 	);
+
+/**
+ * Better Auth handler for authentication endpoints
+ * Delegates all authentication-related requests to Better Auth
+ * Supports POST and GET methods for various auth flows
+ *
+ * IMPORTANT: This is placed AFTER all custom routes to avoid conflicts
+ * Custom routes under /api/auth/* are handled first, then Better Auth takes over
+ */
+app.on(['POST', 'GET'], '/api/auth/*', async (c) => {
+	return await auth.handler(c.req.raw);
+});
 
 /**
  * Export the complete route type for RPC client generation
