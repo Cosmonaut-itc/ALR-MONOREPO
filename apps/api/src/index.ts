@@ -316,6 +316,117 @@ const route = app
 	})
 
 	/**
+	 * GET /api/cabinet-warehouse - Retrieve cabinet warehouse data
+	 *
+	 * This endpoint fetches all cabinet warehouse records from the database.
+	 * If the database table is empty (e.g., in development or test environments),
+	 * it returns mock cabinet warehouse data instead. This ensures the frontend
+	 * always receives a valid response structure for development and testing.
+	 *
+	 * @returns {ApiResponse} Success response with cabinet warehouse data (from DB or mock)
+	 * @throws {500} If an unexpected error occurs during data retrieval
+	 */
+	.get('/api/cabinet-warehouse/all', async (c) => {
+		try {
+			// Query the cabinetWarehouse table for all records
+			const cabinetWarehouse = await db.select().from(schemas.cabinetWarehouse);
+
+			// If no records exist, return mock data for development/testing
+			if (cabinetWarehouse.length === 0) {
+				return c.json(
+					{
+						success: false,
+						message: 'No data found',
+						data: [],
+					} satisfies ApiResponse,
+					200,
+				);
+			}
+
+			// Return actual cabinet warehouse data from the database
+			return c.json(
+				{
+					success: true,
+					message: 'Fetching db data',
+					data: cabinetWarehouse,
+				} satisfies ApiResponse,
+				200,
+			);
+		} catch (error) {
+			// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
+			console.error('Error fetching cabinet warehouse:', error);
+
+			return c.json(
+				{
+					success: false,
+					message: 'Failed to fetch cabinet warehouse',
+				} satisfies ApiResponse,
+				500,
+			);
+		}
+	})
+
+	/**
+	 * GET /api/employee - Retrieve employee data
+	 *
+	 * This endpoint fetches all employee records from the database.
+	 * If the database table is empty (e.g., in development or test environments),
+	 * it returns mock employee data instead. This ensures the frontend
+	 * always receives a valid response structure for development and testing.
+	 *
+	 * @returns {ApiResponse} Success response with employee data (from DB or mock)
+	 * @throws {500} If an unexpected error occurs during data retrieval
+	 */
+	.get(
+		'/api/auth/employee/all',
+		zValidator('query', z.object({ userId: z.string() })),
+		async (c) => {
+			try {
+				const { userId } = c.req.valid('query');
+				// Query the employee table for all records
+				const employee = await db
+					.select()
+					.from(schemas.employee)
+					.where(eq(schemas.employee.userId, userId));
+
+				// If no records exist, return mock data for development/testing
+				if (employee.length === 0) {
+					return c.json(
+						{
+							success: false,
+							message: 'No data found',
+							data: [],
+						} satisfies ApiResponse,
+						200,
+					);
+				}
+
+				// Return actual employee data from the database
+				return c.json(
+					{
+						success: true,
+						message: 'Fetching db data',
+						data: employee,
+					} satisfies ApiResponse,
+					200,
+				);
+			} catch (error) {
+				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
+				console.error('Error fetching employee:', error);
+
+				return c.json(
+					{
+						success: false,
+						message: 'No data found',
+						data: [],
+					} satisfies ApiResponse,
+					200,
+				);
+			}
+		},
+	)
+
+	/**
 	 * GET /api/withdraw-orders - Retrieve withdraw orders data
 	 *
 	 * This endpoint fetches all withdraw orders records from the database.

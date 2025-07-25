@@ -1,0 +1,1 @@
+ALTER TABLE "employee" ALTER COLUMN "permissions" SET DATA TYPE uuid;

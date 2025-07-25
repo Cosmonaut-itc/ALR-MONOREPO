@@ -1,4 +1,4 @@
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 import { boolean, date, integer, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
 export const user = pgTable('user', {
@@ -124,6 +124,27 @@ export const withdrawOrderDetails = pgTable('withdraw_order_details', {
 	withdrawOrderId: uuid('withdraw_order_id').references(() => withdrawOrder.id),
 	dateWithdraw: date('date_withdraw').defaultNow().notNull(),
 	dateReturn: date('date_return'),
+});
+
+export const cabinetWarehouse = pgTable('cabinet_warehouse', {
+	id: uuid('id').default(sql`gen_random_uuid()`).notNull().primaryKey(),
+	name: text('name').default('warehouse 1').notNull(),
+	parentWarehouse: integer('parent_warehouse').default(12).notNull(),
+});
+
+export const employee = pgTable('employee', {
+	id: uuid('id').default(sql`gen_random_uuid()`).notNull().primaryKey(),
+	name: text('name').default('Jon Doe').notNull(),
+	surname: text('surname').default('').notNull(),
+	warehouse: integer('warehouse').default(1).notNull(),
+	passcode: integer('passcode').default(1111).notNull(),
+	userId: text('user_id').references(() => account.id),
+	permissions: uuid('permissions').references(() => permissions.id),
+});
+
+export const permissions = pgTable('permissions', {
+	id: uuid('id').default(sql`gen_random_uuid()`).notNull().primaryKey(),
+	permission: text('permission').notNull(),
 });
 
 // Relations
