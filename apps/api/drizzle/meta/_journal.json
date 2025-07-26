@@ -22,6 +22,27 @@
       "when": 1753467565284,
       "tag": "0002_wet_redwing",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1753549490140,
+      "tag": "0003_busy_grey_gargoyle",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1753549778994,
+      "tag": "0004_narrow_prowler",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1753551231898,
+      "tag": "0005_clumsy_doctor_spectrum",
+      "breakpoints": true
     }
   ]
 }

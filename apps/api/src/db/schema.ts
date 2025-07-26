@@ -97,7 +97,7 @@ export const productStock = pgTable('product_stock', {
 	id: uuid('id').defaultRandom().primaryKey().notNull(),
 	barcode: integer('barcode').default(0).notNull(),
 	lastUsed: date('last_used'),
-	lastUsedBy: integer('last_used_by'),
+	lastUsedBy: uuid('last_used_by').references(() => employee.id),
 	numberOfUses: integer('number_of_uses').default(0).notNull(),
 	currentWarehouse: integer('current_warehouse').default(0).notNull(),
 	isBeingUsed: boolean('is_being_used').default(false).notNull(),
@@ -108,7 +108,7 @@ export const withdrawOrder = pgTable('withdraw_order', {
 	id: uuid('id').defaultRandom().primaryKey().notNull(),
 	dateWithdraw: date('date_withdraw').defaultNow().notNull(),
 	dateReturn: date('date_return'),
-	userId: integer('user_id').default(1).notNull(),
+	userId: uuid('user_id').references(() => employee.id),
 	numItems: integer('num_items').default(1).notNull(),
 	isComplete: boolean('is_complete').default(false),
 });
@@ -138,7 +138,7 @@ export const employee = pgTable('employee', {
 	surname: text('surname').default('').notNull(),
 	warehouse: integer('warehouse').default(1).notNull(),
 	passcode: integer('passcode').default(1111).notNull(),
-	userId: text('user_id').references(() => account.id),
+	userId: text('user_id').references(() => user.id),
 	permissions: uuid('permissions').references(() => permissions.id),
 });
 

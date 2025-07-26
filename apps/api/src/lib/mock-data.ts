@@ -9,7 +9,7 @@ setFaker(faker);
  * Creates a structured response containing success status, data array with 5 mock items, and meta information.
  * @returns {ReturnType<typeof fake>} The generated mock API response containing data array and meta information.
  */
-const generateMockApiResponse = () => {
+export const generateMockApiResponse = () => {
 	// Generate an array of 5 mock items using a for loop
 	const mainResponse = {
 		success: true,
@@ -132,18 +132,4 @@ const generateMockApiResponse = () => {
 	};
 	// Return the mock data and meta as expected by the API
 	return response;
-};
-
-/**
- * Asynchronously generates mock data for Articulos using a timeout to simulate latency.
- * @returns {Promise<ReturnType<typeof fake>>} A promise that resolves to the mocked API response.
- */
-export const mockDataArticulos = (): Promise<ReturnType<typeof generateMockApiResponse>> => {
-	// Return a promise that resolves after a short timeout (e.g., 300ms)
-	return new Promise((resolve) => {
-		setTimeout(() => {
-			// Generate the mock data using the extracted function
-			resolve(generateMockApiResponse());
-		}, 10); // Simulate 300ms latency
-	});
 };

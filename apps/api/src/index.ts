@@ -15,7 +15,7 @@
 /** biome-ignore-all lint/performance/noNamespaceImport: Required for zod */
 
 import { zValidator } from '@hono/zod-validator';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
@@ -26,7 +26,7 @@ import type { apiResponseSchema, DataItemArticulosType } from '@/types';
 import { db } from './db/index';
 import * as schemas from './db/schema';
 import { auth } from './lib/auth';
-import { mockDataArticulos } from './lib/mock-data';
+import { generateMockApiResponse } from './lib/mock-data';
 
 /**
  * Custom type definitions for Hono context variables
@@ -192,14 +192,14 @@ const route = app
 	 * @returns {ApiResponse<DataItemArticulosType[]>} Success response with products array
 	 * @throws {500} Internal server error if data fetching fails
 	 */
-	.get('/api/auth/products/all', async (c) => {
+	.get('/api/auth/products/all', (c) => {
 		try {
 			// TODO: Replace with actual API call when ready
 			// const { company_id } = c.req.valid('query');
 			// const response = await fetch(`https://api.alteg.io/api/v1/goods/${company_id}`);
 
 			// Fetch mock data with simulated latency - returns full API response
-			const mockResponse = await mockDataArticulos();
+			const mockResponse = generateMockApiResponse();
 
 			// Type assertion since we know the mock data structure
 			const typedResponse = mockResponse as z.infer<typeof apiResponseSchema>;
@@ -575,7 +575,7 @@ const route = app
 			'json',
 			z.object({
 				dateWithdraw: z.string().describe('ISO date string for withdrawal date'),
-				userId: z.number().int().positive().describe('User ID from the user table'),
+				userId: z.string().describe('User ID from the user table'),
 				numItems: z.number().int().positive().describe('Number of items to withdraw'),
 				isComplete: z.boolean().optional().describe('Whether the order is complete'),
 			}),
@@ -751,11 +751,12 @@ const route = app
 				productId: z.string(),
 				withdrawOrderId: z.string(),
 				dateWithdraw: z.string(),
+				userId: z.string(),
 			}),
 		),
 		async (c) => {
 			try {
-				const { productId, withdrawOrderId, dateWithdraw } = c.req.valid('json');
+				const { productId, withdrawOrderId, dateWithdraw, userId } = c.req.valid('json');
 
 				// Insert the new withdraw order details into the database
 				const insertedWithdrawOrderDetails = await db
@@ -766,6 +767,20 @@ const route = app
 						dateWithdraw,
 					})
 					.returning();
+
+				// Update the product in the database by changing the is_being_used to true, adding one to the
+				// number_of_uses, if first_used is null updated to the dateWithdraw, as well update the last_used
+				// to the dateWithdraw and the last_used_by to the employeeId that is going in the userId
+				await db
+					.update(schemas.productStock)
+					.set({
+						isBeingUsed: true,
+						numberOfUses: sql`${schemas.productStock.numberOfUses} + 1`,
+						firstUsed: dateWithdraw,
+						lastUsed: dateWithdraw,
+						lastUsedBy: userId,
+					})
+					.where(eq(schemas.productStock.id, productId));
 
 				if (insertedWithdrawOrderDetails.length === 0) {
 					return c.json(
