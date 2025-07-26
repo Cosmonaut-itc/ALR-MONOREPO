@@ -109,11 +109,11 @@ app.use('*', async (c, next) => {
 
 		// Define routes that require authentication
 		const protectedRoutes = [
-			'/api/auth/products/',
-			'/api/auth/product-stock/',
-			'/api/auth/cabinet-warehouse/',
-			'/api/auth/employee/',
-			'/api/auth/withdraw-orders/',
+			'/api/auth/products/*',
+			'/api/auth/product-stock/*',
+			'/api/auth/cabinet-warehouse/*',
+			'/api/auth/employee/*',
+			'/api/auth/withdraw-orders/*',
 			'/api/auth/withdraw-orders/details',
 		];
 

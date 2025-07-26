@@ -1,6 +1,6 @@
 import { faker } from '@faker-js/faker';
-import { fake, setFaker } from 'zod-schema-faker';
-import { apiResponseSchema, type DataItemArticulosType } from '@/types';
+import { setFaker } from 'zod-schema-faker';
+import type { DataItemArticulosType } from '@/types';
 
 setFaker(faker);
 
@@ -11,7 +11,11 @@ setFaker(faker);
  */
 const generateMockApiResponse = () => {
 	// Generate an array of 5 mock items using a for loop
-	const mainResponse = fake(apiResponseSchema);
+	const mainResponse = {
+		success: true,
+		data: [],
+		meta: [],
+	};
 	const items: DataItemArticulosType[] = [
 		{
 			title: 'Red Gelish Nail Polish',
@@ -134,12 +138,12 @@ const generateMockApiResponse = () => {
  * Asynchronously generates mock data for Articulos using a timeout to simulate latency.
  * @returns {Promise<ReturnType<typeof fake>>} A promise that resolves to the mocked API response.
  */
-export const mockDataArticulos = (): Promise<ReturnType<typeof fake>> => {
+export const mockDataArticulos = (): Promise<ReturnType<typeof generateMockApiResponse>> => {
 	// Return a promise that resolves after a short timeout (e.g., 300ms)
 	return new Promise((resolve) => {
 		setTimeout(() => {
 			// Generate the mock data using the extracted function
 			resolve(generateMockApiResponse());
-		}, 300); // Simulate 300ms latency
+		}, 10); // Simulate 300ms latency
 	});
 };
