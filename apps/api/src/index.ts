@@ -552,6 +552,112 @@ const route = app
 				);
 			}
 		},
+	)
+	/**
+	 * POST /api/auth/withdraw-orders/create - Create a new withdraw order
+	 *
+	 * Creates a new withdraw order record in the database with the provided
+	 * details. The endpoint validates input data and returns the created record
+	 * upon successful insertion. This is used when employees initiate new
+	 * inventory withdrawal requests.
+	 *
+	 * @param {string} dateWithdraw - ISO date string for when the withdrawal is scheduled
+	 * @param {number} userId - Integer ID of the user creating the withdraw order (schema uses integer)
+	 * @param {number} numItems - Number of items to be withdrawn in this order
+	 * @param {boolean} isComplete - Whether the withdraw order is complete (defaults to false)
+	 * @returns {ApiResponse} Success response with created withdraw order data
+	 * @throws {400} Validation error if input data is invalid
+	 * @throws {500} Database error if insertion fails
+	 */
+	.post(
+		'/api/auth/withdraw-orders/create',
+		zValidator(
+			'json',
+			z.object({
+				dateWithdraw: z.string().describe('ISO date string for withdrawal date'),
+				userId: z.number().int().positive().describe('User ID from the user table'),
+				numItems: z.number().int().positive().describe('Number of items to withdraw'),
+				isComplete: z.boolean().optional().describe('Whether the order is complete'),
+			}),
+		),
+		async (c) => {
+			try {
+				const { dateWithdraw, userId, numItems, isComplete } = c.req.valid('json');
+
+				// Insert the new withdraw order into the database
+				// Using .returning() to get the inserted record back from the database
+				const insertedWithdrawOrder = await db
+					.insert(schemas.withdrawOrder)
+					.values({
+						dateWithdraw, // Maps to date_withdraw column in database
+						userId, // Maps to user_id column (integer type in schema)
+						numItems, // Maps to num_items column
+						isComplete: isComplete ?? false, // Maps to is_complete column with default
+					})
+					.returning(); // Returns array of inserted records
+
+				// Check if the insertion was successful
+				// Drizzle's .returning() always returns an array, even for single inserts
+				if (insertedWithdrawOrder.length === 0) {
+					return c.json(
+						{
+							success: false,
+							message: 'Failed to create withdraw order - no record inserted',
+							data: null,
+						} satisfies ApiResponse,
+						500,
+					);
+				}
+
+				// Return successful response with the newly created withdraw order
+				// Take the first (and only) element from the returned array
+				return c.json(
+					{
+						success: true,
+						message: 'Withdraw order created successfully',
+						data: insertedWithdrawOrder[0], // Return the single created record
+					} satisfies ApiResponse,
+					201, // 201 Created status for successful resource creation
+				);
+			} catch (error) {
+				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
+				console.error('Error creating withdraw order:', error);
+
+				// Check if it's a validation error or database constraint error
+				if (error instanceof Error) {
+					// Handle specific database errors (e.g., foreign key constraints)
+					if (error.message.includes('foreign key')) {
+						return c.json(
+							{
+								success: false,
+								message: 'Invalid user ID - user does not exist',
+							} satisfies ApiResponse,
+							400,
+						);
+					}
+
+					// Handle other validation errors
+					if (error.message.includes('invalid input')) {
+						return c.json(
+							{
+								success: false,
+								message: 'Invalid input data provided',
+							} satisfies ApiResponse,
+							400,
+						);
+					}
+				}
+
+				// Handle generic database errors
+				return c.json(
+					{
+						success: false,
+						message: 'Failed to create withdraw order',
+					} satisfies ApiResponse,
+					500,
+				);
+			}
+		},
 	);
 
 /**
