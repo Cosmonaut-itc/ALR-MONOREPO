@@ -41,6 +41,116 @@ type Variables = {
 };
 
 /**
+ * Helper function to log detailed error information
+ */
+function logErrorDetails(error: unknown, method: string, path: string): void {
+	// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
+	console.error('\n🚨 API ERROR DETAILS:');
+	// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
+	console.error('📍 Route:', method, path);
+	// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
+	console.error('🕐 Timestamp:', new Date().toISOString());
+
+	if (error instanceof Error) {
+		// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
+		console.error('❌ Error Name:', error.name);
+		// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
+		console.error('💬 Error Message:', error.message);
+		// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
+		console.error('📚 Stack Trace:');
+		// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
+		console.error(error.stack);
+	} else {
+		// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
+		console.error('🔍 Raw Error:', error);
+	}
+	// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
+	console.error('🔚 END ERROR DETAILS\n');
+}
+
+/**
+ * Helper function to log request headers
+ */
+function logRequestHeaders(c: { req: { header: (name: string) => string | undefined } }): void {
+	const authHeader = c.req.header('Authorization');
+	const cookieHeader = c.req.header('Cookie');
+	if (authHeader) {
+		// biome-ignore lint/suspicious/noConsole: Intentional debug logging
+		console.log(`🔑 Authorization: ${authHeader.substring(0, 20)}...`);
+	}
+	if (cookieHeader) {
+		// biome-ignore lint/suspicious/noConsole: Intentional debug logging
+		console.log(`🍪 Cookie: ${cookieHeader.substring(0, 50)}...`);
+	}
+}
+
+/**
+ * Helper function to log request body
+ */
+async function logRequestBody(c: {
+	req: { header: (name: string) => string | undefined; raw: { text: () => Promise<string> } };
+}): Promise<void> {
+	try {
+		const contentType = c.req.header('Content-Type');
+		if (contentType?.includes('application/json')) {
+			const rawBody = await c.req.raw.text();
+			const body = JSON.parse(rawBody);
+			// biome-ignore lint/suspicious/noConsole: Intentional debug logging
+			console.log('📝 Request Body:', JSON.stringify(body, null, 2));
+		}
+	} catch (error) {
+		const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+		// biome-ignore lint/suspicious/noConsole: Intentional debug logging
+		console.log('⚠️ Could not parse request body:', errorMessage);
+	}
+}
+
+/**
+ * Helper function to handle database errors with specific patterns
+ */
+function handleDatabaseError(error: Error): { response: ApiResponse; status: number } | null {
+	const errorMessage = error.message.toLowerCase();
+
+	if (errorMessage.includes('duplicate') || errorMessage.includes('unique')) {
+		// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
+		console.error('🗃️ Database: Duplicate key violation');
+		return {
+			response: {
+				success: false,
+				message: 'Duplicate record - resource already exists',
+			},
+			status: 409,
+		};
+	}
+
+	if (errorMessage.includes('foreign key') || errorMessage.includes('constraint')) {
+		// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
+		console.error('🔗 Database: Foreign key constraint violation');
+		return {
+			response: {
+				success: false,
+				message: 'Invalid reference - related record does not exist',
+			},
+			status: 400,
+		};
+	}
+
+	if (errorMessage.includes('connection') || errorMessage.includes('timeout')) {
+		// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
+		console.error('🔌 Database: Connection issue');
+		return {
+			response: {
+				success: false,
+				message: 'Database connection error',
+			},
+			status: 503,
+		};
+	}
+
+	return null;
+}
+
+/**
  * Standard API response structure for consistent client-server communication
  * This interface ensures all API responses follow the same format
  */
@@ -65,10 +175,32 @@ const app = new Hono<{
 }>();
 
 /**
- * Global logging middleware for request/response monitoring
- * Logs all incoming requests for debugging and monitoring purposes
+ * Hono's built-in logger for clean request/response logging
+ * Provides standard HTTP logging format: <-- GET /path and --> GET /path 200 123ms
  */
 app.use('*', logger());
+
+/**
+ * Custom detailed logging middleware for debugging
+ * Logs request headers, body, and enhanced error information
+ */
+app.use('*', async (c, next) => {
+	// Only log detailed info for development or when DEBUG is set
+	const shouldLogDetails = process.env.NODE_ENV === 'development' || process.env.DEBUG === 'true';
+
+	if (shouldLogDetails) {
+		// Log auth headers for debugging
+		logRequestHeaders(c);
+
+		// Log request body for POST/PUT/PATCH requests
+		const method = c.req.method;
+		if (['POST', 'PUT', 'PATCH'].includes(method)) {
+			await logRequestBody(c);
+		}
+	}
+
+	await next();
+});
 
 /**
  * CORS middleware configuration for authentication endpoints
@@ -107,22 +239,29 @@ app.use('*', async (c, next) => {
 		c.set('user', session?.user || null);
 		c.set('session', session?.session || null);
 
-		// Define routes that require authentication
-		const protectedRoutes = [
-			'/api/auth/products/*',
-			'/api/auth/product-stock/*',
-			'/api/auth/cabinet-warehouse/*',
-			'/api/auth/employee/*',
-			'/api/auth/withdraw-orders/*',
-			'/api/auth/withdraw-orders/details',
+		// Define Better Auth endpoints that should NOT be protected
+		// These are the public authentication endpoints that Better Auth handles
+		const betterAuthPublicEndpoints = [
+			'/api/auth/sign-in',
+			'/api/auth/sign-up',
+			'/api/auth/sign-out',
+			'/api/auth/session',
+			'/api/auth/callback',
+			'/api/auth/verify-email',
+			'/api/auth/reset-password',
+			'/api/auth/forgot-password',
 		];
 
-		// Check if this is a protected custom route
-		// biome-ignore lint/nursery/noShadow: false flag
-		const isProtectedRoute = protectedRoutes.some((route) => c.req.path.startsWith(route));
+		// Check if this is a Better Auth public endpoint
+		const isBetterAuthEndpoint = betterAuthPublicEndpoints.some((endpoint) =>
+			c.req.path.startsWith(endpoint),
+		);
 
-		// If it's a protected route and no session, block access
-		if (isProtectedRoute && !session) {
+		// Automatically protect ALL custom routes under /api/auth/ except Better Auth endpoints
+		const isCustomProtectedRoute = c.req.path.startsWith('/api/auth/') && !isBetterAuthEndpoint;
+
+		// If it's a custom protected route and no session, block access
+		if (isCustomProtectedRoute && !session) {
 			return c.json(
 				{
 					success: false,
@@ -150,18 +289,20 @@ app.use('*', async (c, next) => {
  */
 const route = app
 	/**
-	 * Global error handling middleware for API routes
-	 * Catches and properly formats any unhandled errors in API endpoints
+	 * Enhanced error handling middleware for API routes
+	 * Catches and properly formats any unhandled errors in API endpoints with detailed logging
 	 */
-	.use('/api/*', async (c, next) => {
+	.use('/api/auth/*', async (c, next) => {
 		try {
 			await next();
 		} catch (error) {
-			// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
-			console.error('API Error:', error);
+			// Log detailed error information
+			logErrorDetails(error, c.req.method, c.req.path);
 
 			// Handle HTTP exceptions with proper status codes
 			if (error instanceof HTTPException) {
+				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
+				console.error('🌐 HTTP Exception Status:', error.status);
 				return c.json(
 					{
 						success: false,
@@ -171,11 +312,36 @@ const route = app
 				);
 			}
 
+			// Handle Zod validation errors
+			if (error instanceof Error && error.name === 'ZodError') {
+				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
+				console.error('📋 Validation Error Details:', JSON.stringify(error, null, 2));
+				return c.json(
+					{
+						success: false,
+						message: 'Validation error',
+						data: error,
+					} satisfies ApiResponse,
+					400,
+				);
+			}
+
+			// Handle database errors using helper function
+			if (error instanceof Error) {
+				const dbError = handleDatabaseError(error);
+				if (dbError) {
+					return c.json(dbError.response, dbError.status as 400 | 409 | 503);
+				}
+			}
+
 			// Handle generic errors with 500 status
 			return c.json(
 				{
 					success: false,
 					message: 'Internal server error',
+					...(process.env.NODE_ENV === 'development' && {
+						error: error instanceof Error ? error.message : 'Unknown error',
+					}),
 				} satisfies ApiResponse,
 				500,
 			);
@@ -238,42 +404,6 @@ const route = app
 	 * @returns {string} Simple greeting message
 	 */
 	.get('/', (c) => c.json('Hello Bun!'))
-
-	/**
-	 * GET /db/health - Database connectivity health check
-	 *
-	 * Verifies database connectivity by performing a simple query
-	 * on the health check table. Essential for monitoring and alerting
-	 * systems to detect database connectivity issues.
-	 *
-	 * @returns {ApiResponse} Success response if database is accessible
-	 * @throws {500} Database connection error if query fails
-	 */
-	.get('/db/health', async (c) => {
-		try {
-			// Perform simple database query to verify connectivity
-			await db.select().from(schemas.healthCheck);
-
-			return c.json(
-				{
-					success: true,
-					message: 'Database connection healthy',
-				} satisfies ApiResponse,
-				200,
-			);
-		} catch (error) {
-			// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
-			console.error('Database health check failed:', error);
-
-			return c.json(
-				{
-					success: false,
-					message: 'Database connection failed',
-				} satisfies ApiResponse,
-				500,
-			);
-		}
-	})
 
 	/**
 	 * GET /api/product-stock - Retrieve product stock data
