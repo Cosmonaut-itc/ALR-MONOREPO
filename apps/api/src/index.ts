@@ -658,6 +658,215 @@ const route = app
 				);
 			}
 		},
+	)
+	/**
+	 * POST /api/auth/withdraw-orders/update - Update a withdraw order
+	 *
+	 * Updates a withdraw order record in the database with the provided details.
+	 * The endpoint validates input data and returns the updated record upon successful update.
+	 *
+	 * @param {string} withdrawOrderId - ID of the withdraw order to update
+	 * @param {string} dateReturn - ISO date string for return date
+	 * @param {boolean} isComplete - Whether the withdraw order is complete
+	 * @returns {ApiResponse} Success response with updated withdraw order data
+	 * @throws {400} Validation error if input data is invalid
+	 * @throws {500} Database error if update fails
+	 */
+	.post(
+		'/api/auth/withdraw-orders/update',
+		zValidator(
+			'json',
+			z.object({
+				withdrawOrderId: z.string(),
+				dateReturn: z.string(),
+				isComplete: z.boolean(),
+			}),
+		),
+		async (c) => {
+			try {
+				const { withdrawOrderId, dateReturn, isComplete } = c.req.valid('json');
+
+				// Update the withdraw order in the database
+				const updatedWithdrawOrder = await db
+					.update(schemas.withdrawOrder)
+					.set({
+						dateReturn,
+						isComplete,
+					})
+					.where(eq(schemas.withdrawOrder.id, withdrawOrderId))
+					.returning();
+
+				if (updatedWithdrawOrder.length === 0) {
+					return c.json(
+						{
+							success: false,
+							data: null,
+							message: 'Failed to update withdraw order',
+						} satisfies ApiResponse,
+						500,
+					);
+				}
+
+				// Return the updated withdraw order
+				return c.json(
+					{
+						success: true,
+						message: 'Withdraw order updated successfully',
+						data: updatedWithdrawOrder[0],
+					} satisfies ApiResponse,
+					200,
+				);
+			} catch (error) {
+				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
+				console.error('Error updating withdraw order:', error);
+
+				return c.json(
+					{
+						success: false,
+						message: 'Failed to update withdraw order',
+					} satisfies ApiResponse,
+					500,
+				);
+			}
+		},
+	)
+	/**
+	 * POST /api/auth/withdraw-orders/details/create - Create a new withdraw order details
+	 *
+	 * Creates a new withdraw order details record in the database with the provided details.
+	 * The endpoint validates input data and returns the created record upon successful insertion.
+	 *
+	 * @param {string} productId - ID of the product to withdraw
+	 * @param {string} withdrawOrderId - ID of the withdraw order to which the details belong
+	 * @param {string} dateWithdraw - ISO date string for the withdrawal date
+	 * @returns {ApiResponse} Success response with created withdraw order details data
+	 * @throws {400} Validation error if input data is invalid
+	 * @throws {500} Database error if insertion fails
+	 */
+	.post(
+		'/api/auth/withdraw-orders/details/create',
+		zValidator(
+			'json',
+			z.object({
+				productId: z.string(),
+				withdrawOrderId: z.string(),
+				dateWithdraw: z.string(),
+			}),
+		),
+		async (c) => {
+			try {
+				const { productId, withdrawOrderId, dateWithdraw } = c.req.valid('json');
+
+				// Insert the new withdraw order details into the database
+				const insertedWithdrawOrderDetails = await db
+					.insert(schemas.withdrawOrderDetails)
+					.values({
+						productId,
+						withdrawOrderId,
+						dateWithdraw,
+					})
+					.returning();
+
+				if (insertedWithdrawOrderDetails.length === 0) {
+					return c.json(
+						{
+							success: false,
+							data: null,
+							message: 'Failed to create withdraw order details',
+						} satisfies ApiResponse,
+						500,
+					);
+				}
+
+				// Return the inserted withdraw order details
+				return c.json(
+					{
+						success: true,
+						message: 'Withdraw order details created successfully',
+						data: insertedWithdrawOrderDetails[0],
+					} satisfies ApiResponse,
+					201,
+				);
+			} catch (error) {
+				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
+				console.error('Error creating withdraw order details:', error);
+
+				return c.json(
+					{
+						success: false,
+						message: 'Failed to create withdraw order details',
+					} satisfies ApiResponse,
+					500,
+				);
+			}
+		},
+	)
+	/**
+	 * POST /api/auth/withdraw-orders/details/update - Update a withdraw order details
+	 *
+	 * Updates a withdraw order details record in the database with the provided details.
+	 * The endpoint validates input data and returns the updated record upon successful update.
+	 *
+	 * @param {string} id - ID of the withdraw order details to update
+	 * @param {string} dateReturn - ISO date string for the return date
+	 * @returns {ApiResponse} Success response with updated withdraw order details data
+	 * @throws {400} Validation error if input data is invalid
+	 * @throws {500} Database error if update fails
+	 */
+	.post(
+		'/api/auth/withdraw-orders/details/update',
+		zValidator(
+			'json',
+			z.object({
+				id: z.string(),
+				dateReturn: z.string(),
+			}),
+		),
+		async (c) => {
+			try {
+				const { id, dateReturn } = c.req.valid('json');
+
+				// Update the withdraw order details in the database
+				const updatedWithdrawOrderDetails = await db
+					.update(schemas.withdrawOrderDetails)
+					.set({
+						dateReturn,
+					})
+					.where(eq(schemas.withdrawOrderDetails.id, id))
+					.returning();
+
+				if (updatedWithdrawOrderDetails.length === 0) {
+					return c.json(
+						{
+							success: false,
+							message: 'Failed to update withdraw order details',
+						} satisfies ApiResponse,
+						500,
+					);
+				}
+
+				// Return the updated withdraw order details
+				return c.json(
+					{
+						success: true,
+						message: 'Withdraw order details updated successfully',
+						data: updatedWithdrawOrderDetails[0],
+					} satisfies ApiResponse,
+					200,
+				);
+			} catch (error) {
+				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
+				console.error('Error updating withdraw order details:', error);
+
+				return c.json(
+					{
+						success: false,
+						message: 'Failed to update withdraw order details',
+					} satisfies ApiResponse,
+					500,
+				);
+			}
+		},
 	);
 
 /**
