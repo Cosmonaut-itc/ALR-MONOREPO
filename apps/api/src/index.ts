@@ -19,7 +19,7 @@ import { eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
-import { logger } from 'hono/logger';
+
 import { z } from 'zod';
 import { productStockData, withdrawOrderData, withdrawOrderDetailsData } from '@/constants';
 import type { apiResponseSchema, DataItemArticulosType } from '@/types';
@@ -69,40 +69,111 @@ function logErrorDetails(error: unknown, method: string, path: string): void {
 }
 
 /**
- * Helper function to log request headers
+ * Helper function to get detailed HTTP status descriptions
+ * Provides human-readable descriptions for HTTP status codes to improve debugging
+ *
+ * @param status - HTTP status code
+ * @returns Detailed description of the status code
  */
-function logRequestHeaders(c: { req: { header: (name: string) => string | undefined } }): void {
-	const authHeader = c.req.header('Authorization');
-	const cookieHeader = c.req.header('Cookie');
-	if (authHeader) {
-		// biome-ignore lint/suspicious/noConsole: Intentional debug logging
-		console.log(`🔑 Authorization: ${authHeader.substring(0, 20)}...`);
+function getDetailedStatusDescription(status: number): string {
+	// 1xx Informational responses
+	if (status >= 100 && status < 200) {
+		const informationalCodes: Record<number, string> = {
+			100: 'Continue - Client should continue with request',
+			101: 'Switching Protocols - Server switching protocols per client request',
+			102: 'Processing - Server received and processing request',
+			103: 'Early Hints - Server sending preliminary response headers',
+		};
+		return informationalCodes[status] || `Informational response (${status})`;
 	}
-	if (cookieHeader) {
-		// biome-ignore lint/suspicious/noConsole: Intentional debug logging
-		console.log(`🍪 Cookie: ${cookieHeader.substring(0, 50)}...`);
-	}
-}
 
-/**
- * Helper function to log request body
- */
-async function logRequestBody(c: {
-	req: { header: (name: string) => string | undefined; raw: { text: () => Promise<string> } };
-}): Promise<void> {
-	try {
-		const contentType = c.req.header('Content-Type');
-		if (contentType?.includes('application/json')) {
-			const rawBody = await c.req.raw.text();
-			const body = JSON.parse(rawBody);
-			// biome-ignore lint/suspicious/noConsole: Intentional debug logging
-			console.log('📝 Request Body:', JSON.stringify(body, null, 2));
-		}
-	} catch (error) {
-		const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-		// biome-ignore lint/suspicious/noConsole: Intentional debug logging
-		console.log('⚠️ Could not parse request body:', errorMessage);
+	// 2xx Success responses
+	if (status >= 200 && status < 300) {
+		const successCodes: Record<number, string> = {
+			200: 'OK - Request successful',
+			201: 'Created - Resource successfully created',
+			202: 'Accepted - Request accepted for processing',
+			203: 'Non-Authoritative Information - Modified response from proxy',
+			204: 'No Content - Request successful, no content to return',
+			205: 'Reset Content - Client should reset document view',
+			206: 'Partial Content - Partial resource delivered',
+			207: 'Multi-Status - Multiple status codes for WebDAV',
+			208: 'Already Reported - DAV binding already enumerated',
+			226: 'IM Used - Instance manipulation applied',
+		};
+		return successCodes[status] || `Success response (${status})`;
 	}
+
+	// 3xx Redirection responses
+	if (status >= 300 && status < 400) {
+		const redirectCodes: Record<number, string> = {
+			300: 'Multiple Choices - Multiple possible responses',
+			301: 'Moved Permanently - Resource permanently moved',
+			302: 'Found - Resource temporarily moved',
+			303: 'See Other - Response located elsewhere',
+			304: 'Not Modified - Resource unchanged since last request',
+			305: 'Use Proxy - Must access resource through proxy',
+			307: 'Temporary Redirect - Resource temporarily moved, method preserved',
+			308: 'Permanent Redirect - Resource permanently moved, method preserved',
+		};
+		return redirectCodes[status] || `Redirection response (${status})`;
+	}
+
+	// 4xx Client error responses
+	if (status >= 400 && status < 500) {
+		const clientErrorCodes: Record<number, string> = {
+			400: 'Bad Request - Invalid request syntax or parameters',
+			401: 'Unauthorized - Authentication required or failed',
+			402: 'Payment Required - Payment needed for access',
+			403: 'Forbidden - Server understood but refuses authorization',
+			404: 'Not Found - Requested resource not found',
+			405: 'Method Not Allowed - HTTP method not supported',
+			406: 'Not Acceptable - Content not acceptable per headers',
+			407: 'Proxy Authentication Required - Proxy authentication needed',
+			408: 'Request Timeout - Server timeout waiting for request',
+			409: 'Conflict - Request conflicts with current resource state',
+			410: 'Gone - Resource permanently deleted',
+			411: 'Length Required - Content-Length header required',
+			412: 'Precondition Failed - Precondition in headers failed',
+			413: 'Payload Too Large - Request entity too large',
+			414: 'URI Too Long - Request URI too long',
+			415: 'Unsupported Media Type - Media type not supported',
+			416: 'Range Not Satisfiable - Range header cannot be satisfied',
+			417: 'Expectation Failed - Expect header cannot be satisfied',
+			418: "I'm a teapot - April Fools' joke (RFC 2324)",
+			421: 'Misdirected Request - Request directed to wrong server',
+			422: 'Unprocessable Entity - Request syntax correct but semantically incorrect',
+			423: 'Locked - Resource is locked',
+			424: 'Failed Dependency - Request failed due to previous request failure',
+			425: 'Too Early - Server unwilling to risk replay attack',
+			426: 'Upgrade Required - Client must upgrade to different protocol',
+			428: 'Precondition Required - Origin server requires conditional request',
+			429: 'Too Many Requests - Rate limit exceeded',
+			431: 'Request Header Fields Too Large - Header fields too large',
+			451: 'Unavailable For Legal Reasons - Access denied for legal reasons',
+		};
+		return clientErrorCodes[status] || `Client error (${status})`;
+	}
+
+	// 5xx Server error responses
+	if (status >= 500 && status < 600) {
+		const serverErrorCodes: Record<number, string> = {
+			500: 'Internal Server Error - Generic server error',
+			501: 'Not Implemented - Server does not support functionality',
+			502: 'Bad Gateway - Invalid response from upstream server',
+			503: 'Service Unavailable - Server temporarily overloaded or down',
+			504: 'Gateway Timeout - Upstream server timeout',
+			505: 'HTTP Version Not Supported - HTTP version not supported',
+			506: 'Variant Also Negotiates - Server misconfiguration',
+			507: 'Insufficient Storage - Server cannot store request',
+			508: 'Loop Detected - Infinite loop in request processing',
+			510: 'Not Extended - Extensions required for request',
+			511: 'Network Authentication Required - Network authentication needed',
+		};
+		return serverErrorCodes[status] || `Server error (${status})`;
+	}
+
+	return `Unknown status code (${status})`;
 }
 
 /**
@@ -175,31 +246,117 @@ const app = new Hono<{
 }>();
 
 /**
- * Hono's built-in logger for clean request/response logging
- * Provides standard HTTP logging format: <-- GET /path and --> GET /path 200 123ms
+ * Enhanced logging middleware for requests and responses
+ * Logs detailed information for debugging API issues
  */
-app.use('*', logger());
-
-/**
- * Custom detailed logging middleware for debugging
- * Logs request headers, body, and enhanced error information
- */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Logging middleware needs comprehensive coverage
 app.use('*', async (c, next) => {
-	// Only log detailed info for development or when DEBUG is set
-	const shouldLogDetails = process.env.NODE_ENV === 'development' || process.env.DEBUG === 'true';
+	const start = Date.now();
+	const method = c.req.method;
+	const path = c.req.path;
+	const isDev = process.env.NODE_ENV === 'development' || process.env.DEBUG === 'true';
 
-	if (shouldLogDetails) {
-		// Log auth headers for debugging
-		logRequestHeaders(c);
+	// Log incoming request with timestamp
+	// biome-ignore lint/suspicious/noConsole: Intentional debug logging
+	console.log(`\n🔵 [${new Date().toISOString()}] ${method} ${path}`);
+
+	// Log auth headers for debugging (only in development)
+	if (isDev) {
+		const authHeader = c.req.header('Authorization');
+		const cookieHeader = c.req.header('Cookie');
+		if (authHeader) {
+			// biome-ignore lint/suspicious/noConsole: Intentional debug logging
+			console.log(`🔑 Authorization: ${authHeader.substring(0, 20)}...`);
+		}
+		if (cookieHeader) {
+			// biome-ignore lint/suspicious/noConsole: Intentional debug logging
+			console.log(`🍪 Cookie: ${cookieHeader.substring(0, 50)}...`);
+		}
 
 		// Log request body for POST/PUT/PATCH requests
-		const method = c.req.method;
 		if (['POST', 'PUT', 'PATCH'].includes(method)) {
-			await logRequestBody(c);
+			try {
+				const contentType = c.req.header('Content-Type');
+				if (contentType?.includes('application/json')) {
+					const rawBody = await c.req.raw.text();
+					const body = JSON.parse(rawBody);
+					// biome-ignore lint/suspicious/noConsole: Intentional debug logging
+					console.log('📝 Request Body:', JSON.stringify(body, null, 2));
+				}
+			} catch (error) {
+				const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+				logErrorDetails(error, c.req.method, c.req.path);
+				// biome-ignore lint/suspicious/noConsole: Intentional debug logging
+				console.log('⚠️ Could not parse request body:', errorMessage);
+			}
 		}
 	}
 
 	await next();
+
+	// Log response with timing and status
+	const end = Date.now();
+	const duration = end - start;
+	const status = c.res.status;
+
+	// Determine status emoji and detailed status information based on HTTP status code
+	let statusEmoji = '🟢';
+	let statusCategory = '';
+	let statusDescription = '';
+
+	if (status >= 500) {
+		statusEmoji = '🔴';
+		statusCategory = 'SERVER_ERROR';
+		statusDescription = getDetailedStatusDescription(status);
+		// Log additional details for server errors
+		// biome-ignore lint/suspicious/noConsole: Intentional error logging for debugging
+		console.error(`🚨 SERVER ERROR DETECTED - ${status}: ${statusDescription}`);
+	} else if (status >= 400) {
+		statusEmoji = '🟡';
+		statusCategory = 'CLIENT_ERROR';
+		statusDescription = getDetailedStatusDescription(status);
+		// Log client errors for debugging API usage issues
+		// biome-ignore lint/suspicious/noConsole: Intentional error logging for debugging
+		console.warn(`⚠️ CLIENT ERROR - ${status}: ${statusDescription}`);
+	} else if (status >= 300) {
+		statusEmoji = '🟠';
+		statusCategory = 'REDIRECT';
+		statusDescription = getDetailedStatusDescription(status);
+		// biome-ignore lint/suspicious/noConsole: Intentional debug logging
+		console.log(`🔄 REDIRECT - ${status}: ${statusDescription}`);
+	} else if (status >= 200) {
+		statusEmoji = '🟢';
+		statusCategory = 'SUCCESS';
+		statusDescription = getDetailedStatusDescription(status);
+	} else if (status >= 100) {
+		statusEmoji = '🔵';
+		statusCategory = 'INFORMATIONAL';
+		statusDescription = getDetailedStatusDescription(status);
+	}
+
+	// Enhanced logging with detailed status information
+	// biome-ignore lint/suspicious/noConsole: Intentional debug logging
+	console.log(
+		`${statusEmoji} [${new Date().toISOString()}] ${method} ${path} ${status} (${statusCategory}) ${duration}ms`,
+	);
+
+	// Log additional details for development debugging
+	if (isDev && statusDescription) {
+		// biome-ignore lint/suspicious/noConsole: Intentional debug logging
+		console.log(`📋 Status Details: ${statusDescription}`);
+	}
+
+	// Log performance warnings for slow requests
+	if (duration > 1000) {
+		// biome-ignore lint/suspicious/noConsole: Intentional performance logging
+		console.warn(`⏱️ SLOW REQUEST WARNING: ${method} ${path} took ${duration}ms`);
+	} else if (duration > 500) {
+		// biome-ignore lint/suspicious/noConsole: Intentional performance logging
+		console.log(`⏰ Performance Notice: ${method} ${path} took ${duration}ms`);
+	}
+
+	// biome-ignore lint/suspicious/noConsole: Intentional debug logging
+	console.log('─'.repeat(80));
 });
 
 /**
@@ -242,7 +399,7 @@ app.use('*', async (c, next) => {
 		// Define Better Auth endpoints that should NOT be protected
 		// These are the public authentication endpoints that Better Auth handles
 		const betterAuthPublicEndpoints = [
-			'/api/auth/sign-in',
+			'/api/auth/sign-in/email',
 			'/api/auth/sign-up',
 			'/api/auth/sign-out',
 			'/api/auth/session',
@@ -297,7 +454,6 @@ const route = app
 			await next();
 		} catch (error) {
 			// Log detailed error information
-			logErrorDetails(error, c.req.method, c.req.path);
 
 			// Handle HTTP exceptions with proper status codes
 			if (error instanceof HTTPException) {
