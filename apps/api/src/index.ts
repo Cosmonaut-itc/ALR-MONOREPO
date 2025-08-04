@@ -1054,6 +1054,23 @@ const route = app
 					})
 					.returning();
 
+				//get the product stock id from the productId to check if the first_used is null, and if it is currently being used
+				//if it is currently being used return and error
+				const productStockCheck = await db
+					.select()
+					.from(schemas.productStock)
+					.where(eq(schemas.productStock.id, productId));
+
+				if (productStockCheck[0].isBeingUsed === true) {
+					return c.json(
+						{
+							success: false,
+							message: 'Product is currently being used',
+						} satisfies ApiResponse,
+						400,
+					);
+				}
+
 				// Update the product in the database by changing the is_being_used to true, adding one to the
 				// number_of_uses, if first_used is null updated to the dateWithdraw, as well update the last_used
 				// to the dateWithdraw and the last_used_by to the employeeId that is going in the userId
@@ -1062,7 +1079,7 @@ const route = app
 					.set({
 						isBeingUsed: true,
 						numberOfUses: sql`${schemas.productStock.numberOfUses} + 1`,
-						firstUsed: dateWithdraw,
+						firstUsed: productStockCheck[0].firstUsed ?? dateWithdraw,
 						lastUsed: dateWithdraw,
 						lastUsedBy: userId,
 					})
@@ -1135,6 +1152,48 @@ const route = app
 					})
 					.where(eq(schemas.withdrawOrderDetails.id, id))
 					.returning();
+
+				const productId = updatedWithdrawOrderDetails[0].productId;
+
+				// get the product stock id from the productId to check if it is currently being used
+				//if it is currently not being used return an error
+				const productStockCheck = await db
+					.select()
+					.from(schemas.productStock)
+					.where(eq(schemas.productStock.id, productId));
+
+				if (productStockCheck[0].isBeingUsed === false) {
+					return c.json(
+						{
+							success: false,
+							message: 'Product is not currently being used',
+						} satisfies ApiResponse,
+						400,
+					);
+				}
+
+				// update the product stock to be not being used, and set the last_used to the dateReturn
+
+				if (productStockCheck[0].isBeingUsed === true) {
+					const updatedProductStock = await db
+						.update(schemas.productStock)
+						.set({
+							isBeingUsed: false,
+							lastUsed: dateReturn,
+						})
+						.where(eq(schemas.productStock.id, productId))
+						.returning();
+
+					if (updatedProductStock.length === 0) {
+						return c.json(
+							{
+								success: false,
+								message: 'Failed to update product stock',
+							} satisfies ApiResponse,
+							500,
+						);
+					}
+				}
 
 				if (updatedWithdrawOrderDetails.length === 0) {
 					return c.json(
