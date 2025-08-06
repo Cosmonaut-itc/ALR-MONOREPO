@@ -1,34 +1,37 @@
 "use client"
 
 import { useEffect } from "react"
-import { Plus, Search } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useInventoryStore } from "@/stores/inventory-store"
 import { InventoryTable } from "@/components/inventory/InventoryTable"
+import { ProductCombobox } from "@/components/inventory/ProductCombobox"
 import { NewProductModal } from "@/components/inventory/NewProductModal"
 import { SkeletonInventoryTable } from "@/ui/skeletons/Skeleton.InventoryTable"
-import type { ProductStockItem } from "@/lib/schemas"
+import type { ProductStockItem, ProductCatalog } from "@/lib/schemas"
 
 export default function InventarioPage() {
   const {
     searchTerm,
     selectedCategory,
+    selectedWarehouse,
     categories,
-    isLoadingGeneral,
-    isLoadingGabinete,
+    productCatalog,
+    isLoadingStock,
+    isLoadingCatalog,
     isNewProductModalOpen,
-    setGeneralProducts,
-    setGabineteProducts,
+    setStockItems,
+    setProductCatalog,
     setCategories,
     setSearchTerm,
     setSelectedCategory,
-    setLoadingGeneral,
-    setLoadingGabinete,
+    setSelectedWarehouse,
+    setLoadingStock,
+    setLoadingCatalog,
     setNewProductModalOpen,
-    getFilteredProducts,
+    getFilteredStockItems,
   } = useInventoryStore()
 
   // Mock data loading
@@ -45,127 +48,190 @@ export default function InventarioPage() {
     ]
     setCategories(mockCategories)
 
-    // Mock general products
+    // Mock product catalog
     setTimeout(() => {
-      const mockGeneralProducts: ProductStockItem[] = [
+      const mockCatalog: ProductCatalog[] = [
         {
-          id: "1",
-          barcode: "7501234567890",
+          barcode: 7501234567890,
           name: "Acrílico Rosa Claro",
           category: "Acrílicos",
-          stock: 25,
-          lastUsed: "2024-01-15T10:30:00Z",
-          inUse: true,
-          location: "general"
+          description: "Acrílico de alta calidad en tono rosa claro"
         },
         {
-          id: "2",
-          barcode: "7501234567891",
+          barcode: 7501234567891,
           name: "Lima 80/100 Profesional",
           category: "Limas",
-          stock: 45,
-          lastUsed: "2024-01-14T14:20:00Z",
-          inUse: false,
-          location: "general"
+          description: "Lima profesional de doble cara"
         },
         {
-          id: "3",
-          barcode: "7501234567892",
+          barcode: 7501234567892,
           name: "Gel Constructor Transparente",
           category: "Geles",
-          stock: 12,
-          lastUsed: "2024-01-13T09:15:00Z",
-          inUse: true,
-          location: "general"
+          description: "Gel constructor de alta resistencia"
         },
         {
-          id: "4",
-          barcode: "7501234567893",
+          barcode: 7501234567893,
           name: "Base Coat Fortalecedora",
           category: "Bases y Top Coats",
-          stock: 8,
-          lastUsed: "2024-01-12T16:45:00Z",
-          inUse: false,
-          location: "general"
+          description: "Base fortalecedora para uñas débiles"
         },
         {
-          id: "5",
-          barcode: "7501234567894",
+          barcode: 7501234567894,
           name: "Top Coat Brillo Extremo",
           category: "Bases y Top Coats",
-          stock: 3,
-          lastUsed: "2024-01-11T11:30:00Z",
-          inUse: true,
-          location: "general"
+          description: "Top coat con acabado de brillo extremo"
         },
         {
-          id: "6",
-          barcode: "7501234567895",
+          barcode: 7501234567895,
           name: "Pusher de Cutícula",
           category: "Herramientas",
-          stock: 15,
-          lastUsed: "2024-01-10T13:20:00Z",
-          inUse: false,
-          location: "general"
-        }
-      ]
-      setGeneralProducts(mockGeneralProducts)
-      setLoadingGeneral(false)
-    }, 1500)
-
-    // Mock gabinete products
-    setTimeout(() => {
-      const mockGabineteProducts: ProductStockItem[] = [
+          description: "Herramienta para empujar cutículas"
+        },
         {
-          id: "7",
-          barcode: "7501234567896",
+          barcode: 7501234567896,
           name: "Acrílico Rojo Pasión",
           category: "Acrílicos",
-          stock: 18,
-          lastUsed: "2024-01-14T15:30:00Z",
-          inUse: true,
-          location: "gabinete"
+          description: "Acrílico en tono rojo intenso"
         },
         {
-          id: "8",
-          barcode: "7501234567897",
+          barcode: 7501234567897,
           name: "Strass Cristal 2mm",
           category: "Decoración",
-          stock: 200,
-          lastUsed: "2024-01-13T12:15:00Z",
-          inUse: false,
-          location: "gabinete"
+          description: "Cristales decorativos de 2mm"
         },
         {
-          id: "9",
-          barcode: "7501234567898",
+          barcode: 7501234567898,
           name: "Aceite de Cutícula Lavanda",
           category: "Cuidado de uñas",
-          stock: 6,
-          lastUsed: "2024-01-12T10:45:00Z",
-          inUse: true,
-          location: "gabinete"
+          description: "Aceite nutritivo con aroma a lavanda"
         },
         {
-          id: "10",
-          barcode: "7501234567899",
+          barcode: 7501234567899,
           name: "Lima Buffer 4 Caras",
           category: "Limas",
-          stock: 22,
-          lastUsed: "2024-01-11T14:20:00Z",
-          inUse: false,
-          location: "gabinete"
+          description: "Lima buffer de 4 caras para pulir"
         }
       ]
-      setGabineteProducts(mockGabineteProducts)
-      setLoadingGabinete(false)
-    }, 2000)
-  }, [setGeneralProducts, setGabineteProducts, setCategories, setLoadingGeneral, setLoadingGabinete])
+      setProductCatalog(mockCatalog)
+      setLoadingCatalog(false)
+    }, 1000)
+
+    // Mock stock items
+    setTimeout(() => {
+      const mockStockItems: ProductStockItem[] = [
+        {
+          id: "item-001",
+          barcode: 7501234567890,
+          lastUsed: "2024-01-15T10:30:00Z",
+          lastUsedBy: "María González",
+          numberOfUses: 15,
+          currentWarehouse: 1,
+          isBeingUsed: true,
+          firstUsed: "2023-12-01T09:00:00Z"
+        },
+        {
+          id: "item-002",
+          barcode: 7501234567890,
+          lastUsed: "2024-01-14T14:20:00Z",
+          lastUsedBy: "Ana Martínez",
+          numberOfUses: 8,
+          currentWarehouse: 1,
+          isBeingUsed: false,
+          firstUsed: "2023-12-15T11:30:00Z"
+        },
+        {
+          id: "item-003",
+          barcode: 7501234567891,
+          lastUsed: "2024-01-13T09:15:00Z",
+          lastUsedBy: "Carmen López",
+          numberOfUses: 22,
+          currentWarehouse: 1,
+          isBeingUsed: false,
+          firstUsed: "2023-11-20T08:45:00Z"
+        },
+        {
+          id: "item-004",
+          barcode: 7501234567892,
+          lastUsed: "2024-01-12T16:45:00Z",
+          lastUsedBy: "Sofía Ruiz",
+          numberOfUses: 12,
+          currentWarehouse: 2,
+          isBeingUsed: true,
+          firstUsed: "2023-12-10T10:15:00Z"
+        },
+        {
+          id: "item-005",
+          barcode: 7501234567893,
+          numberOfUses: 0,
+          currentWarehouse: 1,
+          isBeingUsed: false,
+          firstUsed: "2024-01-10T12:00:00Z"
+        },
+        {
+          id: "item-006",
+          barcode: 7501234567894,
+          lastUsed: "2024-01-11T11:30:00Z",
+          lastUsedBy: "Elena Vega",
+          numberOfUses: 5,
+          currentWarehouse: 2,
+          isBeingUsed: true,
+          firstUsed: "2024-01-05T14:20:00Z"
+        },
+        {
+          id: "item-007",
+          barcode: 7501234567895,
+          lastUsed: "2024-01-10T13:20:00Z",
+          lastUsedBy: "Patricia Morales",
+          numberOfUses: 18,
+          currentWarehouse: 1,
+          isBeingUsed: false,
+          firstUsed: "2023-11-25T16:30:00Z"
+        },
+        {
+          id: "item-008",
+          barcode: 7501234567896,
+          lastUsed: "2024-01-14T15:30:00Z",
+          lastUsedBy: "Lucía Herrera",
+          numberOfUses: 9,
+          currentWarehouse: 2,
+          isBeingUsed: true,
+          firstUsed: "2023-12-20T09:45:00Z"
+        },
+        {
+          id: "item-009",
+          barcode: 7501234567897,
+          numberOfUses: 0,
+          currentWarehouse: 2,
+          isBeingUsed: false,
+          firstUsed: "2024-01-08T11:00:00Z"
+        },
+        {
+          id: "item-010",
+          barcode: 7501234567898,
+          lastUsed: "2024-01-12T10:45:00Z",
+          lastUsedBy: "Raquel Torres",
+          numberOfUses: 7,
+          currentWarehouse: 2,
+          isBeingUsed: false,
+          firstUsed: "2023-12-28T13:15:00Z"
+        }
+      ]
+      setStockItems(mockStockItems)
+      setLoadingStock(false)
+    }, 1500)
+  }, [setStockItems, setProductCatalog, setCategories, setLoadingStock, setLoadingCatalog])
 
   const handleClearFilters = () => {
     setSearchTerm("")
     setSelectedCategory(undefined)
+    setSelectedWarehouse(undefined)
   }
+
+  const filteredItems = getFilteredStockItems()
+  const generalItems = filteredItems.filter(item => item.currentWarehouse === 1)
+  const gabineteItems = filteredItems.filter(item => item.currentWarehouse === 2)
+
+  const isLoading = isLoadingStock || isLoadingCatalog
 
   return (
     <div className="flex-1 space-y-6 p-4 md:p-6 bg-white dark:bg-[#151718] theme-transition">
@@ -179,6 +245,71 @@ export default function InventarioPage() {
         </p>
       </div>
 
+      {/* Filters */}
+      <div className="space-y-4">
+        <div className="flex flex-col lg:flex-row gap-4">
+          {/* Product Search Combobox */}
+          <div className="flex-1">
+            <ProductCombobox
+              products={productCatalog}
+              value={searchTerm}
+              onValueChange={setSearchTerm}
+              placeholder="Buscar por nombre o código de barras..."
+            />
+          </div>
+          
+          {/* Category Filter */}
+          <Select value={selectedCategory} onValueChange={(value) => setSelectedCategory(value === "all" ? undefined : value)}>
+            <SelectTrigger className="w-full lg:w-48 border-[#E5E7EB] dark:border-[#2D3033] bg-white dark:bg-[#151718] text-[#11181C] dark:text-[#ECEDEE] focus:ring-[#0a7ea4] focus:border-[#0a7ea4] input-transition">
+              <SelectValue placeholder="Todas las categorías" />
+            </SelectTrigger>
+            <SelectContent className="bg-white dark:bg-[#1E1F20] border-[#E5E7EB] dark:border-[#2D3033] theme-transition">
+              <SelectItem value="all" className="text-[#11181C] dark:text-[#ECEDEE] hover:bg-[#F9FAFB] dark:hover:bg-[#2D3033] theme-transition">
+                Todas las categorías
+              </SelectItem>
+              {categories.map((category) => (
+                <SelectItem 
+                  key={category} 
+                  value={category}
+                  className="text-[#11181C] dark:text-[#ECEDEE] hover:bg-[#F9FAFB] dark:hover:bg-[#2D3033] theme-transition"
+                >
+                  {category}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          
+          {/* Warehouse Filter */}
+          <Select value={selectedWarehouse?.toString()} onValueChange={(value) => setSelectedWarehouse(value === "all" ? undefined : parseInt(value))}>
+            <SelectTrigger className="w-full lg:w-48 border-[#E5E7EB] dark:border-[#2D3033] bg-white dark:bg-[#151718] text-[#11181C] dark:text-[#ECEDEE] focus:ring-[#0a7ea4] focus:border-[#0a7ea4] input-transition">
+              <SelectValue placeholder="Todos los almacenes" />
+            </SelectTrigger>
+            <SelectContent className="bg-white dark:bg-[#1E1F20] border-[#E5E7EB] dark:border-[#2D3033] theme-transition">
+              <SelectItem value="all" className="text-[#11181C] dark:text-[#ECEDEE] hover:bg-[#F9FAFB] dark:hover:bg-[#2D3033] theme-transition">
+                Todos los almacenes
+              </SelectItem>
+              <SelectItem value="1" className="text-[#11181C] dark:text-[#ECEDEE] hover:bg-[#F9FAFB] dark:hover:bg-[#2D3033] theme-transition">
+                Almacén General
+              </SelectItem>
+              <SelectItem value="2" className="text-[#11181C] dark:text-[#ECEDEE] hover:bg-[#F9FAFB] dark:hover:bg-[#2D3033] theme-transition">
+                Gabinete
+              </SelectItem>
+            </SelectContent>
+          </Select>
+          
+          {/* Clear Filters */}
+          {(searchTerm || selectedCategory || selectedWarehouse) && (
+            <Button
+              variant="outline"
+              onClick={handleClearFilters}
+              className="border-[#E5E7EB] dark:border-[#2D3033] text-[#687076] dark:text-[#9BA1A6] hover:bg-[#F9FAFB] dark:hover:bg-[#2D3033] theme-transition"
+            >
+              Limpiar filtros
+            </Button>
+          )}
+        </div>
+      </div>
+
       {/* Tabs */}
       <Tabs defaultValue="general" className="space-y-6">
         <TabsList className="grid w-full grid-cols-2 max-w-md bg-[#F9FAFB] dark:bg-[#2D3033] theme-transition">
@@ -186,119 +317,31 @@ export default function InventarioPage() {
             value="general"
             className="text-[#687076] dark:text-[#9BA1A6] data-[state=active]:text-[#11181C] dark:data-[state=active]:text-[#ECEDEE] data-[state=active]:bg-white dark:data-[state=active]:bg-[#1E1F20] theme-transition"
           >
-            Almacén General
+            Almacén General ({generalItems.length})
           </TabsTrigger>
           <TabsTrigger 
             value="gabinete"
             className="text-[#687076] dark:text-[#9BA1A6] data-[state=active]:text-[#11181C] dark:data-[state=active]:text-[#ECEDEE] data-[state=active]:bg-white dark:data-[state=active]:bg-[#1E1F20] theme-transition"
           >
-            Gabinete
+            Gabinete ({gabineteItems.length})
           </TabsTrigger>
         </TabsList>
 
         {/* General Tab */}
         <TabsContent value="general" className="space-y-4">
-          {isLoadingGeneral ? (
+          {isLoading ? (
             <SkeletonInventoryTable />
           ) : (
-            <>
-              {/* Filters */}
-              <div className="flex flex-col sm:flex-row gap-4">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-[#687076] dark:text-[#9BA1A6] icon-transition" />
-                  <Input
-                    placeholder="Buscar producto…"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10 border-[#E5E7EB] dark:border-[#2D3033] bg-white dark:bg-[#151718] text-[#11181C] dark:text-[#ECEDEE] placeholder:text-[#687076] dark:placeholder:text-[#9BA1A6] focus:ring-[#0a7ea4] focus:border-[#0a7ea4] input-transition"
-                  />
-                </div>
-                <Select value={selectedCategory} onValueChange={(value) => setSelectedCategory(value === "all" ? undefined : value)}>
-                  <SelectTrigger className="w-full sm:w-48 border-[#E5E7EB] dark:border-[#2D3033] bg-white dark:bg-[#151718] text-[#11181C] dark:text-[#ECEDEE] focus:ring-[#0a7ea4] focus:border-[#0a7ea4] input-transition">
-                    <SelectValue placeholder="Todas las categorías" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-white dark:bg-[#1E1F20] border-[#E5E7EB] dark:border-[#2D3033] theme-transition">
-                    <SelectItem value="all" className="text-[#11181C] dark:text-[#ECEDEE] hover:bg-[#F9FAFB] dark:hover:bg-[#2D3033] theme-transition">
-                      Todas las categorías
-                    </SelectItem>
-                    {categories.map((category) => (
-                      <SelectItem 
-                        key={category} 
-                        value={category}
-                        className="text-[#11181C] dark:text-[#ECEDEE] hover:bg-[#F9FAFB] dark:hover:bg-[#2D3033] theme-transition"
-                      >
-                        {category}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {(searchTerm || selectedCategory) && (
-                  <Button
-                    variant="outline"
-                    onClick={handleClearFilters}
-                    className="border-[#E5E7EB] dark:border-[#2D3033] text-[#687076] dark:text-[#9BA1A6] hover:bg-[#F9FAFB] dark:hover:bg-[#2D3033] theme-transition"
-                  >
-                    Limpiar filtros
-                  </Button>
-                )}
-              </div>
-
-              {/* Table */}
-              <InventoryTable products={getFilteredProducts('general')} />
-            </>
+            <InventoryTable items={generalItems} />
           )}
         </TabsContent>
 
         {/* Gabinete Tab */}
         <TabsContent value="gabinete" className="space-y-4">
-          {isLoadingGabinete ? (
+          {isLoading ? (
             <SkeletonInventoryTable />
           ) : (
-            <>
-              {/* Filters */}
-              <div className="flex flex-col sm:flex-row gap-4">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-[#687076] dark:text-[#9BA1A6] icon-transition" />
-                  <Input
-                    placeholder="Buscar producto…"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10 border-[#E5E7EB] dark:border-[#2D3033] bg-white dark:bg-[#151718] text-[#11181C] dark:text-[#ECEDEE] placeholder:text-[#687076] dark:placeholder:text-[#9BA1A6] focus:ring-[#0a7ea4] focus:border-[#0a7ea4] input-transition"
-                  />
-                </div>
-                <Select value={selectedCategory} onValueChange={(value) => setSelectedCategory(value === "all" ? undefined : value)}>
-                  <SelectTrigger className="w-full sm:w-48 border-[#E5E7EB] dark:border-[#2D3033] bg-white dark:bg-[#151718] text-[#11181C] dark:text-[#ECEDEE] focus:ring-[#0a7ea4] focus:border-[#0a7ea4] input-transition">
-                    <SelectValue placeholder="Todas las categorías" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-white dark:bg-[#1E1F20] border-[#E5E7EB] dark:border-[#2D3033] theme-transition">
-                    <SelectItem value="all" className="text-[#11181C] dark:text-[#ECEDEE] hover:bg-[#F9FAFB] dark:hover:bg-[#2D3033] theme-transition">
-                      Todas las categorías
-                    </SelectItem>
-                    {categories.map((category) => (
-                      <SelectItem 
-                        key={category} 
-                        value={category}
-                        className="text-[#11181C] dark:text-[#ECEDEE] hover:bg-[#F9FAFB] dark:hover:bg-[#2D3033] theme-transition"
-                      >
-                        {category}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {(searchTerm || selectedCategory) && (
-                  <Button
-                    variant="outline"
-                    onClick={handleClearFilters}
-                    className="border-[#E5E7EB] dark:border-[#2D3033] text-[#687076] dark:text-[#9BA1A6] hover:bg-[#F9FAFB] dark:hover:bg-[#2D3033] theme-transition"
-                  >
-                    Limpiar filtros
-                  </Button>
-                )}
-              </div>
-
-              {/* Table */}
-              <InventoryTable products={getFilteredProducts('gabinete')} />
-            </>
+            <InventoryTable items={gabineteItems} />
           )}
         </TabsContent>
       </Tabs>
