@@ -5,7 +5,7 @@ import { DisposeItemDialog } from "./DisposeItemDialog";
 import { useDisposalStore } from "@/stores/disposal-store";
 import { TableCell } from "@/components/ui/table";
 
-const InventoryTable = ({ items }) => {
+export const InventoryTable = ({ items }) => {
   const { show: showDisposeDialog } = useDisposalStore();
 
   return (
