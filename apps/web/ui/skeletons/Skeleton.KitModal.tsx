@@ -1,4 +1,4 @@
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton } from "@/components/ui/skeleton"
 
 export function SkeletonKitModal() {
   return (
@@ -9,21 +9,20 @@ export function SkeletonKitModal() {
       </div>
       
       <div className="space-y-2">
-        <Skeleton className="h-4 w-24" />
-        <Skeleton className="h-10 w-full" />
-      </div>
-      
-      <div className="space-y-2">
         <Skeleton className="h-4 w-16" />
         <Skeleton className="h-10 w-full" />
       </div>
       
+      <div className="space-y-2">
+        <Skeleton className="h-4 w-24" />
+        <Skeleton className="h-10 w-full" />
+      </div>
+      
       <div className="space-y-3">
-        <Skeleton className="h-4 w-28" />
+        <Skeleton className="h-4 w-20" />
         <div className="space-y-2">
-          <Skeleton className="h-12 w-full" />
-          <Skeleton className="h-12 w-full" />
-          <Skeleton className="h-12 w-full" />
+          <Skeleton className="h-16 w-full" />
+          <Skeleton className="h-16 w-full" />
         </div>
       </div>
       
@@ -32,5 +31,5 @@ export function SkeletonKitModal() {
         <Skeleton className="h-10 w-20" />
       </div>
     </div>
-  );
+  )
 }
