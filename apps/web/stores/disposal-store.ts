@@ -1,24 +1,15 @@
 import { create } from "zustand"
 import { devtools } from "zustand/middleware"
-
-interface ProductStockItem {
-  id: string
-  nombre: string
-  codigoBarras: string
-  cantidad: number
-  categoria: string
-  marca: string
-  precio: number
-}
+import type { ProductStockItem } from "@/lib/schemas"
 
 interface DisposalState {
-  current?: ProductStockItem
+  current?: ProductStockItem & { productInfo?: any }
   reason?: "consumido" | "dañado" | "otro"
   open: boolean
   isLoading: boolean
   
   /** Abrir diálogo para artículo específico */
-  show: (item: ProductStockItem) => void
+  show: (item: ProductStockItem & { productInfo?: any }) => void
   
   /** Cerrar diálogo y resetear */
   hide: () => void
