@@ -1,104 +1,99 @@
 "use client"
 
-import { Calendar, Package, User } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader } from "@/components/ui/card"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import * as t from 'io-ts'
-import { kitSchema } from "@/lib/schemas"
-
-type Kit = t.TypeOf<typeof kitSchema>
-
-// Mock data for employees (same as in modal)
-const mockEmployees = [
-  { id: "emp-001", name: "María González", role: "Manicurista Senior" },
-  { id: "emp-002", name: "Ana Rodríguez", role: "Especialista en Uñas" },
-  { id: "emp-003", name: "Carmen López", role: "Técnica en Manicure" },
-  { id: "emp-004", name: "Sofia Martínez", role: "Estilista de Uñas" },
-  { id: "emp-005", name: "Isabella Torres", role: "Manicurista" }
-]
+import { Package, Calendar } from 'lucide-react'
+import { useKitsStore } from "@/stores/kits-store"
+import type { Kit } from "@/lib/schemas"
 
 interface KitCardProps {
   kit: Kit
 }
 
 export function KitCard({ kit }: KitCardProps) {
-  const employee = mockEmployees.find(e => e.id === kit.employeeId)
+  const { employees, products } = useKitsStore()
+  
+  const employee = employees.find(emp => emp.id === kit.employeeId)
   const totalProducts = kit.items.reduce((sum, item) => sum + item.qty, 0)
   
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
-    return date.toLocaleDateString('es-MX', {
+    return new Date(dateString).toLocaleDateString('es-MX', {
       weekday: 'short',
-      year: 'numeric',
+      day: 'numeric',
       month: 'short',
-      day: 'numeric'
     })
   }
 
-  const getInitials = (name: string) => {
-    return name
-      .split(' ')
-      .map(word => word[0])
-      .join('')
-      .toUpperCase()
-      .slice(0, 2)
+  const getProductNames = () => {
+    const names = kit.items.map(item => {
+      const product = products.find(p => p.id === item.productId)
+      return product?.name || 'Producto desconocido'
+    })
+    
+    if (names.length <= 2) {
+      return names.join(', ')
+    }
+    
+    return `${names.slice(0, 2).join(', ')} y ${names.length - 2} más`
+  }
+
+  if (!employee) {
+    return null
   }
 
   return (
-    <Card className="w-full hover:shadow-md transition-shadow">
+    <Card className="card-transition hover:shadow-md">
       <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-lg font-semibold">
-            Kit #{kit.id.slice(-6)}
-          </CardTitle>
-          <Badge variant="outline" className="text-xs">
-            <Calendar className="h-3 w-3 mr-1" />
-            {formatDate(kit.date)}
-          </Badge>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {/* Employee Info */}
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center gap-3">
           <Avatar className="h-10 w-10">
-            <AvatarFallback className="bg-primary/10 text-primary font-medium">
-              {employee ? getInitials(employee.name) : 'NN'}
+            <AvatarImage src={employee.avatar || "/placeholder.svg"} alt={employee.name} />
+            <AvatarFallback className="bg-[#0a7ea4] text-white">
+              {employee.name.split(' ').map(n => n[0]).join('')}
             </AvatarFallback>
           </Avatar>
           <div className="flex-1 min-w-0">
-            <p className="font-medium text-sm truncate">
-              {employee?.name || 'Empleada no encontrada'}
-            </p>
-            <p className="text-xs text-muted-foreground truncate">
-              {employee?.role || 'Sin rol asignado'}
-            </p>
+            <h3 className="font-semibold text-sm truncate text-[#11181C] dark:text-[#ECEDEE]">
+              {employee.name}
+            </h3>
+            <Badge variant="secondary" className="text-xs mt-1">
+              {employee.specialty}
+            </Badge>
           </div>
         </div>
-
-        {/* Kit Stats */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-            <Package className="h-4 w-4" />
-            <span>{kit.items.length} productos únicos</span>
-          </div>
-          <Badge variant="secondary" className="font-medium">
-            {totalProducts} total
-          </Badge>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-[#687076] dark:text-[#9BA1A6]">Kit ID:</span>
+          <span className="font-mono text-xs text-[#11181C] dark:text-[#ECEDEE]">
+            {kit.id.slice(-8)}
+          </span>
         </div>
-
-        {/* Products Preview */}
-        <div className="text-xs text-muted-foreground">
-          <span className="font-medium">Productos: </span>
-          {kit.items.slice(0, 2).map((item, index) => (
-            <span key={item.productId}>
-              {index > 0 && ', '}
-              {item.qty}x Producto
-            </span>
-          ))}
-          {kit.items.length > 2 && (
-            <span> y {kit.items.length - 2} más...</span>
-          )}
+        
+        <div className="flex items-center justify-between text-sm">
+          <div className="flex items-center gap-1 text-[#687076] dark:text-[#9BA1A6]">
+            <Package className="h-3 w-3" />
+            <span>Productos:</span>
+          </div>
+          <span className="font-medium text-[#11181C] dark:text-[#ECEDEE]">
+            {totalProducts}
+          </span>
+        </div>
+        
+        <div className="flex items-center justify-between text-sm">
+          <div className="flex items-center gap-1 text-[#687076] dark:text-[#9BA1A6]">
+            <Calendar className="h-3 w-3" />
+            <span>Fecha:</span>
+          </div>
+          <span className="text-[#11181C] dark:text-[#ECEDEE]">
+            {formatDate(kit.date)}
+          </span>
+        </div>
+        
+        <div className="pt-2 border-t border-[#E5E7EB] dark:border-[#2D3033]">
+          <p className="text-xs text-[#687076] dark:text-[#9BA1A6] truncate">
+            {getProductNames()}
+          </p>
         </div>
       </CardContent>
     </Card>

@@ -1,25 +1,57 @@
-import * as t from 'io-ts';
+import { t } from "arktype"
 
-export const productStockItemSchema = t.type({
-  id: t.string,              // UUID
-  barcode: t.number,
-  productName: t.string,
-  category: t.string,
-  warehouse: t.union([t.literal("general"), t.literal("gabinete")]),       // "general" | "gabinete"
-  quantity: t.number
-});
+// Existing schemas
+export const productSchema = t({
+  id: "string.uuid",
+  name: "string",
+  category: "string",
+  brand: "string",
+  sku: "string",
+  price: "number",
+  stock: "number",
+  minStock: "number",
+  maxStock: "number",
+  location: "string",
+  supplier: "string",
+  description: "string",
+  imageUrl: "string",
+  createdAt: "string.date.iso.parse",
+  updatedAt: "string.date.iso.parse",
+})
 
+export const transferSchema = t({
+  id: "string.uuid",
+  fromLocation: "string",
+  toLocation: "string",
+  items: "array<{ productId: string, qty: number }>",
+  status: "'pending' | 'in_transit' | 'completed' | 'cancelled'",
+  requestedBy: "string.uuid",
+  approvedBy: "string.uuid?",
+  createdAt: "string.date.iso.parse",
+  updatedAt: "string.date.iso.parse",
+})
 
-export const kitItemSchema = t.type({
-  productId: t.string,
-  qty: t.number
-});
+export const receptionSchema = t({
+  id: "string.uuid",
+  shipmentId: "string",
+  supplier: "string",
+  items: "array<{ productId: string, expectedQty: number, receivedQty: number }>",
+  status: "'pending' | 'partial' | 'completed'",
+  receivedBy: "string.uuid",
+  receivedAt: "string.date.iso.parse?",
+  createdAt: "string.date.iso.parse",
+  updatedAt: "string.date.iso.parse",
+})
 
-export const kitSchema = t.type({
-  id: t.string,              // UUID
-  employeeId: t.string,      // UUID
-  date: t.string,            // ISO date string
-  items: t.array(kitItemSchema)
-});
+// New kit schema
+export const kitSchema = t({
+  id: "string.uuid",
+  employeeId: "string.uuid",
+  date: "string.date.iso.parse",
+  items: "array<{ productId: string, qty: number }>",
+})
 
-// /** rest of code here **/
+export type Product = typeof productSchema.infer
+export type Transfer = typeof transferSchema.infer
+export type Reception = typeof receptionSchema.infer
+export type Kit = typeof kitSchema.infer

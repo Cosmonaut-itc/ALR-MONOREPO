@@ -1,199 +1,160 @@
-"use client"
-
-import { useState } from "react"
-import { MoreHorizontal, Package, Search, Trash2, Edit, Eye } from 'lucide-react'
-
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { useInventoryStore } from "@/stores/inventory-store"
-import { useDisposalStore } from "@/stores/disposal-store"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Button } from "@/components/ui/button"
+import { Copy, Eye, Trash2 } from 'lucide-react'
+import type { ProductStockItem, ProductCatalog } from "@/lib/schemas"
+import { format } from "date-fns"
+import { es } from "date-fns/locale"
 import { DisposeItemDialog } from "./DisposeItemDialog"
-import { SkeletonInventoryTable } from "@/ui/skeletons/Skeleton.InventoryTable"
+import { useDisposalStore } from "@/stores/disposal-store"
 
-export function InventoryTable() {
-  const { items, loading, searchTerm, setSearchTerm, warehouseFilter, setWarehouseFilter } = useInventoryStore()
-  const { show: showDisposal } = useDisposalStore()
-  const [sortBy, setSortBy] = useState<'name' | 'quantity' | 'category'>('name')
+interface InventoryTableProps {
+  items: (ProductStockItem & { productInfo: ProductCatalog | undefined })[]
+}
 
-  // Filter and sort items
-  const filteredItems = items
-    .filter(item => {
-      const matchesSearch = item.productName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           item.barcode.toString().includes(searchTerm)
-      const matchesWarehouse = warehouseFilter === 'all' || item.warehouse === warehouseFilter
-      return matchesSearch && matchesWarehouse
-    })
-    .sort((a, b) => {
-      switch (sortBy) {
-        case 'name':
-          return a.productName.localeCompare(b.productName)
-        case 'quantity':
-          return b.quantity - a.quantity
-        case 'category':
-          return a.category.localeCompare(b.category)
-        default:
-          return 0
-      }
-    })
+export function InventoryTable({ items }: InventoryTableProps) {
+  const { show: showDisposeDialog } = useDisposalStore()
 
-  const getStockStatus = (quantity: number) => {
-    if (quantity === 0) return { label: 'Sin Stock', variant: 'destructive' as const }
-    if (quantity < 5) return { label: 'Stock Bajo', variant: 'secondary' as const }
-    if (quantity < 10) return { label: 'Stock Medio', variant: 'outline' as const }
-    return { label: 'Stock Alto', variant: 'default' as const }
+  const formatDate = (dateString: string | undefined) => {
+    if (!dateString) return "N/A"
+    try {
+      return format(new Date(dateString), "dd/MM/yyyy", { locale: es })
+    } catch {
+      return "N/A"
+    }
   }
 
-  if (loading) {
-    return <SkeletonInventoryTable />
+  const getWarehouseName = (warehouse: number) => {
+    return warehouse === 1 ? "General" : "Gabinete"
+  }
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text)
+  }
+
+  if (items.length === 0) {
+    return (
+      <div className="rounded-md border border-[#E5E7EB] dark:border-[#2D3033] theme-transition">
+        <div className="flex items-center justify-center py-12">
+          <p className="text-[#687076] dark:text-[#9BA1A6] text-transition">
+            No se encontraron productos
+          </p>
+        </div>
+      </div>
+    )
   }
 
   return (
     <>
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Package className="h-5 w-5" />
-            Inventario de Productos
-          </CardTitle>
-          <CardDescription>
-            Gestiona el inventario de productos del salón de uñas
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {/* Filters */}
-          <div className="flex flex-col sm:flex-row gap-4 mb-6">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-              <Input
-                placeholder="Buscar por nombre o código de barras..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-            <Select value={warehouseFilter} onValueChange={setWarehouseFilter}>
-              <SelectTrigger className="w-full sm:w-48">
-                <SelectValue placeholder="Filtrar por almacén" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos los almacenes</SelectItem>
-                <SelectItem value="general">General</SelectItem>
-                <SelectItem value="gabinete">Gabinete</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={sortBy} onValueChange={(value: 'name' | 'quantity' | 'category') => setSortBy(value)}>
-              <SelectTrigger className="w-full sm:w-48">
-                <SelectValue placeholder="Ordenar por" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="name">Nombre</SelectItem>
-                <SelectItem value="quantity">Cantidad</SelectItem>
-                <SelectItem value="category">Categoría</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Table */}
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Producto</TableHead>
-                  <TableHead>Categoría</TableHead>
-                  <TableHead>Almacén</TableHead>
-                  <TableHead>Cantidad</TableHead>
-                  <TableHead>Estado</TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredItems.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                      No se encontraron productos
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  filteredItems.map((item) => {
-                    const stockStatus = getStockStatus(item.quantity)
-                    return (
-                      <TableRow key={item.id} className="hover:bg-muted/50">
-                        <TableCell>
-                          <div className="space-y-1">
-                            <p className="font-medium">{item.productName}</p>
-                            <p className="text-sm text-muted-foreground">
-                              Código: {item.barcode}
-                            </p>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{item.category}</Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={item.warehouse === 'general' ? 'default' : 'secondary'}>
-                            {item.warehouse === 'general' ? 'General' : 'Gabinete'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <span className="font-medium">{item.quantity}</span>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={stockStatus.variant}>
-                            {stockStatus.label}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" className="h-8 w-8 p-0">
-                                <span className="sr-only">Abrir menú</span>
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem>
-                                <Eye className="mr-2 h-4 w-4" />
-                                Ver detalles
-                              </DropdownMenuItem>
-                              <DropdownMenuItem>
-                                <Edit className="mr-2 h-4 w-4" />
-                                Editar
-                              </DropdownMenuItem>
-                              {item.warehouse === 'gabinete' && (
-                                <DropdownMenuItem 
-                                  className="text-destructive focus:text-destructive"
-                                  onClick={() => showDisposal(item)}
-                                >
-                                  <Trash2 className="mr-2 h-4 w-4" />
-                                  Dar de baja
-                                </DropdownMenuItem>
-                              )}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })
-                )}
-              </TableBody>
-            </Table>
-          </div>
-
-          {/* Results count */}
-          {filteredItems.length > 0 && (
-            <div className="mt-4 text-sm text-muted-foreground">
-              Mostrando {filteredItems.length} de {items.length} productos
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Disposal Dialog */}
+      <div className="rounded-md border border-[#E5E7EB] dark:border-[#2D3033] theme-transition">
+        <Table>
+          <TableHeader>
+            <TableRow className="border-b border-[#E5E7EB] dark:border-[#2D3033] hover:bg-[#F9FAFB] dark:hover:bg-[#2D3033]">
+              <TableHead className="text-[#11181C] dark:text-[#ECEDEE] text-transition font-medium">
+                UUID
+              </TableHead>
+              <TableHead className="text-[#11181C] dark:text-[#ECEDEE] text-transition font-medium">
+                Código de barras
+              </TableHead>
+              <TableHead className="text-[#11181C] dark:text-[#ECEDEE] text-transition font-medium">
+                Nombre
+              </TableHead>
+              <TableHead className="text-[#11181C] dark:text-[#ECEDEE] text-transition font-medium">
+                Usos
+              </TableHead>
+              <TableHead className="text-[#11181C] dark:text-[#ECEDEE] text-transition font-medium">
+                Último uso
+              </TableHead>
+              <TableHead className="text-[#11181C] dark:text-[#ECEDEE] text-transition font-medium">
+                Usado por
+              </TableHead>
+              <TableHead className="text-[#11181C] dark:text-[#ECEDEE] text-transition font-medium">
+                ¿En uso?
+              </TableHead>
+              <TableHead className="text-[#11181C] dark:text-[#ECEDEE] text-transition font-medium">
+                Acciones
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {items.map((item) => (
+              <TableRow 
+                key={item.id} 
+                className="border-b border-[#E5E7EB] dark:border-[#2D3033] hover:bg-[#F9FAFB] dark:hover:bg-[#2D3033] theme-transition"
+              >
+                <TableCell className="font-mono text-xs text-[#687076] dark:text-[#9BA1A6] text-transition max-w-[120px]">
+                  <div className="flex items-center gap-1">
+                    <span className="truncate">{item.uuid.split('-')[0]}...</span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => copyToClipboard(item.uuid)}
+                      className="h-6 w-6 p-0 hover:bg-[#E5E7EB] dark:hover:bg-[#2D3033]"
+                    >
+                      <Copy className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </TableCell>
+                <TableCell className="font-mono text-sm text-[#687076] dark:text-[#9BA1A6] text-transition">
+                  {item.barcode}
+                </TableCell>
+                <TableCell className="font-medium text-[#11181C] dark:text-[#ECEDEE] text-transition">
+                  <div>
+                    <div>{item.productInfo?.name || "Producto desconocido"}</div>
+                    <div className="text-xs text-[#687076] dark:text-[#9BA1A6]">
+                      {item.productInfo?.category} • {getWarehouseName(item.currentWarehouse)}
+                    </div>
+                  </div>
+                </TableCell>
+                <TableCell className="text-[#11181C] dark:text-[#ECEDEE] text-transition">
+                  <span className={item.numberOfUses === 0 ? "text-[#687076] dark:text-[#9BA1A6]" : ""}>
+                    {item.numberOfUses}
+                  </span>
+                </TableCell>
+                <TableCell className="text-[#687076] dark:text-[#9BA1A6] text-transition">
+                  {formatDate(item.lastUsed)}
+                </TableCell>
+                <TableCell className="text-[#687076] dark:text-[#9BA1A6] text-transition">
+                  {item.lastUsedBy || "N/A"}
+                </TableCell>
+                <TableCell>
+                  <Badge 
+                    variant={item.isBeingUsed ? "default" : "secondary"}
+                    className={
+                      item.isBeingUsed 
+                        ? "bg-[#0a7ea4] text-white hover:bg-[#0a7ea4]/90" 
+                        : "bg-[#F9FAFB] dark:bg-[#2D3033] text-[#687076] dark:text-[#9BA1A6] hover:bg-[#E5E7EB] dark:hover:bg-[#1E1F20]"
+                    }
+                  >
+                    {item.isBeingUsed ? "Sí" : "No"}
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 p-0 hover:bg-[#E5E7EB] dark:hover:bg-[#2D3033]"
+                    >
+                      <Eye className="h-4 w-4" />
+                      <span className="sr-only">Ver detalles</span>
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => showDisposeDialog(item)}
+                      className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      <span className="sr-only">Dar de baja</span>
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
       <DisposeItemDialog />
     </>
   )

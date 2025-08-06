@@ -1,31 +1,34 @@
 "use client"
 
-import { AlertTriangle, Package, Trash2 } from 'lucide-react'
-import { toast } from "sonner"
-
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Input } from "@/components/ui/input"
 import { useDisposalStore } from "@/stores/disposal-store"
-import { SkeletonDisposeDialog } from "@/ui/skeletons/Skeleton.DisposeDialog"
+import { AlertTriangle, Loader2 } from 'lucide-react'
+import { toast } from "sonner"
+import { useEffect } from "react"
 
 export function DisposeItemDialog() {
-  const { 
-    current, 
-    reason, 
-    open, 
-    loading,
-    hide, 
-    setReason, 
-    confirm 
-  } = useDisposalStore()
+  const { current, reason, open, isLoading, hide, setReason, confirm } = useDisposalStore()
 
   const handleConfirm = async () => {
     if (!reason) {
-      toast.error("Selecciona un motivo para dar de baja")
+      toast.error("Por favor selecciona un motivo para la baja")
       return
     }
 
@@ -37,102 +40,106 @@ export function DisposeItemDialog() {
     }
   }
 
-  if (loading) {
-    return (
-      <Dialog open={open} onOpenChange={hide}>
-        <DialogContent className="sm:max-w-md">
-          <SkeletonDisposeDialog />
-        </DialogContent>
-      </Dialog>
-    )
-  }
+  // Reset reason when dialog opens
+  useEffect(() => {
+    if (open && !reason) {
+      setReason(undefined as any)
+    }
+  }, [open, reason, setReason])
+
+  if (!current) return null
 
   return (
-    <Dialog open={open} onOpenChange={hide}>
-      <DialogContent className="sm:max-w-md">
+    <Dialog open={open} onOpenChange={(isOpen) => !isOpen && hide()}>
+      <DialogContent className="sm:max-w-[425px] bg-white dark:bg-[#151718] border-[#E5E7EB] dark:border-[#2D3033]">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-destructive">
-            <Trash2 className="h-5 w-5" />
-            Dar de Baja Artículo
+          <DialogTitle className="text-[#11181C] dark:text-[#ECEDEE] flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-red-600" />
+            Dar de baja artículo
           </DialogTitle>
-          <DialogDescription>
-            Esta acción eliminará permanentemente el artículo del inventario.
+          <DialogDescription className="text-[#687076] dark:text-[#9BA1A6]">
+            Esta acción es permanente y no se puede deshacer. El artículo será removido del inventario.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          {/* Product Info */}
-          <div className="space-y-3">
-            <div className="space-y-2">
-              <Label>Producto</Label>
-              <div className="flex items-center gap-3 p-3 bg-muted rounded-lg">
-                <Package className="h-5 w-5 text-muted-foreground" />
-                <div className="flex-1">
-                  <p className="font-medium">{current?.productName}</p>
-                  <p className="text-sm text-muted-foreground">
-                    Código: {current?.barcode}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label>ID del Artículo</Label>
-              <Input 
-                value={current?.id || ""} 
-                readOnly 
-                className="bg-muted font-mono text-sm"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Cantidad en Stock</Label>
-              <Input 
-                value={current?.quantity || 0} 
-                readOnly 
-                className="bg-muted"
-              />
-            </div>
+        <div className="grid gap-4 py-4">
+          <div className="grid gap-2">
+            <Label htmlFor="product-name" className="text-[#11181C] dark:text-[#ECEDEE]">
+              Producto
+            </Label>
+            <Input
+              id="product-name"
+              value={current.productInfo?.name || "Producto desconocido"}
+              readOnly
+              className="bg-[#F9FAFB] dark:bg-[#1E1F20] border-[#E5E7EB] dark:border-[#2D3033] text-[#687076] dark:text-[#9BA1A6]"
+            />
           </div>
 
-          {/* Reason Selection */}
-          <div className="space-y-2">
-            <Label htmlFor="reason">Motivo de la Baja *</Label>
+          <div className="grid gap-2">
+            <Label htmlFor="barcode" className="text-[#11181C] dark:text-[#ECEDEE]">
+              Código de barras
+            </Label>
+            <Input
+              id="barcode"
+              value={current.barcode || "N/A"}
+              readOnly
+              className="bg-[#F9FAFB] dark:bg-[#1E1F20] border-[#E5E7EB] dark:border-[#2D3033] text-[#687076] dark:text-[#9BA1A6] font-mono text-sm"
+            />
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="uuid" className="text-[#11181C] dark:text-[#ECEDEE]">
+              UUID
+            </Label>
+            <Input
+              id="uuid"
+              value={current.uuid || "N/A"}
+              readOnly
+              className="bg-[#F9FAFB] dark:bg-[#1E1F20] border-[#E5E7EB] dark:border-[#2D3033] text-[#687076] dark:text-[#9BA1A6] font-mono text-xs"
+            />
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="reason" className="text-[#11181C] dark:text-[#ECEDEE]">
+              Motivo de baja *
+            </Label>
             <Select value={reason} onValueChange={setReason}>
-              <SelectTrigger>
-                <SelectValue placeholder="Selecciona el motivo" />
+              <SelectTrigger className="bg-white dark:bg-[#1E1F20] border-[#E5E7EB] dark:border-[#2D3033]">
+                <SelectValue placeholder="Selecciona un motivo" />
               </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="consumido">Consumido</SelectItem>
-                <SelectItem value="dañado">Dañado</SelectItem>
-                <SelectItem value="otro">Otro</SelectItem>
+              <SelectContent className="bg-white dark:bg-[#1E1F20] border-[#E5E7EB] dark:border-[#2D3033]">
+                <SelectItem value="consumido" className="text-[#11181C] dark:text-[#ECEDEE]">
+                  Consumido
+                </SelectItem>
+                <SelectItem value="dañado" className="text-[#11181C] dark:text-[#ECEDEE]">
+                  Dañado
+                </SelectItem>
+                <SelectItem value="otro" className="text-[#11181C] dark:text-[#ECEDEE]">
+                  Otro
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
-
-          {/* Warning */}
-          <Alert className="border-destructive/50 text-destructive">
-            <AlertTriangle className="h-4 w-4" />
-            <AlertDescription>
-              <strong>Advertencia:</strong> Esta acción no se puede deshacer. 
-              El artículo será eliminado permanentemente del inventario.
-            </AlertDescription>
-          </Alert>
-
-          {/* Action Buttons */}
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" onClick={hide}>
-              Cancelar
-            </Button>
-            <Button 
-              variant="destructive" 
-              onClick={handleConfirm}
-              disabled={!reason}
-            >
-              Dar de Baja
-            </Button>
-          </div>
         </div>
+
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={hide}
+            disabled={isLoading}
+            className="border-[#E5E7EB] dark:border-[#2D3033] text-[#11181C] dark:text-[#ECEDEE] hover:bg-[#F9FAFB] dark:hover:bg-[#2D3033]"
+          >
+            Cancelar
+          </Button>
+          <Button
+            onClick={handleConfirm}
+            disabled={!reason || isLoading}
+            className="bg-red-600 hover:bg-red-700 text-white"
+          >
+            {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Dar de baja
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )
