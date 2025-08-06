@@ -3,6 +3,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 
 export function SkeletonKitCard() {
   return (
+
     <Card className="card-transition">
       <CardHeader className="pb-3">
         <div className="flex items-center gap-3">

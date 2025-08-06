@@ -1,9 +1,8 @@
 import { create } from "zustand"
 import { devtools } from "zustand/middleware"
-import { kitSchema, receptionItemSchema } from "@/lib/schemas"
+import { kitSchema } from "@/lib/schemas"
 
 type Kit = typeof kitSchema.infer
-type KitItem = typeof receptionItemSchema.infer // mismo shape que item individual
 
 // Mock data for employees
 export const mockEmployees = [
@@ -100,19 +99,11 @@ interface KitsState {
   kits: Kit[]
   employees: typeof mockEmployees
   products: typeof mockProducts
-  /** Form draft para nueva asignación */
+  /** Form draft */
   draft: Partial<Kit>
-  /** Items en modo inspección */
-  inspectionItems: Record<string, KitItem[]> // key = kitId
   setDraft: (partial: Partial<Kit>) => void
   clearDraft: () => void
   addKit: (k: Kit) => void
-  /**
-   * Inspección
-   */
-  loadInspection: (kitId: string, items: KitItem[]) => void
-  toggleReturned: (kitId: string, itemId: string) => void
-  markAllReturned: (kitId: string) => void
 }
 
 export const useKitsStore = create<KitsState>()(
@@ -142,33 +133,8 @@ export const useKitsStore = create<KitsState>()(
     employees: mockEmployees,
     products: mockProducts,
     draft: {},
-    inspectionItems: {},
-    setDraft: (partial) => set((s) => ({ draft: { ...s.draft, ...partial } })),
+    setDraft: (partial) => set((state) => ({ draft: { ...state.draft, ...partial } })),
     clearDraft: () => set({ draft: {} }),
-    addKit: (kit) => set((s) => ({ kits: [...s.kits, kit], draft: {} })),
-    loadInspection: (kitId, items) =>
-      set((s) => ({ inspectionItems: { ...s.inspectionItems, [kitId]: items } })),
-    toggleReturned: (kitId, itemId) =>
-      set((s) => {
-        const items = s.inspectionItems[kitId] ?? []
-        return {
-          inspectionItems: {
-            ...s.inspectionItems,
-            [kitId]: items.map((it) =>
-              it.id === itemId ? { ...it, received: !it.received } : it
-            ),
-          },
-        }
-      }),
-    markAllReturned: (kitId) =>
-      set((s) => {
-        const items = s.inspectionItems[kitId] ?? []
-        return {
-          inspectionItems: {
-            ...s.inspectionItems,
-            [kitId]: items.map((it) => ({ ...it, received: true })),
-          },
-        }
-      }),
+    addKit: (kit) => set((state) => ({ kits: [...state.kits, kit], draft: {} })),
   }))
 )
