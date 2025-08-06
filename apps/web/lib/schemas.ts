@@ -60,14 +60,13 @@ export const productCatalogSchema = t({
   description: "string?"
 })
 
-// Reception schema
+// Reception schemas
 export const receptionSchema = t({
   shipmentNumber: "string",
   arrivalDate: "string.date.iso.parse",
   lines: "array<{ barcode: number, quantity: number }>"
 })
 
-// Reception history schema
 export const receptionHistorySchema = t({
   id: "string",
   shipmentNumber: "string",
@@ -75,6 +74,21 @@ export const receptionHistorySchema = t({
   totalItems: "number",
   receivedBy: "string",
   createdAt: "string.date.iso.parse"
+})
+
+// New reception schemas for distribution center
+export const receptionHeaderSchema = t({
+  shipmentId: "string",          // UUID
+  arrivalDate: "string.date.iso.parse",
+  totalItems: "number",
+  status: t.union("pendiente", "completada")
+})
+
+export const receptionItemSchema = t({
+  id: "string",              // UUID
+  barcode: "number",
+  productName: "string",
+  received: "boolean"
 })
 
 export type ProductStat = typeof productStatSchema.infer
@@ -87,3 +101,5 @@ export type ProductStockItem = typeof productStockItemSchema.infer
 export type ProductCatalog = typeof productCatalogSchema.infer
 export type Reception = typeof receptionSchema.infer
 export type ReceptionHistory = typeof receptionHistorySchema.infer
+export type ReceptionHeader = typeof receptionHeaderSchema.infer
+export type ReceptionItem = typeof receptionItemSchema.infer
