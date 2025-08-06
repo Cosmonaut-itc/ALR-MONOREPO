@@ -60,6 +60,23 @@ export const productCatalogSchema = t({
   description: "string?"
 })
 
+// Reception schema
+export const receptionSchema = t({
+  shipmentNumber: "string",
+  arrivalDate: "string.date.iso.parse",
+  lines: "array<{ barcode: number, quantity: number }>"
+})
+
+// Reception history schema
+export const receptionHistorySchema = t({
+  id: "string",
+  shipmentNumber: "string",
+  arrivalDate: "string.date.iso.parse",
+  totalItems: "number",
+  receivedBy: "string",
+  createdAt: "string.date.iso.parse"
+})
+
 export type ProductStat = typeof productStatSchema.infer
 export type EmployeeUse = typeof employeeUseSchema.infer
 export type Efficiency = typeof efficiencySchema.infer
@@ -68,3 +85,5 @@ export type ActiveEmployee = typeof activeEmployeeSchema.infer
 export type DashboardMetric = typeof dashboardMetricSchema.infer
 export type ProductStockItem = typeof productStockItemSchema.infer
 export type ProductCatalog = typeof productCatalogSchema.infer
+export type Reception = typeof receptionSchema.infer
+export type ReceptionHistory = typeof receptionHistorySchema.infer
