@@ -1,23 +1,22 @@
 import { create } from "zustand"
 import { devtools } from "zustand/middleware"
-import type { ProductStockItem } from "@/lib/schemas"
+import * as t from 'io-ts'
+import { productStockItemSchema } from "@/lib/schemas"
+
+type ProductStockItem = t.TypeOf<typeof productStockItemSchema>
 
 interface DisposalState {
-  current?: ProductStockItem & { productInfo?: any }
+  current?: ProductStockItem
   reason?: "consumido" | "dañado" | "otro"
   open: boolean
-  isLoading: boolean
-  
-  /** Abrir diálogo para artículo específico */
-  show: (item: ProductStockItem & { productInfo?: any }) => void
-  
-  /** Cerrar diálogo y resetear */
+  loading: boolean
+  /** Open dialog for specific item */
+  show: (item: ProductStockItem) => void
+  /** Close dialog & reset */
   hide: () => void
-  
-  /** Establecer motivo de baja */
-  setReason: (reason: "consumido" | "dañado" | "otro") => void
-  
-  /** Confirmar baja del artículo */
+  setReason: (r: "consumido" | "dañado" | "otro") => void
+  setLoading: (loading: boolean) => void
+  /** Stub that will eventually POST /api/dispose */
   confirm: () => Promise<void>
 }
 
@@ -26,50 +25,37 @@ export const useDisposalStore = create<DisposalState>()(
     current: undefined,
     reason: undefined,
     open: false,
-    isLoading: false,
-
-    show: (item) => set({ 
-      current: item, 
-      open: true,
-      reason: undefined 
-    }),
-
-    hide: () => set({ 
-      current: undefined, 
-      reason: undefined, 
-      open: false,
-      isLoading: false 
-    }),
-
+    loading: false,
+    show: (item) => set({ current: item, open: true }),
+    hide: () => set({ current: undefined, reason: undefined, open: false }),
     setReason: (reason) => set({ reason }),
-
+    setLoading: (loading) => set({ loading }),
     confirm: async () => {
-      const { current, reason } = get()
-      if (!current || !reason) return
+      const state = get()
+      if (!state.current || !state.reason) return
 
-      set({ isLoading: true })
-
+      set({ loading: true })
+      
       try {
-        // TODO: Integrar llamada a la API
-        // await fetch('/api/dispose', { ... })
+        // TODO: integrate API call
+        // await fetch('/api/dispose', {
+        //   method: 'POST',
+        //   body: JSON.stringify({
+        //     itemId: state.current.id,
+        //     reason: state.reason
+        //   })
+        // })
         
-        // Simulación de llamada API
+        // Simulate API call
         await new Promise(resolve => setTimeout(resolve, 1000))
         
-        console.log("Artículo dado de baja:", current.id, "Motivo:", reason)
-        
-        set({ 
-          current: undefined, 
-          reason: undefined, 
-          open: false,
-          isLoading: false 
-        })
+        console.log("Disposed", state.current.id, "reason:", state.reason)
+        set({ current: undefined, reason: undefined, open: false, loading: false })
       } catch (error) {
-        console.error("Error al dar de baja el artículo:", error)
-        set({ isLoading: false })
+        console.error("Error disposing item:", error)
+        set({ loading: false })
+        throw error
       }
     },
-  }), {
-    name: "disposal-store"
-  })
+  }))
 )
