@@ -1,368 +1,202 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { ArrowLeft, PackageCheck, Package } from 'lucide-react'
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb"
-import { SkeletonKitInspectionGroup } from "@/ui/skeletons/Skeleton.KitInspectionGroup"
-import { useKitsStore } from "@/stores/kits-store"
-import { useRouter } from "next/navigation"
-import { useToast } from "@/hooks/use-toast"
-import { cn } from "@/lib/utils"
+import { useEffect, useState } from 'react'
+import { useParams, useRouter } from 'next/navigation'
+import Link from 'next/link'
+import { ChevronLeft, PackageCheck } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Progress } from '@/components/ui/progress'
+import { useToast } from '@/hooks/use-toast'
+import { useKitsStore } from '@/stores/kits-store'
+import { SkeletonKitInspectionGroup } from '@/ui/skeletons/Skeleton.KitInspectionGroup'
 
-interface PageProps {
-  params: {
-    kitId: string
-  }
-}
-
-// Helper function to generate UUID
-function generateUUID(): string {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    const r = Math.random() * 16 | 0
-    const v = c == 'x' ? r : (r & 0x3 | 0x8)
-    return v.toString(16)
-  })
-}
-
-export default function KitInspectionPage({ params }: PageProps) {
-  const [isLoading, setIsLoading] = useState(true)
+export default function KitInspectionPage() {
+  const params = useParams()
   const router = useRouter()
   const { toast } = useToast()
+  const kitId = params.kitId as string
   
   const {
     inspectionItems,
-    isLoadingInspection,
+    inspectionLoading,
     loadInspection,
-    toggleItemReturned,
+    toggleInspectionItem,
+    toggleInspectionGroup,
     markAllReturned,
-    getReturnedCount,
-    getTotalInspectionCount,
-    isAllReturned,
-    setLoadingInspection
+    getInspectionProgress
   } = useKitsStore()
 
-  // Mock data loading - TODO: Replace mock with GET /api/kits/{kitId}
   useEffect(() => {
-    setLoadingInspection(true)
+    // Mock data - replace with actual API call
+    const mockItems = [
+      {
+        id: '1',
+        barcode: 'BC001',
+        name: 'Esmalte Rojo Pasión',
+        returned: false
+      },
+      {
+        id: '2',
+        barcode: 'BC001',
+        name: 'Base Coat Premium',
+        returned: false
+      },
+      {
+        id: '3',
+        barcode: 'BC002',
+        name: 'Top Coat Brillante',
+        returned: true
+      },
+      {
+        id: '4',
+        barcode: 'BC002',
+        name: 'Removedor de Cutícula',
+        returned: false
+      }
+    ]
     
-    setTimeout(() => {
-      const mockItems = [
-        // Group 1: Barcode 123456 - Esmalte Base Coat
-        {
-          id: "kit-item-001",
-          uuid: generateUUID(),
-          barcode: 123456,
-          productName: "Esmalte Base Coat",
-          returned: false
-        },
-        {
-          id: "kit-item-002",
-          uuid: generateUUID(),
-          barcode: 123456,
-          productName: "Esmalte Base Coat",
-          returned: false
-        },
-        {
-          id: "kit-item-003",
-          uuid: generateUUID(),
-          barcode: 123456,
-          productName: "Esmalte Base Coat",
-          returned: true
-        },
-        // Group 2: Barcode 789012 - Lima de Uñas
-        {
-          id: "kit-item-004",
-          uuid: generateUUID(),
-          barcode: 789012,
-          productName: "Lima de Uñas 180/240",
-          returned: false
-        },
-        {
-          id: "kit-item-005",
-          uuid: generateUUID(),
-          barcode: 789012,
-          productName: "Lima de Uñas 180/240",
-          returned: false
-        },
-        {
-          id: "kit-item-006",
-          uuid: generateUUID(),
-          barcode: 789012,
-          productName: "Lima de Uñas 180/240",
-          returned: false
-        },
-        {
-          id: "kit-item-007",
-          uuid: generateUUID(),
-          barcode: 789012,
-          productName: "Lima de Uñas 180/240",
-          returned: false
-        },
-        {
-          id: "kit-item-008",
-          uuid: generateUUID(),
-          barcode: 789012,
-          productName: "Lima de Uñas 180/240",
-          returned: true
-        },
-        // Group 3: Barcode 345678 - Aceite de Cutícula
-        {
-          id: "kit-item-009",
-          uuid: generateUUID(),
-          barcode: 345678,
-          productName: "Aceite de Cutícula",
-          returned: false
-        },
-        {
-          id: "kit-item-010",
-          uuid: generateUUID(),
-          barcode: 345678,
-          productName: "Aceite de Cutícula",
-          returned: false
-        }
-      ]
-      
-      loadInspection(params.kitId, mockItems)
-      setIsLoading(false)
-    }, 1500)
-  }, [params.kitId, loadInspection, setLoadingInspection])
-
-  // Group items by barcode
-  const groupedItems = inspectionItems.reduce((groups, item) => {
-    const key = item.barcode
-    if (!groups[key]) {
-      groups[key] = []
-    }
-    groups[key].push(item)
-    return groups
-  }, {} as Record<number, typeof inspectionItems>)
+    loadInspection(kitId, mockItems)
+  }, [kitId, loadInspection])
 
   const handleMarkAllReturned = () => {
-    markAllReturned(params.kitId)
+    markAllReturned(kitId)
     toast({
       title: "Kit devuelto",
-      description: "Todos los artículos han sido marcados como devueltos",
+      description: "Todos los productos han sido marcados como devueltos",
     })
-    
-    // Navigate back to kits list
-    setTimeout(() => {
-      router.push("/kits")
-    }, 1500)
+    router.push('/kits')
   }
 
-  const handleToggleItem = (itemId: string) => {
-    toggleItemReturned(itemId)
-  }
+  const progress = getInspectionProgress()
+  const groupedItems = inspectionItems.reduce((acc, item) => {
+    if (!acc[item.barcode]) {
+      acc[item.barcode] = []
+    }
+    acc[item.barcode].push(item)
+    return acc
+  }, {} as Record<string, typeof inspectionItems>)
 
-  const handleGroupToggle = (barcode: number) => {
-    const groupItems = groupedItems[barcode] || []
-    const allReturned = groupItems.every(item => item.returned)
-    
-    // Toggle all items in the group
-    groupItems.forEach(item => {
-      if (item.returned === allReturned) {
-        toggleItemReturned(item.id)
-      }
-    })
-  }
-
-  const getGroupSelectionState = (barcode: number) => {
-    const groupItems = groupedItems[barcode] || []
-    const returnedCount = groupItems.filter(item => item.returned).length
-    
-    if (returnedCount === 0) return "unchecked"
-    if (returnedCount === groupItems.length) return "checked"
-    return "indeterminate"
-  }
-
-  const returnedCount = getReturnedCount()
-  const totalCount = getTotalInspectionCount()
-
-  return (
-    <div className="flex-1 space-y-6 p-4 md:p-6 bg-white dark:bg-[#151718] theme-transition">
-      {/* Breadcrumb */}
-      <Breadcrumb>
-        <BreadcrumbList>
-          <BreadcrumbItem>
-            <BreadcrumbLink 
-              href="/kits"
-              className="flex items-center text-[#0a7ea4] hover:text-[#0a7ea4]/80 theme-transition"
-            >
-              <ArrowLeft className="h-4 w-4 mr-1" />
-              Volver a kits
-            </BreadcrumbLink>
-          </BreadcrumbItem>
-          <BreadcrumbSeparator />
-          <BreadcrumbItem>
-            <BreadcrumbPage className="text-[#11181C] dark:text-[#ECEDEE] text-transition">
-              {params.kitId}
-            </BreadcrumbPage>
-          </BreadcrumbItem>
-        </BreadcrumbList>
-      </Breadcrumb>
-
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="space-y-2">
-          <h1 className="text-2xl md:text-3xl font-bold text-[#11181C] dark:text-[#ECEDEE] text-transition">
-            Inspeccionar Kit {params.kitId}
-          </h1>
-          <p className="text-[#687076] dark:text-[#9BA1A6] text-transition">
-            Marca los artículos como devueltos
-          </p>
+  if (inspectionLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="h-9 w-24 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+            <div className="h-8 w-48 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+          </div>
+          <div className="h-10 w-48 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
         </div>
         
-        <Button
+        <div className="space-y-4">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <SkeletonKitInspectionGroup key={i} />
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="sm" asChild>
+            <Link href="/kits" className="flex items-center gap-2">
+              <ChevronLeft className="h-4 w-4" />
+              Volver a kits
+            </Link>
+          </Button>
+          <div>
+            <h1 className="text-2xl font-bold text-[#11181C] dark:text-[#ECEDEE]">
+              Inspeccionar Kit {kitId.slice(-8)}
+            </h1>
+            <div className="flex items-center gap-4 mt-2">
+              <Progress value={progress.percentage} className="w-48" />
+              <span className="text-sm text-[#687076] dark:text-[#9BA1A6]">
+                {progress.returned} de {progress.total} devueltos
+              </span>
+            </div>
+          </div>
+        </div>
+        
+        <Button 
           onClick={handleMarkAllReturned}
-          disabled={isLoading || isLoadingInspection || isAllReturned()}
-          className="bg-[#0a7ea4] hover:bg-[#0a7ea4]/90 text-white disabled:opacity-50 theme-transition"
+          className="bg-[#0a7ea4] hover:bg-[#0a7ea4]/90"
         >
           <PackageCheck className="h-4 w-4 mr-2" />
           Marcar todo como devuelto
         </Button>
       </div>
 
-      {/* Progress Card */}
-      <Card className="border-[#E5E7EB] dark:border-[#2D3033] bg-[#F9FAFB] dark:bg-[#1E1F20] card-transition">
-        <CardContent className="p-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <div className="p-2 bg-[#0a7ea4]/10 rounded-lg">
-                <Package className="h-6 w-6 text-[#0a7ea4]" />
-              </div>
-              <div className="space-y-1">
-                <p className="text-sm font-medium text-[#687076] dark:text-[#9BA1A6] text-transition">
-                  Progreso de devolución
-                </p>
-                <p className="text-2xl font-bold text-[#11181C] dark:text-[#ECEDEE] text-transition">
-                  {isLoading || isLoadingInspection ? "..." : `${returnedCount} / ${totalCount}`}
-                </p>
-              </div>
-            </div>
-            <div className="text-right">
-              <p className="text-sm text-[#687076] dark:text-[#9BA1A6] text-transition">
-                Completado
-              </p>
-              <p className="text-lg font-semibold text-[#0a7ea4]">
-                {isLoading || isLoadingInspection ? "0%" : `${totalCount > 0 ? Math.round((returnedCount / totalCount) * 100) : 0}%`}
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Inspection Groups */}
+      <div className="space-y-4">
+        {Object.entries(groupedItems).map(([barcode, items]) => {
+          const allReturned = items.every(item => item.returned)
+          const someReturned = items.some(item => item.returned)
+          const isIndeterminate = someReturned && !allReturned
 
-      {/* Items Table */}
-      <Card className="border-[#E5E7EB] dark:border-[#2D3033] bg-white dark:bg-[#1E1F20] card-transition">
-        <CardHeader>
-          <CardTitle className="text-[#11181C] dark:text-[#ECEDEE] text-transition">
-            Artículos del kit
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="rounded-md border border-[#E5E7EB] dark:border-[#2D3033] theme-transition">
-            <Table>
-              <TableHeader>
-                <TableRow className="border-b border-[#E5E7EB] dark:border-[#2D3033] hover:bg-[#F9FAFB] dark:hover:bg-[#2D3033]">
-                  <TableHead className="text-[#11181C] dark:text-[#ECEDEE] text-transition font-medium">
-                    UUID
-                  </TableHead>
-                  <TableHead className="text-[#11181C] dark:text-[#ECEDEE] text-transition font-medium">
-                    Código de barras
-                  </TableHead>
-                  <TableHead className="text-[#11181C] dark:text-[#ECEDEE] text-transition font-medium">
-                    Nombre de producto
-                  </TableHead>
-                  <TableHead className="text-[#11181C] dark:text-[#ECEDEE] text-transition font-medium">
-                    Devuelto
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoading || isLoadingInspection ? (
-                  Array.from({ length: 3 }).map((_, index) => (
-                    <SkeletonKitInspectionGroup key={index} />
-                  ))
-                ) : Object.entries(groupedItems).length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={4} className="text-center py-12">
-                      <Package className="h-12 w-12 text-[#687076] dark:text-[#9BA1A6] mx-auto mb-4" />
-                      <p className="text-[#687076] dark:text-[#9BA1A6] text-transition">
-                        No hay artículos en este kit
+          return (
+            <Card key={barcode} className="overflow-hidden">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Checkbox
+                      checked={allReturned}
+                      ref={(el) => {
+                        if (el) el.indeterminate = isIndeterminate
+                      }}
+                      onCheckedChange={() => toggleInspectionGroup(barcode)}
+                    />
+                    <div>
+                      <CardTitle className="text-base text-[#11181C] dark:text-[#ECEDEE]">
+                        Código de barras {barcode}
+                      </CardTitle>
+                      <p className="text-sm text-[#687076] dark:text-[#9BA1A6]">
+                        {items.length} {items.length === 1 ? 'ítem' : 'ítems'}
                       </p>
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  Object.entries(groupedItems).map(([barcode, groupItems]) => {
-                    const selectionState = getGroupSelectionState(Number(barcode))
-                    
-                    return (
-                      <React.Fragment key={barcode}>
-                        {/* Group header */}
-                        <TableRow className="bg-[#F9FAFB]/60 dark:bg-[#1E1F20]/60 theme-transition">
-                          <TableCell colSpan={4} className="py-3 font-medium text-[#687076] dark:text-[#9BA1A6] text-transition">
-                            <div className="flex items-center space-x-3">
-                              <Checkbox
-                                checked={selectionState === "checked"}
-                                ref={(el) => {
-                                  if (el) {
-                                    el.indeterminate = selectionState === "indeterminate"
-                                  }
-                                }}
-                                onCheckedChange={() => handleGroupToggle(Number(barcode))}
-                                className="h-4 w-4"
-                              />
-                              <span className="font-mono text-sm">Código: {barcode}</span>
-                              <span className="text-sm">• {groupItems[0].productName}</span>
-                              <span className="text-xs bg-[#0a7ea4]/10 text-[#0a7ea4] px-2 py-1 rounded-full">
-                                {groupItems.length} items
-                              </span>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                        
-                        {/* Group items */}
-                        {groupItems.map((item) => (
-                          <TableRow 
-                            key={item.id}
-                            className={cn(
-                              "border-b border-[#E5E7EB] dark:border-[#2D3033] hover:bg-[#F9FAFB] dark:hover:bg-[#2D3033] theme-transition",
-                              item.returned && "opacity-75"
-                            )}
-                          >
-                            <TableCell className="pl-8 font-mono text-sm text-[#11181C] dark:text-[#ECEDEE] text-transition">
-                              {item.uuid.split('-')[0]}...
-                            </TableCell>
-                            <TableCell className="font-mono text-sm text-[#687076] dark:text-[#9BA1A6] text-transition">
-                              {item.barcode}
-                            </TableCell>
-                            <TableCell className={cn(
-                              "text-[#11181C] dark:text-[#ECEDEE] text-transition",
-                              item.returned && "line-through"
-                            )}>
-                              {item.productName}
-                            </TableCell>
-                            <TableCell>
-                              <Checkbox
-                                checked={item.returned}
-                                onCheckedChange={() => handleToggleItem(item.id)}
-                                className="h-5 w-5 data-[state=checked]:bg-[#0a7ea4] data-[state=checked]:border-[#0a7ea4]"
-                              />
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </React.Fragment>
-                    )
-                  })
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+                    </div>
+                  </div>
+                  <div className="text-sm font-medium text-[#11181C] dark:text-[#ECEDEE]">
+                    {items.filter(item => item.returned).length}/{items.length}
+                  </div>
+                </div>
+              </CardHeader>
+              
+              <CardContent className="pt-0">
+                <div className="space-y-2">
+                  {items.map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex items-center justify-between py-2 px-3 rounded-lg bg-[#F9FAFB] dark:bg-[#1E1F20] transition-colors"
+                    >
+                      <div className="flex items-center gap-3 flex-1">
+                        <Checkbox
+                          checked={item.returned}
+                          onCheckedChange={() => toggleInspectionItem(item.id)}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs text-[#687076] dark:text-[#9BA1A6] font-mono">
+                            {item.id.slice(-8)}
+                          </p>
+                          <p className="text-sm font-medium text-[#11181C] dark:text-[#ECEDEE] truncate">
+                            {item.name}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-xs text-[#687076] dark:text-[#9BA1A6]">
+                        {item.returned ? 'Devuelto' : 'Pendiente'}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )
+        })}
+      </div>
     </div>
   )
 }

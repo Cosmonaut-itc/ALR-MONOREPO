@@ -3,8 +3,10 @@
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
-import { Package, Calendar } from 'lucide-react'
+import { Button } from "@/components/ui/button"
+import { Package, Calendar, Eye } from 'lucide-react'
 import { useKitsStore } from "@/stores/kits-store"
+import Link from 'next/link'
 import type { Kit } from "@/lib/schemas"
 
 interface KitCardProps {
@@ -94,6 +96,15 @@ export function KitCard({ kit }: KitCardProps) {
           <p className="text-xs text-[#687076] dark:text-[#9BA1A6] truncate">
             {getProductNames()}
           </p>
+        </div>
+        
+        <div className="pt-3">
+          <Button asChild size="sm" className="w-full">
+            <Link href={`/kits/${kit.id}`}>
+              <Eye className="h-4 w-4 mr-2" />
+              Inspeccionar Kit
+            </Link>
+          </Button>
         </div>
       </CardContent>
     </Card>
