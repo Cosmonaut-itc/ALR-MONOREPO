@@ -12,6 +12,15 @@ import { NewProductModal } from "@/components/inventory/NewProductModal"
 import { SkeletonInventoryTable } from "@/ui/skeletons/Skeleton.InventoryTable"
 import type { ProductStockItem, ProductCatalog } from "@/lib/schemas"
 
+// Helper function to generate UUID
+function generateUUID(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0
+    const v = c == 'x' ? r : (r & 0x3 | 0x8)
+    return v.toString(16)
+  })
+}
+
 export default function InventarioPage() {
   const {
     searchTerm,
@@ -116,11 +125,12 @@ export default function InventarioPage() {
       setLoadingCatalog(false)
     }, 1000)
 
-    // Mock stock items
+    // Mock stock items with UUIDs
     setTimeout(() => {
       const mockStockItems: ProductStockItem[] = [
         {
           id: "item-001",
+          uuid: generateUUID(),
           barcode: 7501234567890,
           lastUsed: "2024-01-15T10:30:00Z",
           lastUsedBy: "María González",
@@ -131,6 +141,7 @@ export default function InventarioPage() {
         },
         {
           id: "item-002",
+          uuid: generateUUID(),
           barcode: 7501234567890,
           lastUsed: "2024-01-14T14:20:00Z",
           lastUsedBy: "Ana Martínez",
@@ -141,6 +152,7 @@ export default function InventarioPage() {
         },
         {
           id: "item-003",
+          uuid: generateUUID(),
           barcode: 7501234567891,
           lastUsed: "2024-01-13T09:15:00Z",
           lastUsedBy: "Carmen López",
@@ -151,6 +163,7 @@ export default function InventarioPage() {
         },
         {
           id: "item-004",
+          uuid: generateUUID(),
           barcode: 7501234567892,
           lastUsed: "2024-01-12T16:45:00Z",
           lastUsedBy: "Sofía Ruiz",
@@ -161,6 +174,7 @@ export default function InventarioPage() {
         },
         {
           id: "item-005",
+          uuid: generateUUID(),
           barcode: 7501234567893,
           numberOfUses: 0,
           currentWarehouse: 1,
@@ -169,6 +183,7 @@ export default function InventarioPage() {
         },
         {
           id: "item-006",
+          uuid: generateUUID(),
           barcode: 7501234567894,
           lastUsed: "2024-01-11T11:30:00Z",
           lastUsedBy: "Elena Vega",
@@ -179,6 +194,7 @@ export default function InventarioPage() {
         },
         {
           id: "item-007",
+          uuid: generateUUID(),
           barcode: 7501234567895,
           lastUsed: "2024-01-10T13:20:00Z",
           lastUsedBy: "Patricia Morales",
@@ -189,6 +205,7 @@ export default function InventarioPage() {
         },
         {
           id: "item-008",
+          uuid: generateUUID(),
           barcode: 7501234567896,
           lastUsed: "2024-01-14T15:30:00Z",
           lastUsedBy: "Lucía Herrera",
@@ -199,6 +216,7 @@ export default function InventarioPage() {
         },
         {
           id: "item-009",
+          uuid: generateUUID(),
           barcode: 7501234567897,
           numberOfUses: 0,
           currentWarehouse: 2,
@@ -207,6 +225,7 @@ export default function InventarioPage() {
         },
         {
           id: "item-010",
+          uuid: generateUUID(),
           barcode: 7501234567898,
           lastUsed: "2024-01-12T10:45:00Z",
           lastUsedBy: "Raquel Torres",
@@ -214,6 +233,28 @@ export default function InventarioPage() {
           currentWarehouse: 2,
           isBeingUsed: false,
           firstUsed: "2023-12-28T13:15:00Z"
+        },
+        {
+          id: "item-011",
+          uuid: generateUUID(),
+          barcode: 7501234567890,
+          lastUsed: "2024-01-13T16:15:00Z",
+          lastUsedBy: "Isabella Moreno",
+          numberOfUses: 11,
+          currentWarehouse: 2,
+          isBeingUsed: false,
+          firstUsed: "2023-12-05T10:30:00Z"
+        },
+        {
+          id: "item-012",
+          uuid: generateUUID(),
+          barcode: 7501234567899,
+          lastUsed: "2024-01-11T14:20:00Z",
+          lastUsedBy: "Valentina Castro",
+          numberOfUses: 6,
+          currentWarehouse: 1,
+          isBeingUsed: true,
+          firstUsed: "2024-01-02T09:45:00Z"
         }
       ]
       setStockItems(mockStockItems)

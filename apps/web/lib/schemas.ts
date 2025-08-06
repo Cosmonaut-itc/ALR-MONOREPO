@@ -42,6 +42,7 @@ export const dashboardMetricSchema = t({
 // Updated inventory schemas
 export const productStockItemSchema = t({
   id: "string",
+  uuid: "string", // Unique UUID for each product instance
   barcode: "number",
   lastUsed: "string.date.iso.parse?",
   lastUsedBy: "string?",

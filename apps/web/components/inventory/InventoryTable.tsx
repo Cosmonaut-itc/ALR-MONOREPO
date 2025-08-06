@@ -1,5 +1,7 @@
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Button } from "@/components/ui/button"
+import { Copy, Eye } from 'lucide-react'
 import type { ProductStockItem, ProductCatalog } from "@/lib/schemas"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
@@ -22,6 +24,10 @@ export function InventoryTable({ items }: InventoryTableProps) {
     return warehouse === 1 ? "General" : "Gabinete"
   }
 
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text)
+  }
+
   if (items.length === 0) {
     return (
       <div className="rounded-md border border-[#E5E7EB] dark:border-[#2D3033] theme-transition">
@@ -40,6 +46,9 @@ export function InventoryTable({ items }: InventoryTableProps) {
         <TableHeader>
           <TableRow className="border-b border-[#E5E7EB] dark:border-[#2D3033] hover:bg-[#F9FAFB] dark:hover:bg-[#2D3033]">
             <TableHead className="text-[#11181C] dark:text-[#ECEDEE] text-transition font-medium">
+              UUID
+            </TableHead>
+            <TableHead className="text-[#11181C] dark:text-[#ECEDEE] text-transition font-medium">
               Código de barras
             </TableHead>
             <TableHead className="text-[#11181C] dark:text-[#ECEDEE] text-transition font-medium">
@@ -57,6 +66,9 @@ export function InventoryTable({ items }: InventoryTableProps) {
             <TableHead className="text-[#11181C] dark:text-[#ECEDEE] text-transition font-medium">
               ¿En uso?
             </TableHead>
+            <TableHead className="text-[#11181C] dark:text-[#ECEDEE] text-transition font-medium">
+              Acciones
+            </TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -65,6 +77,19 @@ export function InventoryTable({ items }: InventoryTableProps) {
               key={item.id} 
               className="border-b border-[#E5E7EB] dark:border-[#2D3033] hover:bg-[#F9FAFB] dark:hover:bg-[#2D3033] theme-transition"
             >
+              <TableCell className="font-mono text-xs text-[#687076] dark:text-[#9BA1A6] text-transition max-w-[120px]">
+                <div className="flex items-center gap-1">
+                  <span className="truncate">{item.uuid.split('-')[0]}...</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => copyToClipboard(item.uuid)}
+                    className="h-6 w-6 p-0 hover:bg-[#E5E7EB] dark:hover:bg-[#2D3033]"
+                  >
+                    <Copy className="h-3 w-3" />
+                  </Button>
+                </div>
+              </TableCell>
               <TableCell className="font-mono text-sm text-[#687076] dark:text-[#9BA1A6] text-transition">
                 {item.barcode}
               </TableCell>
@@ -77,7 +102,9 @@ export function InventoryTable({ items }: InventoryTableProps) {
                 </div>
               </TableCell>
               <TableCell className="text-[#11181C] dark:text-[#ECEDEE] text-transition">
-                {item.numberOfUses}
+                <span className={item.numberOfUses === 0 ? "text-[#687076] dark:text-[#9BA1A6]" : ""}>
+                  {item.numberOfUses}
+                </span>
               </TableCell>
               <TableCell className="text-[#687076] dark:text-[#9BA1A6] text-transition">
                 {formatDate(item.lastUsed)}
@@ -96,6 +123,16 @@ export function InventoryTable({ items }: InventoryTableProps) {
                 >
                   {item.isBeingUsed ? "Sí" : "No"}
                 </Badge>
+              </TableCell>
+              <TableCell>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 p-0 hover:bg-[#E5E7EB] dark:hover:bg-[#2D3033]"
+                >
+                  <Eye className="h-4 w-4" />
+                  <span className="sr-only">Ver detalles</span>
+                </Button>
               </TableCell>
             </TableRow>
           ))}
