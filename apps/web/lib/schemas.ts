@@ -39,9 +39,22 @@ export const dashboardMetricSchema = t({
   icon: "string"
 })
 
+// Inventory schemas
+export const productStockItemSchema = t({
+  id: "string",
+  barcode: "string",
+  name: "string",
+  category: "string",
+  stock: "number",
+  lastUsed: "string", // ISO date string
+  inUse: "boolean",
+  location: "'general' | 'gabinete'" // almacén general o gabinete
+})
+
 export type ProductStat = typeof productStatSchema.infer
 export type EmployeeUse = typeof employeeUseSchema.infer
 export type Efficiency = typeof efficiencySchema.infer
 export type TopProduct = typeof topProductSchema.infer
 export type ActiveEmployee = typeof activeEmployeeSchema.infer
 export type DashboardMetric = typeof dashboardMetricSchema.infer
+export type ProductStockItem = typeof productStockItemSchema.infer
