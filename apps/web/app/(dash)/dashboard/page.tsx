@@ -7,12 +7,12 @@ export default function DashboardPage() {
   const { user } = useAuthStore()
 
   return (
-    <div className="flex flex-1 flex-col gap-4 p-4 bg-white dark:bg-[#151718] theme-transition">
+    <div className="flex-1 space-y-6 p-4 md:p-6 bg-white dark:bg-[#151718] theme-transition">
       <div className="space-y-2">
-        <h1 className="text-3xl font-bold text-[#11181C] dark:text-[#ECEDEE] text-transition">
+        <h1 className="text-2xl md:text-3xl font-bold text-[#11181C] dark:text-[#ECEDEE] text-transition">
           Dashboard
         </h1>
-        <p className="text-lg text-[#687076] dark:text-[#9BA1A6] text-transition">
+        <p className="text-[#687076] dark:text-[#9BA1A6] text-transition">
           Bienvenido de vuelta, {user?.name || 'Usuario'}
         </p>
       </div>
