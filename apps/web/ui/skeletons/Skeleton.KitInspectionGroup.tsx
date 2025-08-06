@@ -1,39 +1,38 @@
+import { TableRow, TableCell } from "@/components/ui/table"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Card, CardContent } from "@/components/ui/card"
-import { Checkbox } from "@/components/ui/checkbox"
 
 export function SkeletonKitInspectionGroup() {
   return (
-    <Card className="mb-4">
-      <CardContent className="p-4">
-        {/* Group header */}
-        <div className="flex items-center justify-between mb-3 pb-3 border-b border-[#E5E7EB] dark:border-[#2D3033]">
-          <div className="flex items-center gap-3">
-            <Checkbox disabled />
-            <div className="space-y-1">
-              <Skeleton className="h-4 w-48" />
-              <Skeleton className="h-3 w-24" />
-            </div>
+    <>
+      {/* Group header skeleton */}
+      <TableRow className="bg-[#F9FAFB]/60 dark:bg-[#1E1F20]/60">
+        <TableCell colSpan={4} className="py-3">
+          <div className="flex items-center space-x-3">
+            <Skeleton className="h-4 w-4 rounded" />
+            <Skeleton className="h-4 w-24" />
+            <Skeleton className="h-4 w-32" />
+            <Skeleton className="h-5 w-16 rounded-full" />
           </div>
-          <Skeleton className="h-6 w-16" />
-        </div>
-        
-        {/* Group items */}
-        <div className="space-y-2">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="flex items-center justify-between py-2 px-3 rounded-lg bg-[#F9FAFB] dark:bg-[#1E1F20]">
-              <div className="flex items-center gap-3 flex-1">
-                <Checkbox disabled />
-                <div className="space-y-1 flex-1">
-                  <Skeleton className="h-3 w-32" />
-                  <Skeleton className="h-4 w-48" />
-                </div>
-              </div>
-              <Skeleton className="h-6 w-20" />
-            </div>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
+        </TableCell>
+      </TableRow>
+      
+      {/* Group items skeleton */}
+      {Array.from({ length: 3 }).map((_, index) => (
+        <TableRow key={index} className="border-b border-[#E5E7EB] dark:border-[#2D3033]">
+          <TableCell className="pl-8">
+            <Skeleton className="h-4 w-20" />
+          </TableCell>
+          <TableCell>
+            <Skeleton className="h-4 w-16" />
+          </TableCell>
+          <TableCell>
+            <Skeleton className="h-4 w-32" />
+          </TableCell>
+          <TableCell>
+            <Skeleton className="h-5 w-5 rounded" />
+          </TableCell>
+        </TableRow>
+      ))}
+    </>
   )
 }
