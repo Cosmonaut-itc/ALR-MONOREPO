@@ -11,55 +11,47 @@ import {
 export function SkeletonDisposeDialog() {
   return (
     <Dialog open={true}>
-      <DialogContent className="sm:max-w-[425px] bg-white dark:bg-[#1E1F20] border-[#E5E7EB] dark:border-[#2D3033] theme-transition">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>
-            <Skeleton className="h-6 w-48 bg-[#F9FAFB] dark:bg-[#2D3033]" />
+          <DialogTitle className="flex items-center gap-2">
+            <Skeleton className="h-5 w-5" />
+            <Skeleton className="h-5 w-32" />
           </DialogTitle>
           <DialogDescription>
-            <Skeleton className="h-4 w-full bg-[#F9FAFB] dark:bg-[#2D3033] mt-2" />
-            <Skeleton className="h-4 w-3/4 bg-[#F9FAFB] dark:bg-[#2D3033] mt-1" />
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-3/4 mt-1" />
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-4">
-          {/* Product Info Skeleton */}
+          {/* Información del Producto */}
           <div className="space-y-2">
-            <Skeleton className="h-4 w-16 bg-[#F9FAFB] dark:bg-[#2D3033]" />
-            <Skeleton className="h-10 w-full bg-[#F9FAFB] dark:bg-[#2D3033]" />
-          </div>
-
-          {/* Barcode Skeleton */}
-          <div className="space-y-2">
-            <Skeleton className="h-4 w-24 bg-[#F9FAFB] dark:bg-[#2D3033]" />
-            <Skeleton className="h-10 w-full bg-[#F9FAFB] dark:bg-[#2D3033]" />
-          </div>
-
-          {/* UUID Skeleton */}
-          <div className="space-y-2">
-            <Skeleton className="h-4 w-12 bg-[#F9FAFB] dark:bg-[#2D3033]" />
-            <Skeleton className="h-10 w-full bg-[#F9FAFB] dark:bg-[#2D3033]" />
-          </div>
-
-          {/* Reason Selection Skeleton */}
-          <div className="space-y-2">
-            <Skeleton className="h-4 w-20 bg-[#F9FAFB] dark:bg-[#2D3033]" />
-            <Skeleton className="h-10 w-full bg-[#F9FAFB] dark:bg-[#2D3033]" />
-          </div>
-
-          {/* Warning Skeleton */}
-          <div className="flex items-start gap-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md">
-            <Skeleton className="h-4 w-4 bg-red-200 dark:bg-red-800 mt-0.5 flex-shrink-0" />
-            <div className="flex-1 space-y-1">
-              <Skeleton className="h-4 w-full bg-red-200 dark:bg-red-800" />
-              <Skeleton className="h-4 w-2/3 bg-red-200 dark:bg-red-800" />
+            <Skeleton className="h-4 w-16" />
+            <div className="flex items-center gap-3 p-3 bg-muted rounded-lg">
+              <Skeleton className="h-4 w-4" />
+              <div className="flex-1 space-y-1">
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-3 w-24" />
+              </div>
             </div>
+          </div>
+
+          {/* Cantidad Actual */}
+          <div className="space-y-2">
+            <Skeleton className="h-4 w-24" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+
+          {/* Motivo de Baja */}
+          <div className="space-y-2">
+            <Skeleton className="h-4 w-28" />
+            <Skeleton className="h-10 w-full" />
           </div>
         </div>
 
-        <DialogFooter className="gap-2">
-          <Skeleton className="h-10 w-20 bg-[#F9FAFB] dark:bg-[#2D3033]" />
-          <Skeleton className="h-10 w-24 bg-red-200 dark:bg-red-800" />
+        <DialogFooter className="flex-col sm:flex-row gap-2">
+          <Skeleton className="h-10 w-full sm:w-20" />
+          <Skeleton className="h-10 w-full sm:w-24" />
         </DialogFooter>
       </DialogContent>
     </Dialog>
