@@ -2,17 +2,13 @@ import { create } from "zustand"
 import { devtools } from "zustand/middleware"
 import type { ProductStockItem } from "@/lib/schemas"
 
-interface ProductStockItemWithInfo extends ProductStockItem {
-  productInfo?: { name: string; barcode: number }
-}
-
 interface DisposalState {
-  current?: ProductStockItemWithInfo
+  current?: ProductStockItem
   reason?: "consumido" | "dañado" | "otro"
   open: boolean
   isLoading: boolean
   /** Open dialog for specific item */
-  show: (item: ProductStockItemWithInfo) => void
+  show: (item: ProductStockItem) => void
   /** Close dialog & reset */
   hide: () => void
   setReason: (r: "consumido" | "dañado" | "otro") => void
@@ -27,7 +23,7 @@ export const useDisposalStore = create<DisposalState>()(
     open: false,
     isLoading: false,
     
-    show: (item) => set({ current: item, open: true, reason: undefined }),
+    show: (item) => set({ current: item, open: true }),
     
     hide: () => set({ 
       current: undefined, 
@@ -65,7 +61,5 @@ export const useDisposalStore = create<DisposalState>()(
         throw error
       }
     },
-  }), {
-    name: "disposal-store"
-  })
+  }))
 )
