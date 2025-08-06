@@ -95,19 +95,36 @@ export const mockProducts = [
   },
 ]
 
+interface KitItem {
+  id: string
+  uuid: string
+  barcode: number
+  productName: string
+  returned: boolean
+}
+
 interface KitsState {
   kits: Kit[]
   employees: typeof mockEmployees
   products: typeof mockProducts
+  inspectionItems: KitItem[]
+  isLoadingInspection: boolean
   /** Form draft */
   draft: Partial<Kit>
   setDraft: (partial: Partial<Kit>) => void
   clearDraft: () => void
   addKit: (k: Kit) => void
+  loadInspection: (kitId: string, items: KitItem[]) => void
+  toggleItemReturned: (itemId: string) => void
+  markAllReturned: (kitId: string) => void
+  getReturnedCount: () => number
+  getTotalInspectionCount: () => number
+  isAllReturned: () => boolean
+  setLoadingInspection: (loading: boolean) => void
 }
 
 export const useKitsStore = create<KitsState>()(
-  devtools((set) => ({
+  devtools((set, get) => ({
     kits: [
       {
         id: "kit-001",
@@ -132,9 +149,33 @@ export const useKitsStore = create<KitsState>()(
     ],
     employees: mockEmployees,
     products: mockProducts,
+    inspectionItems: [],
+    isLoadingInspection: true,
     draft: {},
     setDraft: (partial) => set((state) => ({ draft: { ...state.draft, ...partial } })),
     clearDraft: () => set({ draft: {} }),
     addKit: (kit) => set((state) => ({ kits: [...state.kits, kit], draft: {} })),
+    loadInspection: (kitId, items) => set({ inspectionItems: items, isLoadingInspection: false }),
+    toggleItemReturned: (itemId) => set((state) => ({
+      inspectionItems: state.inspectionItems.map(item =>
+        item.id === itemId ? { ...item, returned: !item.returned } : item
+      )
+    })),
+    markAllReturned: (kitId) => set((state) => ({
+      inspectionItems: state.inspectionItems.map(item => ({ ...item, returned: true }))
+    })),
+    getReturnedCount: () => {
+      const { inspectionItems } = get()
+      return inspectionItems.filter(item => item.returned).length
+    },
+    getTotalInspectionCount: () => {
+      const { inspectionItems } = get()
+      return inspectionItems.length
+    },
+    isAllReturned: () => {
+      const { inspectionItems } = get()
+      return inspectionItems.length > 0 && inspectionItems.every(item => item.returned)
+    },
+    setLoadingInspection: (loading) => set({ isLoadingInspection: loading }),
   }))
 )
