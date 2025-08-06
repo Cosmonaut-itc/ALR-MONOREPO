@@ -62,5 +62,3 @@ export const InventoryTable = ({ items }) => {
     </div>
   );
 };
-
-export default InventoryTable;
