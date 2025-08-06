@@ -1,27 +1,99 @@
 import { create } from "zustand"
 import { devtools } from "zustand/middleware"
-import type { Kit } from "@/lib/schemas"
+import { kitSchema } from "@/lib/schemas"
+
+type Kit = typeof kitSchema.infer
 
 // Mock data for employees
-const mockEmployees = [
-  { id: "emp-1", name: "María González", specialty: "Manicure Clásica", avatar: "/placeholder-user.jpg" },
-  { id: "emp-2", name: "Ana Rodríguez", specialty: "Nail Art", avatar: "/placeholder-user.jpg" },
-  { id: "emp-3", name: "Carmen López", specialty: "Pedicure", avatar: "/placeholder-user.jpg" },
-  { id: "emp-4", name: "Sofia Martínez", specialty: "Uñas Acrílicas", avatar: "/placeholder-user.jpg" },
-  { id: "emp-5", name: "Isabella Torres", specialty: "Gel Polish", avatar: "/placeholder-user.jpg" }
-];
+export const mockEmployees = [
+  {
+    id: "emp-001",
+    name: "María González",
+    specialty: "Manicure Clásica",
+    avatar: "/placeholder-user.jpg",
+    active: true,
+  },
+  {
+    id: "emp-002", 
+    name: "Ana Rodríguez",
+    specialty: "Nail Art",
+    avatar: "/placeholder-user.jpg",
+    active: true,
+  },
+  {
+    id: "emp-003",
+    name: "Carmen López",
+    specialty: "Pedicure Spa",
+    avatar: "/placeholder-user.jpg",
+    active: true,
+  },
+  {
+    id: "emp-004",
+    name: "Isabel Martín",
+    specialty: "Uñas Acrílicas",
+    avatar: "/placeholder-user.jpg",
+    active: true,
+  },
+  {
+    id: "emp-005",
+    name: "Laura Sánchez",
+    specialty: "Gel Polish",
+    avatar: "/placeholder-user.jpg",
+    active: false,
+  },
+]
 
 // Mock data for products
-const mockProducts = [
-  { id: "prod-1", name: "Esmalte Rojo Clásico", category: "Esmaltes", price: 15.99 },
-  { id: "prod-2", name: "Base Coat Fortalecedora", category: "Bases", price: 18.50 },
-  { id: "prod-3", name: "Top Coat Brillante", category: "Acabados", price: 16.75 },
-  { id: "prod-4", name: "Lima de Uñas Profesional", category: "Herramientas", price: 8.99 },
-  { id: "prod-5", name: "Aceite Cuticular", category: "Cuidado", price: 12.50 },
-  { id: "prod-6", name: "Removedor de Esmalte", category: "Limpieza", price: 9.99 },
-  { id: "prod-7", name: "Algodón Cosmético", category: "Consumibles", price: 5.50 },
-  { id: "prod-8", name: "Palitos de Naranjo", category: "Herramientas", price: 3.99 }
-];
+export const mockProducts = [
+  {
+    id: "prod-001",
+    name: "Esmalte Base Coat",
+    category: "Esmaltes",
+    brand: "OPI",
+    price: 15.99,
+    stock: 25,
+  },
+  {
+    id: "prod-002",
+    name: "Esmalte Top Coat",
+    category: "Esmaltes",
+    brand: "OPI",
+    price: 15.99,
+    stock: 30,
+  },
+  {
+    id: "prod-003",
+    name: "Lima de Uñas 180/240",
+    category: "Herramientas",
+    brand: "Sally Hansen",
+    price: 3.50,
+    stock: 50,
+  },
+  {
+    id: "prod-004",
+    name: "Removedor de Cutícula",
+    category: "Cuidado",
+    brand: "CND",
+    price: 12.99,
+    stock: 15,
+  },
+  {
+    id: "prod-005",
+    name: "Aceite de Cutícula",
+    category: "Cuidado",
+    brand: "Essie",
+    price: 8.99,
+    stock: 20,
+  },
+  {
+    id: "prod-006",
+    name: "Esmalte Rojo Clásico",
+    category: "Esmaltes",
+    brand: "Chanel",
+    price: 28.00,
+    stock: 12,
+  },
+]
 
 interface KitsState {
   kits: Kit[]
@@ -32,41 +104,37 @@ interface KitsState {
   setDraft: (partial: Partial<Kit>) => void
   clearDraft: () => void
   addKit: (k: Kit) => void
-  getEmployeeById: (id: string) => typeof mockEmployees[0] | undefined
-  getProductById: (id: string) => typeof mockProducts[0] | undefined
 }
 
 export const useKitsStore = create<KitsState>()(
-  devtools((set, get) => ({
+  devtools((set) => ({
     kits: [
       {
-        id: "kit-1",
-        employeeId: "emp-1",
-        date: new Date().toISOString().split('T')[0],
+        id: "kit-001",
+        employeeId: "emp-001",
+        date: new Date().toISOString(),
         items: [
-          { productId: "prod-1", qty: 2 },
-          { productId: "prod-2", qty: 1 },
-          { productId: "prod-4", qty: 3 }
-        ]
+          { productId: "prod-001", qty: 2 },
+          { productId: "prod-003", qty: 5 },
+          { productId: "prod-004", qty: 1 },
+        ],
       },
       {
-        id: "kit-2",
-        employeeId: "emp-2",
-        date: new Date().toISOString().split('T')[0],
+        id: "kit-002", 
+        employeeId: "emp-002",
+        date: new Date().toISOString(),
         items: [
-          { productId: "prod-3", qty: 1 },
-          { productId: "prod-5", qty: 2 },
-          { productId: "prod-7", qty: 5 }
-        ]
-      }
+          { productId: "prod-002", qty: 3 },
+          { productId: "prod-005", qty: 2 },
+          { productId: "prod-006", qty: 4 },
+        ],
+      },
     ],
     employees: mockEmployees,
     products: mockProducts,
     draft: {},
-    setDraft: partial => set(state => ({ draft: { ...state.draft, ...partial } })),
+    setDraft: (partial) => set((state) => ({ draft: { ...state.draft, ...partial } })),
     clearDraft: () => set({ draft: {} }),
-    addKit: kit => set(state => ({ kits: [...state.kits, kit], draft: {} })),
-    getEmployeeById: (id: string) => get().employees.find(emp => emp.id === id),
-    getProductById: (id: string) => get().products.find(prod => prod.id === id),
-  })),
+    addKit: (kit) => set((state) => ({ kits: [...state.kits, kit], draft: {} })),
+  }))
 )

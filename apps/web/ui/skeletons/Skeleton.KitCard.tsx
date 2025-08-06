@@ -3,9 +3,9 @@ import { Skeleton } from "@/components/ui/skeleton"
 
 export function SkeletonKitCard() {
   return (
-    <Card>
+    <Card className="card-transition">
       <CardHeader className="pb-3">
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center gap-3">
           <Skeleton className="h-10 w-10 rounded-full" />
           <div className="space-y-2">
             <Skeleton className="h-4 w-32" />
@@ -24,7 +24,7 @@ export function SkeletonKitCard() {
         </div>
         <div className="flex justify-between">
           <Skeleton className="h-3 w-12" />
-          <Skeleton className="h-3 w-16" />
+          <Skeleton className="h-3 w-24" />
         </div>
       </CardContent>
     </Card>
