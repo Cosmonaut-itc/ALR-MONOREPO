@@ -1,18 +1,24 @@
 import { create } from "zustand"
 import { devtools } from "zustand/middleware"
-import { productStockItemSchema } from "@/lib/schemas"
 
-type ProductStockItem = typeof productStockItemSchema.infer
+interface TransferItem {
+  id: string
+  barcode: number
+  productName: string
+  category: string
+  warehouse: string
+  quantity: number
+}
 
 interface TransferState {
   /** Items currently displayed in the table */
-  items: ProductStockItem[]
+  items: TransferItem[]
   /** UUID list of items selected for transfer */
   selectedIds: string[]
+  setItems: (items: TransferItem[]) => void
   toggleSelection: (id: string) => void
   selectGroup: (barcode: number) => void
   clearSelection: () => void
-  setItems: (items: ProductStockItem[]) => void
   /** Stub that will eventually POST to /api/transfer */
   transferSelected: () => void
 }
