@@ -51,7 +51,17 @@ export const kitSchema = t({
   items: "array<{ productId: string, qty: number }>",
 })
 
+// Agregar después del kitSchema existente
+export const kitItemSchema = t({
+  id: "string",
+  uuid: "string",
+  barcode: "number",
+  productName: "string",
+  returned: "boolean",
+})
+
 export type Product = typeof productSchema.infer
 export type Transfer = typeof transferSchema.infer
 export type Reception = typeof receptionSchema.infer
 export type Kit = typeof kitSchema.infer
+export type KitItem = typeof kitItemSchema.infer
