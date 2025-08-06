@@ -9,4 +9,14 @@ export const productStockItemSchema = t.type({
   quantity: t.number
 });
 
+export const kitSchema = t.type({
+  id: t.string,              // UUID
+  employeeId: t.string,      // UUID
+  date: t.string,            // ISO date string
+  items: t.array(t.type({
+    productId: t.string,
+    qty: t.number
+  }))
+});
+
 // /** rest of code here **/
