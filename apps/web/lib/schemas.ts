@@ -9,6 +9,7 @@ export const productStockItemSchema = t.type({
   quantity: t.number
 });
 
+
 export const kitItemSchema = t.type({
   productId: t.string,
   qty: t.number
