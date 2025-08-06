@@ -1,44 +1,38 @@
+// Create the inventory table skeleton
+
 import { Skeleton } from "@/components/ui/skeleton"
-import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { SkeletonInventoryRow } from "./Skeleton.InventoryRow"
 
 export function SkeletonInventoryTable() {
   return (
     <div className="space-y-4">
-      {/* Search and filters skeleton */}
+      {/* Filters skeleton */}
       <div className="flex flex-col sm:flex-row gap-4">
-        <Skeleton className="h-10 flex-1 theme-transition" />
-        <Skeleton className="h-10 w-48 theme-transition" />
+        <div className="flex-1">
+          <Skeleton className="h-10 w-full bg-[#F9FAFB] dark:bg-[#2D3033]" />
+        </div>
+        <Skeleton className="h-10 w-full sm:w-48 bg-[#F9FAFB] dark:bg-[#2D3033]" />
       </div>
       
       {/* Table skeleton */}
-      <div className="rounded-md border border-[#E5E7EB] dark:border-[#2D3033] theme-transition">
-        <Table>
-          <TableHeader>
-            <TableRow className="border-b border-[#E5E7EB] dark:border-[#2D3033]">
-              <TableHead className="w-32">
-                <Skeleton className="h-4 w-24 theme-transition" />
-              </TableHead>
-              <TableHead>
-                <Skeleton className="h-4 w-20 theme-transition" />
-              </TableHead>
-              <TableHead className="w-24">
-                <Skeleton className="h-4 w-16 theme-transition" />
-              </TableHead>
-              <TableHead className="w-32">
-                <Skeleton className="h-4 w-20 theme-transition" />
-              </TableHead>
-              <TableHead className="w-20">
-                <Skeleton className="h-4 w-12 theme-transition" />
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {Array.from({ length: 8 }).map((_, index) => (
-              <SkeletonInventoryRow key={index} />
-            ))}
-          </TableBody>
-        </Table>
+      <div className="rounded-md border border-[#E5E7EB] dark:border-[#2D3033]">
+        {/* Header skeleton */}
+        <div className="border-b border-[#E5E7EB] dark:border-[#2D3033] p-4">
+          <div className="grid grid-cols-5 gap-4">
+            <Skeleton className="h-4 bg-[#F9FAFB] dark:bg-[#2D3033]" />
+            <Skeleton className="h-4 bg-[#F9FAFB] dark:bg-[#2D3033]" />
+            <Skeleton className="h-4 bg-[#F9FAFB] dark:bg-[#2D3033]" />
+            <Skeleton className="h-4 bg-[#F9FAFB] dark:bg-[#2D3033]" />
+            <Skeleton className="h-4 bg-[#F9FAFB] dark:bg-[#2D3033]" />
+          </div>
+        </div>
+        
+        {/* Rows skeleton */}
+        <div className="divide-y divide-[#E5E7EB] dark:divide-[#2D3033]">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <SkeletonInventoryRow key={i} />
+          ))}
+        </div>
       </div>
     </div>
   )

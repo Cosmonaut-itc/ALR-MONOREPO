@@ -1,15 +1,17 @@
-import { create } from "zustand"
-import type { ProductStockItem } from "@/lib/schemas"
+// Create the complete inventory store
 
-interface InventoryState {
-  // Data
+import { create } from 'zustand'
+import type { ProductStockItem } from '@/lib/schemas'
+
+interface InventoryStore {
+  // Products
   generalProducts: ProductStockItem[]
   gabineteProducts: ProductStockItem[]
-  categories: string[]
   
   // Filters
   searchTerm: string
-  selectedCategory: string
+  selectedCategory: string | undefined
+  categories: string[]
   
   // Loading states
   isLoadingGeneral: boolean
@@ -23,7 +25,7 @@ interface InventoryState {
   setGabineteProducts: (products: ProductStockItem[]) => void
   setCategories: (categories: string[]) => void
   setSearchTerm: (term: string) => void
-  setSelectedCategory: (category: string) => void
+  setSelectedCategory: (category: string | undefined) => void
   setLoadingGeneral: (loading: boolean) => void
   setLoadingGabinete: (loading: boolean) => void
   setNewProductModalOpen: (open: boolean) => void
@@ -32,21 +34,15 @@ interface InventoryState {
   getFilteredProducts: (location: 'general' | 'gabinete') => ProductStockItem[]
 }
 
-export const useInventoryStore = create<InventoryState>((set, get) => ({
-  // Initial data
+export const useInventoryStore = create<InventoryStore>((set, get) => ({
+  // Initial state
   generalProducts: [],
   gabineteProducts: [],
+  searchTerm: '',
+  selectedCategory: undefined,
   categories: [],
-  
-  // Initial filters
-  searchTerm: "",
-  selectedCategory: "",
-  
-  // Initial loading states
   isLoadingGeneral: true,
   isLoadingGabinete: true,
-  
-  // Initial modal state
   isNewProductModalOpen: false,
   
   // Actions
@@ -61,12 +57,12 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
   
   // Computed
   getFilteredProducts: (location) => {
-    const { searchTerm, selectedCategory } = get()
-    const products = location === 'general' ? get().generalProducts : get().gabineteProducts
+    const { generalProducts, gabineteProducts, searchTerm, selectedCategory } = get()
+    const products = location === 'general' ? generalProducts : gabineteProducts
     
-    return products.filter(product => {
+    return products.filter((product) => {
       const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           product.barcode.toLowerCase().includes(searchTerm.toLowerCase())
+                           product.barcode.includes(searchTerm)
       const matchesCategory = !selectedCategory || product.category === selectedCategory
       
       return matchesSearch && matchesCategory

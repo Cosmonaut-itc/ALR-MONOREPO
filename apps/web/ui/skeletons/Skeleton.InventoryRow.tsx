@@ -1,24 +1,17 @@
+// Create the inventory row skeleton
+
 import { Skeleton } from "@/components/ui/skeleton"
-import { TableCell, TableRow } from "@/components/ui/table"
 
 export function SkeletonInventoryRow() {
   return (
-    <TableRow className="border-b border-[#E5E7EB] dark:border-[#2D3033]">
-      <TableCell>
-        <Skeleton className="h-4 w-24 theme-transition" />
-      </TableCell>
-      <TableCell>
-        <Skeleton className="h-4 w-32 theme-transition" />
-      </TableCell>
-      <TableCell>
-        <Skeleton className="h-4 w-8 theme-transition" />
-      </TableCell>
-      <TableCell>
-        <Skeleton className="h-4 w-20 theme-transition" />
-      </TableCell>
-      <TableCell>
-        <Skeleton className="h-4 w-12 rounded-full theme-transition" />
-      </TableCell>
-    </TableRow>
+    <div className="p-4">
+      <div className="grid grid-cols-5 gap-4 items-center">
+        <Skeleton className="h-4 w-24 bg-[#F9FAFB] dark:bg-[#2D3033]" />
+        <Skeleton className="h-4 w-32 bg-[#F9FAFB] dark:bg-[#2D3033]" />
+        <Skeleton className="h-4 w-8 bg-[#F9FAFB] dark:bg-[#2D3033]" />
+        <Skeleton className="h-4 w-20 bg-[#F9FAFB] dark:bg-[#2D3033]" />
+        <Skeleton className="h-6 w-12 rounded-full bg-[#F9FAFB] dark:bg-[#2D3033]" />
+      </div>
+    </div>
   )
 }
