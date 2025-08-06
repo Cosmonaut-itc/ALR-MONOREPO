@@ -9,6 +9,7 @@ export const productStockItemSchema = t.type({
   quantity: t.number
 });
 
+// Kit schema for daily assignments
 export const kitSchema = t.type({
   id: t.string,              // UUID
   employeeId: t.string,      // UUID
@@ -18,5 +19,7 @@ export const kitSchema = t.type({
     qty: t.number
   }))
 });
+
+export type Kit = t.TypeOf<typeof kitSchema>;
 
 // /** rest of code here **/

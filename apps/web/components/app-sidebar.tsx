@@ -1,8 +1,7 @@
-import React from 'react';
 import { Package } from 'lucide-react';
 
-const AppSidebar = () => {
-  const navMain = [
+const data = {
+  navMain: [
     {
       title: "Dashboard",
       url: "/dashboard",
@@ -27,16 +26,14 @@ const AppSidebar = () => {
           title: "Asignaciones",
           url: "/kits",
         },
+        {
+          title: "Historial",
+          url: "/kits/historial",
+        },
       ],
     },
-    // ** rest of code here **
-  ];
-
-  return (
-    <div>
-      {/* Sidebar content */}
-    </div>
-  );
+    //** rest of code here **/
+  ],
 };
 
-export default AppSidebar;
+export default data;

@@ -1,91 +1,106 @@
-"use client"
+"use client";
 
-import { CalendarDays, Package, User } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import type { Kit } from "@/stores/kits-store"
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Calendar, Package, User } from 'lucide-react';
+import { useKitsStore } from "@/stores/kits-store";
+import type { Kit } from "@/lib/schemas";
 
 interface KitCardProps {
-  kit: Kit
+  kit: Kit;
 }
 
 export function KitCard({ kit }: KitCardProps) {
+  const { employees, products } = useKitsStore();
+  
+  const employee = employees.find(emp => emp.id === kit.employeeId);
+  const totalProducts = kit.items.reduce((sum, item) => sum + item.qty, 0);
+  
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('es-MX', {
       weekday: 'short',
       year: 'numeric',
       month: 'short',
       day: 'numeric'
-    })
-  }
-
-  const getInitials = (name: string) => {
-    return name
-      .split(' ')
-      .map(word => word[0])
-      .join('')
-      .toUpperCase()
-      .slice(0, 2)
-  }
+    });
+  };
 
   return (
-    <Card className="w-full hover:shadow-md transition-shadow">
+    <Card className="hover:shadow-md transition-shadow">
       <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-lg font-semibold">
-            Kit #{kit.id.slice(-6)}
-          </CardTitle>
-          <Badge variant="outline" className="text-xs">
-            <CalendarDays className="h-3 w-3 mr-1" />
-            {formatDate(kit.date)}
-          </Badge>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {/* Employee Info */}
-        <div className="flex items-center gap-3">
-          <Avatar className="h-8 w-8">
-            <AvatarFallback className="text-xs bg-primary/10 text-primary">
-              {getInitials(kit.employeeName)}
+        <div className="flex items-center space-x-3">
+          <Avatar>
+            <AvatarImage src={employee?.avatar || "/placeholder.svg"} />
+            <AvatarFallback>
+              {employee?.name?.charAt(0) || <User className="h-4 w-4" />}
             </AvatarFallback>
           </Avatar>
-          <div>
-            <p className="font-medium text-sm">{kit.employeeName}</p>
-            <p className="text-xs text-muted-foreground">Empleada asignada</p>
+          <div className="flex-1 min-w-0">
+            <div className="font-medium truncate">
+              {employee?.name || "Empleada no encontrada"}
+            </div>
+            <div className="text-sm text-muted-foreground truncate">
+              {employee?.specialty}
+            </div>
           </div>
         </div>
-
-        {/* Products Summary */}
-        <div className="flex justify-between items-center">
-          <div className="flex items-center gap-2">
-            <Package className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm text-muted-foreground">
-              {kit.items.length} productos diferentes
-            </span>
+      </CardHeader>
+      
+      <CardContent className="space-y-3">
+        <div className="flex items-center justify-between text-sm">
+          <div className="flex items-center space-x-1 text-muted-foreground">
+            <Package className="h-3 w-3" />
+            <span>Kit ID:</span>
           </div>
-          <Badge variant="secondary" className="font-medium">
-            {kit.totalProducts} total
+          <Badge variant="outline" className="font-mono text-xs">
+            {kit.id.slice(-8)}
           </Badge>
         </div>
+        
+        <div className="flex items-center justify-between text-sm">
+          <div className="flex items-center space-x-1 text-muted-foreground">
+            <Package className="h-3 w-3" />
+            <span>Productos:</span>
+          </div>
+          <Badge variant="secondary">
+            {totalProducts} items
+          </Badge>
+        </div>
+        
+        <div className="flex items-center justify-between text-sm">
+          <div className="flex items-center space-x-1 text-muted-foreground">
+            <Calendar className="h-3 w-3" />
+            <span>Fecha:</span>
+          </div>
+          <span className="font-medium">
+            {formatDate(kit.date)}
+          </span>
+        </div>
 
-        {/* Products Preview */}
-        <div className="space-y-1">
-          <p className="text-xs font-medium text-muted-foreground">Productos:</p>
-          <div className="flex flex-wrap gap-1">
-            {kit.items.slice(0, 3).map((item, index) => (
-              <Badge key={index} variant="outline" className="text-xs">
-                {item.productName} ({item.qty})
-              </Badge>
-            ))}
+        {/* Product details */}
+        <div className="pt-2 border-t">
+          <div className="text-xs text-muted-foreground mb-2">Productos asignados:</div>
+          <div className="space-y-1">
+            {kit.items.slice(0, 3).map((item) => {
+              const product = products.find(p => p.id === item.productId);
+              return (
+                <div key={item.productId} className="flex justify-between text-xs">
+                  <span className="truncate flex-1 mr-2">
+                    {product?.name || "Producto desconocido"}
+                  </span>
+                  <span className="font-medium">x{item.qty}</span>
+                </div>
+              );
+            })}
             {kit.items.length > 3 && (
-              <Badge variant="outline" className="text-xs">
-                +{kit.items.length - 3} más
-              </Badge>
+              <div className="text-xs text-muted-foreground">
+                +{kit.items.length - 3} más...
+              </div>
             )}
           </div>
         </div>
       </CardContent>
     </Card>
-  )
+  );
 }
