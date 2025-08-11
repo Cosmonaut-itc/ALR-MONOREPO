@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useLoginMutation } from '@/lib/mutations/login';
 import { useAuthStore } from '@/stores/auth-store';
 
 export default function LoginPage() {
@@ -22,20 +23,34 @@ export default function LoginPage() {
 			password: '',
 		},
 	});
-	const { login, isLoading } = useAuthStore();
+	const { login } = useAuthStore();
+	const { mutateAsync, isSuccess, isPending } = useLoginMutation();
 
 	const [showPassword, setShowPassword] = useState(false);
 
 	const handleSubmit = async (e: React.FormEvent) => {
-		e.preventDefault();
+		try {
+			e.preventDefault();
 
-		const success = await login(form.state.values.emailOrUsername, form.state.values.password);
+			const success = await mutateAsync({
+				email: form.state.values.emailOrUsername,
+				password: form.state.values.password,
+			});
 
-		if (success) {
-			toast('¡Bienvenido! Inicio de sesión exitoso');
-			router.push('/dashboard');
-		} else {
-			toast('Error de autenticación: Credenciales inválidas. Intenta de nuevo.');
+			if (isSuccess) {
+				toast('¡Bienvenido! Inicio de sesión exitoso');
+				login(
+					success?.data?.user?.id || '',
+					success?.data?.user?.email || '',
+					success?.data?.user?.name || '',
+					'encargado',
+				);
+				router.push('/dashboard');
+			}
+		} catch (error) {
+			toast.error('Error de autenticación: Credenciales inválidas. Intenta de nuevo.');
+			// biome-ignore lint/suspicious/noConsole: Needed for error logging
+			console.error(error);
 		}
 	};
 
@@ -78,7 +93,7 @@ export default function LoginPage() {
 											<>
 												<Input
 													className="input-transition border-[#E5E7EB] bg-white text-[#11181C] placeholder:text-[#687076] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:placeholder:text-[#9BA1A6]"
-													disabled={isLoading}
+													disabled={isPending}
 													id="emailOrUsername"
 													name={field.name}
 													onBlur={field.handleBlur}
@@ -123,7 +138,7 @@ export default function LoginPage() {
 											<>
 												<Input
 													className="input-transition border-[#E5E7EB] bg-white text-[#11181C] placeholder:text-[#687076] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:placeholder:text-[#9BA1A6]"
-													disabled={isLoading}
+													disabled={isPending}
 													id="password"
 													name={field.name}
 													onBlur={field.handleBlur}
@@ -154,7 +169,7 @@ export default function LoginPage() {
 									/>
 									<Button
 										className="theme-transition absolute top-0 right-0 h-full px-3 py-2 hover:bg-transparent"
-										disabled={isLoading}
+										disabled={isPending}
 										onClick={() => setShowPassword(!showPassword)}
 										size="sm"
 										type="button"
@@ -177,16 +192,16 @@ export default function LoginPage() {
 							<div className="space-y-4">
 								<Button
 									className="theme-transition h-11 w-full bg-[#0a7ea4] font-medium text-white hover:bg-[#0a7ea4]/90"
-									disabled={isLoading}
+									disabled={isPending}
 									type="submit"
 								>
-									{isLoading ? 'Iniciando sesión...' : 'Iniciar Sesión'}
+									{isPending ? 'Iniciando sesión...' : 'Iniciar Sesión'}
 								</Button>
 
 								<div className="text-center">
 									<Button
 										className="theme-transition h-auto p-0 font-normal text-[#0a7ea4] text-sm hover:text-[#0a7ea4]/90"
-										disabled={isLoading}
+										disabled={isPending}
 										variant="link"
 									>
 										¿Olvidaste tu contraseña?

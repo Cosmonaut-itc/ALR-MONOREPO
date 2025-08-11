@@ -1,81 +1,71 @@
-import { create } from "zustand"
-import { persist } from "zustand/middleware"
+import { create } from 'zustand';
+import { devtools, persist } from 'zustand/middleware';
 
 interface User {
-  id: string
-  email: string
-  name: string
-  role: string
+	id: string;
+	email: string;
+	name: string;
+	role: string;
 }
 
 interface AuthState {
-  user: User | null
-  isAuthenticated: boolean
-  isLoading: boolean
-  
-  // Actions
-  login: (email: string, password: string) => Promise<boolean>
-  logout: () => void
-  setLoading: (loading: boolean) => void
+	user: User | null;
+	isAuthenticated: boolean;
+
+	// Actions
+	login: (id: string, email: string, name: string, role: string) => void;
+	logout: () => void;
 }
 
 export const useAuthStore = create<AuthState>()(
-  persist(
-    (set, get) => ({
-      user: null,
-      isAuthenticated: false,
-      isLoading: false,
+	devtools(
+		persist(
+			(set, get) => ({
+				user: null,
+				isAuthenticated: false,
 
-      login: async (email: string, password: string) => {
-        set({ isLoading: true })
-        
-        try {
-          // Simulate API call
-          await new Promise(resolve => setTimeout(resolve, 1500))
-          
-          // Simple validation for demo
-          if (email && password.length >= 6) {
-            const user: User = {
-              id: "1",
-              email: email,
-              name: "María González",
-              role: "Administrador"
-            }
-            
-            set({ 
-              user, 
-              isAuthenticated: true, 
-              isLoading: false 
-            })
-            return true
-          } else {
-            set({ isLoading: false })
-            return false
-          }
-        } catch (error) {
-          set({ isLoading: false })
-          return false
-        }
-      },
+				login: (id: string, email: string, name: string, role: string) => {
+					try {
+						const user: User = {
+							id,
+							email,
+							name,
+							role,
+						};
 
-      logout: () => {
-        set({ 
-          user: null, 
-          isAuthenticated: false, 
-          isLoading: false 
-        })
-      },
+						set({
+							user,
+							isAuthenticated: true,
+						});
+					} catch (error) {
+						// biome-ignore lint/suspicious/noConsole: Needed for error logging
+						console.error('Error al iniciar sesión:', error);
+					}
+				},
 
-      setLoading: (loading: boolean) => {
-        set({ isLoading: loading })
-      }
-    }),
-    {
-      name: "auth-storage",
-      partialize: (state) => ({ 
-        user: state.user, 
-        isAuthenticated: state.isAuthenticated 
-      }),
-    }
-  )
-)
+				logout: () => {
+					set({
+						user: null,
+						isAuthenticated: false,
+					});
+				},
+
+				getUserData: () => {
+					const user = get().user;
+					if (!user) {
+						return null;
+					}
+					return user;
+				},
+			}),
+			{
+				name: 'auth-storage',
+				partialize: (state) => ({
+					user: state.user,
+					isAuthenticated: state.isAuthenticated,
+				}),
+			},
+		),
+		{ name: 'auth-store' },
+	),
+);
