@@ -5,4 +5,10 @@ export const loginSchema = t({
 	password: 'string',
 });
 
+export const userRoleSchema = t({
+	role: "'encargado' | 'admin'",
+});
+
 export type LoginType = typeof loginSchema.infer;
+
+export type UserRole = typeof userRoleSchema.infer;

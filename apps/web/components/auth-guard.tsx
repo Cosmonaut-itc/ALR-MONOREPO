@@ -1,36 +1,42 @@
-'use client';
+import type { ReactNode } from 'react';
+import type { UserRole } from '@/types';
 
-import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
-import { useAuthStore } from '@/stores/auth-store';
+interface RoleGuardProps {
+	/** The current user's role */
+	userRole: UserRole | null;
 
-interface AuthGuardProps {
-	children: React.ReactNode;
+	/** The roles that are allowed to access the content */
+	allowedRoles: UserRole[];
+
+	/** The content to render if the user has permission */
+	children: ReactNode;
+
+	/** Optional content to render if the user lacks permission */
+	fallback?: ReactNode;
 }
 
-export function AuthGuard({ children }: AuthGuardProps) {
-	const router = useRouter();
-	const { isAuthenticated, isLoading } = useAuthStore();
-
-	useEffect(() => {
-		if (!(isLoading || isAuthenticated)) {
-			router.push('/login');
-		}
-	}, [isAuthenticated, isLoading, router]);
-
-	// Show loading or redirect while checking auth
-	if (isLoading || !isAuthenticated) {
-		return (
-			<div className="flex min-h-screen items-center justify-center bg-white dark:bg-[#151718]">
-				<div className="text-center">
-					<div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-4 border-[#0a7ea4] border-t-transparent" />
-					<p className="text-[#687076] dark:text-[#9BA1A6]">
-						Verificando autenticación...
-					</p>
-				</div>
-			</div>
-		);
+/**
+ * A component that conditionally renders its children based on user role permissions
+ */
+export const RoleGuard: React.FC<RoleGuardProps> = ({
+	userRole,
+	allowedRoles,
+	children,
+	fallback = null,
+}) => {
+	// If no role is provided, don't render the protected content
+	if (!userRole) {
+		return <>{fallback}</>;
 	}
 
-	return <>{children}</>;
-}
+	// Admin role has access to everything
+	if (userRole.role === 'admin') {
+		return <>{children}</>;
+	}
+
+	// Check if the user's role is in the list of allowed roles
+	const hasPermission = allowedRoles.some((role) => role.role === userRole.role);
+
+	// Render children or fallback based on permission
+	return <>{hasPermission ? children : fallback}</>;
+};
