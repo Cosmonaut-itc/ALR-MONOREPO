@@ -29,16 +29,16 @@ export default function LoginPage() {
 	const [showPassword, setShowPassword] = useState(false);
 
 	const handleSubmit = async (e: React.FormEvent) => {
-		try {
-			e.preventDefault();
+		e.preventDefault();
 
+		try {
 			const success = await mutateAsync({
 				email: form.state.values.emailOrUsername,
 				password: form.state.values.password,
 			});
 
 			if (isSuccess) {
-				toast('¡Bienvenido! Inicio de sesión exitoso');
+				toast.success('¡Bienvenido! Inicio de sesión exitoso');
 				login(
 					success?.data?.user?.id || '',
 					success?.data?.user?.email || '',
