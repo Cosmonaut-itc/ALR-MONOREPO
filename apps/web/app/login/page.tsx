@@ -1,6 +1,8 @@
+/** biome-ignore-all lint/correctness/noChildrenProp: Needed for form usage */
 'use client';
 
-import { Eye, EyeOff, Lock, Mail } from 'lucide-react';
+import { useForm } from '@tanstack/react-form';
+import { Eye, EyeOff, Lock } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import type React from 'react';
 import { useState } from 'react';
@@ -14,30 +16,20 @@ import { useAuthStore } from '@/stores/auth-store';
 
 export default function LoginPage() {
 	const router = useRouter();
+	const form = useForm({
+		defaultValues: {
+			emailOrUsername: '',
+			password: '',
+		},
+	});
 	const { login, isLoading } = useAuthStore();
 
 	const [showPassword, setShowPassword] = useState(false);
-	const [formData, setFormData] = useState({
-		emailOrUsername: '',
-		password: '',
-	});
-
-	const handleInputChange = (field: string, value: string) => {
-		setFormData((prev) => ({
-			...prev,
-			[field]: value,
-		}));
-	};
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
 
-		if (!(formData.emailOrUsername && formData.password)) {
-			toast('Por favor completa todos los campos');
-			return;
-		}
-
-		const success = await login(formData.emailOrUsername, formData.password);
+		const success = await login(form.state.values.emailOrUsername, form.state.values.password);
 
 		if (success) {
 			toast('¡Bienvenido! Inicio de sesión exitoso');
@@ -81,18 +73,39 @@ export default function LoginPage() {
 									Correo Electrónico / Usuario
 								</Label>
 								<div className="relative">
-									<Mail className="-translate-y-1/2 icon-transition absolute top-1/2 left-3 h-4 w-4 transform text-[#687076] dark:text-[#9BA1A6]" />
-									<Input
-										className="input-transition border-[#E5E7EB] bg-white pl-10 text-[#11181C] placeholder:text-[#687076] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:placeholder:text-[#9BA1A6]"
-										disabled={isLoading}
-										id="emailOrUsername"
-										onChange={(e) =>
-											handleInputChange('emailOrUsername', e.target.value)
-										}
-										placeholder="correo@ejemplo.com o usuario123"
-										required
-										type="text"
-										value={formData.emailOrUsername}
+									<form.Field
+										children={(field) => (
+											<>
+												<Input
+													className="input-transition border-[#E5E7EB] bg-white text-[#11181C] placeholder:text-[#687076] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:placeholder:text-[#9BA1A6]"
+													disabled={isLoading}
+													id="emailOrUsername"
+													name={field.name}
+													onBlur={field.handleBlur}
+													onChange={(e) =>
+														field.handleChange(e.target.value)
+													}
+													placeholder="correo@ejemplo.com o usuario123"
+													required
+													type="text"
+													value={field.state.value}
+												/>
+												{!field.state.meta.isValid && (
+													<em className="mt-1 text-red-500 text-xs">
+														{field.state.meta.errors.join(',')}
+													</em>
+												)}
+											</>
+										)}
+										name="emailOrUsername"
+										validators={{
+											// We can choose between form-wide and field-specific validators
+											onChange: ({ value }) => {
+												return value.length > 0
+													? undefined
+													: 'El campo es requerido';
+											},
+										}}
 									/>
 								</div>
 							</div>
@@ -105,18 +118,39 @@ export default function LoginPage() {
 									Contraseña
 								</Label>
 								<div className="relative">
-									<Lock className="-translate-y-1/2 icon-transition absolute top-1/2 left-3 h-4 w-4 transform text-[#687076] dark:text-[#9BA1A6]" />
-									<Input
-										className="input-transition border-[#E5E7EB] bg-white pr-10 pl-10 text-[#11181C] placeholder:text-[#687076] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:placeholder:text-[#9BA1A6]"
-										disabled={isLoading}
-										id="password"
-										onChange={(e) =>
-											handleInputChange('password', e.target.value)
-										}
-										placeholder="••••••••"
-										required
-										type={showPassword ? 'text' : 'password'}
-										value={formData.password}
+									<form.Field
+										children={(field) => (
+											<>
+												<Input
+													className="input-transition border-[#E5E7EB] bg-white text-[#11181C] placeholder:text-[#687076] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:placeholder:text-[#9BA1A6]"
+													disabled={isLoading}
+													id="password"
+													name={field.name}
+													onBlur={field.handleBlur}
+													onChange={(e) =>
+														field.handleChange(e.target.value)
+													}
+													placeholder="********"
+													required
+													type={showPassword ? 'text' : 'password'}
+													value={field.state.value}
+												/>
+												{!field.state.meta.isValid && (
+													<em className="mt-1 text-red-500 text-xs">
+														{field.state.meta.errors.join(',')}
+													</em>
+												)}
+											</>
+										)}
+										name="password"
+										validators={{
+											// We can choose between form-wide and field-specific validators
+											onChange: ({ value }) => {
+												return value.length > 0
+													? undefined
+													: 'El campo es requerido';
+											},
+										}}
 									/>
 									<Button
 										className="theme-transition absolute top-0 right-0 h-full px-3 py-2 hover:bg-transparent"
