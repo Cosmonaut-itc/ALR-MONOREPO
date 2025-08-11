@@ -52,7 +52,7 @@
     "immer": "latest",
     "input-otp": "latest",
     "lucide-react": "^0.454.0",
-    "next": "15.2.4",
+    "next": "canary",
     "next-themes": "latest",
     "react": "^19",
     "react-day-picker": "latest",
