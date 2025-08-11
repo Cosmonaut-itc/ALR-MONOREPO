@@ -1,6 +1,7 @@
 'use client';
 
 import { ArrowLeft, Package, PackageCheck } from 'lucide-react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Fragment, use, useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
@@ -195,11 +196,13 @@ export default function KitInspectionPage({ params }: PageProps) {
 				<BreadcrumbList>
 					<BreadcrumbItem>
 						<BreadcrumbLink
+							asChild={true}
 							className="theme-transition flex items-center text-[#0a7ea4] hover:text-[#0a7ea4]/80"
-							href="/kits"
 						>
-							<ArrowLeft className="mr-1 h-4 w-4" />
-							Volver a kits
+							<Link href="/kits">
+								<ArrowLeft className="mr-1 h-4 w-4" />
+								Volver a kits
+							</Link>
 						</BreadcrumbLink>
 					</BreadcrumbItem>
 					<BreadcrumbSeparator />
