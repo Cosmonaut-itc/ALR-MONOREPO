@@ -14,6 +14,7 @@ import {
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type * as React from 'react';
+import { toast } from 'sonner';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
 	DropdownMenu,
@@ -34,6 +35,7 @@ import {
 	SidebarMenuItem,
 	SidebarRail,
 } from '@/components/ui/sidebar';
+import { useLogoutMutation } from '@/lib/mutations/auth';
 import { useAuthStore } from '@/stores/auth-store';
 
 // Datos de navegación del sistema ALR
@@ -74,9 +76,21 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 	const router = useRouter();
 	const { user, logout } = useAuthStore();
 
-	const handleLogout = () => {
-		logout();
-		router.push('/login');
+	const { mutateAsync } = useLogoutMutation();
+
+	const handleLogout = async () => {
+		try {
+			const response = await mutateAsync();
+			logout();
+			if (response.data?.success) {
+				toast.success('Sesión cerrada correctamente');
+				router.push('/login');
+			}
+		} catch (error) {
+			toast.error('Error al cerrar sesión');
+			// biome-ignore lint/suspicious/noConsole: Needed for error logging
+			console.error(error);
+		}
 	};
 
 	return (
