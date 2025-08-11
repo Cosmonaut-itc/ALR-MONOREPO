@@ -1,9 +1,19 @@
 import { type NextRequest, NextResponse } from 'next/server';
 
-const AUTH_SERVER_URL = process.env.NEXT_PUBLIC_BETTER_AUTH_URL;
+// Prefer server-side env; fall back to NEXT_PUBLIC for client-configured deployments.
+// Final fallback is the current request origin to avoid invalid URL errors.
+const ENV_AUTH_SERVER_URL =
+	process.env.BETTER_AUTH_URL || process.env.NEXT_PUBLIC_BETTER_AUTH_URL || '';
 
 // Paths that should bypass auth checks
-const PUBLIC_PATHS = ['/login', '/_next', '/favicon.ico', '/robots.txt', '/sitemap.xml'];
+const PUBLIC_PATHS = [
+	'/login',
+	`${ENV_AUTH_SERVER_URL}/api/auth/sign-in/email`,
+	'/_next',
+	'/favicon.ico',
+	'/robots.txt',
+	'/sitemap.xml',
+];
 
 function isPublicPath(pathname: string) {
 	return PUBLIC_PATHS.some((p) =>
@@ -19,9 +29,11 @@ export async function middleware(request: NextRequest) {
 		return NextResponse.next();
 	}
 
-	// Full validation against your Hono Better Auth server
-	// We call the get-session endpoint and forward the cookies
-	const url = new URL('/api/auth/get-session', AUTH_SERVER_URL);
+	// Full validation against your Hono Better Auth server.
+	// Build the absolute URL safely. Use env if available; otherwise use the
+	// current request origin to avoid throwing on invalid base.
+	const authBase = ENV_AUTH_SERVER_URL || request.nextUrl.origin;
+	const url = new URL('/api/auth/get-session', authBase);
 
 	let session: unknown = null;
 	try {
