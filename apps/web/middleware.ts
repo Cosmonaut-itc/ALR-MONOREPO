@@ -3,14 +3,7 @@ import { type NextRequest, NextResponse } from 'next/server';
 const AUTH_SERVER_URL = process.env.NEXT_PUBLIC_BETTER_AUTH_URL;
 
 // Paths that should bypass auth checks
-const PUBLIC_PATHS = [
-	'/login',
-	`${process.env.NEXT_PUBLIC_BETTER_AUTH_URL}/api/auth/sign-in/email`,
-	'/_next',
-	'/favicon.ico',
-	'/robots.txt',
-	'/sitemap.xml',
-];
+const PUBLIC_PATHS = ['/login', '/_next', '/favicon.ico', '/robots.txt', '/sitemap.xml'];
 
 function isPublicPath(pathname: string) {
 	return PUBLIC_PATHS.some((p) =>
