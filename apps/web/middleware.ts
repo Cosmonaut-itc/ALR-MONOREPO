@@ -1,19 +1,8 @@
+// middleware.ts
+/** biome-ignore-all lint/suspicious/noExplicitAny: we need to use any here */
 import { type NextRequest, NextResponse } from 'next/server';
 
-// Prefer server-side env; fall back to NEXT_PUBLIC for client-configured deployments.
-// Final fallback is the current request origin to avoid invalid URL errors.
-const ENV_AUTH_SERVER_URL =
-	process.env.BETTER_AUTH_URL || process.env.NEXT_PUBLIC_BETTER_AUTH_URL || '';
-
-// Paths that should bypass auth checks
-const PUBLIC_PATHS = [
-	'/login',
-	`${ENV_AUTH_SERVER_URL}/api/auth/sign-in/email`,
-	'/_next',
-	'/favicon.ico',
-	'/robots.txt',
-	'/sitemap.xml',
-];
+const PUBLIC_PATHS = ['/login', '/_next', '/favicon.ico', '/robots.txt', '/sitemap.xml'];
 
 function isPublicPath(pathname: string) {
 	return PUBLIC_PATHS.some((p) =>
@@ -24,23 +13,18 @@ function isPublicPath(pathname: string) {
 export async function middleware(request: NextRequest) {
 	const { pathname, search } = request.nextUrl;
 
-	// Avoid auth on public paths
 	if (isPublicPath(pathname)) {
 		return NextResponse.next();
 	}
 
-	// Full validation against your Hono Better Auth server.
-	// Build the absolute URL safely. Use env if available; otherwise use the
-	// current request origin to avoid throwing on invalid base.
-	const authBase = ENV_AUTH_SERVER_URL || request.nextUrl.origin;
-	const url = new URL('/api/auth/get-session', authBase);
+	// Always use the current origin so the proxied cookie works
+	const url = new URL('/api/auth/get-session', request.nextUrl.origin);
 
 	let session: unknown = null;
 	try {
 		const res = await fetch(url.toString(), {
 			method: 'GET',
 			headers: {
-				// forward cookies from the browser request
 				cookie: request.headers.get('cookie') ?? '',
 			},
 			credentials: 'include',
@@ -48,18 +32,15 @@ export async function middleware(request: NextRequest) {
 		});
 
 		if (res.ok) {
-			// Better Auth may respond with either the session object directly
-			// or { data: session }. Handle both.
 			const body = await res.json().catch(() => null);
-			session = body && (('data' in body ? body.data : body) as unknown);
+			session = body && (('data' in (body as any) ? (body as any).data : body) as unknown);
 		}
 	} catch {
-		// Fail closed below
+		// fall through to redirect
 	}
 
 	if (!session) {
 		const loginUrl = new URL('/login', request.url);
-		// Preserve where the user was trying to go
 		loginUrl.searchParams.set('next', pathname + search);
 		return NextResponse.redirect(loginUrl);
 	}
@@ -68,8 +49,8 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-	// Full validation requires Node.js runtime (Next.js 15.2+)
+	// Note: Node.js middleware runtime requires Next.js 15.2+. If you're on <15.2,
+	// remove runtime or use edge-compatible code.
 	runtime: 'nodejs',
-	// Apply to everything except Next internals, API routes, and auth/login
-	matcher: ['/((?!api|_next|favicon.ico|robots.txt|sitemap.xml|login|auth).*)'],
+	matcher: ['/((?!api|_next|favicon.ico|robots.txt|sitemap.xml|login).*)'],
 };
