@@ -3,7 +3,14 @@ import { type NextRequest, NextResponse } from 'next/server';
 const AUTH_SERVER_URL = process.env.BETTER_AUTH_URL ?? 'http://localhost:3000';
 
 // Paths that should bypass auth checks
-const PUBLIC_PATHS = ['/login', '/_next', '/favicon.ico', '/robots.txt', '/sitemap.xml'];
+const PUBLIC_PATHS = [
+	'/login',
+	`${process.env.BETTER_AUTH_URL}/api/auth/sign-in/email`,
+	'/_next',
+	'/favicon.ico',
+	'/robots.txt',
+	'/sitemap.xml',
+];
 
 function isPublicPath(pathname: string) {
 	return PUBLIC_PATHS.some((p) =>
@@ -58,6 +65,6 @@ export async function middleware(request: NextRequest) {
 export const config = {
 	// Full validation requires Node.js runtime (Next.js 15.2+)
 	runtime: 'nodejs',
-	// Apply to everything except Next internals, API routes, and login
-	matcher: ['/((?!api|_next/static|_next/image|favicon.ico|login).*)'],
+	// Apply to everything except Next internals, API routes, and auth/login
+	matcher: ['/((?!api|_next|favicon.ico|robots.txt|sitemap.xml|login|auth).*)'],
 };
