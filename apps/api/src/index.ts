@@ -370,6 +370,7 @@ app.use(
 		// Allowed origins for CORS requests
 		origin: [
 			'http://localhost:3000', // Local development
+			'http://localhost:3001', // Local development
 			'http://100.89.145.51:3000', // Development server IP
 			'nsinventorymngmt://', // Mobile app deep link
 			'http://100.111.159.14:3000', // Additional development IP

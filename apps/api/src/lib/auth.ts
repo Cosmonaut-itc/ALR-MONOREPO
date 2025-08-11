@@ -16,6 +16,7 @@ export const auth = betterAuth({
 	},
 	trustedOrigins: [
 		'nsinventorymngmt://',
+		'http://localhost:3001', // Local development
 		'http://localhost:3000',
 		'https://localhost:3000',
 		'exp://192.168.15.188:8081',
