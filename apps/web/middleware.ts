@@ -32,8 +32,10 @@ export async function middleware(request: NextRequest) {
 		});
 
 		if (res.ok) {
-			const body = await res.json().catch(() => null);
-			session = body && (('data' in (body as any) ? (body as any).data : body) as unknown);
+			const body: unknown = await res.json().catch(() => null);
+			const hasData = (value: unknown): value is { data: unknown } =>
+				typeof value === 'object' && value !== null && 'data' in value;
+			session = body && (hasData(body) ? body.data : body);
 		}
 	} catch {
 		// fall through to redirect
