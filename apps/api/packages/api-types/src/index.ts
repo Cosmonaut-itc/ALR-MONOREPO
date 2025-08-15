@@ -14,8 +14,9 @@
  * ```
  */
 
-// Export the main AppType - this will be generated separately
+// Export the main AppType for Hono RPC client
 export type { AppType } from './app-type';
+
 export * from './schemas';
 /**
  * Re-export commonly used types with shorter names for convenience
