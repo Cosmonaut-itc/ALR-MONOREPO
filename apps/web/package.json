@@ -40,6 +40,7 @@
     "@tanstack/react-form": "^1.19.1",
     "@tanstack/react-query": "^5.84.2",
     "@tanstack/react-query-devtools": "^5.84.2",
+    "@tanstack/react-table": "^8.21.3",
     "arktype": "latest",
     "autoprefixer": "^10.4.20",
     "better-auth": "^1.3.5",
@@ -49,14 +50,17 @@
     "date-fns": "latest",
     "embla-carousel-react": "latest",
     "geist": "^1.3.1",
+    "hono": "^4.9.1",
     "immer": "latest",
     "input-otp": "latest",
     "lucide-react": "^0.454.0",
     "next": "canary",
     "next-themes": "latest",
+    "ns-inventory-api-types": "^1.0.5",
     "react": "^19",
     "react-day-picker": "latest",
     "react-dom": "^19",
+    "react-error-boundary": "^5.0.0",
     "react-hook-form": "latest",
     "react-resizable-panels": "latest",
     "recharts": "latest",
@@ -66,13 +70,13 @@
     "use-sync-external-store": "latest",
     "uuid": "latest",
     "vaul": "latest",
-    "zod": "3.25.67",
+    "zod": "^4.0.5",
     "zustand": "latest"
   },
   "devDependencies": {
     "@biomejs/biome": "2.1.2",
     "@tailwindcss/postcss": "^4.1.9",
-    "@types/node": "^22",
+    "@types/node": ">=22.12.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "postcss": "^8.5",
@@ -80,5 +84,6 @@
     "tw-animate-css": "1.3.3",
     "typescript": "^5.9.2",
     "ultracite": "5.1.2"
-  }
+  },
+  "packageManager": "pnpm@10.14.0+sha512.ad27a79641b49c3e481a16a805baa71817a04bbe06a38d17e60e2eaee83f6a146c6a688125f5792e48dd5ba30e7da52a5cda4c3992b9ccf333f9ce223af84748"
 }

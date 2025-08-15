@@ -1,11 +1,31 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
-import type { ProductCatalog, ProductStockItem } from '@/lib/schemas';
+
+// Type for product catalog items
+type ProductCatalogItem = {
+	barcode: number;
+	name: string;
+	category: string;
+	description: string;
+};
+
+// Type for stock items (simplified for table usage)
+type StockItem = {
+	id: string;
+	uuid: string;
+	barcode: number;
+	lastUsed?: string;
+	lastUsedBy?: string;
+	numberOfUses: number;
+	currentWarehouse: number;
+	isBeingUsed: boolean;
+	firstUsed: string;
+};
 
 interface InventoryStore {
 	// Products
-	stockItems: ProductStockItem[];
-	productCatalog: ProductCatalog[];
+	stockItems: StockItem[];
+	productCatalog: ProductCatalogItem[];
 
 	// Filters
 	searchTerm: string;
@@ -21,8 +41,8 @@ interface InventoryStore {
 	isNewProductModalOpen: boolean;
 
 	// Actions
-	setStockItems: (items: ProductStockItem[]) => void;
-	setProductCatalog: (catalog: ProductCatalog[]) => void;
+	setStockItems: (items: StockItem[]) => void;
+	setProductCatalog: (catalog: ProductCatalogItem[]) => void;
 	setCategories: (categories: string[]) => void;
 	setSearchTerm: (term: string) => void;
 	setSelectedCategory: (category: string | undefined) => void;
@@ -32,8 +52,8 @@ interface InventoryStore {
 	setNewProductModalOpen: (open: boolean) => void;
 
 	// Computed
-	getFilteredStockItems: () => (ProductStockItem & { productInfo: ProductCatalog | undefined })[];
-	getProductByBarcode: (barcode: number) => ProductCatalog | undefined;
+	getFilteredStockItems: () => (StockItem & { productInfo: ProductCatalogItem | undefined })[];
+	getProductByBarcode: (barcode: number) => ProductCatalogItem | undefined;
 }
 
 export const useInventoryStore = create<InventoryStore>()(
@@ -77,19 +97,20 @@ export const useInventoryStore = create<InventoryStore>()(
 					return !selectedWarehouse || warehouse === selectedWarehouse;
 				}
 
-				function findProductInfo(barcode: number) {
-					return productCatalog.find((p) => p.barcode === barcode);
+				function findProductInfo(productId: number) {
+					return productCatalog.find((p) => p.barcode === productId);
 				}
 
-				function doesItemMatchSearch(barcode: number, name?: string) {
+				function doesItemMatchSearch(item: StockItem, name?: string) {
 					if (!normalizedSearch) {
 						return true;
 					}
-					const matchesBarcode = barcode.toString().includes(normalizedSearch);
+					const matchesId = item.id?.toString().includes(normalizedSearch);
+					const matchesBarcode = item.barcode?.toString().includes(normalizedSearch);
 					const matchesName = name
 						? name.toLowerCase().includes(normalizedSearch)
 						: false;
-					return matchesBarcode || matchesName;
+					return matchesId || matchesBarcode || matchesName;
 				}
 
 				function doesItemMatchCategory(category?: string) {
@@ -104,7 +125,7 @@ export const useInventoryStore = create<InventoryStore>()(
 					.filter(
 						({ item, productInfo }) =>
 							doesItemMatchWarehouse(item.currentWarehouse) &&
-							doesItemMatchSearch(item.barcode, productInfo?.name) &&
+							doesItemMatchSearch(item, productInfo?.name) &&
 							doesItemMatchCategory(productInfo?.category),
 					)
 					.map(({ item, productInfo }) => ({ ...item, productInfo }));
