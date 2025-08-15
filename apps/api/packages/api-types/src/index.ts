@@ -15,20 +15,4 @@
  */
 
 // Export the main AppType for Hono RPC client
-export type { AppType } from './app-type';
-
-export * from './schemas';
-/**
- * Re-export commonly used types with shorter names for convenience
- */
-export type {
-	ApiResponse,
-	CabinetWarehouse,
-	Employee,
-	ProductStock,
-	ProductStockWithEmployee,
-	WithdrawOrder,
-	WithdrawOrderDetails,
-} from './types';
-// Export additional utility types
-export * from './types';
+export type { AppType } from '../../../src/index';

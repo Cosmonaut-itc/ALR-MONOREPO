@@ -4,7 +4,7 @@ import { expo } from '@better-auth/expo';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { apiKey } from 'better-auth/plugins';
-import { db } from '@/src/db/index'; // your drizzle instance
+import { db } from '../db/index'; // your drizzle instance
 
 export const auth = betterAuth({
 	database: drizzleAdapter(db, {

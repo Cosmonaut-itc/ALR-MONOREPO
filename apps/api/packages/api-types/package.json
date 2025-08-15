@@ -1,36 +1,42 @@
 {
   "name": "ns-inventory-api-types",
-  "version": "1.0.1",
-  "description": "TypeScript types for NS Inventory Management API - Auto-generated from Hono AppType",
-  "main": "dist/index.js",
+  "version": "1.0.4",
+  "description": "Types-only package that re-exports the Hono AppType for RPC clients.",
+  "type": "module",
+  "sideEffects": false,
+  "main": "dist/noop.js",
+  "module": "dist/noop.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/noop.js"
+    }
+  },
   "files": [
-    "dist/**/*"
+    "dist"
   ],
   "scripts": {
-    "build": "tsc",
-    "dev": "tsc --watch",
-    "clean": "rm -rf dist",
+    "clean": "rimraf dist",
+    "build": "tsc -p tsconfig.json",
     "prepublishOnly": "npm run clean && npm run build"
   },
-  "keywords": [
-    "typescript",
-    "hono",
-    "api-types",
-    "rpc",
-    "ns-inventory"
-  ],
-  "author": "NS Team",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/your-org/ns-api.git"
+  "peerDependencies": {
+    "hono": ">=4.0.0"
   },
   "devDependencies": {
-    "typescript": "^5.0.0"
+    "hono": "^4.5.0",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.5.0"
   },
-  "peerDependencies": {
-    "hono": "^4.7.10",
-    "zod": "^4.0.5"
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "MIT",
+  "author": "NS-TEAM",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Cosmonaut-itc/NS-API.git",
+    "directory": "packages/api-types"
   }
 }

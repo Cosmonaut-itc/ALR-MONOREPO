@@ -1,6 +1,6 @@
 import { faker } from '@faker-js/faker';
 import { setFaker } from 'zod-schema-faker';
-import type { DataItemArticulosType } from '@/types';
+import type { DataItemArticulosType } from '../types';
 
 setFaker(faker);
 

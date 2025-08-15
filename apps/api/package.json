@@ -1,7 +1,11 @@
 {
-  "name": "my-app",
+  "name": "@ns-inventory/server",
+  "private": true,
+  "type": "module",
+  "types": "dist-types/index.d.ts",
   "scripts": {
     "dev": "bun run --hot src/index.ts",
+    "build:server-types": "tsc -p tsconfig.server-types.json",
     "build:types": "bun run scripts/build-and-publish-types.ts --no-publish",
     "publish:types": "bun run scripts/build-and-publish-types.ts",
     "install:types": "cd packages/api-types && npm install",
@@ -27,6 +31,7 @@
     "husky": "^9.1.7",
     "lint-staged": "^16.1.2",
     "tsx": "^4.19.4",
+    "typescript": "^5.5.0",
     "ultracite": "5.0.36",
     "zod-schema-faker": "^2.0.0-beta.5"
   }

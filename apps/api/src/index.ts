@@ -21,12 +21,12 @@ import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
 
 import { z } from 'zod';
-import { productStockData, withdrawOrderData, withdrawOrderDetailsData } from '@/constants';
-import type { apiResponseSchema, DataItemArticulosType } from '@/types';
+import { productStockData, withdrawOrderData, withdrawOrderDetailsData } from './constants';
 import { db } from './db/index';
 import * as schemas from './db/schema';
 import { auth } from './lib/auth';
 import { generateMockApiResponse } from './lib/mock-data';
+import type { apiResponseSchema, DataItemArticulosType } from './types';
 
 /**
  * Custom type definitions for Hono context variables

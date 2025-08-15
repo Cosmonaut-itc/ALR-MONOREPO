@@ -52,14 +52,6 @@ async function buildAndPublishTypes() {
 		writeFileSync(PACKAGE_JSON_PATH, JSON.stringify(packageJson, null, 2));
 		console.log('✅ Updated package.json version');
 
-		// Extract AppType first
-		console.log('🔍 Extracting AppType...');
-		execSync('bun run scripts/extract-app-type.ts', { stdio: 'inherit' });
-
-		// Install dependencies if needed
-		console.log('📦 Installing dependencies...');
-		execSync('npm install', { cwd: TYPES_DIR, stdio: 'inherit' });
-
 		// Clean previous build
 		console.log('🧹 Cleaning previous build...');
 		execSync('npm run clean', { cwd: TYPES_DIR, stdio: 'inherit' });

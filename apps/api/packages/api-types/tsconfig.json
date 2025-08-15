@@ -6,7 +6,7 @@
     "declaration": true,
     "declarationMap": true,
     "outDir": "./dist",
-    "rootDir": "../..",
+    "rootDir": "../../",
     "strict": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
@@ -16,6 +16,6 @@
     "exactOptionalPropertyTypes": true,
     "strictNullChecks": true
   },
-  "include": ["packages/api-types/src/**/*", "src/index.ts"],
+  "include": ["src/**/*", "../../src/index.ts"],
   "exclude": ["node_modules", "dist"]
 }
