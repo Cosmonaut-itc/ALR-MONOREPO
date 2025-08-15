@@ -1,0 +1,36 @@
+{
+  "name": "ns-inventory-api-types",
+  "version": "1.0.1",
+  "description": "TypeScript types for NS Inventory Management API - Auto-generated from Hono AppType",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist/**/*"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "keywords": [
+    "typescript",
+    "hono",
+    "api-types",
+    "rpc",
+    "ns-inventory"
+  ],
+  "author": "NS Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/your-org/ns-api.git"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "peerDependencies": {
+    "hono": "^4.7.10",
+    "zod": "^4.0.5"
+  }
+}

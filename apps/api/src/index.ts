@@ -614,6 +614,59 @@ const route = app
 	})
 
 	/**
+	 * GET /api/product-stock/with-employee - Retrieve product stock joined with employee
+	 *
+	 * This endpoint fetches all product stock records and joins each record with
+	 * the corresponding employee (via `last_used_by`). If no records are found, it
+	 * returns mock product stock data.
+	 *
+	 * @returns {ApiResponse} Success response with product stock + employee join data
+	 * @throws {500} If an unexpected error occurs during data retrieval
+	 */
+	.get('/api/auth/product-stock/with-employee', async (c) => {
+		try {
+			const productStockWithEmployee = await db
+				.select()
+				.from(schemas.productStock)
+				.leftJoin(
+					schemas.employee,
+					eq(schemas.productStock.lastUsedBy, schemas.employee.id),
+				);
+
+			if (productStockWithEmployee.length === 0) {
+				return c.json(
+					{
+						success: true,
+						message: 'Fetching test data',
+						data: productStockData,
+					} satisfies ApiResponse,
+					200,
+				);
+			}
+
+			return c.json(
+				{
+					success: true,
+					message: 'Fetching db data',
+					data: productStockWithEmployee,
+				} satisfies ApiResponse,
+				200,
+			);
+		} catch (error) {
+			// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
+			console.error('Error fetching product stock with employee:', error);
+
+			return c.json(
+				{
+					success: false,
+					message: 'Failed to fetch product stock with employee',
+				} satisfies ApiResponse,
+				500,
+			);
+		}
+	})
+
+	/**
 	 * GET /api/cabinet-warehouse - Retrieve cabinet warehouse data
 	 *
 	 * This endpoint fetches all cabinet warehouse records from the database.
