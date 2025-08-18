@@ -101,17 +101,17 @@ export function InventoryTable({ items }: InventoryTableProps) {
 	const columns = useMemo<ColumnDef<InventoryTableData>[]>(
 		() => [
 			{
-				accessorKey: 'uuid',
-				header: 'UUID',
+				accessorKey: 'id',
+				header: 'ID',
 				cell: ({ row }) => {
-					const uuid = row.getValue('uuid') as string;
+					const id = row.getValue('id') as string;
 					return (
 						<div className="max-w-[120px] font-mono text-[#687076] text-transition text-xs dark:text-[#9BA1A6]">
 							<div className="flex items-center gap-1">
-								<span className="truncate">{uuid.split('-')[0]}...</span>
+								<span className="truncate">{id.split('-')[0]}...</span>
 								<Button
 									className="h-6 w-6 p-0 hover:bg-[#E5E7EB] dark:hover:bg-[#2D3033]"
-									onClick={() => copyToClipboard(uuid)}
+									onClick={() => copyToClipboard(id)}
 									size="sm"
 									variant="ghost"
 								>
