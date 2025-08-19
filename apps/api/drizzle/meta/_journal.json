@@ -43,6 +43,13 @@
       "when": 1753551231898,
       "tag": "0005_clumsy_doctor_spectrum",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1753648000000,
+      "tag": "0006_fix_employee_permissions_type",
+      "breakpoints": true
     }
   ]
 }
