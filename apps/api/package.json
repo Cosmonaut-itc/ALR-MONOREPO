@@ -10,9 +10,9 @@
     "publish:types": "bun run scripts/build-and-publish-types.ts",
     "install:types": "cd packages/api-types && npm install",
     "dev:with-types": "concurrently \"npm run dev\" \"cd packages/api-types && npm run dev\"",
-    "db:migrate": "drizzle-kit migrate",
-    "db:studio": "drizzle-kit studio",
-    "db:generate": "drizzle-kit generate"
+    "db:migrate": "drizzle-kit migrate --config=src/drizzle.config.ts",
+    "db:studio": "drizzle-kit studio --config=src/drizzle.config.ts",
+    "db:generate": "drizzle-kit generate --config=src/drizzle.config.ts"
   },
   "dependencies": {
     "@better-auth/expo": "^1.2.8",
