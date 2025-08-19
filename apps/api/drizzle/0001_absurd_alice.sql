@@ -11,7 +11,7 @@ CREATE TABLE "employee" (
 	"warehouse" integer DEFAULT 1 NOT NULL,
 	"passcode" integer DEFAULT 1111 NOT NULL,
 	"user_id" text,
-	"permissions" text
+	"permissions" uuid
 );
 --> statement-breakpoint
 CREATE TABLE "permissions" (
