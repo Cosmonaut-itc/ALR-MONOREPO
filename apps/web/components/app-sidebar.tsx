@@ -7,6 +7,7 @@ import {
 	LogOut,
 	Package,
 	RefreshCw,
+	Settings,
 	TrendingUp,
 	Truck,
 	User,
@@ -69,6 +70,11 @@ const navigationItems = [
 		title: 'Estadísticas',
 		url: '/estadisticas',
 		icon: BarChart3,
+	},
+	{
+		title: 'Ajustes',
+		url: '/ajustes',
+		icon: Settings,
 	},
 ];
 

@@ -13,6 +13,15 @@ export type LoginType = typeof loginSchema.infer;
 
 export type UserRole = typeof userRoleSchema.infer;
 
+// Sign Up schema/types
+export const signUpSchema = t({
+	email: 'string',
+	password: 'string',
+	name: 'string',
+});
+
+export type SignUpType = typeof signUpSchema.infer;
+
 /**
  * Type inference for inventory data with employee information
  * Extracted from the API response of client.api.auth['product-stock']['with-employee'].$get()

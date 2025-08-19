@@ -1,5 +1,5 @@
 import { useMutation } from '@tanstack/react-query';
-import type { LoginType } from '@/types';
+import type { LoginType, SignUpType } from '@/types';
 import { authClient } from '../auth-client';
 
 /**
@@ -94,6 +94,46 @@ export const useLogoutMutation = () =>
 						: (hasError && typeof hasError === 'object' && 'message' in hasError
 								? (hasError as { message?: string }).message
 								: undefined) || 'Error al cerrar sesión';
+				throw new Error(message);
+			}
+			return response;
+		},
+	});
+
+/**
+ * Custom React Query mutation hook for creating a new user (sign-up).
+ *
+ * Uses Better Auth `signUp.email` on the client.
+ */
+export const useSignUpMutation = () =>
+	useMutation({
+		mutationKey: ['signup'],
+		mutationFn: async ({ email, password, name }: SignUpType) => {
+			const response = await authClient.signUp.email({ email, password, name });
+			type MaybeError = {
+				ok?: boolean;
+				success?: boolean;
+				status?: number;
+				error?: string | { message?: string };
+				errors?: unknown;
+				data?: { error?: string | { message?: string } };
+			};
+			const r = response as unknown as MaybeError;
+			const hasError =
+				(r?.error as string | { message?: string } | undefined) ||
+				(r?.errors as unknown) ||
+				(r?.data?.error as string | { message?: string } | undefined);
+			const notOk =
+				r?.ok === false ||
+				r?.success === false ||
+				(typeof r?.status === 'number' && r.status >= 400);
+			if (hasError || notOk) {
+				const message =
+					typeof hasError === 'string'
+						? hasError
+						: (hasError && typeof hasError === 'object' && 'message' in hasError
+								? (hasError as { message?: string }).message
+								: undefined) || 'No se pudo crear el usuario';
 				throw new Error(message);
 			}
 			return response;
