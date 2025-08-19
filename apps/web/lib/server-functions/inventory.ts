@@ -1,16 +1,18 @@
 import 'server-only';
-import { headers } from 'next/headers';
+import { cookies } from 'next/headers';
 import { getServerApiClient } from '@/lib/server-client';
 
 export const fetchInventoryServer = async () => {
 	const client = await getServerApiClient();
-	const rawCookie = (await headers()).get('cookie') ?? '';
+	// Build cookie header from next/headers cookies to avoid losing HttpOnly flags
+	const cookieStore = await cookies();
+	const allCookies = cookieStore.getAll();
+	const rawCookie = allCookies
+		.map((c: { name: string; value: string }) => `${c.name}=${c.value}`)
+		.join('; ');
 
 	const res = await client.api.auth['product-stock']['with-employee'].$get({
-		headers: {
-			// Forward the browser cookies to the API
-			cookie: rawCookie,
-		},
+		headers: rawCookie ? { cookie: rawCookie } : undefined,
 		// cache: "no-store", // optional
 	});
 

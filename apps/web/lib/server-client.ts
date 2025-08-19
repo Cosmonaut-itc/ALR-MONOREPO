@@ -15,16 +15,14 @@ export const getServerApiClient = async () => {
 		return hc<AppType>(''); // relative base
 	}
 
-	// Prefer your API/BETTER_AUTH server base in server-side code.
+	// Prefer the current request origin so cookies match and Next rewrites apply.
+	const currentOrigin = (() => {
+		const host = h.get('x-forwarded-host') ?? h.get('host');
+		const proto = h.get('x-forwarded-proto') ?? 'http';
+		return host ? `${proto}://${host}` : undefined;
+	})();
 	const apiBase =
-		process.env.BETTER_AUTH_URL ||
-		process.env.NEXT_PUBLIC_BETTER_AUTH_URL ||
-		// Fallback to current request origin if you really need it
-		(() => {
-			const host = h.get('x-forwarded-host') ?? h.get('host');
-			const proto = h.get('x-forwarded-proto') ?? 'http';
-			return host ? `${proto}://${host}` : undefined;
-		})();
+		currentOrigin || process.env.BETTER_AUTH_URL || process.env.NEXT_PUBLIC_BETTER_AUTH_URL;
 
 	if (!apiBase) {
 		throw new Error('Cannot determine API base URL on the server');

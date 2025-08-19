@@ -15,14 +15,11 @@ export default async function AbastecimientoPage() {
 	const queryClient = getQueryClient();
 
 	try {
-		// Prefetch almacenes data (static data that won't change frequently)
+		// Prefetch inventory data so the client query hydrates
 		await queryClient.prefetchQuery({
 			queryKey: queryKeys.inventory,
 			queryFn: () => fetchInventoryServer(),
 		});
-
-		const inventory = await fetchInventoryServer();
-		console.log(inventory);
 		return (
 			<HydrationBoundary state={dehydrate(queryClient)}>
 				<GenericBoundaryWrapper fallbackComponent={<SkeletonInventoryTable />}>
@@ -33,5 +30,12 @@ export default async function AbastecimientoPage() {
 	} catch (error) {
 		console.error(error);
 		console.error('Error prefetching abastecimiento data');
+		return (
+			<HydrationBoundary state={dehydrate(queryClient)}>
+				<GenericBoundaryWrapper fallbackComponent={<SkeletonInventoryTable />}>
+					<InventarioPage />
+				</GenericBoundaryWrapper>
+			</HydrationBoundary>
+		);
 	}
 }
