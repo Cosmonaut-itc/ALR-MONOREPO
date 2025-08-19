@@ -14,7 +14,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useLoginMutation } from '@/lib/mutations/auth';
 import { useAuthStore } from '@/stores/auth-store';
-import SignUpPage from '../signup/page';
 
 export default function LoginPage() {
 	const router = useRouter();
@@ -220,7 +219,6 @@ export default function LoginPage() {
 						</div>
 					</CardContent>
 				</Card>
-				<SignUpPage />
 			</div>
 		</div>
 	);
