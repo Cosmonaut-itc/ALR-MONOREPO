@@ -1,4 +1,6 @@
 /** biome-ignore-all lint/suspicious/noConsole: Needed for debugging */
+
+'use client';
 import { client } from '../client';
 
 export const getInventory = async () => {
