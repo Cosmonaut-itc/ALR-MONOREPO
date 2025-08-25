@@ -43,6 +43,13 @@
       "when": 1753551231898,
       "tag": "0005_clumsy_doctor_spectrum",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1756160747020,
+      "tag": "0006_stale_ultimo",
+      "breakpoints": true
     }
   ]
 }

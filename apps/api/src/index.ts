@@ -1325,6 +1325,190 @@ const route = app
 				);
 			}
 		},
+	)
+
+	/**
+	 * GET /api/auth/warehouse/all - Retrieve all warehouses
+	 *
+	 * This endpoint fetches all warehouse records from the database.
+	 * Returns warehouse data with all fields including operational details,
+	 * location information, and audit trails.
+	 *
+	 * @returns {ApiResponse} Success response with warehouse data from DB
+	 * @throws {500} If an unexpected error occurs during data retrieval
+	 */
+	.get('/api/auth/warehouse/all', async (c) => {
+		try {
+			// Query the warehouse table for all records
+			const warehouses = await db.select().from(schemas.warehouse);
+
+			// Return warehouse data from the database
+			return c.json(
+				{
+					success: true,
+					message:
+						warehouses.length > 0
+							? 'Warehouses retrieved successfully'
+							: 'No warehouses found',
+					data: warehouses,
+				} satisfies ApiResponse,
+				200,
+			);
+		} catch (error) {
+			// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
+			console.error('Error fetching warehouses:', error);
+
+			return c.json(
+				{
+					success: false,
+					message: 'Failed to fetch warehouses',
+				} satisfies ApiResponse,
+				500,
+			);
+		}
+	})
+
+	/**
+	 * POST /api/auth/warehouse/create - Create a new warehouse
+	 *
+	 * Creates a new warehouse record in the database with comprehensive validation.
+	 * Requires authentication and validates all input fields according to business rules.
+	 * Automatically sets creation timestamps and audit fields.
+	 *
+	 * @param {string} name - Warehouse name (required)
+	 * @param {string} code - Unique warehouse identifier code (required)
+	 * @param {string} description - Optional warehouse description
+	 * @param {boolean} isActive - Whether the warehouse is active (defaults to true)
+	 * @param {boolean} allowsInbound - Whether inbound operations are allowed (defaults to true)
+	 * @param {boolean} allowsOutbound - Whether outbound operations are allowed (defaults to true)
+	 * @param {boolean} requiresApproval - Whether operations require approval (defaults to false)
+	 * @param {string} operatingHoursStart - Start time for operations (defaults to '08:00')
+	 * @param {string} operatingHoursEnd - End time for operations (defaults to '18:00')
+	 * @param {string} timeZone - Timezone for operations (defaults to 'UTC')
+	 * @param {string} notes - Optional notes
+	 * @param {string} customFields - Optional JSON string for custom data
+	 * @returns {ApiResponse} Success response with created warehouse data
+	 * @throws {400} Validation error if input data is invalid
+	 * @throws {409} Conflict error if warehouse code already exists
+	 * @throws {500} Database error if insertion fails
+	 */
+	.post(
+		'/api/auth/warehouse/create',
+		zValidator(
+			'json',
+			z.object({
+				name: z
+					.string()
+					.min(1, 'Warehouse name is required')
+					.max(255, 'Warehouse name too long'),
+				code: z
+					.string()
+					.min(1, 'Warehouse code is required')
+					.max(50, 'Warehouse code too long'),
+				description: z.string().max(1000, 'Description too long').optional(),
+				isActive: z.boolean().optional().default(true),
+				allowsInbound: z.boolean().optional().default(true),
+				allowsOutbound: z.boolean().optional().default(true),
+				requiresApproval: z.boolean().optional().default(false),
+				operatingHoursStart: z
+					.string()
+					.regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Invalid time format (HH:MM)')
+					.optional()
+					.default('08:00'),
+				operatingHoursEnd: z
+					.string()
+					.regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Invalid time format (HH:MM)')
+					.optional()
+					.default('18:00'),
+				timeZone: z.string().max(50, 'Timezone too long').optional().default('UTC'),
+				notes: z.string().max(2000, 'Notes too long').optional(),
+				customFields: z.string().max(5000, 'Custom fields too long').optional(),
+			}),
+		),
+		async (c) => {
+			try {
+				const warehouseData = c.req.valid('json');
+
+				// Get the current user for audit trail
+				const currentUser = c.get('user');
+				const userId = currentUser?.id || null;
+
+				// Insert the new warehouse into the database
+				// Using .returning() to get the inserted record back from the database
+				const insertedWarehouse = await db
+					.insert(schemas.warehouse)
+					.values({
+						...warehouseData,
+						createdBy: userId,
+						lastModifiedBy: userId,
+						createdAt: new Date(),
+						updatedAt: new Date(),
+					})
+					.returning(); // Returns array of inserted records
+
+				// Check if the insertion was successful
+				// Drizzle's .returning() always returns an array, even for single inserts
+				if (insertedWarehouse.length === 0) {
+					return c.json(
+						{
+							success: false,
+							message: 'Failed to create warehouse - no record inserted',
+							data: null,
+						} satisfies ApiResponse,
+						500,
+					);
+				}
+
+				// Return successful response with the newly created warehouse
+				// Take the first (and only) element from the returned array
+				return c.json(
+					{
+						success: true,
+						message: 'Warehouse created successfully',
+						data: insertedWarehouse[0], // Return the single created record
+					} satisfies ApiResponse,
+					201, // 201 Created status for successful resource creation
+				);
+			} catch (error) {
+				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
+				console.error('Error creating warehouse:', error);
+
+				// Handle unique constraint violation (duplicate warehouse code)
+				if (
+					error instanceof Error &&
+					error.message.includes('duplicate') &&
+					error.message.includes('code')
+				) {
+					return c.json(
+						{
+							success: false,
+							message: 'Warehouse code already exists - please use a unique code',
+						} satisfies ApiResponse,
+						409, // 409 Conflict for duplicate resource
+					);
+				}
+
+				// Handle validation errors
+				if (error instanceof Error && error.message.includes('validation')) {
+					return c.json(
+						{
+							success: false,
+							message: 'Invalid input data provided',
+						} satisfies ApiResponse,
+						400,
+					);
+				}
+
+				// Handle generic database errors
+				return c.json(
+					{
+						success: false,
+						message: 'Failed to create warehouse',
+					} satisfies ApiResponse,
+					500,
+				);
+			}
+		},
 	);
 
 /**

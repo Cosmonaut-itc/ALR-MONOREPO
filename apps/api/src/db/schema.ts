@@ -132,6 +132,43 @@ export const cabinetWarehouse = pgTable('cabinet_warehouse', {
 	parentWarehouse: integer('parent_warehouse').default(12).notNull(),
 });
 
+/**
+ * Main warehouse table for comprehensive warehouse management
+ * Independent from cabinet_warehouse with complete operational details
+ */
+export const warehouse = pgTable('warehouse', {
+	// Primary identification
+	id: uuid('id').default(sql`gen_random_uuid()`).notNull().primaryKey(),
+	name: text('name').notNull(),
+	code: text('code').notNull().unique(),
+	description: text('description'),
+
+	// Business logic
+	isActive: boolean('is_active').default(true).notNull(),
+	allowsInbound: boolean('allows_inbound').default(true).notNull(),
+	allowsOutbound: boolean('allows_outbound').default(true).notNull(),
+	requiresApproval: boolean('requires_approval').default(false).notNull(),
+
+	// Operational hours
+	operatingHoursStart: text('operating_hours_start').default('08:00'),
+	operatingHoursEnd: text('operating_hours_end').default('18:00'),
+	timeZone: text('time_zone').default('UTC'),
+
+	// Audit and tracking
+	createdAt: timestamp('created_at')
+		.$defaultFn(() => /* @__PURE__ */ new Date())
+		.notNull(),
+	updatedAt: timestamp('updated_at')
+		.$defaultFn(() => /* @__PURE__ */ new Date())
+		.notNull(),
+	createdBy: text('created_by').references(() => user.id),
+	lastModifiedBy: text('last_modified_by').references(() => user.id),
+
+	// Additional metadata
+	notes: text('notes'),
+	customFields: text('custom_fields'), // JSON string for additional custom data
+});
+
 export const employee = pgTable('employee', {
 	id: uuid('id').default(sql`gen_random_uuid()`).notNull().primaryKey(),
 	name: text('name').default('Jon Doe').notNull(),
@@ -165,4 +202,17 @@ export const withdrawOrderDetailsRelations = relations(withdrawOrderDetails, ({ 
 
 export const productStockRelations = relations(productStock, ({ many }) => ({
 	withdrawOrderDetails: many(withdrawOrderDetails),
+}));
+
+export const warehouseRelations = relations(warehouse, ({ one }) => ({
+	// User who created the warehouse
+	creator: one(user, {
+		fields: [warehouse.createdBy],
+		references: [user.id],
+	}),
+	// User who last modified the warehouse
+	lastModifier: one(user, {
+		fields: [warehouse.lastModifiedBy],
+		references: [user.id],
+	}),
 }));
