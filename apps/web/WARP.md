@@ -3,12 +3,12 @@
 This file provides guidance to WARP (warp.dev) when working with code in this repository.
 
 Repository summary
-- Stack: Next.js (canary, App Router) with React 19 and TypeScript. Tailwind CSS v4, Radix UI, TanStack Query/Form/Table, Zustand stores. Biome for formatting/linting is present; Next.js ESLint is wired via scripts.
+- Stack: Next.js (canary, App Router) with React 19 and TypeScript. Tailwind CSS v4, Radix UI, TanStack Query/Form, Zustand stores. Biome for formatting/linting; Next.js ESLint is wired via scripts.
 - Hosting/Sync: Project originates from v0.dev and is deployed on Vercel. See README for links. Code is auto-synced from v0.dev.
 - Notable config: next.config.mjs enables experimental.nodeMiddleware and a rewrite proxying /api/auth/* to BETTER_AUTH_URL. Images are unoptimized. Type and ESLint errors are ignored during build.
 
 Common commands
-- Install deps (pnpm is required by packageManager):
+- Install deps (pnpm is recommended; pnpm-lock.yaml present):
   pnpm install
 - Develop (Next dev server on port 3000 by default):
   pnpm dev
@@ -35,10 +35,10 @@ Environment and configuration
 
 High-level architecture
 - App Router structure (app/):
-  - layout.tsx defines the root layout and global providers (see app/providers.tsx) registering theme, TanStack Query client, and global styles (app/globals.css).
-  - page.tsx is the root page. Additional route segments would appear under app/.
+  - layout.tsx defines the root layout and global providers (see app/providers.tsx) registering the theme provider, TanStack Query client, and global styles (app/globals.css).
+  - (dash)/layout.tsx composes the dashboard shell (sidebar, header). Nested routes include dashboard, inventario, transferencias, recepciones, kits (with dynamic [kitId]), and estadisticas. login/page.tsx handles sign-in.
 - Data fetching and caching:
-  - TanStack Query is set up with a QueryClient initialized via app/get-query-client.ts and wired in app/providers.tsx. Query keys are centralized in lib/query-keys.ts.
+  - TanStack Query is configured in app/get-query-client.ts (staleTime ~10m; dehydrate includes pending) and provided via app/providers.tsx. ReactQueryDevtools enabled during development.
 - Authentication:
   - better-auth is used on the client (see lib/auth-client.ts). The repository relies on the rewrite to a separate auth server defined by BETTER_AUTH_URL. middleware.ts is present to handle auth/session-related edge logic for protected routes, and components/auth-guard.tsx provides client-side gating.
 - State management:
@@ -46,18 +46,14 @@ High-level architecture
 - UI system:
   - components/ contains reusable UI building blocks (e.g., DashboardMetricCard, app-sidebar, theme toggles/providers). Radix UI primitives and Tailwind CSS v4 are used. UI skeletons reside under ui/.
 - Utilities and types:
-  - lib/ holds client helpers (lib/client.ts, lib/utils.ts), schema/type helpers (lib/schemas.ts), and an HTTP server/client bridge (lib/server-client.ts) for isomorphic fetch patterns. Global app types are in types.ts.
+  - lib/ holds client helpers (lib/utils.ts), the Better Auth client (lib/auth-client.ts), schema/type helpers (lib/schemas.ts), and React Query mutations (lib/mutations/). Global app types are in types.ts.
 
 Testing
 - No test runner or test scripts are configured in package.json, and no test config files (Jest/Vitest/Playwright) are present. To run a single test, first introduce a test framework (e.g., Vitest or Jest) and add the corresponding scripts.
 
 Important repo docs and rules
 - README.md: Highlights that this repo is auto-synced from v0.dev and deployed on Vercel. Use the v0.dev project link for iterative building in their UI.
-- Cursor rules: .cursor/rules/ultracite.mdc includes extensive accessibility and code-quality guidance. Key takeaways:
-  - Favor semantic HTML/JSX, correct ARIA usage, and proper keyboard accessibility. Avoid tabIndex on non-interactive elements, ensure headings, labels, and alt text are meaningful.
-  - For Next.js, don’t use <img> and <head> directly; use framework primitives. Ensure next/document usage follows Next conventions.
-  - Enforce clean TypeScript/React patterns: avoid any, avoid disabling type checks, prevent unused variables/imports, keep hooks valid and at top level, avoid nested ternaries and focused tests, etc.
-  - Prefer modern JS/TS idioms (optional chaining, const, for-of, object spread) and consistent formatting.
+- Biome config: biome.jsonc extends the "ultracite" ruleset with formatter and linter enabled. Formatting defaults include tabs, ~100 character line width, single quotes, and trailing commas.
 
 Notes for Warp usage
 - If port 3000 is occupied, prefer passing an explicit port via pnpm dev -- -p <port> instead of relying on auto-port switching to keep URLs predictable for linked services (like the auth proxy).

@@ -1,9 +1,7 @@
 import 'server-only';
-import { cookies } from 'next/headers';
-import { getServerApiClient } from '@/lib/server-client';
+import { cookies, headers } from 'next/headers';
 
 export const fetchInventoryServer = async () => {
-	const client = await getServerApiClient();
 	// Build cookie header from next/headers cookies to avoid losing HttpOnly flags
 	const cookieStore = await cookies();
 	const allCookies = cookieStore.getAll();
@@ -11,9 +9,23 @@ export const fetchInventoryServer = async () => {
 		.map((c: { name: string; value: string }) => `${c.name}=${c.value}`)
 		.join('; ');
 
-	const res = await client.api.auth['product-stock']['with-employee'].$get({
+	// Build absolute URL from the current request context to avoid relative fetch issues on Node
+	const h = await headers();
+	const host = h.get('x-forwarded-host') ?? h.get('host');
+	const proto = h.get('x-forwarded-proto') ?? 'http';
+	const origin = host
+		? `${proto}://${host}`
+		: process.env.BETTER_AUTH_URL || process.env.NEXT_PUBLIC_BETTER_AUTH_URL;
+
+	if (!origin) {
+		throw new Error('Cannot determine origin for server fetch');
+	}
+
+	const url = new URL('/api/auth/product-stock/with-employee', origin).toString();
+
+	const res = await fetch(url, {
 		headers: rawCookie ? { cookie: rawCookie } : undefined,
-		// cache: "no-store", // optional
+		cache: 'no-store',
 	});
 
 	if (!res.ok) {
