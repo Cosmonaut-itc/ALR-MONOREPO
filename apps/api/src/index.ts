@@ -25,8 +25,9 @@ import { productStockData, withdrawOrderData, withdrawOrderDetailsData } from '.
 import { db } from './db/index';
 import * as schemas from './db/schema';
 import { auth } from './lib/auth';
-import { generateMockApiResponse } from './lib/mock-data';
-import type { apiResponseSchema, DataItemArticulosType } from './types';
+
+import type { DataItemArticulosType } from './types';
+import { apiResponseSchema } from './types';
 
 /**
  * Custom type definitions for Hono context variables
@@ -509,44 +510,87 @@ const route = app
 	 * GET /api/products/all - Retrieve all products
 	 *
 	 * Returns a list of all available products/articles in the system.
-	 * Currently serves mock data but can be extended to fetch from external APIs
-	 * or database sources. Includes proper error handling and response formatting.
+	 * Fetches data from the Altegio API with authentication headers.
+	 * Returns an error response if the API is unavailable or authentication fails.
+	 * Includes proper error handling and response formatting.
 	 *
-	 * @returns {ApiResponse<DataItemArticulosType[]>} Success response with products array
-	 * @throws {500} Internal server error if data fetching fails
+	 * @returns {ApiResponse<DataItemArticulosType[]>} Success response with products array or error response
+	 * @throws {400} Bad request if required environment variables are missing
+	 * @throws {500} Internal server error if API call fails
 	 */
-	.get('/api/auth/products/all', (c) => {
+	.get('/api/auth/products/all', async (c) => {
 		try {
-			// TODO: Replace with actual API call when ready
-			// const { company_id } = c.req.valid('query');
-			// const response = await fetch(`https://api.alteg.io/api/v1/goods/${company_id}`);
+			// Validate required environment variables
+			const authHeader = process.env.AUTH_HEADER;
+			const acceptHeader = process.env.ACCEPT_HEADER;
 
-			// Fetch mock data with simulated latency - returns full API response
-			const mockResponse = generateMockApiResponse();
+			const hasRequiredHeaders = authHeader && acceptHeader;
+			if (!hasRequiredHeaders) {
+				// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
+				console.error(
+					'Missing required environment variables (AUTH_HEADER, ACCEPT_HEADER)',
+				);
 
-			// Type assertion since we know the mock data structure
-			const typedResponse = mockResponse as z.infer<typeof apiResponseSchema>;
+				// Return error response when environment variables are missing
+				return c.json(
+					{
+						success: false,
+						message: 'Missing required authentication configuration',
+						data: [],
+					} satisfies ApiResponse<DataItemArticulosType[]>,
+					400,
+				);
+			}
 
-			// Return successful response with proper typing
+			// Make API call to Altegio products endpoint
+			const apiUrl = 'https://api.alteg.io/api/v1/goods/706097/';
+
+			// biome-ignore lint/suspicious/noConsole: API call logging is useful for debugging
+			console.log('Fetching products from Altegio API:', apiUrl);
+
+			const response = await fetch(apiUrl, {
+				method: 'GET',
+				headers: {
+					Authorization: authHeader,
+					Accept: acceptHeader,
+					'Content-Type': 'application/json',
+				},
+			});
+
+			// Check if the API response is successful
+			if (!response.ok) {
+				throw new Error(
+					`Altegio API responded with status ${response.status}: ${response.statusText}`,
+				);
+			}
+
+			// Parse the JSON response
+			const apiData = await response.json();
+
+			// Validate the response against our expected schema
+			const validatedResponse = apiResponseSchema.parse(apiData);
+
+			// Return successful response with actual API data
 			return c.json(
 				{
-					success: typedResponse.success,
-					message: 'Products retrieved successfully',
-					data: typedResponse.data,
-					meta: typedResponse.meta,
+					success: validatedResponse.success,
+					message: 'Products retrieved successfully from Altegio API',
+					data: validatedResponse.data,
+					meta: validatedResponse.meta,
 				} satisfies ApiResponse<DataItemArticulosType[]>,
 				200,
 			);
 		} catch (error) {
-			// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging product fetching issues
-			console.error('Error fetching products:', error);
+			// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
+			console.error('Error fetching products from Altegio API:', error);
 
-			// Return error response with proper status code
+			// Return error response with empty data array
 			return c.json(
 				{
 					success: false,
-					message: 'Failed to fetch products',
-				} satisfies ApiResponse,
+					message: 'Failed to fetch products from Altegio API',
+					data: [],
+				} satisfies ApiResponse<DataItemArticulosType[]>,
 				500,
 			);
 		}
