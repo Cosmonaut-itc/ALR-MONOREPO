@@ -127,31 +127,17 @@ export function InventarioPage() {
 		});
 	}, [storedProductCatalog, storedInventoryData]);
 
-	const gabineteProducts = useMemo(() => {
-		const hasProductCatalog = storedProductCatalog.length > 0;
-		const hasInventoryData = storedInventoryData.length > 0;
-		if (!hasProductCatalog) {
-			return [];
-		}
-		if (!hasInventoryData) {
-			return [];
-		}
+	// For now, use the same data as general products for gabinete
+	const gabineteProducts = generalProducts;
 
-		return storedProductCatalog
-			.map((product) => {
-				// Get all inventory items for this product in gabinete warehouse
-				const inventoryItems = storedInventoryData.filter((item) => {
-					return getItemBarcode(item) === product.barcode && getItemWarehouse(item) === 2;
-				});
+	// Calculate total inventory items count for tab titles
+	const generalItemsCount = useMemo(() => {
+		return generalProducts.reduce((total, product) => total + product.stockCount, 0);
+	}, [generalProducts]);
 
-				return {
-					...product,
-					inventoryItems,
-					stockCount: inventoryItems.length,
-				};
-			})
-			.filter((product) => product.stockCount > 0); // Only show products that have items in gabinete
-	}, [storedProductCatalog, storedInventoryData]);
+	const gabineteItemsCount = useMemo(() => {
+		return gabineteProducts.reduce((total, product) => total + product.stockCount, 0);
+	}, [gabineteProducts]);
 
 	return (
 		<div className="theme-transition flex-1 space-y-6 bg-white p-4 md:p-6 dark:bg-[#151718]">
@@ -172,15 +158,13 @@ export function InventarioPage() {
 						className="theme-transition text-[#687076] data-[state=active]:bg-white data-[state=active]:text-[#11181C] dark:text-[#9BA1A6] dark:data-[state=active]:bg-[#1E1F20] dark:data-[state=active]:text-[#ECEDEE]"
 						value="general"
 					>
-						Almacén General ({generalProducts.reduce((sum, p) => sum + p.stockCount, 0)}{' '}
-						items)
+						Almacén General ({generalItemsCount} items)
 					</TabsTrigger>
 					<TabsTrigger
 						className="theme-transition text-[#687076] data-[state=active]:bg-white data-[state=active]:text-[#11181C] dark:text-[#9BA1A6] dark:data-[state=active]:bg-[#1E1F20] dark:data-[state=active]:text-[#ECEDEE]"
 						value="gabinete"
 					>
-						Gabinete ({gabineteProducts.reduce((sum, p) => sum + p.stockCount, 0)}{' '}
-						items)
+						Gabinete ({gabineteItemsCount} items)
 					</TabsTrigger>
 				</TabsList>
 
