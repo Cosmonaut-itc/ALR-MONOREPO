@@ -45,3 +45,25 @@ export type InventoryItemWithEmployee = ProductStockWithEmployeeData extends { d
 		? U
 		: never
 	: never;
+
+/**
+ * Type inference for product catalog data
+ * Extracted from the API response of client.api.auth.products.all.$get()
+ */
+export type ProductCatalogResponse = Awaited<
+	ReturnType<typeof import('./lib/fetch-functions/inventory').getAllProducts>
+>;
+
+/**
+ * Type for successful product catalog data (excludes null case from error handling)
+ */
+export type ProductCatalogData = NonNullable<ProductCatalogResponse>;
+
+/**
+ * Type for individual product catalog item
+ */
+export type ProductCatalogItem = ProductCatalogData extends { data: infer T }
+	? T extends readonly (infer U)[]
+		? U
+		: never
+	: never;

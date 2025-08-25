@@ -26,6 +26,7 @@ interface InventoryStore {
 	// Products
 	stockItems: StockItem[];
 	productCatalog: ProductCatalogItem[];
+	inventoryData: unknown[]; // raw inventory items as returned by API (with employee)
 
 	// Filters
 	searchTerm: string;
@@ -43,6 +44,7 @@ interface InventoryStore {
 	// Actions
 	setStockItems: (items: StockItem[]) => void;
 	setProductCatalog: (catalog: ProductCatalogItem[]) => void;
+	setInventoryData: (items: unknown[]) => void;
 	setCategories: (categories: string[]) => void;
 	setSearchTerm: (term: string) => void;
 	setSelectedCategory: (category: string | undefined) => void;
@@ -54,6 +56,11 @@ interface InventoryStore {
 	// Computed
 	getFilteredStockItems: () => (StockItem & { productInfo: ProductCatalogItem | undefined })[];
 	getProductByBarcode: (barcode: number) => ProductCatalogItem | undefined;
+	getInventoryItemsByBarcode: (barcode: number) => unknown[];
+	getFilteredProductCatalog: () => (ProductCatalogItem & {
+		stockCount: number;
+		inventoryItems: unknown[];
+	})[];
 }
 
 export const useInventoryStore = create<InventoryStore>()(
@@ -62,6 +69,7 @@ export const useInventoryStore = create<InventoryStore>()(
 			// Initial state
 			stockItems: [],
 			productCatalog: [],
+			inventoryData: [],
 			searchTerm: '',
 			selectedCategory: undefined,
 			selectedWarehouse: undefined,
@@ -73,6 +81,7 @@ export const useInventoryStore = create<InventoryStore>()(
 			// Actions
 			setStockItems: (items) => set({ stockItems: items }),
 			setProductCatalog: (catalog) => set({ productCatalog: catalog }),
+			setInventoryData: (items) => set({ inventoryData: items }),
 			setCategories: (categories) => set({ categories }),
 			setSearchTerm: (term) => set({ searchTerm: term }),
 			setSelectedCategory: (category) => set({ selectedCategory: category }),
@@ -134,6 +143,106 @@ export const useInventoryStore = create<InventoryStore>()(
 			getProductByBarcode: (barcode) => {
 				const { productCatalog } = get();
 				return productCatalog.find((p) => p.barcode === barcode);
+			},
+
+			getInventoryItemsByBarcode: (barcode) => {
+				const { inventoryData } = get();
+				// Helper to extract barcode from inventory item structure
+				const extractBarcode = (item: unknown): number => {
+					if (item && typeof item === 'object' && 'product_stock' in item) {
+						const stock = (item as { product_stock: unknown }).product_stock;
+						if (stock && typeof stock === 'object' && 'barcode' in stock) {
+							return (stock as { barcode: number }).barcode;
+						}
+					}
+					return 0;
+				};
+
+				return inventoryData.filter((item) => extractBarcode(item) === barcode);
+			},
+
+			getFilteredProductCatalog: () => {
+				const {
+					productCatalog,
+					inventoryData,
+					searchTerm,
+					selectedCategory,
+					selectedWarehouse,
+				} = get();
+
+				const normalizedSearch = searchTerm.trim().toLowerCase();
+
+				// Helper to extract inventory item data
+				// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: No need
+				const extractInventoryData = (item: unknown) => {
+					if (item && typeof item === 'object' && 'product_stock' in item) {
+						const stock = (item as { product_stock: unknown }).product_stock;
+						if (stock && typeof stock === 'object') {
+							return {
+								barcode:
+									'barcode' in stock ? (stock as { barcode: number }).barcode : 0,
+								warehouse:
+									'currentWarehouse' in stock
+										? (stock as { currentWarehouse: number }).currentWarehouse
+										: 1,
+							};
+						}
+					}
+					return { barcode: 0, warehouse: 1 };
+				};
+
+				// Helper to filter items by warehouse
+				const filterByWarehouse = (items: unknown[]) => {
+					if (!selectedWarehouse) {
+						return items;
+					}
+					return items.filter((item) => {
+						const { warehouse } = extractInventoryData(item);
+						return warehouse === selectedWarehouse;
+					});
+				};
+
+				// Helper to check if product matches search term
+				const matchesSearch = (product: ProductCatalogItem) => {
+					if (!normalizedSearch) {
+						return true;
+					}
+					const matchesName = product.name.toLowerCase().includes(normalizedSearch);
+					const matchesBarcode = product.barcode.toString().includes(normalizedSearch);
+					const matchesCategory = product.category
+						.toLowerCase()
+						.includes(normalizedSearch);
+					return matchesName || matchesBarcode || matchesCategory;
+				};
+
+				// Helper to check if product matches category filter
+				const matchesCategory = (product: ProductCatalogItem) => {
+					return !selectedCategory || product.category === selectedCategory;
+				};
+
+				// Combined filter function
+				const matchesFilters = (product: ProductCatalogItem) => {
+					return matchesSearch(product) && matchesCategory(product);
+				};
+
+				return productCatalog
+					.map((product) => {
+						// Get all inventory items for this product
+						const inventoryItems = inventoryData.filter((item) => {
+							const { barcode } = extractInventoryData(item);
+							return barcode === product.barcode;
+						});
+
+						// Filter by warehouse if selected
+						const filteredItems = filterByWarehouse(inventoryItems);
+
+						return {
+							...product,
+							stockCount: filteredItems.length,
+							inventoryItems: filteredItems,
+						};
+					})
+					.filter(matchesFilters);
 			},
 		}),
 		{ name: 'inventory-store' },

@@ -5,7 +5,7 @@ import { dehydrate, HydrationBoundary } from '@tanstack/react-query';
 import { getQueryClient } from '@/app/get-query-client';
 import { GenericBoundaryWrapper } from '@/components/suspense-generics/general-wrapper';
 import { queryKeys } from '@/lib/query-keys';
-import { fetchInventoryServer } from '@/lib/server-functions/inventory';
+import { fetchAllProductsServer, fetchInventoryServer } from '@/lib/server-functions/inventory';
 import { SkeletonInventoryTable } from '@/ui/skeletons/Skeleton.InventoryTable';
 import { InventarioPage } from './inventory';
 
@@ -19,6 +19,11 @@ export default async function AbastecimientoPage() {
 		await queryClient.prefetchQuery({
 			queryKey: queryKeys.inventory,
 			queryFn: () => fetchInventoryServer(),
+		});
+		// Prefetch product catalog data
+		await queryClient.prefetchQuery({
+			queryKey: queryKeys.productCatalog,
+			queryFn: () => fetchAllProductsServer(),
 		});
 		return (
 			<HydrationBoundary state={dehydrate(queryClient)}>

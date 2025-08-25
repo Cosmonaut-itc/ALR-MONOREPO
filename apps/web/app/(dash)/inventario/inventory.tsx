@@ -1,118 +1,17 @@
+/** biome-ignore-all lint/correctness/useExhaustiveDependencies: No need to use exhaustive dependencies */
 'use client';
 
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
 import { useEffect, useMemo } from 'react';
-import { InventoryTable } from '@/components/inventory/InventoryTable';
 import { NewProductModal } from '@/components/inventory/NewProductModal';
+import { ProductCatalogTable } from '@/components/inventory/ProductCatalogTable';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { getInventory } from '@/lib/fetch-functions/inventory';
+import { getAllProducts, getInventory } from '@/lib/fetch-functions/inventory';
 import { queryKeys } from '@/lib/query-keys';
 import { useInventoryStore } from '@/stores/inventory-store';
-import type { ProductStockWithEmployee } from '@/types';
-
-// Type for the transformed table rows
-type InventoryTableRow = {
-	id: string;
-	uuid: string;
-	barcode: number;
-	lastUsed?: string;
-	lastUsedBy?: string;
-	numberOfUses: number;
-	currentWarehouse: number;
-	isBeingUsed: boolean;
-	firstUsed: string;
-	productInfo: {
-		barcode: number;
-		name: string;
-		category: string;
-		description: string;
-	};
-};
-
-// Helpers to normalize API item shape without using `any`
-type FlatStock = {
-	id?: string | number;
-	barcode?: number;
-	lastUsed?: string | null;
-	lastUsedBy?: string | number | null;
-	numberOfUses?: number;
-	currentWarehouse?: number;
-	isBeingUsed?: boolean;
-	firstUsed?: string | null;
-	employee?: { name?: string };
-};
-
-function hasProductStock(
-	item: unknown,
-): item is { product_stock: FlatStock; employee?: { name?: string } } {
-	return !!(
-		item &&
-		typeof item === 'object' &&
-		'product_stock' in (item as Record<string, unknown>)
-	);
-}
-
-function extractFlat(item: unknown): { stock: FlatStock; employeeName?: string } {
-	if (hasProductStock(item)) {
-		const flat = item.product_stock ?? {};
-		const employeeName = item.employee?.name;
-		return { stock: flat, employeeName };
-	}
-	const flat = (item as FlatStock) ?? {};
-	const employeeName = (item as FlatStock).employee?.name;
-	return { stock: flat, employeeName };
-}
-
-function normalizeId(rawId: string | number | undefined): string {
-	if (typeof rawId === 'string') {
-		return rawId;
-	}
-	return String(rawId ?? Math.random());
-}
-
-function normalizeBarcode(rawBarcode: number | undefined): number {
-	return typeof rawBarcode === 'number' ? rawBarcode : 0;
-}
-
-function deriveLastUsedBy(
-	employeeName?: string,
-	lastUsedBy?: string | number | null,
-): string | undefined {
-	if (typeof employeeName === 'string' && employeeName.length > 0) {
-		return employeeName;
-	}
-	return typeof lastUsedBy === 'string' ? lastUsedBy : undefined;
-}
-
-function productNameFromBarcode(barcode: number): string {
-	return barcode ? `Producto ${barcode}` : 'Producto sin nombre';
-}
-
-function mapApiItemToRow(item: unknown): InventoryTableRow {
-	const { stock, employeeName } = extractFlat(item);
-	const idString = normalizeId(stock.id);
-	const barcode = normalizeBarcode(stock.barcode);
-
-	return {
-		id: idString,
-		uuid: `uuid-${idString}`,
-		barcode,
-		lastUsed: stock.lastUsed ?? undefined,
-		lastUsedBy: deriveLastUsedBy(employeeName, stock.lastUsedBy ?? undefined),
-		numberOfUses: stock.numberOfUses ?? 0,
-		currentWarehouse: stock.currentWarehouse ?? 1,
-		isBeingUsed: stock.isBeingUsed ?? false,
-		firstUsed: stock.firstUsed ?? new Date().toISOString(),
-		productInfo: {
-			barcode,
-			name: productNameFromBarcode(barcode),
-			category: 'Sin categoría',
-			description: 'Descripción del producto',
-		},
-	};
-}
+import type { ProductCatalogResponse, ProductStockWithEmployee } from '@/types';
 
 export function InventarioPage() {
 	const { data: inventory } = useSuspenseQuery<
@@ -124,68 +23,135 @@ export function InventarioPage() {
 		queryFn: getInventory,
 	});
 
-	const { isNewProductModalOpen, setProductCatalog, setCategories, setNewProductModalOpen } =
-		useInventoryStore();
+	const { data: productCatalog } = useSuspenseQuery<
+		ProductCatalogResponse | null,
+		Error,
+		ProductCatalogResponse | null
+	>({
+		queryKey: queryKeys.productCatalog,
+		queryFn: getAllProducts,
+	});
 
-	// Transform API data for table usage
+	const {
+		isNewProductModalOpen,
+		setProductCatalog,
+		setInventoryData,
+		setCategories,
+		setNewProductModalOpen,
+		productCatalog: storedProductCatalog,
+		inventoryData: storedInventoryData,
+	} = useInventoryStore();
+
+	// Set inventory data in store
 	useEffect(() => {
-		if (!(inventory?.success && inventory.data)) {
-			return;
+		if (inventory?.success && inventory.data) {
+			setInventoryData(inventory.data);
 		}
+	}, [inventory, setInventoryData]);
 
-		// Extract unique categories from inventory data
-		// Note: The API structure appears to have product_stock rather than product
-		// For now, we'll use placeholder categories since the structure needs to be clarified
-		const placeholderCategories = [
-			'Acrílicos',
-			'Limas',
-			'Geles',
-			'Bases y Top Coats',
-			'Herramientas',
-			'Decoración',
-			'Cuidado de uñas',
-		];
-		setCategories(placeholderCategories);
+	// Set product catalog data in store
+	useEffect(() => {
+		if (productCatalog?.success && productCatalog.data) {
+			// Transform API product data to match our expected structure
+			const transformedProducts = productCatalog.data.map((product: unknown) => {
+				// Handle the API response structure
+				const productData = product as {
+					title?: string;
+					good_id?: string;
+					category?: string;
+					description?: string;
+				};
 
-		// Create product catalog from inventory data
-		// Using product_stock barcode as identifier for now
-		const catalogMap = new Map<
-			number,
-			{ barcode: number; name: string; category: string; description: string }
-		>();
-		for (const item of inventory.data) {
-			const { stock } = extractFlat(item as unknown);
-			const barcode = stock.barcode;
-			if (typeof barcode === 'number' && !catalogMap.has(barcode)) {
-				catalogMap.set(barcode, {
-					barcode,
-					name: `Producto ${barcode}`, // Placeholder name
-					category: 'Sin categoría', // Placeholder category
-					description: 'Descripción del producto', // Placeholder description
-				});
+				return {
+					barcode: Number.parseInt(productData.good_id || '0', 10),
+					name: productData.title || 'Producto sin nombre',
+					category: productData.category || 'Sin categoría',
+					description: productData.description || 'Sin descripción',
+				};
+			});
+
+			setProductCatalog(transformedProducts);
+
+			// Extract unique categories from product catalog
+			const uniqueCategories = Array.from(
+				new Set(transformedProducts.map((product) => product.category).filter(Boolean)),
+			);
+			setCategories(uniqueCategories);
+		}
+	}, [productCatalog, setProductCatalog, setCategories]);
+
+	// Helper to extract warehouse from inventory item
+	const getItemWarehouse = (item: unknown): number => {
+		if (item && typeof item === 'object' && 'product_stock' in item) {
+			const stock = (item as { product_stock: unknown }).product_stock;
+			if (stock && typeof stock === 'object' && 'currentWarehouse' in stock) {
+				return (stock as { currentWarehouse: number }).currentWarehouse;
 			}
 		}
-		setProductCatalog(Array.from(catalogMap.values()));
-	}, [inventory, setCategories, setProductCatalog]);
+		return 1; // Default to general warehouse
+	};
 
-	// Transform inventory data for table consumption
-	const transformedData = useMemo<InventoryTableRow[]>(() => {
-		if (!(inventory?.success && inventory.data)) {
+	// Helper to extract barcode from inventory item
+	const getItemBarcode = (item: unknown): number => {
+		if (item && typeof item === 'object' && 'product_stock' in item) {
+			const stock = (item as { product_stock: unknown }).product_stock;
+			if (stock && typeof stock === 'object' && 'barcode' in stock) {
+				return (stock as { barcode: number }).barcode;
+			}
+		}
+		return 0;
+	};
+
+	// Create products with inventory items for each warehouse
+	const generalProducts = useMemo(() => {
+		const hasProductCatalog = storedProductCatalog.length > 0;
+		const hasInventoryData = storedInventoryData.length > 0;
+		if (!hasProductCatalog) {
+			return [];
+		}
+		if (!hasInventoryData) {
 			return [];
 		}
 
-		return inventory.data.map(mapApiItemToRow);
-	}, [inventory]);
+		return storedProductCatalog.map((product) => {
+			// Get all inventory items for this product in general warehouse
+			const inventoryItems = storedInventoryData.filter((item) => {
+				return getItemBarcode(item) === product.barcode && getItemWarehouse(item) === 1;
+			});
 
-	// Filter data by warehouse for tabs
-	const generalItems = useMemo(
-		() => transformedData.filter((item) => item.currentWarehouse === 1),
-		[transformedData],
-	);
-	const gabineteItems = useMemo(
-		() => transformedData.filter((item) => item.currentWarehouse === 2),
-		[transformedData],
-	);
+			return {
+				...product,
+				inventoryItems,
+				stockCount: inventoryItems.length,
+			};
+		});
+	}, [storedProductCatalog, storedInventoryData]);
+
+	const gabineteProducts = useMemo(() => {
+		const hasProductCatalog = storedProductCatalog.length > 0;
+		const hasInventoryData = storedInventoryData.length > 0;
+		if (!hasProductCatalog) {
+			return [];
+		}
+		if (!hasInventoryData) {
+			return [];
+		}
+
+		return storedProductCatalog
+			.map((product) => {
+				// Get all inventory items for this product in gabinete warehouse
+				const inventoryItems = storedInventoryData.filter((item) => {
+					return getItemBarcode(item) === product.barcode && getItemWarehouse(item) === 2;
+				});
+
+				return {
+					...product,
+					inventoryItems,
+					stockCount: inventoryItems.length,
+				};
+			})
+			.filter((product) => product.stockCount > 0); // Only show products that have items in gabinete
+	}, [storedProductCatalog, storedInventoryData]);
 
 	return (
 		<div className="theme-transition flex-1 space-y-6 bg-white p-4 md:p-6 dark:bg-[#151718]">
@@ -206,24 +172,26 @@ export function InventarioPage() {
 						className="theme-transition text-[#687076] data-[state=active]:bg-white data-[state=active]:text-[#11181C] dark:text-[#9BA1A6] dark:data-[state=active]:bg-[#1E1F20] dark:data-[state=active]:text-[#ECEDEE]"
 						value="general"
 					>
-						Almacén General ({generalItems.length})
+						Almacén General ({generalProducts.reduce((sum, p) => sum + p.stockCount, 0)}{' '}
+						items)
 					</TabsTrigger>
 					<TabsTrigger
 						className="theme-transition text-[#687076] data-[state=active]:bg-white data-[state=active]:text-[#11181C] dark:text-[#9BA1A6] dark:data-[state=active]:bg-[#1E1F20] dark:data-[state=active]:text-[#ECEDEE]"
 						value="gabinete"
 					>
-						Gabinete ({gabineteItems.length})
+						Gabinete ({gabineteProducts.reduce((sum, p) => sum + p.stockCount, 0)}{' '}
+						items)
 					</TabsTrigger>
 				</TabsList>
 
 				{/* General Tab */}
 				<TabsContent className="space-y-4" value="general">
-					<InventoryTable items={generalItems} />
+					<ProductCatalogTable products={generalProducts} />
 				</TabsContent>
 
 				{/* Gabinete Tab */}
 				<TabsContent className="space-y-4" value="gabinete">
-					<InventoryTable items={gabineteItems} />
+					<ProductCatalogTable products={gabineteProducts} />
 				</TabsContent>
 			</Tabs>
 
