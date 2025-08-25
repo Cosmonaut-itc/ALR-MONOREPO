@@ -2,32 +2,52 @@ import { z } from 'zod';
 
 // ArticulosAllTypes - API Response Schema
 const actualAmountSchema = z.object({
-	storage_id: z.string(),
-	amount: z.string(),
+	storage_id: z.number(), // API returns numbers for storage_id
+	amount: z.number(), // API returns numbers for amount (can be negative)
 });
 
 export const dataItemSchema = z.object({
 	title: z.string(),
-	value: z.coerce.number(),
+	value: z.string(), // API returns strings for value, not numbers
 	label: z.string(),
-	good_id: z.string(),
+	article: z.string(), // New field - article description
+	category: z.string(), // New field - category name
+	category_id: z.number(), // New field - category ID
+	salon_id: z.number(), // New field - salon/location ID
+	good_id: z.number(), // API returns numbers for good_id
 	cost: z.coerce.number(),
-	unit_id: z.string(),
+	unit_id: z.number(), // API returns numbers for unit_id
 	unit_short_title: z.string(),
-	service_unit_id: z.string(),
+	service_unit_id: z.number(), // API returns numbers for service_unit_id
 	service_unit_short_title: z.string(),
 	actual_cost: z.coerce.number(),
 	unit_actual_cost: z.coerce.number(),
 	unit_actual_cost_format: z.string(),
 	unit_equals: z.coerce.number(),
-	barcode: z.coerce.number(),
+	barcode: z.string(), // API returns strings for barcode (can be empty)
+	is_chain: z.boolean(), // New field - chain indicator
+	comment: z.string(), // New field - comment (can be empty)
 	loyalty_abonement_type_id: z.number(),
 	loyalty_certificate_type_id: z.number(),
 	loyalty_allow_empty_code: z.number(),
+	loyalty_serial_number_limited: z.number(), // New field - serial number limitation
 	critical_amount: z.number(),
 	desired_amount: z.number(),
 	actual_amounts: z.array(actualAmountSchema),
-	last_change_date: z.string().datetime(),
+	last_change_date: z.string().refine(
+		(val) => {
+			// More flexible date validation - accept various date formats
+			try {
+				const date = new Date(val);
+				return !Number.isNaN(date.getTime());
+			} catch {
+				return false;
+			}
+		},
+		{ message: 'Invalid date format' },
+	),
+	is_goods_mark_enabled: z.boolean(), // New field - goods mark enablement
+	loyalty_expiration_type_id: z.number().nullable(), // New field - nullable expiration type
 });
 
 export const apiResponseSchema = z.object({

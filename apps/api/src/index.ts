@@ -514,6 +514,8 @@ const route = app
 	 * Returns an error response if the API is unavailable or authentication fails.
 	 * Includes proper error handling and response formatting.
 	 *
+	 * Fixed to retrieve 500 products per request.
+	 *
 	 * @returns {ApiResponse<DataItemArticulosType[]>} Success response with products array or error response
 	 * @throws {400} Bad request if required environment variables are missing
 	 * @throws {500} Internal server error if API call fails
@@ -542,8 +544,8 @@ const route = app
 				);
 			}
 
-			// Make API call to Altegio products endpoint
-			const apiUrl = 'https://api.alteg.io/api/v1/goods/706097/';
+			// Make API call to Altegio products endpoint with fixed count of 500
+			const apiUrl = 'https://api.alteg.io/api/v1/goods/706097?count=500';
 
 			// biome-ignore lint/suspicious/noConsole: API call logging is useful for debugging
 			console.log('Fetching products from Altegio API:', apiUrl);
