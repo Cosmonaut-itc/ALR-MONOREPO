@@ -2,11 +2,8 @@
 'use client';
 
 import { useSuspenseQuery } from '@tanstack/react-query';
-import { Plus } from 'lucide-react';
 import { useEffect, useMemo } from 'react';
-import { NewProductModal } from '@/components/inventory/NewProductModal';
 import { ProductCatalogTable } from '@/components/inventory/ProductCatalogTable';
-import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { getAllProducts, getInventory } from '@/lib/fetch-functions/inventory';
 import { queryKeys } from '@/lib/query-keys';
@@ -179,18 +176,7 @@ export function InventarioPage() {
 				</TabsContent>
 			</Tabs>
 
-			{/* Floating Action Button */}
-			<Button
-				className="theme-transition fixed right-6 bottom-6 z-50 h-14 w-14 rounded-full bg-[#0a7ea4] text-white shadow-lg hover:bg-[#0a7ea4]/90"
-				onClick={() => setNewProductModalOpen(true)}
-				size="icon"
-			>
-				<Plus className="h-6 w-6" />
-				<span className="sr-only">Nuevo artículo</span>
-			</Button>
-
-			{/* New Product Modal */}
-			<NewProductModal onOpenChange={setNewProductModalOpen} open={isNewProductModalOpen} />
+	
 		</div>
 	);
 }
