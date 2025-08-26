@@ -184,6 +184,107 @@ export const permissions = pgTable('permissions', {
 	permission: text('permission').notNull(),
 });
 
+/**
+ * Inwarehouse transfer table for tracking stock movements between warehouses
+ * Contains general information about the transfer order
+ */
+export const inwarehouseTransfer = pgTable('inwarehouse_transfer', {
+	// Primary identification
+	id: uuid('id').defaultRandom().primaryKey().notNull(),
+
+	// Transfer details
+	transferNumber: text('transfer_number').notNull().unique(), // Human-readable transfer reference
+	sourceWarehouseId: uuid('source_warehouse_id')
+		.notNull()
+		.references(() => warehouse.id, {
+			onUpdate: 'cascade',
+			onDelete: 'restrict',
+		}),
+	destinationWarehouseId: uuid('destination_warehouse_id')
+		.notNull()
+		.references(() => warehouse.id, {
+			onUpdate: 'cascade',
+			onDelete: 'restrict',
+		}),
+
+	// Status and timing
+	transferDate: timestamp('transfer_date').defaultNow().notNull(),
+	completedDate: timestamp('completed_date'),
+	isCompleted: boolean('is_completed').default(false).notNull(),
+	isPending: boolean('is_pending').default(true).notNull(),
+	isCancelled: boolean('is_cancelled').default(false).notNull(),
+
+	// User tracking
+	initiatedBy: uuid('initiated_by')
+		.notNull()
+		.references(() => employee.id, {
+			onUpdate: 'cascade',
+			onDelete: 'restrict',
+		}),
+	completedBy: uuid('completed_by').references(() => employee.id, {
+		onUpdate: 'cascade',
+		onDelete: 'restrict',
+	}),
+
+	// Transfer metadata
+	totalItems: integer('total_items').default(0).notNull(),
+	transferReason: text('transfer_reason'), // Reason for the transfer
+	notes: text('notes'), // Additional comments
+	priority: text('priority').default('normal').notNull(), // normal, high, urgent
+
+	// Audit fields
+	createdAt: timestamp('created_at')
+		.$defaultFn(() => /* @__PURE__ */ new Date())
+		.notNull(),
+	updatedAt: timestamp('updated_at')
+		.$defaultFn(() => /* @__PURE__ */ new Date())
+		.notNull(),
+});
+
+/**
+ * Inwarehouse transfer details table for tracking individual items in transfers
+ * Each row represents one product stock item being transferred
+ */
+export const inwarehouseTransferDetails = pgTable('inwarehouse_transfer_details', {
+	// Primary identification
+	id: uuid('id').defaultRandom().primaryKey().notNull(),
+
+	// Foreign key relationships
+	transferId: uuid('transfer_id')
+		.notNull()
+		.references(() => inwarehouseTransfer.id, {
+			onUpdate: 'cascade',
+			onDelete: 'cascade',
+		}),
+	productStockId: uuid('product_stock_id')
+		.notNull()
+		.references(() => productStock.id, {
+			onUpdate: 'cascade',
+			onDelete: 'restrict',
+		}),
+
+	// Item transfer details
+	quantityTransferred: integer('quantity_transferred').default(1).notNull(),
+	itemCondition: text('item_condition').default('good').notNull(), // good, damaged, needs_inspection
+	itemNotes: text('item_notes'), // Notes specific to this item
+
+	// Status tracking for individual items
+	isReceived: boolean('is_received').default(false).notNull(),
+	receivedDate: timestamp('received_date'),
+	receivedBy: uuid('received_by').references(() => employee.id, {
+		onUpdate: 'cascade',
+		onDelete: 'restrict',
+	}),
+
+	// Audit fields
+	createdAt: timestamp('created_at')
+		.$defaultFn(() => /* @__PURE__ */ new Date())
+		.notNull(),
+	updatedAt: timestamp('updated_at')
+		.$defaultFn(() => /* @__PURE__ */ new Date())
+		.notNull(),
+});
+
 // Relations
 export const withdrawOrderRelations = relations(withdrawOrder, ({ many }) => ({
 	details: many(withdrawOrderDetails),
@@ -200,11 +301,7 @@ export const withdrawOrderDetailsRelations = relations(withdrawOrderDetails, ({ 
 	}),
 }));
 
-export const productStockRelations = relations(productStock, ({ many }) => ({
-	withdrawOrderDetails: many(withdrawOrderDetails),
-}));
-
-export const warehouseRelations = relations(warehouse, ({ one }) => ({
+export const warehouseRelations = relations(warehouse, ({ one, many }) => ({
 	// User who created the warehouse
 	creator: one(user, {
 		fields: [warehouse.createdBy],
@@ -214,5 +311,97 @@ export const warehouseRelations = relations(warehouse, ({ one }) => ({
 	lastModifier: one(user, {
 		fields: [warehouse.lastModifiedBy],
 		references: [user.id],
+	}),
+	// Transfers originating from this warehouse
+	outgoingTransfers: many(inwarehouseTransfer, {
+		relationName: 'sourceWarehouse',
+	}),
+	// Transfers coming to this warehouse
+	incomingTransfers: many(inwarehouseTransfer, {
+		relationName: 'destinationWarehouse',
+	}),
+}));
+
+// Inwarehouse transfer relations
+export const inwarehouseTransferRelations = relations(inwarehouseTransfer, ({ one, many }) => ({
+	// Source warehouse relation
+	sourceWarehouse: one(warehouse, {
+		fields: [inwarehouseTransfer.sourceWarehouseId],
+		references: [warehouse.id],
+		relationName: 'sourceWarehouse',
+	}),
+	// Destination warehouse relation
+	destinationWarehouse: one(warehouse, {
+		fields: [inwarehouseTransfer.destinationWarehouseId],
+		references: [warehouse.id],
+		relationName: 'destinationWarehouse',
+	}),
+	// Employee who initiated the transfer
+	initiator: one(employee, {
+		fields: [inwarehouseTransfer.initiatedBy],
+		references: [employee.id],
+		relationName: 'transferInitiator',
+	}),
+	// Employee who completed the transfer
+	completer: one(employee, {
+		fields: [inwarehouseTransfer.completedBy],
+		references: [employee.id],
+		relationName: 'transferCompleter',
+	}),
+	// Transfer details (one-to-many)
+	details: many(inwarehouseTransferDetails),
+}));
+
+export const inwarehouseTransferDetailsRelations = relations(
+	inwarehouseTransferDetails,
+	({ one }) => ({
+		// Parent transfer relation
+		transfer: one(inwarehouseTransfer, {
+			fields: [inwarehouseTransferDetails.transferId],
+			references: [inwarehouseTransfer.id],
+		}),
+		// Product stock item being transferred
+		productStock: one(productStock, {
+			fields: [inwarehouseTransferDetails.productStockId],
+			references: [productStock.id],
+		}),
+		// Employee who received the item
+		receiver: one(employee, {
+			fields: [inwarehouseTransferDetails.receivedBy],
+			references: [employee.id],
+			relationName: 'itemReceiver',
+		}),
+	}),
+);
+
+// ProductStock relations including both withdraw orders and inwarehouse transfers
+export const productStockRelations = relations(productStock, ({ many }) => ({
+	withdrawOrderDetails: many(withdrawOrderDetails),
+	inwarehouseTransferDetails: many(inwarehouseTransferDetails),
+}));
+
+// Update employee relations to include transfer activities
+export const employeeRelations = relations(employee, ({ many, one }) => ({
+	// User account relation
+	user: one(user, {
+		fields: [employee.userId],
+		references: [user.id],
+	}),
+	// Permissions relation
+	permissions: one(permissions, {
+		fields: [employee.permissions],
+		references: [permissions.id],
+	}),
+	// Transfers initiated by this employee
+	initiatedTransfers: many(inwarehouseTransfer, {
+		relationName: 'transferInitiator',
+	}),
+	// Transfers completed by this employee
+	completedTransfers: many(inwarehouseTransfer, {
+		relationName: 'transferCompleter',
+	}),
+	// Items received by this employee
+	receivedItems: many(inwarehouseTransferDetails, {
+		relationName: 'itemReceiver',
 	}),
 }));

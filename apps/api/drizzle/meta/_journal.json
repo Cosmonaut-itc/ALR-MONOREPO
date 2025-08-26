@@ -50,6 +50,13 @@
       "when": 1756160747020,
       "tag": "0006_stale_ultimo",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1756244503179,
+      "tag": "0007_naive_princess_powerful",
+      "breakpoints": true
     }
   ]
 }
