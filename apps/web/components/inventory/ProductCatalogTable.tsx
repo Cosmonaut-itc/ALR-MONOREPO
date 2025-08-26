@@ -80,6 +80,8 @@ interface ProductCatalogTableProps {
 		product: ProductWithInventory;
 		items: InventoryItemDisplay[];
 	}) => void;
+	/** List of UUIDs that are already in transfer (to disable checkboxes) */
+	disabledUUIDs?: Set<string>;
 }
 
 // Cache extracted inventory item data to avoid recomputation for stable item references
@@ -145,7 +147,7 @@ function formatDate(dateString: string | undefined): string {
 	}
 }
 
-export function ProductCatalogTable({ products, enableSelection = false, onAddToTransfer }: ProductCatalogTableProps) {
+export function ProductCatalogTable({ products, enableSelection = false, onAddToTransfer, disabledUUIDs = new Set() }: ProductCatalogTableProps) {
 	// State for table features
 	const [sorting, setSorting] = useState<SortingState>([]);
 	const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -347,7 +349,7 @@ export function ProductCatalogTable({ products, enableSelection = false, onAddTo
 																onCheckedChange={(checked) =>
 																	toggleUUID(itemData.uuid, Boolean(checked))
 																}
-																disabled={itemData.isBeingUsed}
+																disabled={itemData.isBeingUsed || disabledUUIDs.has(itemData.uuid)}
 															/>
 														)}
 														<span className="truncate">
@@ -404,7 +406,7 @@ export function ProductCatalogTable({ products, enableSelection = false, onAddTo
 					</div>
 				);
 			},
-		[copyToClipboard, enableSelection, onAddToTransfer, selectedByBarcode],
+		[copyToClipboard, enableSelection, onAddToTransfer, selectedByBarcode, disabledUUIDs],
 	);
 
 	// Define table columns using useMemo for stable reference

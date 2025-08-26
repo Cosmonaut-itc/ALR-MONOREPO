@@ -115,6 +115,11 @@ export function TransferenciasClient() {
 		)
 	}, [transferList, listSearch])
 
+	// Create a set of UUIDs that are in the transfer list to disable checkboxes
+	const disabledUUIDs = useMemo(() => {
+		return new Set(transferList.map(item => item.uuid))
+	}, [transferList])
+
 	return (
 		<div className="theme-transition flex-1 space-y-6 bg-white p-4 md:p-6 dark:bg-[#151718]">
 			{/* Header */}
@@ -198,12 +203,13 @@ export function TransferenciasClient() {
 				</Dialog>
 			</div>
 
-			{/* Catalog Table (Almacén General) */}
-			<ProductCatalogTable
-				products={generalProducts}
-				enableSelection
-				onAddToTransfer={handleAddToTransfer}
-			/>
+					{/* Catalog Table (Almacén General) */}
+		<ProductCatalogTable
+			products={generalProducts}
+			enableSelection
+			onAddToTransfer={handleAddToTransfer}
+			disabledUUIDs={disabledUUIDs}
+		/>
 		</div>
 	)
 }
