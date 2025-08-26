@@ -7,6 +7,7 @@ function makeQueryClient() {
 			queries: {
 				staleTime: 10 * 60 * 1000, // 10 minutes
 				retry: 3, // Retry failed requests 3 times
+				gcTime: 10 * 60 * 1000, // 10 minutes
 			},
 			dehydrate: {
 				// include pending queries in dehydration
