@@ -48,6 +48,7 @@ import {
 	TableHeader,
 	TableRow,
 } from '@/components/ui/table';
+import { Checkbox } from '@/components/ui/checkbox';
 
 // Type for product with inventory data
 type ProductWithInventory = {
@@ -72,6 +73,13 @@ type InventoryItemDisplay = {
 
 interface ProductCatalogTableProps {
 	products: ProductWithInventory[];
+	/** Enable selection controls within expanded rows (for transfers) */
+	enableSelection?: boolean;
+	/** Callback to add selected expanded-row items for a product (used by transfer page) */
+	onAddToTransfer?: (args: {
+		product: ProductWithInventory;
+		items: InventoryItemDisplay[];
+	}) => void;
 }
 
 // Cache extracted inventory item data to avoid recomputation for stable item references
@@ -137,7 +145,7 @@ function formatDate(dateString: string | undefined): string {
 	}
 }
 
-export function ProductCatalogTable({ products }: ProductCatalogTableProps) {
+export function ProductCatalogTable({ products, enableSelection = false, onAddToTransfer }: ProductCatalogTableProps) {
 	// State for table features
 	const [sorting, setSorting] = useState<SortingState>([]);
 	const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -148,6 +156,9 @@ export function ProductCatalogTable({ products }: ProductCatalogTableProps) {
 		pageIndex: 0,
 		pageSize: 10,
 	});
+
+	// Per-product selection state for expanded rows (barcode -> Set of UUIDs)
+	const [selectedByBarcode, setSelectedByBarcode] = useState<Record<number, Set<string>>>({});
 
 	// Extract unique categories from products
 	const uniqueCategories = useMemo(() => {
@@ -241,6 +252,34 @@ export function ProductCatalogTable({ products }: ProductCatalogTableProps) {
 		() =>
 			({ row }: { row: { original: ProductWithInventory } }) => {
 				const product = row.original as ProductWithInventory;
+				const selectionEnabledRef = enableSelection === true;
+				const productSelection = selectedByBarcode[product.barcode] || new Set<string>();
+				const selectedCount = productSelection.size;
+
+				const toggleUUID = (uuid: string, enabled: boolean) => {
+					setSelectedByBarcode((prev) => {
+						const currentSet = prev[product.barcode] || new Set<string>();
+						const nextSet = new Set(currentSet);
+						if (enabled) nextSet.add(uuid);
+						else nextSet.delete(uuid);
+						return { ...prev, [product.barcode]: nextSet };
+					});
+				};
+
+				const handleAddToTransfer = () => {
+					if (!onAddToTransfer) return;
+					const selectedItems = product.inventoryItems
+						.map((it) => extractInventoryItemData(it))
+						.filter((it) => productSelection.has(it.uuid));
+					onAddToTransfer({ product, items: selectedItems });
+					setSelectedByBarcode((prev) => ({ ...prev, [product.barcode]: new Set<string>() }));
+					if (selectedItems.length > 0) {
+						toast.success('Agregado a transferencia', {
+							description: `${selectedItems.length} item(s) agregado(s) desde ${product.name}`,
+							duration: 2000,
+						});
+					}
+				};
 				if (product.inventoryItems.length === 0) {
 					return (
 						<div className="border-[#E5E7EB] border-b bg-[#F8FAFC] p-4 text-center dark:border-[#374151] dark:bg-[#1A1B1C]">
@@ -253,9 +292,21 @@ export function ProductCatalogTable({ products }: ProductCatalogTableProps) {
 
 				return (
 					<div className="border-[#E5E7EB] border-b bg-[#F8FAFC] p-4 dark:border-[#374151] dark:bg-[#1A1B1C]">
-						<h4 className="mb-3 font-medium text-[#11181C] text-sm dark:text-[#ECEDEE]">
-							Inventario detallado ({product.inventoryItems.length} items)
-						</h4>
+						<div className="mb-3 flex items-center justify-between">
+							<h4 className="font-medium text-[#11181C] text-sm dark:text-[#ECEDEE]">
+								Inventario detallado ({product.inventoryItems.length} items)
+							</h4>
+							{selectionEnabledRef && (
+								<Button
+									className="h-8 px-3"
+									disabled={selectedCount === 0}
+									onClick={handleAddToTransfer}
+									size="sm"
+								>
+									Agregar a transferencia ({selectedCount})
+								</Button>
+							)}
+						</div>
 						<div className="overflow-x-auto">
 							<Table>
 								<TableHeader>
@@ -289,7 +340,16 @@ export function ProductCatalogTable({ products }: ProductCatalogTableProps) {
 												key={itemData.uuid}
 											>
 												<TableCell className="font-mono text-[#687076] text-xs dark:text-[#9BA1A6]">
-													<div className="flex items-center gap-1">
+													<div className="flex items-center gap-2">
+														{selectionEnabledRef && (
+															<Checkbox
+																checked={productSelection.has(itemData.uuid)}
+																onCheckedChange={(checked) =>
+																	toggleUUID(itemData.uuid, Boolean(checked))
+																}
+																disabled={itemData.isBeingUsed}
+															/>
+														)}
 														<span className="truncate">
 															{itemData.uuid.slice(0, 8)}...
 														</span>
@@ -328,8 +388,8 @@ export function ProductCatalogTable({ products }: ProductCatalogTableProps) {
 														}
 													>
 														{itemData.isBeingUsed
-															? 'En Uso'
-															: 'Disponible'}
+																? 'En Uso'
+																: 'Disponible'}
 													</Badge>
 												</TableCell>
 												<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
@@ -344,7 +404,7 @@ export function ProductCatalogTable({ products }: ProductCatalogTableProps) {
 					</div>
 				);
 			},
-		[copyToClipboard],
+		[copyToClipboard, enableSelection, onAddToTransfer, selectedByBarcode],
 	);
 
 	// Define table columns using useMemo for stable reference
