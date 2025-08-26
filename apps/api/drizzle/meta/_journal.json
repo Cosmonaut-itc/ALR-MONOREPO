@@ -57,6 +57,13 @@
       "when": 1756244503179,
       "tag": "0007_naive_princess_powerful",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1756246928396,
+      "tag": "0008_nosy_scalphunter",
+      "breakpoints": true
     }
   ]
 }
