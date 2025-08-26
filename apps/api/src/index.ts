@@ -526,12 +526,9 @@ const route = app
 			const authHeader = process.env.AUTH_HEADER;
 			const acceptHeader = process.env.ACCEPT_HEADER;
 
-			const hasRequiredHeaders = authHeader && acceptHeader;
-			if (!hasRequiredHeaders) {
+			if (!authHeader) {
 				// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
-				console.error(
-					'Missing required environment variables (AUTH_HEADER, ACCEPT_HEADER)',
-				);
+				console.error('Missing required environment variable: AUTH_HEADER');
 
 				// Return error response when environment variables are missing
 				return c.json(
@@ -544,41 +541,82 @@ const route = app
 				);
 			}
 
-			// Make API call to Altegio products endpoint with fixed count of 500
-			const apiUrl = 'https://api.alteg.io/api/v1/goods/706097?count=500';
+			if (!acceptHeader) {
+				// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
+				console.error('Missing required environment variable: ACCEPT_HEADER');
 
-			// biome-ignore lint/suspicious/noConsole: API call logging is useful for debugging
-			console.log('Fetching products from Altegio API:', apiUrl);
-
-			const response = await fetch(apiUrl, {
-				method: 'GET',
-				headers: {
-					Authorization: authHeader,
-					Accept: acceptHeader,
-					'Content-Type': 'application/json',
-				},
-			});
-
-			// Check if the API response is successful
-			if (!response.ok) {
-				throw new Error(
-					`Altegio API responded with status ${response.status}: ${response.statusText}`,
+				return c.json(
+					{
+						success: false,
+						message: 'Missing required authentication configuration',
+						data: [],
+					} satisfies ApiResponse<DataItemArticulosType[]>,
+					400,
 				);
 			}
 
-			// Parse the JSON response
-			const apiData = await response.json();
+			const requestHeaders: HeadersInit = {
+				Authorization: authHeader,
+				Accept: acceptHeader,
+				'Content-Type': 'application/json',
+			};
 
-			// Validate the response against our expected schema
-			const validatedResponse = apiResponseSchema.parse(apiData);
+			// Server-side pagination to aggregate all products (max 5,000)
+			const PAGE_SIZE = 100;
+			const MAX_ITEMS = 5000;
+			const MAX_PAGES = Math.ceil(MAX_ITEMS / PAGE_SIZE);
 
-			// Return successful response with actual API data
+			async function fetchAllProducts(
+				page: number,
+				accumulated: DataItemArticulosType[],
+				metaAccumulated: unknown[],
+			): Promise<{ data: DataItemArticulosType[]; meta: unknown[]; success: boolean }> {
+				const apiUrl = `https://api.alteg.io/api/v1/goods/706097?count=${PAGE_SIZE}&page=${page}`;
+
+				// biome-ignore lint/suspicious/noConsole: API call logging is useful for debugging
+				console.log('Fetching products from Altegio API:', { page, apiUrl });
+
+				const response = await fetch(apiUrl, {
+					method: 'GET',
+					headers: requestHeaders,
+				});
+
+				if (!response.ok) {
+					throw new Error(
+						`Altegio API responded with status ${response.status}: ${response.statusText}`,
+					);
+				}
+
+				const apiData = await response.json();
+				const validated = apiResponseSchema.parse(apiData);
+
+				const currentPageData = validated.data as DataItemArticulosType[];
+				const combinedData = accumulated.concat(currentPageData);
+				const combinedMeta = metaAccumulated.concat(validated.meta ?? []);
+
+				const fetchedEnough =
+					currentPageData.length < PAGE_SIZE ||
+					combinedData.length >= MAX_ITEMS ||
+					page >= MAX_PAGES;
+				if (fetchedEnough) {
+					return {
+						data: combinedData.slice(0, MAX_ITEMS),
+						meta: combinedMeta,
+						success: validated.success,
+					};
+				}
+
+				return fetchAllProducts(page + 1, combinedData, combinedMeta);
+			}
+
+			const { data: allProducts, meta, success } = await fetchAllProducts(1, [], []);
+
 			return c.json(
 				{
-					success: validatedResponse.success,
-					message: 'Products retrieved successfully from Altegio API',
-					data: validatedResponse.data,
-					meta: validatedResponse.meta,
+					success,
+					message: `Products retrieved successfully from Altegio API (${allProducts.length} items)`,
+					data: allProducts,
+					meta,
 				} satisfies ApiResponse<DataItemArticulosType[]>,
 				200,
 			);
