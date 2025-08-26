@@ -14,6 +14,7 @@ import {
 	type SortingState,
 	useReactTable,
 } from '@tanstack/react-table';
+import type { FilterFn } from '@tanstack/react-table';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import {
@@ -26,7 +27,8 @@ import {
 	Search,
 	X,
 } from 'lucide-react';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -72,8 +74,15 @@ interface ProductCatalogTableProps {
 	products: ProductWithInventory[];
 }
 
+// Cache extracted inventory item data to avoid recomputation for stable item references
+const inventoryItemCache = new WeakMap<object, InventoryItemDisplay>();
+
 // Helper to extract inventory item data safely
 function extractInventoryItemData(item: unknown): InventoryItemDisplay {
+	if (item && typeof item === 'object') {
+		const cached = inventoryItemCache.get(item as object);
+		if (cached) return cached;
+	}
 	if (item && typeof item === 'object' && 'product_stock' in item) {
 		const stock = (item as { product_stock: unknown }).product_stock;
 		const employee = (item as { employee?: { name?: string } }).employee;
@@ -93,7 +102,7 @@ function extractInventoryItemData(item: unknown): InventoryItemDisplay {
 			const idValue = stockData.id?.toString() || fallbackId;
 			const lastUsedBy = employee?.name || stockData.lastUsedBy;
 
-			return {
+			const result: InventoryItemDisplay = {
 				id: idValue,
 				uuid: stockData.uuid || `uuid-${stockData.id || fallbackId}`,
 				lastUsed: stockData.lastUsed,
@@ -102,6 +111,9 @@ function extractInventoryItemData(item: unknown): InventoryItemDisplay {
 				isBeingUsed: stockData.isBeingUsed ?? false,
 				firstUsed: stockData.firstUsed || new Date().toISOString(),
 			};
+
+			inventoryItemCache.set(item as object, result);
+			return result;
 		}
 	}
 
@@ -176,11 +188,6 @@ export function ProductCatalogTable({ products }: ProductCatalogTableProps) {
 			const product = row.original;
 			const searchValue = value.toLowerCase();
 
-			// Apply category filter first
-			if (categoryFilter !== 'all' && product.category !== categoryFilter) {
-				return false;
-			}
-
 			// If no search term, show all products (that match category filter)
 			if (!value.trim()) {
 				return true;
@@ -192,20 +199,40 @@ export function ProductCatalogTable({ products }: ProductCatalogTableProps) {
 				searchInInventoryItems(product.inventoryItems, searchValue)
 			);
 		},
-		[searchInProduct, searchInInventoryItems, categoryFilter],
+		[searchInProduct, searchInInventoryItems],
 	);
 
 	// Handle category filter changes
 	const handleCategoryFilterChange = (value: string) => {
 		setCategoryFilter(value);
-		// Force table to re-filter by updating the global filter state
-		setGlobalFilter((prev) => prev);
 	};
+
+	// Category equality filter for the category column
+	const categoryFilterFn: FilterFn<ProductWithInventory> = useMemo(
+		() => (row, columnId, filterValue) => {
+			if (!filterValue) return true;
+			const rowValue = row.getValue(columnId) as string | undefined;
+			return (rowValue ?? '') === filterValue;
+		},
+		[],
+	);
 
 	// Utility functions - memoized to prevent recreating on every render
 	const copyToClipboard = useMemo(
-		() => (text: string) => {
-			navigator.clipboard.writeText(text);
+		() => async (text: string) => {
+			try {
+				await navigator.clipboard.writeText(text);
+				toast.success('UUID copiado al portapapeles', {
+					description: `${text.slice(0, 8)}... ha sido copiado exitosamente`,
+					duration: 2000,
+				});
+			} catch (error) {
+				console.error('Error copying to clipboard:', error);
+				toast.error('Error al copiar UUID', {
+					description: 'No se pudo copiar el UUID al portapapeles',
+					duration: 3000,
+				});
+			}
 		},
 		[],
 	);
@@ -268,9 +295,9 @@ export function ProductCatalogTable({ products }: ProductCatalogTableProps) {
 														</span>
 														<Button
 															className="h-4 w-4 p-0 hover:bg-[#E5E7EB] dark:hover:bg-[#2D3033]"
-															onClick={() =>
-																copyToClipboard(itemData.uuid)
-															}
+															onClick={() => {
+																copyToClipboard(itemData.uuid);
+															}}
 															size="sm"
 															variant="ghost"
 														>
@@ -380,7 +407,7 @@ export function ProductCatalogTable({ products }: ProductCatalogTableProps) {
 						{row.getValue('category')}
 					</Badge>
 				),
-				filterFn: 'includesString',
+				filterFn: categoryFilterFn,
 			},
 			{
 				accessorKey: 'stockCount',
@@ -402,7 +429,7 @@ export function ProductCatalogTable({ products }: ProductCatalogTableProps) {
 				},
 			},
 		],
-		[],
+		[categoryFilterFn],
 	);
 
 	// Initialize the table
@@ -429,6 +456,13 @@ export function ProductCatalogTable({ products }: ProductCatalogTableProps) {
 		},
 		getRowCanExpand: () => true,
 	});
+
+	// Keep the table's category column filter in sync with the select value
+	useEffect(() => {
+		const categoryColumn = table.getColumn('category');
+		if (!categoryColumn) return;
+		categoryColumn.setFilterValue(categoryFilter === 'all' ? undefined : categoryFilter);
+	}, [categoryFilter, table]);
 
 	if (products.length === 0) {
 		return (
