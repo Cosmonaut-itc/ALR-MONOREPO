@@ -170,6 +170,7 @@ export const warehouse = pgTable('warehouse', {
 	lastModifiedBy: text('last_modified_by').references(() => user.id),
 
 	// Additional metadata
+	altegioId: integer('altegio_id').default(0).notNull(),
 	notes: text('notes'),
 	customFields: text('custom_fields'), // JSON string for additional custom data
 });

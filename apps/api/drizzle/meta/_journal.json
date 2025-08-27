@@ -71,6 +71,13 @@
       "when": 1756318888731,
       "tag": "0009_square_grandmaster",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1756319428783,
+      "tag": "0010_wandering_lady_vermin",
+      "breakpoints": true
     }
   ]
 }

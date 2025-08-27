@@ -1,0 +1,1 @@
+ALTER TABLE "warehouse" ADD COLUMN "altegio_id" integer DEFAULT 0 NOT NULL;
