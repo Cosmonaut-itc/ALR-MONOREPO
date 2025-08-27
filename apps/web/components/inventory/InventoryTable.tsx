@@ -55,6 +55,7 @@ type InventoryTableData = {
 
 interface InventoryTableProps {
 	items: InventoryTableData[];
+	
 }
 
 export function InventoryTable({ items }: InventoryTableProps) {
@@ -222,7 +223,21 @@ export function InventoryTable({ items }: InventoryTableProps) {
 						</Button>
 						<Button
 							className="h-8 w-8 p-0 text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-900/20"
-							onClick={() => showDisposeDialog(row.original)}
+							onClick={() => {
+								const item = row.original;
+								if (item.productInfo) {
+									showDisposeDialog({
+										id: item.id,
+										uuid: item.uuid,
+										barcode: item.barcode,
+										productInfo: {
+											name: item.productInfo.name,
+											category: item.productInfo.category,
+											description: item.productInfo.description,
+										},
+									});
+								}
+							}}
 							size="sm"
 							variant="ghost"
 						>

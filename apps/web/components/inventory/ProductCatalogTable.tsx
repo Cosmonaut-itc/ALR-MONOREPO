@@ -25,6 +25,7 @@ import {
 	Copy,
 	Package,
 	Search,
+	Trash2,
 	X,
 } from 'lucide-react';
 import React, { useEffect, useMemo, useState } from 'react';
@@ -49,6 +50,8 @@ import {
 	TableHeader,
 	TableRow,
 } from '@/components/ui/table';
+import { useDisposalStore } from '@/stores/disposal-store';
+import { DisposeItemDialog } from './DisposeItemDialog';
 
 // Type for product with inventory data
 type ProductWithInventory = {
@@ -75,6 +78,8 @@ interface ProductCatalogTableProps {
 	products: ProductWithInventory[];
 	/** Enable selection controls within expanded rows (for transfers) */
 	enableSelection?: boolean;
+	/** Enable dispose controls within expanded rows (for disposals) */
+	enableDispose?: boolean;
 	/** Callback to add selected expanded-row items for a product (used by transfer page) */
 	onAddToTransfer?: (args: {
 		product: ProductWithInventory;
@@ -155,7 +160,11 @@ export function ProductCatalogTable({
 	enableSelection = false,
 	onAddToTransfer,
 	disabledUUIDs = new Set(),
+	enableDispose = false,
 }: ProductCatalogTableProps) {
+	// Disposal store for dispose dialog
+	const { show: showDisposeDialog } = useDisposalStore();
+
 	// State for table features
 	const [sorting, setSorting] = useState<SortingState>([]);
 	const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -350,9 +359,15 @@ export function ProductCatalogTable({
 										<TableHead className="font-medium text-[#687076] text-xs dark:text-[#9BA1A6]">
 											Primer Uso
 										</TableHead>
+										{enableDispose && (
+											<TableHead className="font-medium text-[#687076] text-xs dark:text-[#9BA1A6]">
+												Acciones
+											</TableHead>
+										)}
 									</TableRow>
 								</TableHeader>
 								<TableBody>
+									{/** biome-ignore lint/complexity/noExcessiveCognitiveComplexity: This is as optimized as it can be without making it confusing */}
 									{product.inventoryItems.map((item) => {
 										const itemData = extractInventoryItemData(item);
 										return (
@@ -424,6 +439,31 @@ export function ProductCatalogTable({
 												<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
 													{formatDate(itemData.firstUsed)}
 												</TableCell>
+												<TableCell>
+													{enableDispose && (
+														<Button
+															className="h-6 w-6 p-0 text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950 dark:hover:text-red-300"
+															onClick={() => {
+																showDisposeDialog({
+																	id: itemData.id,
+																	uuid: itemData.uuid,
+																	barcode: product.barcode,
+																	productInfo: {
+																		name: product.name,
+																		category: product.category,
+																		description:
+																			product.description,
+																	},
+																});
+															}}
+															size="sm"
+															title="Dar de baja artículo"
+															variant="ghost"
+														>
+															<Trash2 className="h-4 w-4" />
+														</Button>
+													)}
+												</TableCell>
 											</TableRow>
 										);
 									})}
@@ -433,7 +473,15 @@ export function ProductCatalogTable({
 					</div>
 				);
 			},
-		[copyToClipboard, enableSelection, onAddToTransfer, selectedByBarcode, disabledUUIDs],
+		[
+			copyToClipboard,
+			enableSelection,
+			onAddToTransfer,
+			selectedByBarcode,
+			disabledUUIDs,
+			showDisposeDialog,
+			enableDispose,
+		],
 	);
 
 	// Define table columns using useMemo for stable reference
@@ -573,6 +621,9 @@ export function ProductCatalogTable({
 
 	return (
 		<div className="space-y-4">
+			{/* Dispose Item Dialog */}
+			<DisposeItemDialog />
+
 			{/* Filters */}
 			<div className="flex items-center space-x-4">
 				{/* Search Filter */}

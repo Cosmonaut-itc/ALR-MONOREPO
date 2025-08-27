@@ -60,8 +60,21 @@ export const kitItemSchema = t({
 	returned: 'boolean',
 });
 
+// Product stock item schema for disposal
+export const productStockItemSchema = t({
+	id: 'string',
+	uuid: 'string',
+	barcode: 'number',
+	productInfo: {
+		name: 'string',
+		category: 'string?',
+		description: 'string?',
+	},
+});
+
 export type Product = typeof productSchema.infer;
 export type Transfer = typeof transferSchema.infer;
 export type Reception = typeof receptionSchema.infer;
 export type Kit = typeof kitSchema.infer;
 export type KitItem = typeof kitItemSchema.infer;
+export type ProductStockItem = typeof productStockItemSchema.infer;

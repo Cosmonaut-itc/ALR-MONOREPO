@@ -165,12 +165,12 @@ export function InventarioPage() {
 
 				{/* General Tab */}
 				<TabsContent className="space-y-4" value="general">
-					<ProductCatalogTable products={generalProducts} />
+					<ProductCatalogTable enableDispose products={generalProducts} />
 				</TabsContent>
 
 				{/* Gabinete Tab */}
 				<TabsContent className="space-y-4" value="gabinete">
-					<ProductCatalogTable products={gabineteProducts} />
+					<ProductCatalogTable enableDispose products={gabineteProducts} />
 				</TabsContent>
 			</Tabs>
 		</div>
