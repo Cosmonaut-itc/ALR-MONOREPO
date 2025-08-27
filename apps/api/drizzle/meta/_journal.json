@@ -78,6 +78,13 @@
       "when": 1756319428783,
       "tag": "0010_wandering_lady_vermin",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1756328055091,
+      "tag": "0011_sloppy_maggott",
+      "breakpoints": true
     }
   ]
 }

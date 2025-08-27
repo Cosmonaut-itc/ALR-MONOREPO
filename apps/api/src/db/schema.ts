@@ -1,5 +1,14 @@
 import { relations, sql } from 'drizzle-orm';
-import { boolean, date, integer, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import {
+	type AnyPgColumn,
+	boolean,
+	date,
+	integer,
+	pgTable,
+	text,
+	timestamp,
+	uuid,
+} from 'drizzle-orm/pg-core';
 
 export const user = pgTable('user', {
 	id: text('id').primaryKey(),
@@ -9,6 +18,8 @@ export const user = pgTable('user', {
 		.$defaultFn(() => false)
 		.notNull(),
 	image: text('image'),
+	role: text('role').default('employee').notNull(), // User role: admin, manager, employee, viewer
+	warehouseId: uuid('warehouse_id').references((): AnyPgColumn => warehouse.id), // Reference to assigned warehouse
 	createdAt: timestamp('created_at')
 		.$defaultFn(() => /* @__PURE__ */ new Date())
 		.notNull(),
@@ -166,8 +177,8 @@ export const warehouse = pgTable('warehouse', {
 	updatedAt: timestamp('updated_at')
 		.$defaultFn(() => /* @__PURE__ */ new Date())
 		.notNull(),
-	createdBy: text('created_by').references(() => user.id),
-	lastModifiedBy: text('last_modified_by').references(() => user.id),
+	createdBy: text('created_by').references((): AnyPgColumn => user.id),
+	lastModifiedBy: text('last_modified_by').references((): AnyPgColumn => user.id),
 
 	// Additional metadata
 	altegioId: integer('altegio_id').default(0).notNull(),
@@ -314,12 +325,16 @@ export const warehouseRelations = relations(warehouse, ({ one, many }) => ({
 	creator: one(user, {
 		fields: [warehouse.createdBy],
 		references: [user.id],
+		relationName: 'warehouseCreator',
 	}),
 	// User who last modified the warehouse
 	lastModifier: one(user, {
 		fields: [warehouse.lastModifiedBy],
 		references: [user.id],
+		relationName: 'warehouseModifier',
 	}),
+	// Users assigned to this warehouse
+	assignedUsers: many(user),
 	// Product stock currently in this warehouse
 	productStock: many(productStock),
 	// Transfers originating from this warehouse
@@ -424,5 +439,33 @@ export const employeeRelations = relations(employee, ({ many, one }) => ({
 	// Items received by this employee
 	receivedItems: many(warehouseTransferDetails, {
 		relationName: 'itemReceiver',
+	}),
+}));
+
+// User relations for warehouse assignment and account management
+export const userRelations = relations(user, ({ one, many }) => ({
+	// Assigned warehouse relation
+	warehouse: one(warehouse, {
+		fields: [user.warehouseId],
+		references: [warehouse.id],
+	}),
+	// Sessions associated with this user
+	sessions: many(session),
+	// Accounts associated with this user
+	accounts: many(account),
+	// API keys associated with this user
+	apiKeys: many(apikey),
+	// Employee profile (if user is an employee)
+	employee: one(employee, {
+		fields: [user.id],
+		references: [employee.userId],
+	}),
+	// Warehouses created by this user
+	createdWarehouses: many(warehouse, {
+		relationName: 'warehouseCreator',
+	}),
+	// Warehouses last modified by this user
+	lastModifiedWarehouses: many(warehouse, {
+		relationName: 'warehouseModifier',
 	}),
 }));
