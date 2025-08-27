@@ -2,12 +2,12 @@
 /** biome-ignore-all lint/suspicious/noConsole: Needed for error logging */
 
 import { dehydrate, HydrationBoundary } from '@tanstack/react-query';
+import { TransferenciasClient } from '@/app/(dash)/transferencias/transferencias';
 import { getQueryClient } from '@/app/get-query-client';
 import { GenericBoundaryWrapper } from '@/components/suspense-generics/general-wrapper';
 import { queryKeys } from '@/lib/query-keys';
 import { fetchAllProductsServer, fetchInventoryServer } from '@/lib/server-functions/inventory';
 import { SkeletonInventoryTable } from '@/ui/skeletons/Skeleton.InventoryTable';
-import { TransferenciasClient } from '@/app/(dash)/transferencias/transferencias';
 
 export const dynamic = 'force-dynamic';
 

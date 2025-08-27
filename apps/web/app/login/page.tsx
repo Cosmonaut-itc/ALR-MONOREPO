@@ -37,14 +37,9 @@ export default function LoginPage() {
 				password: form.state.values.password,
 			});
 
-			if (isSuccess) {
+			if (isSuccess && success?.data?.user) {
 				toast.success('¡Bienvenido! Inicio de sesión exitoso');
-				login(
-					success?.data?.user?.id || '',
-					success?.data?.user?.email || '',
-					success?.data?.user?.name || '',
-					'encargado',
-				);
+				login(success.data.user);
 				router.push('/dashboard');
 			}
 		} catch (error) {

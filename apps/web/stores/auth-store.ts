@@ -1,20 +1,15 @@
 import { create } from 'zustand';
 import { devtools, persist } from 'zustand/middleware';
-
-interface User {
-	id: string;
-	email: string;
-	name: string;
-	role: string;
-}
+import type { ExtendedUser } from '@/types/auth';
 
 interface AuthState {
-	user: User | null;
+	user: ExtendedUser | null;
 	isAuthenticated: boolean;
 
 	// Actions
-	login: (id: string, email: string, name: string, role: string) => void;
+	login: (user: ExtendedUser) => void;
 	logout: () => void;
+	getUserData: () => ExtendedUser | null;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -24,15 +19,8 @@ export const useAuthStore = create<AuthState>()(
 				user: null,
 				isAuthenticated: false,
 
-				login: (id: string, email: string, name: string, role: string) => {
+				login: (user: ExtendedUser) => {
 					try {
-						const user: User = {
-							id,
-							email,
-							name,
-							role,
-						};
-
 						set({
 							user,
 							isAuthenticated: true,
@@ -50,7 +38,7 @@ export const useAuthStore = create<AuthState>()(
 					});
 				},
 
-				getUserData: () => {
+				getUserData: (): ExtendedUser | null => {
 					const user = get().user;
 					if (!user) {
 						return null;

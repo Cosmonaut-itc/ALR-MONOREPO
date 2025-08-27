@@ -51,7 +51,12 @@ import {
 	TableRow,
 } from '@/components/ui/table';
 import { useDisposalStore } from '@/stores/disposal-store';
+import { useInventoryStore } from '@/stores/inventory-store';
+import type { ProductCatalogResponse, ProductStockWithEmployee } from '@/types';
 import { DisposeItemDialog } from './DisposeItemDialog';
+
+// Precompiled regex for numeric strings (must be at top-level per lint rules)
+const NUMERIC_STRING_REGEX = /^\d+$/;
 
 // Type for product with inventory data
 type ProductWithInventory = {
@@ -75,7 +80,12 @@ type InventoryItemDisplay = {
 };
 
 interface ProductCatalogTableProps {
-	products: ProductWithInventory[];
+	/** Raw inventory data from the API */
+	inventory: ProductStockWithEmployee | null;
+	/** Raw product catalog data from the API */
+	productCatalog: ProductCatalogResponse | null;
+	/** Warehouse to filter for (1 = general, 2 = gabinete) */
+	warehouse?: number;
 	/** Enable selection controls within expanded rows (for transfers) */
 	enableSelection?: boolean;
 	/** Enable dispose controls within expanded rows (for disposals) */
@@ -139,6 +149,60 @@ function extractInventoryItemData(item: unknown): InventoryItemDisplay {
 	};
 }
 
+// Helper to normalize a value into a numeric warehouse id
+function toWarehouseNumber(value: unknown): number | undefined {
+	if (typeof value === 'number' && Number.isFinite(value)) {
+		return value;
+	}
+	if (typeof value === 'string' && NUMERIC_STRING_REGEX.test(value)) {
+		const parsed = Number.parseInt(value, 10);
+		if (Number.isFinite(parsed)) {
+			return parsed;
+		}
+		return;
+	}
+	return;
+}
+
+// Helper to extract warehouse from inventory item
+function getItemWarehouse(item: unknown): number {
+	if (!item || typeof item !== 'object') {
+		return 1;
+	}
+
+	const obj = item as { product_stock?: unknown; employee?: unknown };
+	const stock = obj.product_stock;
+	if (stock && typeof stock === 'object' && 'currentWarehouse' in stock) {
+		const fromStock = toWarehouseNumber(
+			(stock as { currentWarehouse: unknown }).currentWarehouse,
+		);
+		if (typeof fromStock === 'number') {
+			return fromStock;
+		}
+	}
+
+	const employee = obj.employee;
+	if (employee && typeof employee === 'object' && 'warehouse' in employee) {
+		const fromEmployee = toWarehouseNumber((employee as { warehouse: unknown }).warehouse);
+		if (typeof fromEmployee === 'number') {
+			return fromEmployee;
+		}
+	}
+
+	return 1; // Default to general warehouse
+}
+
+// Helper to extract barcode from inventory item
+function getItemBarcode(item: unknown): number {
+	if (item && typeof item === 'object' && 'product_stock' in item) {
+		const stock = (item as { product_stock: unknown }).product_stock;
+		if (stock && typeof stock === 'object' && 'barcode' in stock) {
+			return (stock as { barcode: number }).barcode;
+		}
+	}
+	return 0;
+}
+
 function formatDate(dateString: string | undefined): string {
 	if (!dateString) {
 		return 'N/A';
@@ -151,7 +215,9 @@ function formatDate(dateString: string | undefined): string {
 }
 
 export function ProductCatalogTable({
-	products,
+	inventory,
+	productCatalog,
+	warehouse = 1,
 	enableSelection = false,
 	onAddToTransfer,
 	disabledUUIDs = new Set(),
@@ -159,6 +225,81 @@ export function ProductCatalogTable({
 }: ProductCatalogTableProps) {
 	// Disposal store for dispose dialog
 	const { show: showDisposeDialog } = useDisposalStore();
+
+	// Inventory store for setting global state
+	const {
+		setProductCatalog,
+		setInventoryData,
+		setCategories,
+		productCatalog: storedProductCatalog,
+		inventoryData: storedInventoryData,
+	} = useInventoryStore();
+
+	// Set inventory data in store
+	useEffect(() => {
+		if (inventory?.success && inventory.data) {
+			setInventoryData(inventory.data);
+		}
+	}, [inventory, setInventoryData]);
+
+	// Set product catalog data in store
+	useEffect(() => {
+		if (productCatalog?.success && productCatalog.data) {
+			// Transform API product data to match our expected structure
+			const transformedProducts = productCatalog.data.map((product: unknown) => {
+				// Handle the API response structure
+				const productData = product as {
+					barcode?: string;
+					title?: string;
+					good_id?: string;
+					category?: string;
+					description?: string;
+				};
+
+				return {
+					barcode: Number.parseInt(productData.barcode || productData.good_id || '0', 10),
+					name: productData.title || 'Producto sin nombre',
+					category: productData.category || 'Sin categoría',
+					description: productData.description || 'Sin descripción',
+				};
+			});
+
+			setProductCatalog(transformedProducts);
+
+			// Extract unique categories from product catalog
+			const uniqueCategories = Array.from(
+				new Set(transformedProducts.map((product) => product.category).filter(Boolean)),
+			);
+			setCategories(uniqueCategories);
+		}
+	}, [productCatalog, setProductCatalog, setCategories]);
+
+	// Create products with inventory items for the specified warehouse
+	const products = useMemo(() => {
+		const hasProductCatalog = storedProductCatalog.length > 0;
+		const hasInventoryData = storedInventoryData.length > 0;
+		if (!hasProductCatalog) {
+			return [];
+		}
+		if (!hasInventoryData) {
+			return [];
+		}
+
+		return storedProductCatalog.map((product) => {
+			// Get all inventory items for this product in the specified warehouse
+			const inventoryItems = storedInventoryData.filter((item) => {
+				return (
+					getItemBarcode(item) === product.barcode && getItemWarehouse(item) === warehouse
+				);
+			});
+
+			return {
+				...product,
+				inventoryItems,
+				stockCount: inventoryItems.length,
+			};
+		});
+	}, [storedProductCatalog, storedInventoryData, warehouse]);
 
 	// State for table features
 	const [sorting, setSorting] = useState<SortingState>([]);

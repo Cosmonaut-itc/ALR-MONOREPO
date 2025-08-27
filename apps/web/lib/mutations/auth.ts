@@ -1,5 +1,6 @@
 import { useMutation } from '@tanstack/react-query';
 import type { LoginType, SignUpType } from '@/types';
+import type { SignInResponse, SignUpResponse } from '@/types/auth';
 import { authClient } from '../auth-client';
 
 /**
@@ -16,9 +17,9 @@ import { authClient } from '../auth-client';
  * await mutateAsync({ email: 'user@example.com', password: 'password123' });
  */
 export const useLoginMutation = () =>
-	useMutation({
+	useMutation<SignInResponse, Error, LoginType>({
 		mutationKey: ['login'],
-		mutationFn: async ({ email, password }: LoginType) => {
+		mutationFn: async ({ email, password }: LoginType): Promise<SignInResponse> => {
 			const response = await authClient.signIn.email({ email, password });
 			type MaybeError = {
 				ok?: boolean;
@@ -47,7 +48,7 @@ export const useLoginMutation = () =>
 								: undefined) || 'Error al iniciar sesión';
 				throw new Error(message);
 			}
-			return response;
+			return response as unknown as SignInResponse;
 		},
 	});
 
@@ -106,9 +107,9 @@ export const useLogoutMutation = () =>
  * Uses Better Auth `signUp.email` on the client.
  */
 export const useSignUpMutation = () =>
-	useMutation({
+	useMutation<SignUpResponse, Error, SignUpType>({
 		mutationKey: ['signup'],
-		mutationFn: async ({ email, password, name }: SignUpType) => {
+		mutationFn: async ({ email, password, name }: SignUpType): Promise<SignUpResponse> => {
 			const response = await authClient.signUp.email({ email, password, name });
 			type MaybeError = {
 				ok?: boolean;
@@ -136,6 +137,6 @@ export const useSignUpMutation = () =>
 								: undefined) || 'No se pudo crear el usuario';
 				throw new Error(message);
 			}
-			return response;
+			return response as unknown as SignUpResponse;
 		},
 	});

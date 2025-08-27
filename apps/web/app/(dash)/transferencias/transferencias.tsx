@@ -52,70 +52,6 @@ export function TransferenciasClient() {
 	const [isListOpen, setIsListOpen] = useState(false);
 	const [listSearch, setListSearch] = useState('');
 
-	// Transform product catalog
-	const transformedProducts = useMemo(() => {
-		if (!(productCatalog?.success && productCatalog.data)) {
-			return [];
-		}
-		return productCatalog.data.map((product: unknown) => {
-			const productData = product as {
-				barcode?: string;
-				title?: string;
-				good_id?: string;
-				category?: string;
-				description?: string;
-			};
-			return {
-				barcode: Number.parseInt(productData.barcode || productData.good_id || '0', 10),
-				name: productData.title || 'Producto sin nombre',
-				category: productData.category || 'Sin categoría',
-				description: productData.description || 'Sin descripción',
-			};
-		});
-	}, [productCatalog]);
-
-	// Helpers to pull details from inventory data
-	const getItemWarehouse = (item: unknown): number => {
-		if (item && typeof item === 'object' && 'product_stock' in item) {
-			const stock = (item as { product_stock: unknown }).product_stock;
-			if (stock && typeof stock === 'object' && 'currentWarehouse' in stock) {
-				return (stock as { currentWarehouse: number }).currentWarehouse;
-			}
-		}
-		return 1;
-	};
-
-	const getItemBarcode = (item: unknown): number => {
-		if (item && typeof item === 'object' && 'product_stock' in item) {
-			const stock = (item as { product_stock: unknown }).product_stock;
-			if (stock && typeof stock === 'object' && 'barcode' in stock) {
-				return (stock as { barcode: number }).barcode;
-			}
-		}
-		return 0;
-	};
-
-	// Build products for Almacén General only
-	// biome-ignore lint/correctness/useExhaustiveDependencies: Needed for exhaustive dependencies
-	const generalProducts = useMemo(() => {
-		if (!transformedProducts.length) {
-			return [];
-		}
-		if (!(inventory?.success && inventory.data)) {
-			return [];
-		}
-		return transformedProducts.map((product) => {
-			const inventoryItems = inventory.data.filter((item) => {
-				return getItemBarcode(item) === product.barcode && getItemWarehouse(item) === 1;
-			});
-			return {
-				...product,
-				inventoryItems,
-				stockCount: inventoryItems.length,
-			};
-		});
-	}, [transformedProducts, inventory]);
-
 	// Handler: add selected expanded-row items to transfer list
 	const handleAddToTransfer = ({
 		product,
@@ -272,8 +208,10 @@ export function TransferenciasClient() {
 			<ProductCatalogTable
 				disabledUUIDs={disabledUUIDs}
 				enableSelection
+				inventory={inventory}
 				onAddToTransfer={handleAddToTransfer}
-				products={generalProducts}
+				productCatalog={productCatalog}
+				warehouse={1}
 			/>
 		</div>
 	);

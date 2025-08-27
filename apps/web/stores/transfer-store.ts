@@ -1,99 +1,130 @@
-import { create } from "zustand"
-import { devtools } from "zustand/middleware"
+import { create } from 'zustand';
+import { devtools } from 'zustand/middleware';
+import type { TransferOrderType } from '@/types';
+import { useAuthStore } from './auth-store';
 
 interface TransferItem {
-  id: string
-  barcode: number
-  productName: string
-  category: string
-  warehouse: string
-  quantity: number
+	id: string;
+	barcode: number;
+	productName: string;
+	category: string;
+	warehouse: string;
+	quantity: number;
 }
 
 export interface TransferCandidate {
-  uuid: string
-  barcode: number
-  productName: string
-  category: string
+	uuid: string;
+	barcode: number;
+	productName: string;
+	category: string;
 }
 
 interface TransferState {
-  /** Items currently displayed in the table (kept for potential reuse) */
-  items: TransferItem[]
-  /** UUID list of items selected for transfer in legacy flows */
-  selectedIds: string[]
+	/** Items currently displayed in the table (kept for potential reuse) */
+	items: TransferItem[];
+	/** UUID list of items selected for transfer in legacy flows */
+	selectedIds: string[];
 
-  /** The list of selected inventory UUIDs to transfer from AG to Gabinete */
-  transferList: TransferCandidate[]
+	/** The list of selected inventory UUIDs to transfer from AG to Gabinete */
+	transferList: TransferCandidate[];
 
-  setItems: (items: TransferItem[]) => void
-  toggleSelection: (id: string) => void
-  selectGroup: (barcode: number) => void
-  clearSelection: () => void
+	destinationWarehouseId: string;
 
-  /** Add multiple candidates to the transfer list */
-  addToTransfer: (items: TransferCandidate[]) => void
-  /** Remove one candidate from the transfer list by uuid */
-  removeFromTransfer: (uuid: string) => void
-  /** Clear the transfer list */
-  clearTransfer: () => void
-  /** Approve and finalize transfer (no API yet) */
-  approveTransfer: () => void
+	setItems: (items: TransferItem[]) => void;
+	setDestinationWarehouseId: (destinationWarehouseId: string) => void;
+	toggleSelection: (id: string) => void;
+	selectGroup: (barcode: number) => void;
+	clearSelection: () => void;
+
+	/** Add multiple candidates to the transfer list */
+	addToTransfer: (items: TransferCandidate[]) => void;
+	/** Remove one candidate from the transfer list by uuid */
+	removeFromTransfer: (uuid: string) => void;
+	/** Clear the transfer list */
+	clearTransfer: () => void;
+	/** Approve and finalize transfer - returns transformed data for mutation */
+	approveTransfer: () => TransferOrderType;
 }
 
 export const useTransferStore = create<TransferState>()(
-  devtools((set, get) => ({
-    items: [],
-    selectedIds: [],
-    transferList: [],
+	devtools((set, get) => ({
+		items: [],
+		selectedIds: [],
+		transferList: [],
+		destinationWarehouseId: '',
 
-    setItems: (items) => set({ items }),
+		setItems: (items) => set({ items }),
+		setDestinationWarehouseId: (destinationWarehouseId) => set({ destinationWarehouseId }),
 
-    toggleSelection: (id) =>
-      set((state) => ({
-        selectedIds: state.selectedIds.includes(id)
-          ? state.selectedIds.filter(x => x !== id)
-          : [...state.selectedIds, id],
-      })),
+		toggleSelection: (id) =>
+			set((state) => ({
+				selectedIds: state.selectedIds.includes(id)
+					? state.selectedIds.filter((x) => x !== id)
+					: [...state.selectedIds, id],
+			})),
 
-    selectGroup: (barcode) =>
-      set((state) => {
-        const groupIds = state.items
-          .filter(i => i.barcode === barcode)
-          .map(i => i.id)
-        const allSelected = groupIds.every(id =>
-          state.selectedIds.includes(id),
-        )
-        return {
-          selectedIds: allSelected
-            ? state.selectedIds.filter(id => !groupIds.includes(id))
-            : [...state.selectedIds, ...groupIds],
-        }
-      }),
+		selectGroup: (barcode) =>
+			set((state) => {
+				const groupIds = state.items.filter((i) => i.barcode === barcode).map((i) => i.id);
+				const allSelected = groupIds.every((id) => state.selectedIds.includes(id));
+				return {
+					selectedIds: allSelected
+						? state.selectedIds.filter((id) => !groupIds.includes(id))
+						: [...state.selectedIds, ...groupIds],
+				};
+			}),
 
-    clearSelection: () => set({ selectedIds: [] }),
+		clearSelection: () => set({ selectedIds: [] }),
 
-    addToTransfer: (items) =>
-      set((state) => {
-        const existing = new Set(state.transferList.map(i => i.uuid))
-        const merged = [
-          ...state.transferList,
-          ...items.filter(i => !existing.has(i.uuid)),
-        ]
-        return { transferList: merged }
-      }),
+		addToTransfer: (items) =>
+			set((state) => {
+				const existing = new Set(state.transferList.map((i) => i.uuid));
+				const merged = [
+					...state.transferList,
+					...items.filter((i) => !existing.has(i.uuid)),
+				];
+				return { transferList: merged };
+			}),
 
-    removeFromTransfer: (uuid) =>
-      set((state) => ({
-        transferList: state.transferList.filter(i => i.uuid !== uuid),
-      })),
+		removeFromTransfer: (uuid) =>
+			set((state) => ({
+				transferList: state.transferList.filter((i) => i.uuid !== uuid),
+			})),
 
-    clearTransfer: () => set({ transferList: [] }),
+		clearTransfer: () => set({ transferList: [] }),
 
-    approveTransfer: () => {
-      // Placeholder: log and clear
-      console.log("Approved transfer →", get().transferList)
-      set({ transferList: [] })
-    },
-  })),
-)
+		approveTransfer: () => {
+			const transferList = get().transferList;
+			const currentUser = useAuthStore.getState().user;
+			const currentWarehouse = currentUser?.warehouseId;
+
+			if (!currentUser) {
+				throw new Error('Usuario no autenticado');
+			}
+
+			// Generate unique transfer number using timestamp
+			const transferNumber = `TR-${Date.now()}`;
+
+			// Transform the transfer list to the expected API format
+			const transformedData: TransferOrderType = {
+				transferNumber,
+				transferType: 'internal', // Internal transfer between warehouses
+				sourceWarehouseId: currentWarehouse?.toString() || '',
+				destinationWarehouseId: (currentWarehouse + 1).toString() || '',
+				initiatedBy: currentUser.id,
+				transferDetails: transferList.map((item) => ({
+					productStockId: item.uuid,
+					quantityTransferred: 1, // Default quantity (not specified in TransferCandidate)
+					itemCondition: 'good' as const, // Default to good condition
+				})),
+				transferNotes: `Transfer from AG to Gabinete - ${transferList.length} items`,
+				priority: 'normal' as const,
+			};
+
+			// Clear the transfer list after creating the order
+			set({ transferList: [] });
+
+			return transformedData;
+		},
+	})),
+);

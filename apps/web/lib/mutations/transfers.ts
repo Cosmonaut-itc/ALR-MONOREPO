@@ -7,7 +7,9 @@ export const useCreateTransferOrder = () =>
 	useMutation({
 		mutationKey: ['create-transfer-order'],
 		mutationFn: async (data: TransferOrderType) => {
-			const response = await client.api.auth['warehouse-transfers'].create.$post(data);
+			const response = await client.api.auth['warehouse-transfers'].create.$post({
+				json: data,
+			});
 			return response.json();
 		},
 		onMutate: () => {
