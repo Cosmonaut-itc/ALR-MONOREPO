@@ -238,6 +238,91 @@ interface ApiResponse<T = unknown> {
 }
 
 /**
+ * Helper function to validate warehouse transfer status logic
+ * Separated to reduce cognitive complexity in the main endpoint
+ */
+function validateTransferStatusLogic(
+	isCompleted?: boolean,
+	isPending?: boolean,
+	isCancelled?: boolean,
+	completedBy?: string,
+): ApiResponse | null {
+	// Transfer cannot be both completed and cancelled
+	if (isCompleted === true && isCancelled === true) {
+		return {
+			success: false,
+			message: 'Transfer cannot be both completed and cancelled',
+		};
+	}
+
+	// Completed transfers should not be pending
+	if (isCompleted === true && isPending === true) {
+		return {
+			success: false,
+			message: 'Completed transfers cannot be pending',
+		};
+	}
+
+	// If marking as completed, completedBy is required
+	if (isCompleted === true && !completedBy) {
+		return {
+			success: false,
+			message: 'completedBy is required when marking transfer as completed',
+		};
+	}
+
+	return null; // No validation errors
+}
+
+/**
+ * Helper function to build warehouse transfer update values
+ * Separated to reduce cognitive complexity in the main endpoint
+ */
+function buildTransferUpdateValues(
+	isCompleted?: boolean,
+	isPending?: boolean,
+	isCancelled?: boolean,
+	completedBy?: string,
+	notes?: string,
+): Record<string, unknown> {
+	const updateValues: Record<string, unknown> = {
+		updatedAt: new Date(),
+	};
+
+	if (isCompleted !== undefined) {
+		updateValues.isCompleted = isCompleted;
+		// If marking as completed, set completion date and other fields
+		if (isCompleted) {
+			updateValues.completedDate = new Date();
+			updateValues.isPending = false;
+			updateValues.completedBy = completedBy;
+		}
+	}
+
+	if (isPending !== undefined) {
+		updateValues.isPending = isPending;
+	}
+
+	if (isCancelled !== undefined) {
+		updateValues.isCancelled = isCancelled;
+		// If marking as cancelled, it should not be pending
+		if (isCancelled) {
+			updateValues.isPending = false;
+		}
+	}
+
+	if (completedBy !== undefined && !updateValues.completedBy) {
+		updateValues.completedBy = completedBy;
+	}
+
+	if (notes !== undefined) {
+		updateValues.notes = notes;
+	}
+
+	return updateValues;
+}
+
+/**
  * Initialize Hono application with typed context variables
  * The Variables type ensures type safety for user and session data
  * across all middleware and route handlers
@@ -1544,6 +1629,468 @@ const route = app
 					{
 						success: false,
 						message: 'Failed to create warehouse',
+					} satisfies ApiResponse,
+					500,
+				);
+			}
+		},
+	)
+
+	/**
+	 * GET /api/auth/warehouse-transfers/all - Retrieve all warehouse transfers
+	 *
+	 * This endpoint fetches all warehouse transfer records from the database with
+	 * their associated source and destination warehouse information.
+	 * Returns comprehensive transfer data including status, timing, and metadata.
+	 *
+	 * @returns {ApiResponse} Success response with warehouse transfers data from DB
+	 * @throws {500} If an unexpected error occurs during data retrieval
+	 */
+	.get('/api/auth/warehouse-transfers/all', async (c) => {
+		try {
+			// Query warehouse transfers with basic information - simplified query due to join complexity
+			const warehouseTransfers = await db
+				.select()
+				.from(schemas.warehouseTransfer)
+				.orderBy(schemas.warehouseTransfer.createdAt);
+
+			return c.json(
+				{
+					success: true,
+					message:
+						warehouseTransfers.length > 0
+							? 'Warehouse transfers retrieved successfully'
+							: 'No warehouse transfers found',
+					data: warehouseTransfers,
+				} satisfies ApiResponse,
+				200,
+			);
+		} catch (error) {
+			// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
+			console.error('Error fetching warehouse transfers:', error);
+
+			return c.json(
+				{
+					success: false,
+					message: 'Failed to fetch warehouse transfers',
+				} satisfies ApiResponse,
+				500,
+			);
+		}
+	})
+
+	/**
+	 * POST /api/auth/warehouse-transfers/create - Create a new warehouse transfer with details
+	 *
+	 * Creates a new warehouse transfer record along with its associated transfer details
+	 * in a single transaction. This endpoint handles both external (Distribution Center → Almacen)
+	 * and internal (Almacen → Counter) transfers with comprehensive validation.
+	 *
+	 * @param {string} transferNumber - Unique human-readable transfer reference
+	 * @param {string} transferType - Type of transfer ('external' or 'internal')
+	 * @param {string} sourceWarehouseId - UUID of the source warehouse
+	 * @param {string} destinationWarehouseId - UUID of the destination warehouse
+	 * @param {string} initiatedBy - UUID of the employee initiating the transfer
+	 * @param {string} transferReason - Reason for the transfer
+	 * @param {string} notes - Optional additional comments
+	 * @param {string} priority - Transfer priority ('normal', 'high', 'urgent')
+	 * @param {Array} transferDetails - Array of items to transfer with product and quantity info
+	 * @returns {ApiResponse} Success response with created warehouse transfer and details data
+	 * @throws {400} Validation error if input data is invalid
+	 * @throws {500} Database error if insertion fails
+	 */
+	.post(
+		'/api/auth/warehouse-transfers/create',
+		zValidator(
+			'json',
+			z.object({
+				transferNumber: z
+					.string()
+					.min(1, 'Transfer number is required')
+					.max(100, 'Transfer number too long'),
+				transferType: z
+					.enum(['external', 'internal'])
+					.describe(
+						'Type of transfer: external (DC → Almacen) or internal (Almacen → Counter)',
+					),
+				sourceWarehouseId: z.string().uuid('Invalid source warehouse ID'),
+				destinationWarehouseId: z.string().uuid('Invalid destination warehouse ID'),
+				initiatedBy: z.string().uuid('Invalid employee ID'),
+				transferReason: z.string().max(500, 'Transfer reason too long').optional(),
+				notes: z.string().max(1000, 'Notes too long').optional(),
+				priority: z.enum(['normal', 'high', 'urgent']).optional().default('normal'),
+				transferDetails: z
+					.array(
+						z.object({
+							productStockId: z.string().uuid('Invalid product stock ID'),
+							quantityTransferred: z
+								.number()
+								.int()
+								.positive('Quantity must be positive'),
+							itemCondition: z
+								.enum(['good', 'damaged', 'needs_inspection'])
+								.optional()
+								.default('good'),
+							itemNotes: z.string().max(500, 'Item notes too long').optional(),
+						}),
+					)
+					.min(1, 'At least one transfer detail is required')
+					.max(100, 'Too many items in single transfer'),
+			}),
+		),
+		async (c) => {
+			try {
+				const {
+					transferNumber,
+					transferType,
+					sourceWarehouseId,
+					destinationWarehouseId,
+					initiatedBy,
+					transferReason,
+					notes,
+					priority,
+					transferDetails,
+				} = c.req.valid('json');
+
+				// Validate that source and destination warehouses are different
+				if (sourceWarehouseId === destinationWarehouseId) {
+					return c.json(
+						{
+							success: false,
+							message: 'Source and destination warehouses must be different',
+						} satisfies ApiResponse,
+						400,
+					);
+				}
+
+				// Start database transaction to ensure data consistency
+				const result = await db.transaction(async (tx) => {
+					// Create the main warehouse transfer record
+					const insertedTransfer = await tx
+						.insert(schemas.warehouseTransfer)
+						.values({
+							transferNumber,
+							transferType,
+							sourceWarehouseId,
+							destinationWarehouseId,
+							initiatedBy,
+							transferReason,
+							notes,
+							priority,
+							totalItems: transferDetails.length,
+							transferDate: new Date(),
+							isCompleted: false,
+							isPending: true,
+							isCancelled: false,
+						})
+						.returning();
+
+					if (insertedTransfer.length === 0) {
+						throw new Error('Failed to create warehouse transfer');
+					}
+
+					const transferId = insertedTransfer[0].id;
+
+					// Create transfer detail records for each item
+					const insertedDetails = await tx
+						.insert(schemas.warehouseTransferDetails)
+						.values(
+							transferDetails.map((detail) => ({
+								transferId,
+								productStockId: detail.productStockId,
+								quantityTransferred: detail.quantityTransferred,
+								itemCondition: detail.itemCondition,
+								itemNotes: detail.itemNotes,
+								isReceived: false,
+							})),
+						)
+						.returning();
+
+					return {
+						transfer: insertedTransfer[0],
+						details: insertedDetails,
+					};
+				});
+
+				return c.json(
+					{
+						success: true,
+						message: 'Warehouse transfer created successfully',
+						data: {
+							transfer: result.transfer,
+							details: result.details,
+							totalDetailsCreated: result.details.length,
+						},
+					} satisfies ApiResponse,
+					201,
+				);
+			} catch (error) {
+				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
+				console.error('Error creating warehouse transfer:', error);
+
+				// Handle specific database errors
+				if (error instanceof Error) {
+					// Handle unique constraint violation (duplicate transfer number)
+					if (
+						error.message.includes('duplicate') &&
+						error.message.includes('transfer_number')
+					) {
+						return c.json(
+							{
+								success: false,
+								message:
+									'Transfer number already exists - please use a unique transfer number',
+							} satisfies ApiResponse,
+							409,
+						);
+					}
+
+					// Handle foreign key constraint violations
+					if (error.message.includes('foreign key')) {
+						return c.json(
+							{
+								success: false,
+								message:
+									'Invalid reference - warehouse, employee, or product does not exist',
+							} satisfies ApiResponse,
+							400,
+						);
+					}
+				}
+
+				return c.json(
+					{
+						success: false,
+						message: 'Failed to create warehouse transfer',
+					} satisfies ApiResponse,
+					500,
+				);
+			}
+		},
+	)
+
+	/**
+	 * POST /api/auth/warehouse-transfers/update-status - Update warehouse transfer status
+	 *
+	 * Updates the status of a warehouse transfer including completion status,
+	 * completion date, and the employee who completed the transfer.
+	 * This endpoint is used when marking transfers as completed or cancelled.
+	 *
+	 * @param {string} transferId - UUID of the warehouse transfer to update
+	 * @param {boolean} isCompleted - Whether the transfer is completed
+	 * @param {boolean} isPending - Whether the transfer is still pending
+	 * @param {boolean} isCancelled - Whether the transfer is cancelled
+	 * @param {string} completedBy - UUID of employee who completed the transfer (optional)
+	 * @param {string} notes - Additional notes for the status update (optional)
+	 * @returns {ApiResponse} Success response with updated warehouse transfer data
+	 * @throws {400} Validation error if input data is invalid
+	 * @throws {404} If warehouse transfer not found
+	 * @throws {500} Database error if update fails
+	 */
+	.post(
+		'/api/auth/warehouse-transfers/update-status',
+		zValidator(
+			'json',
+			z.object({
+				transferId: z.string().uuid('Invalid transfer ID'),
+				isCompleted: z.boolean().optional(),
+				isPending: z.boolean().optional(),
+				isCancelled: z.boolean().optional(),
+				completedBy: z.string().uuid('Invalid employee ID').optional(),
+				notes: z.string().max(1000, 'Notes too long').optional(),
+			}),
+		),
+		async (c) => {
+			try {
+				const { transferId, isCompleted, isPending, isCancelled, completedBy, notes } =
+					c.req.valid('json');
+
+				// Validate business logic constraints
+				const validationError = validateTransferStatusLogic(
+					isCompleted,
+					isPending,
+					isCancelled,
+					completedBy,
+				);
+				if (validationError) {
+					return c.json(validationError, 400);
+				}
+
+				// Build update values object
+				const updateValues = buildTransferUpdateValues(
+					isCompleted,
+					isPending,
+					isCancelled,
+					completedBy,
+					notes,
+				);
+
+				// Update the warehouse transfer
+				const updatedTransfer = await db
+					.update(schemas.warehouseTransfer)
+					.set(updateValues)
+					.where(eq(schemas.warehouseTransfer.id, transferId))
+					.returning();
+
+				if (updatedTransfer.length === 0) {
+					return c.json(
+						{
+							success: false,
+							message: 'Warehouse transfer not found',
+						} satisfies ApiResponse,
+						404,
+					);
+				}
+
+				return c.json(
+					{
+						success: true,
+						message: 'Warehouse transfer status updated successfully',
+						data: updatedTransfer[0],
+					} satisfies ApiResponse,
+					200,
+				);
+			} catch (error) {
+				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
+				console.error('Error updating warehouse transfer status:', error);
+
+				// Handle foreign key constraint violations
+				if (error instanceof Error && error.message.includes('foreign key')) {
+					return c.json(
+						{
+							success: false,
+							message: 'Invalid employee ID - employee does not exist',
+						} satisfies ApiResponse,
+						400,
+					);
+				}
+
+				return c.json(
+					{
+						success: false,
+						message: 'Failed to update warehouse transfer status',
+					} satisfies ApiResponse,
+					500,
+				);
+			}
+		},
+	)
+
+	/**
+	 * POST /api/auth/warehouse-transfers/update-item-status - Update individual transfer item status
+	 *
+	 * Updates the status of individual items in a warehouse transfer, typically used
+	 * when marking items as received at the destination warehouse.
+	 * This endpoint allows for granular tracking of transfer progress.
+	 *
+	 * @param {string} transferDetailId - UUID of the transfer detail record to update
+	 * @param {boolean} isReceived - Whether the item has been received
+	 * @param {string} receivedBy - UUID of employee who received the item (required if isReceived is true)
+	 * @param {string} itemCondition - Condition of the item ('good', 'damaged', 'needs_inspection')
+	 * @param {string} itemNotes - Additional notes about the item
+	 * @returns {ApiResponse} Success response with updated transfer detail data
+	 * @throws {400} Validation error if input data is invalid
+	 * @throws {404} If transfer detail not found
+	 * @throws {500} Database error if update fails
+	 */
+	.post(
+		'/api/auth/warehouse-transfers/update-item-status',
+		zValidator(
+			'json',
+			z.object({
+				transferDetailId: z.string().uuid('Invalid transfer detail ID'),
+				isReceived: z.boolean().optional(),
+				receivedBy: z.string().uuid('Invalid employee ID').optional(),
+				itemCondition: z.enum(['good', 'damaged', 'needs_inspection']).optional(),
+				itemNotes: z.string().max(500, 'Item notes too long').optional(),
+			}),
+		),
+		async (c) => {
+			try {
+				const { transferDetailId, isReceived, receivedBy, itemCondition, itemNotes } =
+					c.req.valid('json');
+
+				// Validate business logic: if marking as received, receivedBy is required
+				if (isReceived === true && !receivedBy) {
+					return c.json(
+						{
+							success: false,
+							message: 'receivedBy is required when marking item as received',
+						} satisfies ApiResponse,
+						400,
+					);
+				}
+
+				// Prepare update values
+				const updateValues: Record<string, unknown> = {
+					updatedAt: new Date(),
+				};
+
+				if (isReceived !== undefined) {
+					updateValues.isReceived = isReceived;
+					// If marking as received, set received date
+					if (isReceived) {
+						updateValues.receivedDate = new Date();
+						updateValues.receivedBy = receivedBy;
+					}
+				}
+
+				if (receivedBy !== undefined && !updateValues.receivedBy) {
+					updateValues.receivedBy = receivedBy;
+				}
+
+				if (itemCondition !== undefined) {
+					updateValues.itemCondition = itemCondition;
+				}
+
+				if (itemNotes !== undefined) {
+					updateValues.itemNotes = itemNotes;
+				}
+
+				// Update the warehouse transfer detail
+				const updatedDetail = await db
+					.update(schemas.warehouseTransferDetails)
+					.set(updateValues)
+					.where(eq(schemas.warehouseTransferDetails.id, transferDetailId))
+					.returning();
+
+				if (updatedDetail.length === 0) {
+					return c.json(
+						{
+							success: false,
+							message: 'Transfer detail not found',
+						} satisfies ApiResponse,
+						404,
+					);
+				}
+
+				return c.json(
+					{
+						success: true,
+						message: 'Transfer item status updated successfully',
+						data: updatedDetail[0],
+					} satisfies ApiResponse,
+					200,
+				);
+			} catch (error) {
+				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
+				console.error('Error updating transfer item status:', error);
+
+				// Handle foreign key constraint violations
+				if (error instanceof Error && error.message.includes('foreign key')) {
+					return c.json(
+						{
+							success: false,
+							message: 'Invalid employee ID - employee does not exist',
+						} satisfies ApiResponse,
+						400,
+					);
+				}
+
+				return c.json(
+					{
+						success: false,
+						message: 'Failed to update transfer item status',
 					} satisfies ApiResponse,
 					500,
 				);

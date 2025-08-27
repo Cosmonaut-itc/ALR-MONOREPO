@@ -99,7 +99,12 @@ export const productStock = pgTable('product_stock', {
 	lastUsed: date('last_used'),
 	lastUsedBy: uuid('last_used_by').references(() => employee.id),
 	numberOfUses: integer('number_of_uses').default(0).notNull(),
-	currentWarehouse: integer('current_warehouse').default(0).notNull(),
+	currentWarehouse: uuid('current_warehouse')
+		.notNull()
+		.references(() => warehouse.id, {
+			onUpdate: 'cascade',
+			onDelete: 'restrict',
+		}),
 	isBeingUsed: boolean('is_being_used').default(false).notNull(),
 	firstUsed: date('first_used'),
 });
@@ -314,6 +319,8 @@ export const warehouseRelations = relations(warehouse, ({ one, many }) => ({
 		fields: [warehouse.lastModifiedBy],
 		references: [user.id],
 	}),
+	// Product stock currently in this warehouse
+	productStock: many(productStock),
 	// Transfers originating from this warehouse
 	outgoingTransfers: many(warehouseTransfer, {
 		relationName: 'sourceWarehouse',
@@ -374,8 +381,20 @@ export const warehouseTransferDetailsRelations = relations(warehouseTransferDeta
 }));
 
 // ProductStock relations including both withdraw orders and warehouse transfers
-export const productStockRelations = relations(productStock, ({ many }) => ({
+export const productStockRelations = relations(productStock, ({ one, many }) => ({
+	// Current warehouse where the product is located
+	currentWarehouse: one(warehouse, {
+		fields: [productStock.currentWarehouse],
+		references: [warehouse.id],
+	}),
+	// Employee who last used the product
+	lastUsedByEmployee: one(employee, {
+		fields: [productStock.lastUsedBy],
+		references: [employee.id],
+	}),
+	// Withdraw order details
 	withdrawOrderDetails: many(withdrawOrderDetails),
+	// Warehouse transfer details
 	warehouseTransferDetails: many(warehouseTransferDetails),
 }));
 
@@ -391,6 +410,8 @@ export const employeeRelations = relations(employee, ({ many, one }) => ({
 		fields: [employee.permissions],
 		references: [permissions.id],
 	}),
+	// Product stock last used by this employee
+	lastUsedProducts: many(productStock),
 	// Transfers initiated by this employee
 	initiatedTransfers: many(warehouseTransfer, {
 		relationName: 'transferInitiator',

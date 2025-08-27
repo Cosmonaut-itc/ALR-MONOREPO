@@ -64,6 +64,13 @@
       "when": 1756246928396,
       "tag": "0008_nosy_scalphunter",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1756318888731,
+      "tag": "0009_square_grandmaster",
+      "breakpoints": true
     }
   ]
 }
