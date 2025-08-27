@@ -1,5 +1,6 @@
 'use client';
 
+import type { FilterFn } from '@tanstack/react-table';
 import {
 	type ColumnDef,
 	type ColumnFiltersState,
@@ -14,7 +15,6 @@ import {
 	type SortingState,
 	useReactTable,
 } from '@tanstack/react-table';
-import type { FilterFn } from '@tanstack/react-table';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import {
@@ -32,6 +32,7 @@ import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import {
 	Select,
@@ -48,7 +49,6 @@ import {
 	TableHeader,
 	TableRow,
 } from '@/components/ui/table';
-import { Checkbox } from '@/components/ui/checkbox';
 
 // Type for product with inventory data
 type ProductWithInventory = {
@@ -88,10 +88,13 @@ interface ProductCatalogTableProps {
 const inventoryItemCache = new WeakMap<object, InventoryItemDisplay>();
 
 // Helper to extract inventory item data safely
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: This is as optimized as it can be without making it confusing
 function extractInventoryItemData(item: unknown): InventoryItemDisplay {
 	if (item && typeof item === 'object') {
 		const cached = inventoryItemCache.get(item as object);
-		if (cached) return cached;
+		if (cached) {
+			return cached;
+		}
 	}
 	if (item && typeof item === 'object' && 'product_stock' in item) {
 		const stock = (item as { product_stock: unknown }).product_stock;
@@ -147,7 +150,12 @@ function formatDate(dateString: string | undefined): string {
 	}
 }
 
-export function ProductCatalogTable({ products, enableSelection = false, onAddToTransfer, disabledUUIDs = new Set() }: ProductCatalogTableProps) {
+export function ProductCatalogTable({
+	products,
+	enableSelection = false,
+	onAddToTransfer,
+	disabledUUIDs = new Set(),
+}: ProductCatalogTableProps) {
 	// State for table features
 	const [sorting, setSorting] = useState<SortingState>([]);
 	const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -223,7 +231,9 @@ export function ProductCatalogTable({ products, enableSelection = false, onAddTo
 	// Category equality filter for the category column
 	const categoryFilterFn: FilterFn<ProductWithInventory> = useMemo(
 		() => (row, columnId, filterValue) => {
-			if (!filterValue) return true;
+			if (!filterValue) {
+				return true;
+			}
 			const rowValue = row.getValue(columnId) as string | undefined;
 			return (rowValue ?? '') === filterValue;
 		},
@@ -240,6 +250,7 @@ export function ProductCatalogTable({ products, enableSelection = false, onAddTo
 					duration: 2000,
 				});
 			} catch (error) {
+				// biome-ignore lint/suspicious/noConsole: Used for debugging
 				console.error('Error copying to clipboard:', error);
 				toast.error('Error al copiar UUID', {
 					description: 'No se pudo copiar el UUID al portapapeles',
@@ -262,19 +273,27 @@ export function ProductCatalogTable({ products, enableSelection = false, onAddTo
 					setSelectedByBarcode((prev) => {
 						const currentSet = prev[product.barcode] || new Set<string>();
 						const nextSet = new Set(currentSet);
-						if (enabled) nextSet.add(uuid);
-						else nextSet.delete(uuid);
+						if (enabled) {
+							nextSet.add(uuid);
+						} else {
+							nextSet.delete(uuid);
+						}
 						return { ...prev, [product.barcode]: nextSet };
 					});
 				};
 
 				const handleAddToTransfer = () => {
-					if (!onAddToTransfer) return;
+					if (!onAddToTransfer) {
+						return;
+					}
 					const selectedItems = product.inventoryItems
 						.map((it) => extractInventoryItemData(it))
 						.filter((it) => productSelection.has(it.uuid));
 					onAddToTransfer({ product, items: selectedItems });
-					setSelectedByBarcode((prev) => ({ ...prev, [product.barcode]: new Set<string>() }));
+					setSelectedByBarcode((prev) => ({
+						...prev,
+						[product.barcode]: new Set<string>(),
+					}));
 					if (selectedItems.length > 0) {
 						toast.success('Agregado a transferencia', {
 							description: `${selectedItems.length} item(s) agregado(s) desde ${product.name}`,
@@ -345,11 +364,19 @@ export function ProductCatalogTable({ products, enableSelection = false, onAddTo
 													<div className="flex items-center gap-2">
 														{selectionEnabledRef && (
 															<Checkbox
-																checked={productSelection.has(itemData.uuid)}
-																onCheckedChange={(checked) =>
-																	toggleUUID(itemData.uuid, Boolean(checked))
+																checked={productSelection.has(
+																	itemData.uuid,
+																)}
+																disabled={
+																	itemData.isBeingUsed ||
+																	disabledUUIDs.has(itemData.uuid)
 																}
-																disabled={itemData.isBeingUsed || disabledUUIDs.has(itemData.uuid)}
+																onCheckedChange={(checked) =>
+																	toggleUUID(
+																		itemData.uuid,
+																		Boolean(checked),
+																	)
+																}
 															/>
 														)}
 														<span className="truncate">
@@ -390,8 +417,8 @@ export function ProductCatalogTable({ products, enableSelection = false, onAddTo
 														}
 													>
 														{itemData.isBeingUsed
-																? 'En Uso'
-																: 'Disponible'}
+															? 'En Uso'
+															: 'Disponible'}
 													</Badge>
 												</TableCell>
 												<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
@@ -522,7 +549,9 @@ export function ProductCatalogTable({ products, enableSelection = false, onAddTo
 	// Keep the table's category column filter in sync with the select value
 	useEffect(() => {
 		const categoryColumn = table.getColumn('category');
-		if (!categoryColumn) return;
+		if (!categoryColumn) {
+			return;
+		}
 		categoryColumn.setFilterValue(categoryFilter === 'all' ? undefined : categoryFilter);
 	}, [categoryFilter, table]);
 

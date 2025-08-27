@@ -30,11 +30,9 @@ export function InventarioPage() {
 	});
 
 	const {
-		isNewProductModalOpen,
 		setProductCatalog,
 		setInventoryData,
 		setCategories,
-		setNewProductModalOpen,
 		productCatalog: storedProductCatalog,
 		inventoryData: storedInventoryData,
 	} = useInventoryStore();
@@ -175,8 +173,6 @@ export function InventarioPage() {
 					<ProductCatalogTable products={gabineteProducts} />
 				</TabsContent>
 			</Tabs>
-
-	
 		</div>
 	);
 }
