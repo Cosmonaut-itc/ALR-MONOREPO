@@ -89,21 +89,14 @@ interface ProductCatalogTableProps {
 	disabledUUIDs?: Set<string>;
 }
 
-// Cache extracted inventory item data to avoid recomputation for stable item references
-const inventoryItemCache = new WeakMap<object, InventoryItemDisplay>();
+// Removed WeakMap cache to avoid stale data; compute item data each render
 
 // Helper to extract inventory item data safely
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: This is as optimized as it can be without making it confusing
 function extractInventoryItemData(item: unknown): InventoryItemDisplay {
-	if (item && typeof item === 'object') {
-		const cached = inventoryItemCache.get(item as object);
-		if (cached) {
-			return cached;
-		}
-	}
 	if (item && typeof item === 'object' && 'product_stock' in item) {
 		const stock = (item as { product_stock: unknown }).product_stock;
-		const employee = (item as { employee?: { name?: string } }).employee;
+		const employee = (item as { employee?: { name?: string; surname?: string } }).employee;
 
 		if (stock && typeof stock === 'object') {
 			const stockData = stock as {
@@ -118,7 +111,10 @@ function extractInventoryItemData(item: unknown): InventoryItemDisplay {
 
 			const fallbackId = Math.random().toString();
 			const idValue = stockData.id?.toString() || fallbackId;
-			const lastUsedBy = employee?.name || stockData.lastUsedBy;
+			const employeeFullName = employee?.name
+				? `${employee.name}${employee?.surname ? ` ${employee.surname}` : ''}`
+				: undefined;
+			const lastUsedBy = employeeFullName || stockData.lastUsedBy;
 
 			const result: InventoryItemDisplay = {
 				id: idValue,
@@ -130,7 +126,6 @@ function extractInventoryItemData(item: unknown): InventoryItemDisplay {
 				firstUsed: stockData.firstUsed || new Date().toISOString(),
 			};
 
-			inventoryItemCache.set(item as object, result);
 			return result;
 		}
 	}
@@ -175,7 +170,6 @@ export function ProductCatalogTable({
 		pageIndex: 0,
 		pageSize: 10,
 	});
-
 	// Per-product selection state for expanded rows (barcode -> Set of UUIDs)
 	const [selectedByBarcode, setSelectedByBarcode] = useState<Record<number, Set<string>>>({});
 

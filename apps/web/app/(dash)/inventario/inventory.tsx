@@ -1,6 +1,9 @@
 /** biome-ignore-all lint/correctness/useExhaustiveDependencies: No need to use exhaustive dependencies */
 'use client';
 
+// Precompiled regex for numeric strings (must be at top-level per lint rules)
+const NUMERIC_STRING_REGEX = /^\d+$/;
+
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { useEffect, useMemo } from 'react';
 import { ProductCatalogTable } from '@/components/inventory/ProductCatalogTable';
@@ -51,6 +54,7 @@ export function InventarioPage() {
 			const transformedProducts = productCatalog.data.map((product: unknown) => {
 				// Handle the API response structure
 				const productData = product as {
+					barcode?: string;
 					title?: string;
 					good_id?: string;
 					category?: string;
@@ -58,7 +62,7 @@ export function InventarioPage() {
 				};
 
 				return {
-					barcode: Number.parseInt(productData.good_id || '0', 10),
+					barcode: Number.parseInt(productData.barcode || productData.good_id || '0', 10),
 					name: productData.title || 'Producto sin nombre',
 					category: productData.category || 'Sin categoría',
 					description: productData.description || 'Sin descripción',
@@ -75,14 +79,46 @@ export function InventarioPage() {
 		}
 	}, [productCatalog, setProductCatalog, setCategories]);
 
+	// Helper to normalize a value into a numeric warehouse id
+	const toWarehouseNumber = (value: unknown): number | undefined => {
+		if (typeof value === 'number' && Number.isFinite(value)) {
+			return value;
+		}
+		if (typeof value === 'string' && NUMERIC_STRING_REGEX.test(value)) {
+			const parsed = Number.parseInt(value, 10);
+			if (Number.isFinite(parsed)) {
+				return parsed;
+			}
+			return;
+		}
+		return;
+	};
+
 	// Helper to extract warehouse from inventory item
 	const getItemWarehouse = (item: unknown): number => {
-		if (item && typeof item === 'object' && 'product_stock' in item) {
-			const stock = (item as { product_stock: unknown }).product_stock;
-			if (stock && typeof stock === 'object' && 'currentWarehouse' in stock) {
-				return (stock as { currentWarehouse: number }).currentWarehouse;
+		if (!item || typeof item !== 'object') {
+			return 1;
+		}
+
+		const obj = item as { product_stock?: unknown; employee?: unknown };
+		const stock = obj.product_stock;
+		if (stock && typeof stock === 'object' && 'currentWarehouse' in stock) {
+			const fromStock = toWarehouseNumber(
+				(stock as { currentWarehouse: unknown }).currentWarehouse,
+			);
+			if (typeof fromStock === 'number') {
+				return fromStock;
 			}
 		}
+
+		const employee = obj.employee;
+		if (employee && typeof employee === 'object' && 'warehouse' in employee) {
+			const fromEmployee = toWarehouseNumber((employee as { warehouse: unknown }).warehouse);
+			if (typeof fromEmployee === 'number') {
+				return fromEmployee;
+			}
+		}
+
 		return 1; // Default to general warehouse
 	};
 

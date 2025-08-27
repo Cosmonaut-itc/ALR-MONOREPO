@@ -67,3 +67,25 @@ export type ProductCatalogItem = ProductCatalogData extends { data: infer T }
 		? U
 		: never
 	: never;
+
+/**
+ * Type for creating a transfer order (matches API endpoint expectations)
+ */
+export type TransferOrderType = {
+	json: {
+		transferNumber: string;
+		transferType: 'internal' | 'external';
+		sourceWarehouseId: string;
+		destinationWarehouseId: string;
+		initiatedBy: string;
+		transferDetails: Array<{
+			productStockId: string;
+			quantityTransferred: number;
+			itemCondition?: 'good' | 'damaged' | 'needs_inspection';
+			itemNotes?: string;
+		}>;
+		transferNotes?: string;
+		priority?: 'high' | 'normal' | 'urgent';
+		scheduledDate?: string;
+	};
+};
