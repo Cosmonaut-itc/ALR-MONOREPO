@@ -98,10 +98,6 @@ async function buildTypesOnly() {
 	console.log('🔨 Building types package (development mode)...');
 
 	try {
-		// Extract AppType first
-		console.log('🔍 Extracting AppType...');
-		execSync('bun run scripts/extract-app-type.ts', { stdio: 'inherit' });
-
 		// Install dependencies
 		execSync('npm install', { cwd: TYPES_DIR, stdio: 'inherit' });
 
