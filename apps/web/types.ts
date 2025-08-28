@@ -27,7 +27,7 @@ export type SignUpType = typeof signUpSchema.infer;
  * Extracted from the API response of client.api.auth['product-stock']['with-employee'].$get()
  */
 export type ProductStockWithEmployee = Awaited<
-	ReturnType<typeof import('./lib/fetch-functions/inventory').getInventory>
+	ReturnType<typeof import('./lib/fetch-functions/inventory').getInventoryByWarehouse>
 >;
 
 /**
@@ -86,4 +86,15 @@ export type TransferOrderType = {
 	transferNotes?: string;
 	priority?: 'high' | 'normal' | 'urgent';
 	scheduledDate?: string;
+};
+
+export type InventoryItem = {
+	id: string;
+	barcode: number;
+	lastUsed: string | null;
+	lastUsedBy: number | null;
+	numberOfUses: number;
+	currentWarehouse: number;
+	isBeingUsed: boolean;
+	firstUsed: string | null;
 };

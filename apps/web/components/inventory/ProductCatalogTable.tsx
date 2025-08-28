@@ -52,7 +52,7 @@ import {
 } from '@/components/ui/table';
 import { useDisposalStore } from '@/stores/disposal-store';
 import { useInventoryStore } from '@/stores/inventory-store';
-import type { ProductCatalogResponse, ProductStockWithEmployee } from '@/types';
+import type { InventoryItem, ProductCatalogResponse } from '@/types';
 import { DisposeItemDialog } from './DisposeItemDialog';
 
 // Precompiled regex for numeric strings (must be at top-level per lint rules)
@@ -81,7 +81,7 @@ type InventoryItemDisplay = {
 
 interface ProductCatalogTableProps {
 	/** Raw inventory data from the API */
-	inventory: ProductStockWithEmployee | null;
+	inventory: InventoryItem[] | null;
 	/** Raw product catalog data from the API */
 	productCatalog: ProductCatalogResponse | null;
 	/** Warehouse to filter for (1 = general, 2 = gabinete) */
@@ -237,8 +237,8 @@ export function ProductCatalogTable({
 
 	// Set inventory data in store
 	useEffect(() => {
-		if (inventory?.success && inventory.data) {
-			setInventoryData(inventory.data);
+		if (inventory) {
+			setInventoryData(inventory);
 		}
 	}, [inventory, setInventoryData]);
 

@@ -4,19 +4,23 @@ import { useSuspenseQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { ProductCatalogTable } from '@/components/inventory/ProductCatalogTable';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { getAllProducts, getInventory } from '@/lib/fetch-functions/inventory';
+import { getAllProducts, getInventoryByWarehouse } from '@/lib/fetch-functions/inventory';
 import { queryKeys } from '@/lib/query-keys';
+import { useAuthStore } from '@/stores/auth-store';
 import { useInventoryStore } from '@/stores/inventory-store';
-import type { ProductCatalogResponse, ProductStockWithEmployee } from '@/types';
+import type { InventoryItem, ProductCatalogResponse, ProductStockWithEmployee } from '@/types';
+
+type APIResponse = ProductStockWithEmployee | null;
 
 export function InventarioPage() {
+	const { user } = useAuthStore();
 	const { data: inventory } = useSuspenseQuery<
-		ProductStockWithEmployee | null,
+		APIResponse,
 		Error,
-		ProductStockWithEmployee | null
+		{ warehouse: InventoryItem[]; cabinet: InventoryItem[] }
 	>({
 		queryKey: queryKeys.inventory,
-		queryFn: getInventory,
+		queryFn: () => getInventoryByWarehouse(user?.warehouseId as string),
 	});
 
 	const { data: productCatalog } = useSuspenseQuery<
@@ -98,7 +102,7 @@ export function InventarioPage() {
 				<TabsContent className="space-y-4" value="general">
 					<ProductCatalogTable
 						enableDispose
-						inventory={inventory}
+						inventory={inventory.warehouse}
 						productCatalog={productCatalog}
 						warehouse={1}
 					/>
@@ -108,7 +112,7 @@ export function InventarioPage() {
 				<TabsContent className="space-y-4" value="gabinete">
 					<ProductCatalogTable
 						enableDispose
-						inventory={inventory}
+						inventory={inventory.cabinet}
 						productCatalog={productCatalog}
 						warehouse={2}
 					/>

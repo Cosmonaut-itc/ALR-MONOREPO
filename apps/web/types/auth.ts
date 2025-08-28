@@ -18,7 +18,7 @@ export interface ExtendedUser extends BetterAuthUser {
 	/**
 	 * Warehouse ID that the user belongs to - matches your Drizzle schema
 	 */
-	warehouseId: number;
+	warehouseId: string;
 
 	// Add any other custom columns you've added to your user table here
 	// For example:

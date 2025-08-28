@@ -27,6 +27,7 @@ interface InventoryStore {
 	stockItems: StockItem[];
 	productCatalog: ProductCatalogItem[];
 	inventoryData: unknown[]; // raw inventory items as returned by API (with employee)
+	inventoryDataCabinet: unknown[]; // raw inventory items as returned by API (with employee)
 
 	// Filters
 	searchTerm: string;
@@ -45,6 +46,7 @@ interface InventoryStore {
 	setStockItems: (items: StockItem[]) => void;
 	setProductCatalog: (catalog: ProductCatalogItem[]) => void;
 	setInventoryData: (items: unknown[]) => void;
+	setInventoryDataCabinet: (items: unknown[]) => void;
 	setCategories: (categories: string[]) => void;
 	setSearchTerm: (term: string) => void;
 	setSelectedCategory: (category: string | undefined) => void;
@@ -52,7 +54,6 @@ interface InventoryStore {
 	setLoadingStock: (loading: boolean) => void;
 	setLoadingCatalog: (loading: boolean) => void;
 	setNewProductModalOpen: (open: boolean) => void;
-
 	// Computed
 	getFilteredStockItems: () => (StockItem & { productInfo: ProductCatalogItem | undefined })[];
 	getProductByBarcode: (barcode: number) => ProductCatalogItem | undefined;
@@ -70,6 +71,7 @@ export const useInventoryStore = create<InventoryStore>()(
 			stockItems: [],
 			productCatalog: [],
 			inventoryData: [],
+			inventoryDataCabinet: [],
 			searchTerm: '',
 			selectedCategory: undefined,
 			selectedWarehouse: undefined,
@@ -82,6 +84,7 @@ export const useInventoryStore = create<InventoryStore>()(
 			setStockItems: (items) => set({ stockItems: items }),
 			setProductCatalog: (catalog) => set({ productCatalog: catalog }),
 			setInventoryData: (items) => set({ inventoryData: items }),
+			setInventoryDataCabinet: (items) => set({ inventoryDataCabinet: items }),
 			setCategories: (categories) => set({ categories }),
 			setSearchTerm: (term) => set({ searchTerm: term }),
 			setSelectedCategory: (category) => set({ selectedCategory: category }),
