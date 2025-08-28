@@ -845,15 +845,15 @@ const route = app
 	})
 
 	/**
-	 * GET /api/auth/product-stock/by-warehouse - Retrieve product stock data filtered by warehouse
+	 * GET /api/auth/product-stock/by-warehouse - Retrieve product stock arrays for warehouse and its cabinet
 	 *
-	 * This endpoint fetches product stock records from the database filtered by a specific warehouseId.
-	 * If the database table is empty (e.g., in development or test environments),
-	 * it returns filtered mock product stock data instead. This ensures the frontend
-	 * always receives a valid response structure for development and testing.
+	 * This endpoint fetches product stock records from both the main warehouse and its associated
+	 * cabinet warehouse. Since each warehouse has only one cabinet, it returns two product arrays:
+	 * one for the main warehouse and one for the cabinet. If the database tables are empty
+	 * (e.g., in development or test environments), it returns filtered mock data instead.
 	 *
 	 * @param {string} warehouseId - UUID of the warehouse to filter by (required query parameter)
-	 * @returns {ApiResponse} Success response with filtered product stock data
+	 * @returns {ApiResponse} Success response with warehouse and cabinet product arrays
 	 * @throws {400} If warehouseId is not provided or invalid
 	 * @throws {500} If an unexpected error occurs during data retrieval
 	 */
@@ -865,13 +865,29 @@ const route = app
 				const { warehouseId } = c.req.valid('query');
 
 				// Query the productStock table for records with the specified warehouseId
-				const productStock = await db
+				const warehouseProductStock = await db
 					.select()
 					.from(schemas.productStock)
 					.where(eq(schemas.productStock.currentWarehouse, warehouseId));
 
-				// If no records exist, return filtered mock data for development/testing
-				if (productStock.length === 0) {
+				// Query the cabinetWarehouse table for the single cabinet belonging to this warehouse
+				const cabinetWarehouse = await db
+					.select()
+					.from(schemas.cabinetWarehouse)
+					.where(eq(schemas.cabinetWarehouse.warehouseId, warehouseId))
+					.limit(1);
+
+				// Fetch product stock from the cabinet warehouse (if it exists)
+				let cabinetProductStock: typeof warehouseProductStock = [];
+				if (cabinetWarehouse.length > 0) {
+					cabinetProductStock = await db
+						.select()
+						.from(schemas.productStock)
+						.where(eq(schemas.productStock.currentWarehouse, cabinetWarehouse[0].id));
+				}
+
+				// If no records exist in either table, return filtered mock data for development/testing
+				if (warehouseProductStock.length === 0 && cabinetWarehouse.length === 0) {
 					// Filter mock data by warehouse for consistency
 					const filteredMockData = productStockData.filter(
 						(item) => item.currentWarehouse.toString() === warehouseId,
@@ -881,18 +897,24 @@ const route = app
 						{
 							success: true,
 							message: 'Fetching test data filtered by warehouse',
-							data: filteredMockData,
+							data: {
+								warehouse: filteredMockData,
+								cabinet: [],
+							},
 						} satisfies ApiResponse,
 						200,
 					);
 				}
 
-				// Return actual product stock data from the database filtered by warehouse
+				// Return structured data with warehouse and cabinet product arrays
 				return c.json(
 					{
 						success: true,
 						message: `Fetching db data for warehouse ${warehouseId}`,
-						data: productStock,
+						data: {
+							warehouse: warehouseProductStock,
+							cabinet: cabinetProductStock,
+						},
 					} satisfies ApiResponse,
 					200,
 				);
