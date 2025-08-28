@@ -1,0 +1,2 @@
+ALTER TABLE "cabinet_warehouse" ADD COLUMN "warehouse_id" uuid NOT NULL;--> statement-breakpoint
+ALTER TABLE "cabinet_warehouse" ADD CONSTRAINT "cabinet_warehouse_warehouse_id_warehouse_id_fk" FOREIGN KEY ("warehouse_id") REFERENCES "public"."warehouse"("id") ON DELETE restrict ON UPDATE cascade;

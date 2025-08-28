@@ -323,6 +323,68 @@ function buildTransferUpdateValues(
 }
 
 /**
+ * Helper function to validate product stock creation business rules
+ * Separated to reduce cognitive complexity in the main endpoint
+ */
+function validateProductStockCreationRules(data: {
+	isBeingUsed?: boolean;
+	lastUsedBy?: string | undefined;
+	lastUsed?: string | undefined;
+}): ApiResponse | null {
+	// Validate that if isBeingUsed is true, lastUsedBy must be provided
+	if (data.isBeingUsed === true && !data.lastUsedBy) {
+		return {
+			success: false,
+			message: 'lastUsedBy is required when product is being used',
+		};
+	}
+
+	// Validate that if lastUsed is provided, lastUsedBy should also be provided
+	if (data.lastUsed && !data.lastUsedBy) {
+		return {
+			success: false,
+			message: 'lastUsedBy is required when lastUsed is provided',
+		};
+	}
+
+	return null; // No validation errors
+}
+
+/**
+ * Helper function to handle product stock creation errors
+ * Separated to reduce cognitive complexity in the main endpoint
+ */
+function handleProductStockCreationError(
+	error: unknown,
+): { response: ApiResponse; status: number } | null {
+	if (error instanceof Error) {
+		// Handle foreign key constraint errors (invalid warehouse or employee ID)
+		if (error.message.includes('foreign key')) {
+			return {
+				response: {
+					success: false,
+					message: 'Invalid warehouse ID or employee ID - record does not exist',
+				},
+				status: 400,
+			};
+		}
+
+		// Handle other validation errors
+		if (error.message.includes('invalid input')) {
+			return {
+				response: {
+					success: false,
+					message: 'Invalid input data provided',
+				},
+				status: 400,
+			};
+		}
+	}
+
+	return null; // No specific error handling
+}
+
+/**
  * Initialize Hono application with typed context variables
  * The Variables type ensures type safety for user and session data
  * across all middleware and route handlers
@@ -781,6 +843,190 @@ const route = app
 			);
 		}
 	})
+
+	/**
+	 * GET /api/auth/product-stock/by-warehouse - Retrieve product stock data filtered by warehouse
+	 *
+	 * This endpoint fetches product stock records from the database filtered by a specific warehouseId.
+	 * If the database table is empty (e.g., in development or test environments),
+	 * it returns filtered mock product stock data instead. This ensures the frontend
+	 * always receives a valid response structure for development and testing.
+	 *
+	 * @param {string} warehouseId - UUID of the warehouse to filter by (required query parameter)
+	 * @returns {ApiResponse} Success response with filtered product stock data
+	 * @throws {400} If warehouseId is not provided or invalid
+	 * @throws {500} If an unexpected error occurs during data retrieval
+	 */
+	.get(
+		'/api/auth/product-stock/by-warehouse',
+		zValidator('query', z.object({ warehouseId: z.string('Invalid warehouse ID') })),
+		async (c) => {
+			try {
+				const { warehouseId } = c.req.valid('query');
+
+				// Query the productStock table for records with the specified warehouseId
+				const productStock = await db
+					.select()
+					.from(schemas.productStock)
+					.where(eq(schemas.productStock.currentWarehouse, warehouseId));
+
+				// If no records exist, return filtered mock data for development/testing
+				if (productStock.length === 0) {
+					// Filter mock data by warehouse for consistency
+					const filteredMockData = productStockData.filter(
+						(item) => item.currentWarehouse.toString() === warehouseId,
+					);
+
+					return c.json(
+						{
+							success: true,
+							message: 'Fetching test data filtered by warehouse',
+							data: filteredMockData,
+						} satisfies ApiResponse,
+						200,
+					);
+				}
+
+				// Return actual product stock data from the database filtered by warehouse
+				return c.json(
+					{
+						success: true,
+						message: `Fetching db data for warehouse ${warehouseId}`,
+						data: productStock,
+					} satisfies ApiResponse,
+					200,
+				);
+			} catch (error) {
+				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
+				console.error('Error fetching product stock by warehouse:', error);
+
+				return c.json(
+					{
+						success: false,
+						message: 'Failed to fetch product stock by warehouse',
+					} satisfies ApiResponse,
+					500,
+				);
+			}
+		},
+	)
+
+	/**
+	 * POST /api/auth/product-stock/create - Create a new product stock record
+	 *
+	 * Creates a new product stock record in the database with the provided details.
+	 * The endpoint validates input data and returns the created record upon successful insertion.
+	 * This is used when new inventory items are added to the warehouse system.
+	 *
+	 * @param {number} barcode - Product barcode identifier (required)
+	 * @param {string} currentWarehouse - UUID of the warehouse where the product is located (required)
+	 * @param {string} lastUsedBy - UUID of the employee who last used the product (optional)
+	 * @param {string} lastUsed - ISO date string for when the product was last used (optional)
+	 * @param {string} firstUsed - ISO date string for when the product was first used (optional)
+	 * @param {number} numberOfUses - Number of times the product has been used (defaults to 0)
+	 * @param {boolean} isBeingUsed - Whether the product is currently being used (defaults to false)
+	 * @returns {ApiResponse} Success response with created product stock data
+	 * @throws {400} Validation error if input data is invalid
+	 * @throws {500} Database error if insertion fails
+	 */
+	.post(
+		'/api/auth/product-stock/create',
+		zValidator(
+			'json',
+			z.object({
+				barcode: z.number().int().nonnegative().describe('Product barcode identifier'),
+				currentWarehouse: z
+					.string()
+					.uuid('Invalid warehouse ID')
+					.describe('Warehouse UUID'),
+				lastUsedBy: z
+					.string()
+					.uuid('Invalid employee ID')
+					.optional()
+					.describe('Employee UUID'),
+				lastUsed: z.string().optional().describe('ISO date string for last use'),
+				firstUsed: z.string().optional().describe('ISO date string for first use'),
+				numberOfUses: z
+					.number()
+					.int()
+					.nonnegative()
+					.optional()
+					.default(0)
+					.describe('Number of uses'),
+				isBeingUsed: z
+					.boolean()
+					.optional()
+					.default(false)
+					.describe('Whether currently being used'),
+			}),
+		),
+		async (c) => {
+			try {
+				const requestData = c.req.valid('json');
+
+				// Validate input data business rules
+				const validationError = validateProductStockCreationRules({
+					isBeingUsed: requestData.isBeingUsed,
+					lastUsedBy: requestData.lastUsedBy,
+					lastUsed: requestData.lastUsed,
+				});
+				if (validationError) {
+					return c.json(validationError, 400);
+				}
+
+				// Insert the new product stock record into the database
+				const insertedProductStock = await db
+					.insert(schemas.productStock)
+					.values({
+						barcode: requestData.barcode,
+						currentWarehouse: requestData.currentWarehouse,
+						lastUsedBy: requestData.lastUsedBy || null,
+						lastUsed: requestData.lastUsed || null,
+						firstUsed: requestData.firstUsed || null,
+						numberOfUses: requestData.numberOfUses ?? 0,
+						isBeingUsed: requestData.isBeingUsed ?? false,
+					})
+					.returning();
+
+				// Check if the insertion was successful
+				if (insertedProductStock.length === 0) {
+					return c.json(
+						{
+							success: false,
+							message: 'Failed to create product stock - no record inserted',
+							data: null,
+						} satisfies ApiResponse,
+						500,
+					);
+				}
+
+				// Return successful response with the newly created product stock record
+				return c.json(
+					{
+						success: true,
+						message: 'Product stock created successfully',
+						data: insertedProductStock[0],
+					} satisfies ApiResponse,
+					201,
+				);
+			} catch (error) {
+				// Handle specific database errors
+				const errorResponse = handleProductStockCreationError(error);
+				if (errorResponse) {
+					return c.json(errorResponse.response, errorResponse.status as 400 | 500);
+				}
+
+				// Handle generic database errors
+				return c.json(
+					{
+						success: false,
+						message: 'Failed to create product stock',
+					} satisfies ApiResponse,
+					500,
+				);
+			}
+		},
+	)
 
 	/**
 	 * GET /api/product-stock/with-employee - Retrieve product stock joined with employee
