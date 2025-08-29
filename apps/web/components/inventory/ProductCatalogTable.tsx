@@ -277,11 +277,7 @@ export function ProductCatalogTable({
 	// Create products with inventory items for the specified warehouse
 	const products = useMemo(() => {
 		const hasProductCatalog = storedProductCatalog.length > 0;
-		const hasInventoryData = storedInventoryData.length > 0;
 		if (!hasProductCatalog) {
-			return [];
-		}
-		if (!hasInventoryData) {
 			return [];
 		}
 

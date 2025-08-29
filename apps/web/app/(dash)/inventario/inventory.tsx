@@ -5,6 +5,7 @@ import { useMemo } from 'react';
 import { ProductCatalogTable } from '@/components/inventory/ProductCatalogTable';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { getAllProducts, getInventoryByWarehouse } from '@/lib/fetch-functions/inventory';
+import { createQueryKey } from '@/lib/helpers';
 import { queryKeys } from '@/lib/query-keys';
 import { useAuthStore } from '@/stores/auth-store';
 import { useInventoryStore } from '@/stores/inventory-store';
@@ -19,7 +20,7 @@ export function InventarioPage() {
 		Error,
 		{ warehouse: InventoryItem[]; cabinet: InventoryItem[] }
 	>({
-		queryKey: queryKeys.inventory,
+		queryKey: createQueryKey(queryKeys.inventory, [user?.warehouseId as string]),
 		queryFn: () => getInventoryByWarehouse(user?.warehouseId as string),
 	});
 

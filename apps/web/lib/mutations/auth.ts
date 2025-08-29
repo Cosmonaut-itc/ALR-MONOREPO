@@ -1,7 +1,60 @@
 import { useMutation } from '@tanstack/react-query';
 import type { LoginType, SignUpType } from '@/types';
-import type { SignInResponse, SignUpResponse } from '@/types/auth';
+import type { ExtendedUser, SignUpResponse } from '@/types/auth';
 import { authClient } from '../auth-client';
+
+/**
+ * Minimal shape we care about from Better Auth responses to detect errors.
+ */
+type MaybeError = {
+	ok?: boolean;
+	success?: boolean;
+	status?: number;
+	error?: string | { message?: string } | null;
+	errors?: unknown;
+	data?: { error?: string | { message?: string } | null } | null;
+};
+
+/**
+ * Returns a normalized error message if the response indicates a failure; otherwise null.
+ */
+const getAuthErrorMessage = (
+	response: unknown,
+	defaultMessage = 'Error al iniciar sesión',
+): string | null => {
+	const r = response as MaybeError | null | undefined;
+	if (!r) {
+		return null;
+	}
+
+	const extractMessage = (err: unknown): string | null => {
+		if (!err) {
+			return null;
+		}
+		if (typeof err === 'string') {
+			return err;
+		}
+		if (typeof err === 'object' && 'message' in (err as Record<string, unknown>)) {
+			const msg = (err as { message?: unknown }).message;
+			if (typeof msg === 'string') {
+				return msg;
+			}
+		}
+		return null;
+	};
+
+	const messageFromError = extractMessage(r.error);
+	const messageFromDataError = extractMessage(r.data?.error);
+	const message = messageFromError || messageFromDataError;
+	const notOk = r.ok === false || r.success === false;
+	const httpFailed = typeof r.status === 'number' && r.status >= 400;
+	const hasErrorsBag = Boolean(r.errors);
+
+	if (message || notOk || httpFailed || hasErrorsBag) {
+		return message ?? defaultMessage;
+	}
+	return null;
+};
 
 /**
  * Custom React Query mutation hook for logging in a user.
@@ -17,38 +70,21 @@ import { authClient } from '../auth-client';
  * await mutateAsync({ email: 'user@example.com', password: 'password123' });
  */
 export const useLoginMutation = () =>
-	useMutation<SignInResponse, Error, LoginType>({
+	useMutation<ExtendedUser, Error, LoginType>({
 		mutationKey: ['login'],
-		mutationFn: async ({ email, password }: LoginType): Promise<SignInResponse> => {
+		mutationFn: async ({ email, password }: LoginType): Promise<ExtendedUser> => {
 			const response = await authClient.signIn.email({ email, password });
-			type MaybeError = {
-				ok?: boolean;
-				success?: boolean;
-				status?: number;
-				error?: string | { message?: string };
-				errors?: unknown;
-				data?: { error?: string | { message?: string } };
-			};
-			const r = response as unknown as MaybeError;
-			// Normalize failures returned inside a successful HTTP response
-			const hasError =
-				(r?.error as string | { message?: string } | undefined) ||
-				(r?.errors as unknown) ||
-				(r?.data?.error as string | { message?: string } | undefined);
-			const notOk =
-				r?.ok === false ||
-				r?.success === false ||
-				(typeof r?.status === 'number' && r.status >= 400);
-			if (hasError || notOk) {
-				const message =
-					typeof hasError === 'string'
-						? hasError
-						: (hasError && typeof hasError === 'object' && 'message' in hasError
-								? (hasError as { message?: string }).message
-								: undefined) || 'Error al iniciar sesión';
+			const message = getAuthErrorMessage(response);
+			if (message) {
 				throw new Error(message);
 			}
-			return response as unknown as SignInResponse;
+			// After successful sign-in, resolve the session and return the user object
+			const session = await authClient.getSession();
+			const user = session?.data?.user as ExtendedUser | undefined;
+			if (!user) {
+				throw new Error('No se pudo obtener la sesión del usuario');
+			}
+			return user;
 		},
 	});
 
@@ -70,31 +106,8 @@ export const useLogoutMutation = () =>
 		mutationKey: ['logout'],
 		mutationFn: async () => {
 			const response = await authClient.signOut();
-			type MaybeError = {
-				ok?: boolean;
-				success?: boolean;
-				status?: number;
-				error?: string | { message?: string };
-				errors?: unknown;
-				data?: { error?: string | { message?: string } };
-			};
-			const r = response as unknown as MaybeError;
-			// Normalize failures returned inside a successful HTTP response
-			const hasError =
-				(r?.error as string | { message?: string } | undefined) ||
-				(r?.errors as unknown) ||
-				(r?.data?.error as string | { message?: string } | undefined);
-			const notOk =
-				r?.ok === false ||
-				r?.success === false ||
-				(typeof r?.status === 'number' && r.status >= 400);
-			if (hasError || notOk) {
-				const message =
-					typeof hasError === 'string'
-						? hasError
-						: (hasError && typeof hasError === 'object' && 'message' in hasError
-								? (hasError as { message?: string }).message
-								: undefined) || 'Error al cerrar sesión';
+			const message = getAuthErrorMessage(response, 'Error al cerrar sesión');
+			if (message) {
 				throw new Error(message);
 			}
 			return response;
@@ -111,30 +124,8 @@ export const useSignUpMutation = () =>
 		mutationKey: ['signup'],
 		mutationFn: async ({ email, password, name }: SignUpType): Promise<SignUpResponse> => {
 			const response = await authClient.signUp.email({ email, password, name });
-			type MaybeError = {
-				ok?: boolean;
-				success?: boolean;
-				status?: number;
-				error?: string | { message?: string };
-				errors?: unknown;
-				data?: { error?: string | { message?: string } };
-			};
-			const r = response as unknown as MaybeError;
-			const hasError =
-				(r?.error as string | { message?: string } | undefined) ||
-				(r?.errors as unknown) ||
-				(r?.data?.error as string | { message?: string } | undefined);
-			const notOk =
-				r?.ok === false ||
-				r?.success === false ||
-				(typeof r?.status === 'number' && r.status >= 400);
-			if (hasError || notOk) {
-				const message =
-					typeof hasError === 'string'
-						? hasError
-						: (hasError && typeof hasError === 'object' && 'message' in hasError
-								? (hasError as { message?: string }).message
-								: undefined) || 'No se pudo crear el usuario';
+			const message = getAuthErrorMessage(response, 'No se pudo crear el usuario');
+			if (message) {
 				throw new Error(message);
 			}
 			return response as unknown as SignUpResponse;
