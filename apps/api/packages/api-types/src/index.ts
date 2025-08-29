@@ -16,3 +16,4 @@
 
 // Export the main AppType for Hono RPC client
 export type { AppType } from '../../../src/index';
+export type { auth } from '../../../src/lib/auth';

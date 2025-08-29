@@ -16,6 +16,6 @@
     "exactOptionalPropertyTypes": true,
     "strictNullChecks": true
   },
-  "include": ["src/**/*", "../../src/index.ts"],
+  "include": ["src/**/*", "../../src/index.ts", "../../src/lib/auth.ts"],
   "exclude": ["node_modules", "dist"]
 }
