@@ -24,7 +24,7 @@ export default function LoginPage() {
 		},
 	});
 	const { login } = useAuthStore();
-	const { mutateAsync, isSuccess, isPending } = useLoginMutation();
+	const { mutateAsync, isPending } = useLoginMutation();
 
 	const [showPassword, setShowPassword] = useState(false);
 
@@ -37,9 +37,9 @@ export default function LoginPage() {
 				password: form.state.values.password,
 			});
 
-			if (isSuccess && success?.data?.user) {
+			if (success) {
 				toast.success('¡Bienvenido! Inicio de sesión exitoso');
-				login(success.data.user);
+				login(success);
 				router.push('/dashboard');
 			}
 		} catch (error) {
