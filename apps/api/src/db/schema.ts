@@ -142,8 +142,6 @@ export const withdrawOrderDetails = pgTable('withdraw_order_details', {
 	dateReturn: date('date_return'),
 });
 
-//TODO: RUN THE MIGRATION TO ADD THE PARENT WAREHOUSE COLUMN
-
 export const cabinetWarehouse = pgTable('cabinet_warehouse', {
 	id: uuid('id').default(sql`gen_random_uuid()`).notNull().primaryKey(),
 	name: text('name').default('warehouse 1').notNull(),

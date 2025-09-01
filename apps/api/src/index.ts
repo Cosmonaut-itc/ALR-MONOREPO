@@ -865,9 +865,23 @@ const route = app
 				const { warehouseId } = c.req.valid('query');
 
 				// Query the productStock table for records with the specified warehouseId
+				// Join with employee table to get only id, name, and surname from employee data
 				const warehouseProductStock = await db
-					.select()
+					.select({
+						// Select all productStock fields
+						productStock: schemas.productStock,
+						// Select only specific employee fields
+						employee: {
+							id: schemas.employee.id,
+							name: schemas.employee.name,
+							surname: schemas.employee.surname,
+						},
+					})
 					.from(schemas.productStock)
+					.leftJoin(
+						schemas.employee,
+						eq(schemas.productStock.lastUsedBy, schemas.employee.id),
+					)
 					.where(eq(schemas.productStock.currentWarehouse, warehouseId));
 
 				// Query the cabinetWarehouse table for the single cabinet belonging to this warehouse
@@ -878,11 +892,25 @@ const route = app
 					.limit(1);
 
 				// Fetch product stock from the cabinet warehouse (if it exists)
+				// Join with employee table to get only id, name, and surname from employee data
 				let cabinetProductStock: typeof warehouseProductStock = [];
 				if (cabinetWarehouse.length > 0) {
 					cabinetProductStock = await db
-						.select()
+						.select({
+							// Select all productStock fields
+							productStock: schemas.productStock,
+							// Select only specific employee fields
+							employee: {
+								id: schemas.employee.id,
+								name: schemas.employee.name,
+								surname: schemas.employee.surname,
+							},
+						})
 						.from(schemas.productStock)
+						.leftJoin(
+							schemas.employee,
+							eq(schemas.productStock.lastUsedBy, schemas.employee.id),
+						)
 						.where(eq(schemas.productStock.currentWarehouse, cabinetWarehouse[0].id));
 				}
 
