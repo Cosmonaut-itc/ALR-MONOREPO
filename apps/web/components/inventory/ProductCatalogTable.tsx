@@ -51,12 +51,10 @@ import {
 	TableRow,
 } from '@/components/ui/table';
 import { useDisposalStore } from '@/stores/disposal-store';
-import { useInventoryStore } from '@/stores/inventory-store';
-import type { InventoryItem, ProductCatalogResponse } from '@/types';
+import type { StockItemWithEmployee } from '@/stores/inventory-store';
+import { type StockItem, useInventoryStore } from '@/stores/inventory-store';
+import type { ProductCatalogItem, ProductCatalogResponse } from '@/types';
 import { DisposeItemDialog } from './DisposeItemDialog';
-
-// Precompiled regex for numeric strings (must be at top-level per lint rules)
-const NUMERIC_STRING_REGEX = /^\d+$/;
 
 // Type for product with inventory data
 type ProductWithInventory = {
@@ -65,27 +63,29 @@ type ProductWithInventory = {
 	category: string;
 	description: string;
 	stockCount: number;
-	inventoryItems: unknown[];
+	inventoryItems: StockItemWithEmployee[];
 };
 
 // Type for individual inventory item display
 type InventoryItemDisplay = {
-	id: string;
-	uuid: string;
+	id?: string;
+	uuid?: string;
+	barcode: number;
 	lastUsed?: string;
 	lastUsedBy?: string;
-	numberOfUses: number;
-	isBeingUsed: boolean;
-	firstUsed: string;
+	numberOfUses?: number;
+	isBeingUsed?: boolean;
+	firstUsed?: string;
+	currentWarehouse?: string;
 };
 
 interface ProductCatalogTableProps {
 	/** Raw inventory data from the API */
-	inventory: InventoryItem[] | null;
+	inventory: StockItemWithEmployee[] | null;
 	/** Raw product catalog data from the API */
 	productCatalog: ProductCatalogResponse | null;
 	/** Warehouse to filter for (1 = general, 2 = gabinete) */
-	warehouse?: number;
+	warehouse?: string;
 	/** Enable selection controls within expanded rows (for transfers) */
 	enableSelection?: boolean;
 	/** Enable dispose controls within expanded rows (for disposals) */
@@ -103,101 +103,65 @@ interface ProductCatalogTableProps {
 
 // Helper to extract inventory item data safely
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: This is as optimized as it can be without making it confusing
-function extractInventoryItemData(item: unknown): InventoryItemDisplay {
-	if (item && typeof item === 'object' && 'product_stock' in item) {
-		const stock = (item as { product_stock: unknown }).product_stock;
+function extractInventoryItemData(item: StockItemWithEmployee): InventoryItemDisplay {
+	if (item && typeof item === 'object' && 'productStock' in item) {
+		const itemStock = (item as { productStock: StockItem }).productStock;
 		const employee = (item as { employee?: { name?: string; surname?: string } }).employee;
 
-		if (stock && typeof stock === 'object') {
-			const stockData = stock as {
-				id?: string | number;
-				uuid?: string;
-				lastUsed?: string;
-				lastUsedBy?: string;
-				numberOfUses?: number;
-				isBeingUsed?: boolean;
-				firstUsed?: string;
-			};
+		const fallbackId = Math.random().toString();
+		const idValue = itemStock.id || fallbackId;
+		const employeeFullName = employee?.name
+			? `${employee.name}${employee?.surname ? ` ${employee.surname}` : ''}`
+			: undefined;
+		const lastUsedBy = employeeFullName || itemStock.lastUsedBy || undefined;
 
-			const fallbackId = Math.random().toString();
-			const idValue = stockData.id?.toString() || fallbackId;
-			const employeeFullName = employee?.name
-				? `${employee.name}${employee?.surname ? ` ${employee.surname}` : ''}`
-				: undefined;
-			const lastUsedBy = employeeFullName || stockData.lastUsedBy;
+		const result: InventoryItemDisplay = {
+			id: idValue,
+			uuid: itemStock.id || `uuid-${itemStock.id || fallbackId}`,
+			barcode: itemStock.barcode || 0,
+			lastUsed: itemStock.lastUsed || undefined,
+			lastUsedBy,
+			numberOfUses: itemStock.numberOfUses || 0,
+			isBeingUsed: itemStock.isBeingUsed ?? false,
+			firstUsed: itemStock.firstUsed || new Date().toISOString(),
+			currentWarehouse: itemStock.currentWarehouse?.toString() || '1',
+		};
 
-			const result: InventoryItemDisplay = {
-				id: idValue,
-				uuid: stockData.uuid || `uuid-${stockData.id || fallbackId}`,
-				lastUsed: stockData.lastUsed,
-				lastUsedBy,
-				numberOfUses: stockData.numberOfUses || 0,
-				isBeingUsed: stockData.isBeingUsed ?? false,
-				firstUsed: stockData.firstUsed || new Date().toISOString(),
-			};
-
-			return result;
-		}
+		return result;
 	}
 
 	return {
 		id: Math.random().toString(),
 		uuid: `uuid-${Math.random()}`,
+		barcode: 0,
 		numberOfUses: 0,
 		isBeingUsed: false,
 		firstUsed: new Date().toISOString(),
+		currentWarehouse: '1',
 	};
 }
 
-// Helper to normalize a value into a numeric warehouse id
-function toWarehouseNumber(value: unknown): number | undefined {
-	if (typeof value === 'number' && Number.isFinite(value)) {
-		return value;
-	}
-	if (typeof value === 'string' && NUMERIC_STRING_REGEX.test(value)) {
-		const parsed = Number.parseInt(value, 10);
-		if (Number.isFinite(parsed)) {
-			return parsed;
-		}
-		return;
-	}
-	return;
-}
-
 // Helper to extract warehouse from inventory item
-function getItemWarehouse(item: unknown): number {
+function getItemWarehouse(item: StockItem): string {
 	if (!item || typeof item !== 'object') {
-		return 1;
+		return '1';
 	}
 
-	const obj = item as { product_stock?: unknown; employee?: unknown };
-	const stock = obj.product_stock;
-	if (stock && typeof stock === 'object' && 'currentWarehouse' in stock) {
-		const fromStock = toWarehouseNumber(
-			(stock as { currentWarehouse: unknown }).currentWarehouse,
-		);
-		if (typeof fromStock === 'number') {
-			return fromStock;
-		}
+	const obj = item as { currentWarehouse?: string };
+	const currentWarehouse = obj.currentWarehouse;
+	if (currentWarehouse && typeof currentWarehouse === 'string') {
+		return currentWarehouse;
 	}
 
-	const employee = obj.employee;
-	if (employee && typeof employee === 'object' && 'warehouse' in employee) {
-		const fromEmployee = toWarehouseNumber((employee as { warehouse: unknown }).warehouse);
-		if (typeof fromEmployee === 'number') {
-			return fromEmployee;
-		}
-	}
-
-	return 1; // Default to general warehouse
+	return '1'; // Default to general warehouse
 }
 
 // Helper to extract barcode from inventory item
-function getItemBarcode(item: unknown): number {
-	if (item && typeof item === 'object' && 'product_stock' in item) {
-		const stock = (item as { product_stock: unknown }).product_stock;
-		if (stock && typeof stock === 'object' && 'barcode' in stock) {
-			return (stock as { barcode: number }).barcode;
+function getItemBarcode(item: StockItem): number {
+	if (item && typeof item === 'object' && 'barcode' in item) {
+		const barcode = (item as { barcode: number }).barcode;
+		if (barcode && typeof barcode === 'number') {
+			return barcode;
 		}
 	}
 	return 0;
@@ -217,7 +181,7 @@ function formatDate(dateString: string | undefined): string {
 export function ProductCatalogTable({
 	inventory,
 	productCatalog,
-	warehouse = 1,
+	warehouse,
 	enableSelection = false,
 	onAddToTransfer,
 	disabledUUIDs = new Set(),
@@ -238,7 +202,7 @@ export function ProductCatalogTable({
 	// Set inventory data in store
 	useEffect(() => {
 		if (inventory) {
-			setInventoryData(inventory);
+			setInventoryData(inventory as StockItemWithEmployee[]);
 		}
 	}, [inventory, setInventoryData]);
 
@@ -246,21 +210,12 @@ export function ProductCatalogTable({
 	useEffect(() => {
 		if (productCatalog?.success && productCatalog.data) {
 			// Transform API product data to match our expected structure
-			const transformedProducts = productCatalog.data.map((product: unknown) => {
-				// Handle the API response structure
-				const productData = product as {
-					barcode?: string;
-					title?: string;
-					good_id?: string;
-					category?: string;
-					description?: string;
-				};
-
+			const transformedProducts = productCatalog.data.map((product: ProductCatalogItem) => {
 				return {
-					barcode: Number.parseInt(productData.barcode || productData.good_id || '0', 10),
-					name: productData.title || 'Producto sin nombre',
-					category: productData.category || 'Sin categoría',
-					description: productData.description || 'Sin descripción',
+					barcode: Number.parseInt(product.barcode, 10) || product.good_id,
+					name: product.title || 'Producto sin nombre',
+					category: product.category || 'Sin categoría',
+					description: product.comment || 'Sin descripción',
 				};
 			});
 
@@ -283,9 +238,11 @@ export function ProductCatalogTable({
 
 		return storedProductCatalog.map((product) => {
 			// Get all inventory items for this product in the specified warehouse
-			const inventoryItems = storedInventoryData.filter((item) => {
+			const inventoryItems: StockItemWithEmployee[] = storedInventoryData.filter((item) => {
+				const itemStock = (item as { productStock: StockItem }).productStock;
 				return (
-					getItemBarcode(item) === product.barcode && getItemWarehouse(item) === warehouse
+					getItemBarcode(itemStock) === product.barcode &&
+					getItemWarehouse(itemStock) === warehouse?.toString()
 				);
 			});
 
@@ -329,13 +286,10 @@ export function ProductCatalogTable({
 	);
 
 	const searchInInventoryItems = useMemo(
-		() => (items: unknown[], searchValue: string) => {
+		() => (items: StockItemWithEmployee[], searchValue: string) => {
 			for (const item of items) {
 				const itemData = extractInventoryItemData(item);
-				if (
-					itemData.uuid.toLowerCase().includes(searchValue) ||
-					itemData.id.toLowerCase().includes(searchValue)
-				) {
+				if (itemData.id?.toLowerCase().includes(searchValue)) {
 					return true;
 				}
 			}
@@ -428,7 +382,7 @@ export function ProductCatalogTable({
 					}
 					const selectedItems = product.inventoryItems
 						.map((it) => extractInventoryItemData(it))
-						.filter((it) => productSelection.has(it.uuid));
+						.filter((it) => productSelection.has(it.id || ''));
 					onAddToTransfer({ product, items: selectedItems });
 					setSelectedByBarcode((prev) => ({
 						...prev,
@@ -504,34 +458,36 @@ export function ProductCatalogTable({
 										return (
 											<TableRow
 												className="border-[#E5E7EB] border-b last:border-b-0 dark:border-[#374151]"
-												key={itemData.uuid}
+												key={itemData.id}
 											>
 												<TableCell className="font-mono text-[#687076] text-xs dark:text-[#9BA1A6]">
 													<div className="flex items-center gap-2">
 														{selectionEnabledRef && (
 															<Checkbox
 																checked={productSelection.has(
-																	itemData.uuid,
+																	itemData.id || '',
 																)}
 																disabled={
 																	itemData.isBeingUsed ||
-																	disabledUUIDs.has(itemData.uuid)
+																	disabledUUIDs.has(
+																		itemData.id || '',
+																	)
 																}
 																onCheckedChange={(checked) =>
 																	toggleUUID(
-																		itemData.uuid,
+																		itemData.id || '',
 																		Boolean(checked),
 																	)
 																}
 															/>
 														)}
 														<span className="truncate">
-															{itemData.uuid.slice(0, 8)}...
+															{itemData.id?.slice(0, 8)}...
 														</span>
 														<Button
 															className="h-4 w-4 p-0 hover:bg-[#E5E7EB] dark:hover:bg-[#2D3033]"
 															onClick={() => {
-																copyToClipboard(itemData.uuid);
+																copyToClipboard(itemData.id || '');
 															}}
 															size="sm"
 															variant="ghost"
@@ -576,8 +532,8 @@ export function ProductCatalogTable({
 															className="h-6 w-6 p-0 text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950 dark:hover:text-red-300"
 															onClick={() => {
 																showDisposeDialog({
-																	id: itemData.id,
-																	uuid: itemData.uuid,
+																	id: itemData.id || '',
+																	uuid: itemData.id || '',
 																	barcode: product.barcode,
 																	productInfo: {
 																		name: product.name,

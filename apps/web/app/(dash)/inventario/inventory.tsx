@@ -7,21 +7,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { getAllProducts, getInventoryByWarehouse } from '@/lib/fetch-functions/inventory';
 import { createQueryKey } from '@/lib/helpers';
 import { queryKeys } from '@/lib/query-keys';
-import { useAuthStore } from '@/stores/auth-store';
-import { useInventoryStore } from '@/stores/inventory-store';
-import type { InventoryItem, ProductCatalogResponse, ProductStockWithEmployee } from '@/types';
+import type { StockItemWithEmployee } from '@/stores/inventory-store';
+import type { ProductCatalogResponse, ProductStockWithEmployee } from '@/types';
 
 type APIResponse = ProductStockWithEmployee | null;
 
-export function InventarioPage() {
-	const { user } = useAuthStore();
-	const { data: inventory } = useSuspenseQuery<
-		APIResponse,
-		Error,
-		{ warehouse: InventoryItem[]; cabinet: InventoryItem[] }
-	>({
-		queryKey: createQueryKey(queryKeys.inventory, [user?.warehouseId as string]),
-		queryFn: () => getInventoryByWarehouse(user?.warehouseId as string),
+export function InventarioPage({ warehouseId }: { warehouseId: string }) {
+	const { data: inventory } = useSuspenseQuery<APIResponse, Error, APIResponse>({
+		queryKey: createQueryKey(queryKeys.inventory, [warehouseId as string]),
+		queryFn: () => getInventoryByWarehouse(warehouseId as string),
 	});
 
 	const { data: productCatalog } = useSuspenseQuery<
@@ -33,42 +27,19 @@ export function InventarioPage() {
 		queryFn: getAllProducts,
 	});
 
-	// Get stored inventory data for calculating item counts
-	const { inventoryData: storedInventoryData } = useInventoryStore();
+	const warehouseItems = useMemo<StockItemWithEmployee[]>(() => {
+		const hasData = inventory && 'data' in inventory;
+		return hasData ? inventory.data?.warehouse || [] : [];
+	}, [inventory]);
+
+	const cabinetItems = useMemo<StockItemWithEmployee[]>(() => {
+		const hasData = inventory && 'data' in inventory;
+		return hasData ? inventory.data?.cabinet || [] : [];
+	}, [inventory]);
 
 	// Calculate total inventory items count for tab titles
-	const generalItemsCount = useMemo(() => {
-		if (!storedInventoryData.length) {
-			return 0;
-		}
-		// Count items in warehouse 1 (general)
-		return storedInventoryData.filter((item) => {
-			if (item && typeof item === 'object' && 'product_stock' in item) {
-				const stock = (item as { product_stock: unknown }).product_stock;
-				if (stock && typeof stock === 'object' && 'currentWarehouse' in stock) {
-					return (stock as { currentWarehouse: number }).currentWarehouse === 1;
-				}
-			}
-			// Default to general warehouse if not specified
-			return true;
-		}).length;
-	}, [storedInventoryData]);
-
-	const gabineteItemsCount = useMemo(() => {
-		if (!storedInventoryData.length) {
-			return 0;
-		}
-		// Count items in warehouse 2 (gabinete)
-		return storedInventoryData.filter((item) => {
-			if (item && typeof item === 'object' && 'product_stock' in item) {
-				const stock = (item as { product_stock: unknown }).product_stock;
-				if (stock && typeof stock === 'object' && 'currentWarehouse' in stock) {
-					return (stock as { currentWarehouse: number }).currentWarehouse === 2;
-				}
-			}
-			return false;
-		}).length;
-	}, [storedInventoryData]);
+	const generalItemsCount = warehouseItems.length;
+	const gabineteItemsCount = cabinetItems.length;
 
 	return (
 		<div className="theme-transition flex-1 space-y-6 bg-white p-4 md:p-6 dark:bg-[#151718]">
@@ -103,9 +74,9 @@ export function InventarioPage() {
 				<TabsContent className="space-y-4" value="general">
 					<ProductCatalogTable
 						enableDispose
-						inventory={inventory.warehouse}
+						inventory={warehouseItems}
 						productCatalog={productCatalog}
-						warehouse={1}
+						warehouse={warehouseId}
 					/>
 				</TabsContent>
 
@@ -113,9 +84,13 @@ export function InventarioPage() {
 				<TabsContent className="space-y-4" value="gabinete">
 					<ProductCatalogTable
 						enableDispose
-						inventory={inventory.cabinet}
+						inventory={cabinetItems}
 						productCatalog={productCatalog}
-						warehouse={2}
+						warehouse={
+							inventory && 'data' in inventory
+								? inventory.data?.cabinetId || '1'
+								: '1'
+						}
 					/>
 				</TabsContent>
 			</Tabs>

@@ -92,9 +92,9 @@ export type InventoryItem = {
 	id: string;
 	barcode: number;
 	lastUsed: string | null;
-	lastUsedBy: number | null;
+	lastUsedBy: string | number | null;
 	numberOfUses: number;
-	currentWarehouse: number;
+	currentWarehouse: string | number;
 	isBeingUsed: boolean;
 	firstUsed: string | null;
 };

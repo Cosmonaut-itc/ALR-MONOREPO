@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 
 // Type for product catalog items
-type ProductCatalogItem = {
+export type ProductCatalogItem = {
 	barcode: number;
 	name: string;
 	category: string;
@@ -10,29 +10,37 @@ type ProductCatalogItem = {
 };
 
 // Type for stock items (simplified for table usage)
-type StockItem = {
-	id: string;
-	uuid: string;
-	barcode: number;
-	lastUsed?: string;
-	lastUsedBy?: string;
-	numberOfUses: number;
-	currentWarehouse: number;
-	isBeingUsed: boolean;
-	firstUsed: string;
+export type StockItem = {
+	id?: string | null;
+	barcode: number | null;
+	lastUsed?: string | null;
+	lastUsedBy?: string | null;
+	numberOfUses?: number | null;
+	currentWarehouse?: string | null;
+	isBeingUsed?: boolean | null;
+	firstUsed?: string | null;
+};
+
+export type StockItemWithEmployee = {
+	productStock: StockItem;
+	employee: {
+		id?: string;
+		name?: string;
+		surname?: string;
+	} | null;
 };
 
 interface InventoryStore {
 	// Products
 	stockItems: StockItem[];
 	productCatalog: ProductCatalogItem[];
-	inventoryData: unknown[]; // raw inventory items as returned by API (with employee)
-	inventoryDataCabinet: unknown[]; // raw inventory items as returned by API (with employee)
+	inventoryData: StockItemWithEmployee[]; // raw inventory items as returned by API (with employee)
+	inventoryDataCabinet: StockItemWithEmployee[]; // raw inventory items as returned by API (with employee)
 
 	// Filters
 	searchTerm: string;
 	selectedCategory: string | undefined;
-	selectedWarehouse: number | undefined; // 1 = general, 2 = gabinete
+	selectedWarehouse: string | undefined; // 1 = general, 2 = gabinete
 	categories: string[];
 
 	// Loading states
@@ -45,22 +53,24 @@ interface InventoryStore {
 	// Actions
 	setStockItems: (items: StockItem[]) => void;
 	setProductCatalog: (catalog: ProductCatalogItem[]) => void;
-	setInventoryData: (items: unknown[]) => void;
-	setInventoryDataCabinet: (items: unknown[]) => void;
+	setInventoryData: (items: StockItemWithEmployee[]) => void;
+	setInventoryDataCabinet: (items: StockItemWithEmployee[]) => void;
 	setCategories: (categories: string[]) => void;
 	setSearchTerm: (term: string) => void;
 	setSelectedCategory: (category: string | undefined) => void;
-	setSelectedWarehouse: (warehouse: number | undefined) => void;
+	setSelectedWarehouse: (warehouse: string | undefined) => void;
 	setLoadingStock: (loading: boolean) => void;
 	setLoadingCatalog: (loading: boolean) => void;
 	setNewProductModalOpen: (open: boolean) => void;
 	// Computed
-	getFilteredStockItems: () => (StockItem & { productInfo: ProductCatalogItem | undefined })[];
+	getFilteredStockItems: () => (StockItemWithEmployee & {
+		productInfo: ProductCatalogItem | undefined;
+	})[];
 	getProductByBarcode: (barcode: number) => ProductCatalogItem | undefined;
-	getInventoryItemsByBarcode: (barcode: number) => unknown[];
+	getInventoryItemsByBarcode: (barcode: number) => StockItemWithEmployee[];
 	getFilteredProductCatalog: () => (ProductCatalogItem & {
 		stockCount: number;
-		inventoryItems: unknown[];
+		inventoryItems: StockItemWithEmployee[];
 	})[];
 }
 
@@ -105,7 +115,7 @@ export const useInventoryStore = create<InventoryStore>()(
 
 				const normalizedSearch = searchTerm.trim().toLowerCase();
 
-				function doesItemMatchWarehouse(warehouse?: number) {
+				function doesItemMatchWarehouse(warehouse?: string) {
 					return !selectedWarehouse || warehouse === selectedWarehouse;
 				}
 
@@ -131,12 +141,12 @@ export const useInventoryStore = create<InventoryStore>()(
 
 				return stockItems
 					.map((item) => {
-						const productInfo = findProductInfo(item.barcode);
+						const productInfo = findProductInfo(item.barcode || 0);
 						return { item, productInfo };
 					})
 					.filter(
 						({ item, productInfo }) =>
-							doesItemMatchWarehouse(item.currentWarehouse) &&
+							doesItemMatchWarehouse(item.currentWarehouse || '') &&
 							doesItemMatchSearch(item, productInfo?.name) &&
 							doesItemMatchCategory(productInfo?.category),
 					)
@@ -149,11 +159,11 @@ export const useInventoryStore = create<InventoryStore>()(
 			},
 
 			getInventoryItemsByBarcode: (barcode) => {
-				const { inventoryData } = get();
+				const { inventoryData } = get() as InventoryStore;
 				// Helper to extract barcode from inventory item structure
-				const extractBarcode = (item: unknown): number => {
-					if (item && typeof item === 'object' && 'product_stock' in item) {
-						const stock = (item as { product_stock: unknown }).product_stock;
+				const extractBarcode = (item: StockItemWithEmployee): number => {
+					if (item && typeof item === 'object' && 'productStock' in item) {
+						const stock = (item as { productStock: StockItem }).productStock;
 						if (stock && typeof stock === 'object' && 'barcode' in stock) {
 							return (stock as { barcode: number }).barcode;
 						}
@@ -177,16 +187,16 @@ export const useInventoryStore = create<InventoryStore>()(
 
 				// Helper to extract inventory item data
 				// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: No need
-				const extractInventoryData = (item: unknown) => {
-					if (item && typeof item === 'object' && 'product_stock' in item) {
-						const stock = (item as { product_stock: unknown }).product_stock;
+				const extractInventoryData = (item: StockItemWithEmployee) => {
+					if (item && typeof item === 'object' && 'productStock' in item) {
+						const stock = (item as { productStock: StockItem }).productStock;
 						if (stock && typeof stock === 'object') {
 							return {
 								barcode:
 									'barcode' in stock ? (stock as { barcode: number }).barcode : 0,
 								warehouse:
 									'currentWarehouse' in stock
-										? (stock as { currentWarehouse: number }).currentWarehouse
+										? (stock as { currentWarehouse: string }).currentWarehouse
 										: 1,
 							};
 						}
@@ -195,7 +205,7 @@ export const useInventoryStore = create<InventoryStore>()(
 				};
 
 				// Helper to filter items by warehouse
-				const filterByWarehouse = (items: unknown[]) => {
+				const filterByWarehouse = (items: StockItemWithEmployee[]) => {
 					if (!selectedWarehouse) {
 						return items;
 					}

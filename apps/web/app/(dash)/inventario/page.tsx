@@ -19,24 +19,24 @@ export const dynamic = 'force-dynamic';
 export default async function AbastecimientoPage() {
 	const queryClient = getQueryClient();
 	const auth = await getServerAuth();
-	console.log(auth);
 	const warehouseId = auth.user?.warehouseId;
 
 	try {
 		// Prefetch inventory data so the client query hydrates
-		await queryClient.prefetchQuery({
+		queryClient.prefetchQuery({
 			queryKey: createQueryKey(queryKeys.inventory, [warehouseId as string]),
 			queryFn: () => fetchStockByWarehouseServer(warehouseId as string),
 		});
+
 		// Prefetch product catalog data
-		await queryClient.prefetchQuery({
+		queryClient.prefetchQuery({
 			queryKey: queryKeys.productCatalog,
 			queryFn: () => fetchAllProductsServer(),
 		});
 		return (
 			<HydrationBoundary state={dehydrate(queryClient)}>
 				<GenericBoundaryWrapper fallbackComponent={<SkeletonInventoryTable />}>
-					<InventarioPage />
+					<InventarioPage warehouseId={warehouseId as string} />
 				</GenericBoundaryWrapper>
 			</HydrationBoundary>
 		);
@@ -46,7 +46,7 @@ export default async function AbastecimientoPage() {
 		return (
 			<HydrationBoundary state={dehydrate(queryClient)}>
 				<GenericBoundaryWrapper fallbackComponent={<SkeletonInventoryTable />}>
-					<InventarioPage />
+					<InventarioPage warehouseId={warehouseId as string} />
 				</GenericBoundaryWrapper>
 			</HydrationBoundary>
 		);
