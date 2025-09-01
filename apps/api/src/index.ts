@@ -888,18 +888,14 @@ const route = app
 
 				// If no records exist in either table, return filtered mock data for development/testing
 				if (warehouseProductStock.length === 0 && cabinetWarehouse.length === 0) {
-					// Filter mock data by warehouse for consistency
-					const filteredMockData = productStockData.filter(
-						(item) => item.currentWarehouse.toString() === warehouseId,
-					);
-
 					return c.json(
 						{
 							success: true,
 							message: 'Fetching test data filtered by warehouse',
 							data: {
-								warehouse: filteredMockData,
+								warehouse: [],
 								cabinet: [],
+								cabinetId: '',
 							},
 						} satisfies ApiResponse,
 						200,
@@ -914,6 +910,7 @@ const route = app
 						data: {
 							warehouse: warehouseProductStock,
 							cabinet: cabinetProductStock,
+							cabinetId: cabinetWarehouse[0].id ?? '',
 						},
 					} satisfies ApiResponse,
 					200,
