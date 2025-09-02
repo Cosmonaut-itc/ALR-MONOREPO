@@ -15,7 +15,7 @@
 /** biome-ignore-all lint/performance/noNamespaceImport: Required for zod */
 
 import { zValidator } from '@hono/zod-validator';
-import { eq, sql } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
@@ -220,6 +220,10 @@ function handleDatabaseError(error: Error): { response: ApiResponse; status: num
 	}
 
 	return null;
+}
+
+function isTransferTypeInternal(transferType: string): boolean {
+	return transferType === 'internal';
 }
 
 /**
@@ -2056,6 +2060,9 @@ const route = app
 					);
 				}
 
+				//Get all of the product stock id from the transfer details
+				const productStockIds = transferDetails.map((detail) => detail.productStockId);
+
 				// Start database transaction to ensure data consistency
 				const result = await db.transaction(async (tx) => {
 					// Create the main warehouse transfer record
@@ -2072,8 +2079,8 @@ const route = app
 							priority,
 							totalItems: transferDetails.length,
 							transferDate: new Date(),
-							isCompleted: false,
-							isPending: true,
+							isCompleted: isTransferTypeInternal(transferType),
+							isPending: isTransferTypeInternal(transferType),
 							isCancelled: false,
 						})
 						.returning();
@@ -2098,6 +2105,14 @@ const route = app
 							})),
 						)
 						.returning();
+
+					// If internal transfer, immediately move the involved product stock to destination warehouse
+					if (transferType === 'internal' && productStockIds.length > 0) {
+						await tx
+							.update(schemas.productStock)
+							.set({ currentWarehouse: destinationWarehouseId })
+							.where(inArray(schemas.productStock.id, productStockIds));
+					}
 
 					return {
 						transfer: insertedTransfer[0],
@@ -2314,40 +2329,68 @@ const route = app
 					);
 				}
 
-				// Prepare update values
-				const updateValues: Record<string, unknown> = {
-					updatedAt: new Date(),
-				};
+				// Perform the detail update and potential product stock update atomically
+				const txResult = await db.transaction(async (tx) => {
+					// Build update values
+					const updateValues: Record<string, unknown> = {
+						updatedAt: new Date(),
+					};
 
-				if (isReceived !== undefined) {
-					updateValues.isReceived = isReceived;
-					// If marking as received, set received date
-					if (isReceived) {
-						updateValues.receivedDate = new Date();
-						updateValues.receivedBy = receivedBy;
+					if (isReceived !== undefined) {
+						updateValues.isReceived = isReceived;
+						if (isReceived) {
+							updateValues.receivedDate = new Date();
+							updateValues.receivedBy = receivedBy;
+						}
 					}
-				}
 
-				if (receivedBy !== undefined && !updateValues.receivedBy) {
-					updateValues.receivedBy = receivedBy;
-				}
+					if (itemCondition !== undefined) {
+						updateValues.itemCondition = itemCondition;
+					}
 
-				if (itemCondition !== undefined) {
-					updateValues.itemCondition = itemCondition;
-				}
+					if (itemNotes !== undefined) {
+						updateValues.itemNotes = itemNotes;
+					}
 
-				if (itemNotes !== undefined) {
-					updateValues.itemNotes = itemNotes;
-				}
+					// Update the transfer detail row
+					const updatedRows = await tx
+						.update(schemas.warehouseTransferDetails)
+						.set(updateValues)
+						.where(eq(schemas.warehouseTransferDetails.id, transferDetailId))
+						.returning();
 
-				// Update the warehouse transfer detail
-				const updatedDetail = await db
-					.update(schemas.warehouseTransferDetails)
-					.set(updateValues)
-					.where(eq(schemas.warehouseTransferDetails.id, transferDetailId))
-					.returning();
+					const updatedDetail = updatedRows[0];
+					if (!updatedDetail) {
+						return { type: 'not_found' as const };
+					}
 
-				if (updatedDetail.length === 0) {
+					// Fetch transfer to get destination warehouse
+					const transferRows = await tx
+						.select({
+							destinationWarehouseId:
+								schemas.warehouseTransfer.destinationWarehouseId,
+						})
+						.from(schemas.warehouseTransfer)
+						.where(eq(schemas.warehouseTransfer.id, updatedDetail.transferId))
+						.limit(1);
+
+					const transfer = transferRows[0];
+					if (!transfer) {
+						return { type: 'transfer_not_found' as const };
+					}
+
+					// If received, update the product stock current warehouse
+					if (isReceived === true) {
+						await tx
+							.update(schemas.productStock)
+							.set({ currentWarehouse: transfer.destinationWarehouseId })
+							.where(eq(schemas.productStock.id, updatedDetail.productStockId));
+					}
+
+					return { type: 'ok' as const, updatedDetail };
+				});
+
+				if (txResult.type === 'not_found') {
 					return c.json(
 						{
 							success: false,
@@ -2357,11 +2400,21 @@ const route = app
 					);
 				}
 
+				if (txResult.type === 'transfer_not_found') {
+					return c.json(
+						{
+							success: false,
+							message: 'Transfer not found',
+						} satisfies ApiResponse,
+						404,
+					);
+				}
+
 				return c.json(
 					{
 						success: true,
 						message: 'Transfer item status updated successfully',
-						data: updatedDetail[0],
+						data: txResult.updatedDetail,
 					} satisfies ApiResponse,
 					200,
 				);
