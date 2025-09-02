@@ -963,6 +963,89 @@ const route = app
 	)
 
 	/**
+	 * DELETE /api/auth/product-stock/delete - Delete a product stock record
+	 *
+	 * Deletes a product stock record by ID. Requires an authenticated user
+	 * with role 'encargado'. Returns 404 if the record doesn't exist and 409
+	 * if deletion violates foreign key constraints (referenced by transfers, etc.).
+	 *
+	 * @param {string} id - UUID of the product stock to delete (query parameter)
+	 * @returns {ApiResponse} Success response with deleted record
+	 */
+	.delete(
+		'/api/auth/product-stock/delete',
+		zValidator('query', z.object({ id: z.string().uuid('Invalid product stock ID') })),
+		async (c) => {
+			try {
+				const { id } = c.req.valid('query');
+
+				// Authorization: only 'encargado' can delete
+				const user = c.get('user');
+				if (!user) {
+					return c.json(
+						{
+							success: false,
+							message: 'Authentication required',
+						} satisfies ApiResponse,
+						401,
+					);
+				}
+				if (user.role !== 'encargado') {
+					return c.json(
+						{
+							success: false,
+							message: 'Forbidden - insufficient permissions',
+						} satisfies ApiResponse,
+						403,
+					);
+				}
+
+				const deleted = await db
+					.delete(schemas.productStock)
+					.where(eq(schemas.productStock.id, id))
+					.returning();
+
+				if (deleted.length === 0) {
+					return c.json(
+						{
+							success: false,
+							message: 'Product stock not found',
+						} satisfies ApiResponse,
+						404,
+					);
+				}
+
+				return c.json(
+					{
+						success: true,
+						message: 'Product stock deleted successfully',
+						data: deleted[0],
+					} satisfies ApiResponse,
+					200,
+				);
+			} catch (error) {
+				if (error instanceof Error && error.message.toLowerCase().includes('foreign key')) {
+					return c.json(
+						{
+							success: false,
+							message:
+								'Cannot delete product stock because it is referenced by other records',
+						} satisfies ApiResponse,
+						409,
+					);
+				}
+				return c.json(
+					{
+						success: false,
+						message: 'Failed to delete product stock',
+					} satisfies ApiResponse,
+					500,
+				);
+			}
+		},
+	)
+
+	/**
 	 * POST /api/auth/product-stock/create - Create a new product stock record
 	 *
 	 * Creates a new product stock record in the database with the provided details.
