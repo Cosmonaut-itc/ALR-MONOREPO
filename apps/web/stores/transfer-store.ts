@@ -43,7 +43,13 @@ interface TransferState {
 	/** Clear the transfer list */
 	clearTransfer: () => void;
 	/** Approve and finalize transfer - returns transformed data for mutation */
-	approveTransfer: () => TransferOrderType;
+	approveTransfer: ({
+		destinationWarehouseId,
+		sourceWarehouseId,
+	}: {
+		destinationWarehouseId: string;
+		sourceWarehouseId: string;
+	}) => TransferOrderType;
 }
 
 export const useTransferStore = create<TransferState>()(
@@ -93,13 +99,22 @@ export const useTransferStore = create<TransferState>()(
 
 		clearTransfer: () => set({ transferList: [] }),
 
-		approveTransfer: () => {
+		approveTransfer: ({
+			destinationWarehouseId,
+			sourceWarehouseId,
+		}: {
+			destinationWarehouseId: string;
+			sourceWarehouseId: string;
+		}) => {
 			const transferList = get().transferList;
 			const currentUser = useAuthStore.getState().user;
-			const currentWarehouse = currentUser?.warehouseId;
 
 			if (!currentUser) {
 				throw new Error('Usuario no autenticado');
+			}
+
+			if (!(sourceWarehouseId && destinationWarehouseId)) {
+				throw new Error('Almacén de origen o destino no especificado');
 			}
 
 			// Generate unique transfer number using timestamp
@@ -109,8 +124,8 @@ export const useTransferStore = create<TransferState>()(
 			const transformedData: TransferOrderType = {
 				transferNumber,
 				transferType: 'internal', // Internal transfer between warehouses
-				sourceWarehouseId: currentWarehouse?.toString() || '',
-				destinationWarehouseId: (currentWarehouse + 1).toString() || '',
+				sourceWarehouseId,
+				destinationWarehouseId,
 				initiatedBy: currentUser.id,
 				transferDetails: transferList.map((item) => ({
 					productStockId: item.uuid,

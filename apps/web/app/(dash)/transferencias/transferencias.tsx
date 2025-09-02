@@ -106,6 +106,10 @@ export function TransferenciasClient({ warehouseId }: { warehouseId: string }) {
 		return new Set(transferList.map((item) => item.uuid));
 	}, [transferList]);
 
+	const cabinetWarehouseId = useMemo(() => {
+		return inventory && 'data' in inventory ? inventory.data?.cabinetId || '1' : '1';
+	}, [inventory]);
+
 	return (
 		<div className="theme-transition flex-1 space-y-6 bg-white p-4 md:p-6 dark:bg-[#151718]">
 			{/* Header */}
@@ -206,7 +210,10 @@ export function TransferenciasClient({ warehouseId }: { warehouseId: string }) {
 								disabled={transferList.length === 0}
 								onClick={() => {
 									toast.success('Transferencia aprobada', { duration: 2000 });
-									approveTransfer();
+									approveTransfer({
+										destinationWarehouseId: cabinetWarehouseId,
+										sourceWarehouseId: warehouseId,
+									});
 									setIsListOpen(false);
 								}}
 								variant="outline"
