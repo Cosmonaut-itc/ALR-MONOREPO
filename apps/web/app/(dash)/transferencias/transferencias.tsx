@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/table';
 import { getAllProducts, getInventoryByWarehouse } from '@/lib/fetch-functions/inventory';
 import { createQueryKey } from '@/lib/helpers';
+import { useCreateTransferOrder } from '@/lib/mutations/transfers';
 import { queryKeys } from '@/lib/query-keys';
 import type { StockItemWithEmployee } from '@/stores/inventory-store';
 import { useTransferStore } from '@/stores/transfer-store';
@@ -47,6 +48,8 @@ export function TransferenciasClient({ warehouseId }: { warehouseId: string }) {
 		queryKey: queryKeys.productCatalog,
 		queryFn: getAllProducts,
 	});
+
+	const { mutateAsync: createTransferOrder } = useCreateTransferOrder();
 
 	const { addToTransfer, transferList, removeFromTransfer, approveTransfer } = useTransferStore();
 	const [isListOpen, setIsListOpen] = useState(false);
@@ -109,6 +112,14 @@ export function TransferenciasClient({ warehouseId }: { warehouseId: string }) {
 	const cabinetWarehouseId = useMemo(() => {
 		return inventory && 'data' in inventory ? inventory.data?.cabinetId || '1' : '1';
 	}, [inventory]);
+
+	const handleSubmitTransfer = async () => {
+		const transferData = approveTransfer({
+			destinationWarehouseId: cabinetWarehouseId,
+			sourceWarehouseId: warehouseId,
+		});
+		await createTransferOrder(transferData);
+	};
 
 	return (
 		<div className="theme-transition flex-1 space-y-6 bg-white p-4 md:p-6 dark:bg-[#151718]">
@@ -208,13 +219,10 @@ export function TransferenciasClient({ warehouseId }: { warehouseId: string }) {
 						<DialogFooter className="flex-shrink-0">
 							<Button
 								disabled={transferList.length === 0}
-								onClick={() => {
-									toast.success('Transferencia aprobada', { duration: 2000 });
-									approveTransfer({
-										destinationWarehouseId: cabinetWarehouseId,
-										sourceWarehouseId: warehouseId,
-									});
+								onClick={async () => {
+									await handleSubmitTransfer();
 									setIsListOpen(false);
+									toast.success('Transferencia creada', { duration: 2000 });
 								}}
 								variant="outline"
 							>

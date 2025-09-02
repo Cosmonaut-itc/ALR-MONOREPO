@@ -77,6 +77,7 @@ export type TransferOrderType = {
 	sourceWarehouseId: string;
 	destinationWarehouseId: string;
 	initiatedBy: string;
+	cabinetId: string;
 	transferDetails: Array<{
 		productStockId: string;
 		quantityTransferred: number;
