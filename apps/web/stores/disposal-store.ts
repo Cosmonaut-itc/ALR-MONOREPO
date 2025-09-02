@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import type { ProductStockItem } from '@/lib/schemas';
 
-type DisposalReason = 'consumido' | 'dañado' | 'otro';
+export type DisposalReason = 'consumido' | 'dañado' | 'otro';
 
 interface DisposalState {
 	current?: ProductStockItem;
@@ -16,8 +16,8 @@ interface DisposalState {
 	/** Cerrar diálogo y resetear */
 	hide: () => void;
 
-	/** Establecer motivo de baja */
-	setReason: (reason: DisposalReason) => void;
+	/** Establecer motivo de baja (o limpiar con undefined) */
+	setReason: (reason: DisposalReason | undefined) => void;
 
 	/** Confirmar baja del artículo */
 	confirm: () => Promise<void>;
