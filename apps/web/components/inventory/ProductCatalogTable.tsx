@@ -202,7 +202,10 @@ export function ProductCatalogTable({
 	// Set inventory data in store
 	useEffect(() => {
 		if (inventory) {
-			setInventoryData(inventory as StockItemWithEmployee[]);
+			setInventoryData(
+				inventory &&
+					(('data' in inventory ? inventory.data : inventory) as StockItemWithEmployee[]),
+			);
 		}
 	}, [inventory, setInventoryData]);
 
@@ -238,7 +241,15 @@ export function ProductCatalogTable({
 
 		return storedProductCatalog.map((product) => {
 			// Get all inventory items for this product in the specified warehouse
-			const inventoryItems: StockItemWithEmployee[] = storedInventoryData.filter((item) => {
+			if (!storedInventoryData) {
+				return {
+					...product,
+					inventoryItems: [],
+					stockCount: 0,
+				};
+			}
+
+			const inventoryItems: StockItemWithEmployee[] = storedInventoryData?.filter((item) => {
 				const itemStock = (item as { productStock: StockItem }).productStock;
 				return (
 					getItemBarcode(itemStock) === product.barcode &&
