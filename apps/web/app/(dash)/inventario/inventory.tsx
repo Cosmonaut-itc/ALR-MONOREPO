@@ -29,7 +29,23 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 
 	const warehouseItems = useMemo<StockItemWithEmployee[]>(() => {
 		const hasData = inventory && 'data' in inventory;
-		return hasData ? inventory.data?.warehouse || [] : [];
+		if (!hasData) {
+			return [];
+		}
+		const items = inventory.data?.warehouse || [];
+		// Exclude items that already have a non-null currentCabinet in productStock
+		return items.filter((item) => {
+			if (item && typeof item === 'object' && 'productStock' in item) {
+				const stock = (item as { productStock: unknown }).productStock as
+					| { currentCabinet?: string | null }
+					| undefined;
+				const currentCabinet = stock?.currentCabinet;
+				// Keep only those with null/undefined currentCabinet
+				return currentCabinet == null;
+			}
+			// If structure is unexpected, keep item by default
+			return true;
+		});
 	}, [inventory]);
 
 	const cabinetItems = useMemo<StockItemWithEmployee[]>(() => {
