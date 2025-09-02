@@ -24,19 +24,19 @@ import {
 	TableHeader,
 	TableRow,
 } from '@/components/ui/table';
-import { getAllProducts, getInventory } from '@/lib/fetch-functions/inventory';
+import { getAllProducts, getInventoryByWarehouse } from '@/lib/fetch-functions/inventory';
+import { createQueryKey } from '@/lib/helpers';
 import { queryKeys } from '@/lib/query-keys';
+import type { StockItemWithEmployee } from '@/stores/inventory-store';
 import { useTransferStore } from '@/stores/transfer-store';
 import type { ProductCatalogResponse, ProductStockWithEmployee } from '@/types';
 
-export function TransferenciasClient() {
-	const { data: inventory } = useSuspenseQuery<
-		ProductStockWithEmployee | null,
-		Error,
-		ProductStockWithEmployee | null
-	>({
-		queryKey: queryKeys.inventory,
-		queryFn: getInventory,
+type APIResponse = ProductStockWithEmployee | null;
+
+export function TransferenciasClient({ warehouseId }: { warehouseId: string }) {
+	const { data: inventory } = useSuspenseQuery<APIResponse, Error, APIResponse>({
+		queryKey: createQueryKey(queryKeys.inventory, [warehouseId as string]),
+		queryFn: () => getInventoryByWarehouse(warehouseId as string),
 	});
 
 	const { data: productCatalog } = useSuspenseQuery<
@@ -52,25 +52,39 @@ export function TransferenciasClient() {
 	const [isListOpen, setIsListOpen] = useState(false);
 	const [listSearch, setListSearch] = useState('');
 
-	// Handler: add selected expanded-row items to transfer list
-	const handleAddToTransfer = ({
-		product,
-		items,
-	}: {
+	const warehouseItems = useMemo<StockItemWithEmployee[]>(() => {
+		const hasData = inventory && 'data' in inventory;
+		return hasData ? inventory.data?.warehouse || [] : [];
+	}, [inventory]);
+
+	// Local type compatible with ProductCatalogTable's callback
+	type AddToTransferArgs = {
 		product: { name: string; barcode: number; category: string };
-		items: { uuid: string }[];
-	}) => {
+		items: { uuid?: string; id?: string }[];
+	};
+
+	// Handler: add selected expanded-row items to transfer list
+	const handleAddToTransfer = ({ product, items }: AddToTransferArgs) => {
 		if (items.length === 0) {
 			return;
 		}
-		addToTransfer(
-			items.map((it) => ({
-				uuid: it.uuid,
-				barcode: product.barcode,
-				productName: product.name,
-				category: product.category,
-			})),
-		);
+		const candidates = items.flatMap((it) => {
+			const uuid = it.uuid ?? it.id;
+			return uuid
+				? [
+						{
+							uuid,
+							barcode: product.barcode,
+							productName: product.name,
+							category: product.category,
+						},
+					]
+				: [];
+		});
+		if (candidates.length === 0) {
+			return;
+		}
+		addToTransfer(candidates);
 		toast.success('Agregado a la lista de transferencia', { duration: 2000 });
 	};
 
@@ -111,14 +125,14 @@ export function TransferenciasClient() {
 					<DialogTrigger asChild>
 						<Button variant="outline">Ver Lista({transferList.length})</Button>
 					</DialogTrigger>
-					<DialogContent className="flex max-h-[90vh] w-[95vw] max-w-6xl flex-col">
+					<DialogContent className="flex w-full flex-col md:max-h-[90vh] md:w-[95vw] md:max-w-[900px]">
 						<DialogHeader className="flex-shrink-0">
 							<DialogTitle>Lista de transferencia</DialogTitle>
 							<DialogDescription>
 								Revisa y gestiona los items seleccionados para transferir.
 							</DialogDescription>
 						</DialogHeader>
-						<div className="flex min-h-0 flex-1 flex-col space-y-4">
+						<div className="flex flex-col space-y-4">
 							<div className="flex-shrink-0">
 								<Input
 									className="border-[#E5E7EB] bg-white text-[#11181C] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]"
@@ -127,7 +141,7 @@ export function TransferenciasClient() {
 									value={listSearch}
 								/>
 							</div>
-							<div className="min-h-0 flex-1 overflow-auto rounded-md border border-[#E5E7EB] dark:border-[#2D3033]">
+							<div className="min-h-0 overflow-auto rounded-md border border-[#E5E7EB] md:overflow-visible dark:border-[#2D3033]">
 								{filteredTransferList.length === 0 ? (
 									<div className="p-6 text-[#687076] text-sm dark:text-[#9BA1A6]">
 										No hay items en la lista.
@@ -208,10 +222,10 @@ export function TransferenciasClient() {
 			<ProductCatalogTable
 				disabledUUIDs={disabledUUIDs}
 				enableSelection
-				inventory={inventory}
+				inventory={warehouseItems}
 				onAddToTransfer={handleAddToTransfer}
 				productCatalog={productCatalog}
-				warehouse={1}
+				warehouse={warehouseId}
 			/>
 		</div>
 	);

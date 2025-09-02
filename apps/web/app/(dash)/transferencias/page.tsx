@@ -5,28 +5,36 @@ import { dehydrate, HydrationBoundary } from '@tanstack/react-query';
 import { TransferenciasClient } from '@/app/(dash)/transferencias/transferencias';
 import { getQueryClient } from '@/app/get-query-client';
 import { GenericBoundaryWrapper } from '@/components/suspense-generics/general-wrapper';
+import { createQueryKey } from '@/lib/helpers';
 import { queryKeys } from '@/lib/query-keys';
-import { fetchAllProductsServer, fetchInventoryServer } from '@/lib/server-functions/inventory';
+import {
+	fetchAllProductsServer,
+	fetchStockByWarehouseServer,
+} from '@/lib/server-functions/inventory';
+import { getServerAuth } from '@/lib/server-functions/server-auth';
 import { SkeletonInventoryTable } from '@/ui/skeletons/Skeleton.InventoryTable';
 
 export const dynamic = 'force-dynamic';
 
 export default async function TransferenciasPage() {
 	const queryClient = getQueryClient();
+	const auth = await getServerAuth();
+	const warehouseId = auth.user?.warehouseId;
 
 	try {
-		await queryClient.prefetchQuery({
-			queryKey: queryKeys.inventory,
-			queryFn: () => fetchInventoryServer(),
+		// Prefetch inventory data so the client query hydrates
+		queryClient.prefetchQuery({
+			queryKey: createQueryKey(queryKeys.inventory, [warehouseId as string]),
+			queryFn: () => fetchStockByWarehouseServer(warehouseId as string),
 		});
-		await queryClient.prefetchQuery({
+		queryClient.prefetchQuery({
 			queryKey: queryKeys.productCatalog,
 			queryFn: () => fetchAllProductsServer(),
 		});
 		return (
 			<HydrationBoundary state={dehydrate(queryClient)}>
 				<GenericBoundaryWrapper fallbackComponent={<SkeletonInventoryTable />}>
-					<TransferenciasClient />
+					<TransferenciasClient warehouseId={warehouseId as string} />
 				</GenericBoundaryWrapper>
 			</HydrationBoundary>
 		);
@@ -36,7 +44,7 @@ export default async function TransferenciasPage() {
 		return (
 			<HydrationBoundary state={dehydrate(queryClient)}>
 				<GenericBoundaryWrapper fallbackComponent={<SkeletonInventoryTable />}>
-					<TransferenciasClient />
+					<TransferenciasClient warehouseId={warehouseId as string} />
 				</GenericBoundaryWrapper>
 			</HydrationBoundary>
 		);

@@ -202,10 +202,7 @@ export function ProductCatalogTable({
 	// Set inventory data in store
 	useEffect(() => {
 		if (inventory) {
-			setInventoryData(
-				inventory &&
-					(('data' in inventory ? inventory.data : inventory) as StockItemWithEmployee[]),
-			);
+			setInventoryData(inventory);
 		}
 	}, [inventory, setInventoryData]);
 
