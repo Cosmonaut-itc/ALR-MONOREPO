@@ -145,7 +145,6 @@ export const withdrawOrderDetails = pgTable('withdraw_order_details', {
 export const cabinetWarehouse = pgTable('cabinet_warehouse', {
 	id: uuid('id').default(sql`gen_random_uuid()`).notNull().primaryKey(),
 	name: text('name').default('warehouse 1').notNull(),
-	parentWarehouse: integer('parent_warehouse').default(12).notNull(),
 	warehouseId: uuid('warehouse_id')
 		.notNull()
 		.references(() => warehouse.id, {
@@ -232,6 +231,9 @@ export const warehouseTransfer = pgTable('warehouse_transfer', {
 			onDelete: 'restrict',
 		}),
 
+	// Optional destination cabinet for internal transfers
+	cabinetId: uuid('cabinet_id').references(() => cabinetWarehouse.id),
+
 	// Status and timing
 	transferDate: timestamp('transfer_date').defaultNow().notNull(),
 	completedDate: timestamp('completed_date'),
@@ -240,12 +242,7 @@ export const warehouseTransfer = pgTable('warehouse_transfer', {
 	isCancelled: boolean('is_cancelled').default(false).notNull(),
 
 	// User tracking
-	initiatedBy: uuid('initiated_by')
-		.notNull()
-		.references(() => employee.id, {
-			onUpdate: 'cascade',
-			onDelete: 'restrict',
-		}),
+	initiatedBy: text('initiated_by').notNull(),
 	completedBy: uuid('completed_by').references(() => employee.id, {
 		onUpdate: 'cascade',
 		onDelete: 'restrict',
@@ -378,6 +375,11 @@ export const warehouseTransferRelations = relations(warehouseTransfer, ({ one, m
 		fields: [warehouseTransfer.completedBy],
 		references: [employee.id],
 		relationName: 'transferCompleter',
+	}),
+	// Optional cabinet for internal transfers
+	cabinet: one(cabinetWarehouse, {
+		fields: [warehouseTransfer.cabinetId],
+		references: [cabinetWarehouse.id],
 	}),
 	// Transfer details (one-to-many)
 	details: many(warehouseTransferDetails),

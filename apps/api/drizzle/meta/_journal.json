@@ -92,6 +92,27 @@
       "when": 1756398886496,
       "tag": "0012_lowly_fenris",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1756842521497,
+      "tag": "0013_light_slayback",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1756843013735,
+      "tag": "0014_aspiring_madrox",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1756843912717,
+      "tag": "0015_illegal_reavers",
+      "breakpoints": true
     }
   ]
 }

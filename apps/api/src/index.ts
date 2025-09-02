@@ -2012,7 +2012,8 @@ const route = app
 					),
 				sourceWarehouseId: z.string().uuid('Invalid source warehouse ID'),
 				destinationWarehouseId: z.string().uuid('Invalid destination warehouse ID'),
-				initiatedBy: z.string().uuid('Invalid employee ID'),
+				initiatedBy: z.string('Invalid employee ID'),
+				cabinetId: z.string().uuid('Invalid cabinet ID').optional(),
 				transferReason: z.string().max(500, 'Transfer reason too long').optional(),
 				notes: z.string().max(1000, 'Notes too long').optional(),
 				priority: z.enum(['normal', 'high', 'urgent']).optional().default('normal'),
@@ -2042,6 +2043,7 @@ const route = app
 					transferType,
 					sourceWarehouseId,
 					destinationWarehouseId,
+					cabinetId,
 					initiatedBy,
 					transferReason,
 					notes,
@@ -2050,11 +2052,12 @@ const route = app
 				} = c.req.valid('json');
 
 				// Validate that source and destination warehouses are different
-				if (sourceWarehouseId === destinationWarehouseId) {
+				if (sourceWarehouseId === destinationWarehouseId && transferType === 'external') {
 					return c.json(
 						{
 							success: false,
-							message: 'Source and destination warehouses must be different',
+							message:
+								'Source and destination warehouses must be different for external transfers',
 						} satisfies ApiResponse,
 						400,
 					);
@@ -2072,11 +2075,16 @@ const route = app
 							transferNumber,
 							transferType,
 							sourceWarehouseId,
-							destinationWarehouseId,
+							// For internal transfers, destination warehouse equals source warehouse
+							destinationWarehouseId:
+								transferType === 'internal'
+									? sourceWarehouseId
+									: destinationWarehouseId,
 							initiatedBy,
 							transferReason,
 							notes,
 							priority,
+							cabinetId: transferType === 'internal' ? (cabinetId ?? null) : null,
 							totalItems: transferDetails.length,
 							transferDate: new Date(),
 							isCompleted: isTransferTypeInternal(transferType),
