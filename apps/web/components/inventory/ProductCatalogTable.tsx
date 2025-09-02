@@ -147,8 +147,12 @@ function getItemWarehouse(item: StockItem): string {
 		return '1';
 	}
 
-	const obj = item as { currentWarehouse?: string };
+	const obj = item as { currentWarehouse?: string; currentCabinet?: string };
 	const currentWarehouse = obj.currentWarehouse;
+	const currentCabinet = obj.currentCabinet;
+	if (currentCabinet && typeof currentCabinet === 'string') {
+		return currentCabinet;
+	}
 	if (currentWarehouse && typeof currentWarehouse === 'string') {
 		return currentWarehouse;
 	}

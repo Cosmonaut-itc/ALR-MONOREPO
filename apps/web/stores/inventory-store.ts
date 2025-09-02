@@ -17,6 +17,7 @@ export type StockItem = {
 	lastUsedBy?: string | null;
 	numberOfUses?: number | null;
 	currentWarehouse?: string | null;
+	currentCabinet?: string | null;
 	isBeingUsed?: boolean | null;
 	firstUsed?: string | null;
 };
