@@ -116,6 +116,8 @@ export const productStock = pgTable('product_stock', {
 			onUpdate: 'cascade',
 			onDelete: 'restrict',
 		}),
+	// Optional current cabinet location for internal moves
+	currentCabinet: uuid('current_cabinet').references(() => cabinetWarehouse.id),
 	isBeingUsed: boolean('is_being_used').default(false).notNull(),
 	firstUsed: date('first_used'),
 });

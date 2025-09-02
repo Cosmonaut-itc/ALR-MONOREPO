@@ -915,7 +915,7 @@ const route = app
 							schemas.employee,
 							eq(schemas.productStock.lastUsedBy, schemas.employee.id),
 						)
-						.where(eq(schemas.productStock.currentWarehouse, cabinetWarehouse[0].id));
+						.where(eq(schemas.productStock.currentCabinet, cabinetWarehouse[0].id));
 				}
 
 				// If no records exist in either table, return filtered mock data for development/testing
@@ -2114,11 +2114,14 @@ const route = app
 						)
 						.returning();
 
-					// If internal transfer, immediately move the involved product stock to destination warehouse
+					// If internal transfer, immediately move the involved product stock to the cabinet
 					if (transferType === 'internal' && productStockIds.length > 0) {
 						await tx
 							.update(schemas.productStock)
-							.set({ currentWarehouse: destinationWarehouseId })
+							.set({
+								currentWarehouse: sourceWarehouseId,
+								currentCabinet: cabinetId ?? null,
+							})
 							.where(inArray(schemas.productStock.id, productStockIds));
 					}
 
