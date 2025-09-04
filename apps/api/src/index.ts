@@ -2167,6 +2167,108 @@ const route = app
 	)
 
 	/**
+	 * GET /api/auth/warehouse-transfers/details - Retrieve warehouse transfer details by ID
+	 *
+	 * This endpoint fetches comprehensive warehouse transfer information including
+	 * both the general transfer data and all detailed items that are part of the transfer.
+	 * Returns transfer metadata, status information, and individual item details.
+	 *
+	 * @param {string} transferId - UUID of the warehouse transfer to retrieve (query parameter)
+	 * @returns {ApiResponse} Success response with transfer and details data from DB
+	 * @throws {400} If transfer ID is invalid or missing
+	 * @throws {404} If transfer is not found
+	 * @throws {500} If an unexpected error occurs during data retrieval
+	 */
+	.get(
+		'/api/auth/warehouse-transfers/details',
+		zValidator('query', z.object({ transferId: z.string('Invalid transfer ID') })),
+		async (c) => {
+			try {
+				const { transferId } = c.req.valid('query');
+
+				// Query the main transfer data
+				const transfer = await db
+					.select()
+					.from(schemas.warehouseTransfer)
+					.where(eq(schemas.warehouseTransfer.id, transferId))
+					.limit(1);
+
+				if (transfer.length === 0) {
+					return c.json(
+						{
+							success: false,
+							message: 'Warehouse transfer not found',
+						} satisfies ApiResponse,
+						404,
+					);
+				}
+
+				// Query the transfer details with product stock information
+				const transferDetails = await db
+					.select({
+						id: schemas.warehouseTransferDetails.id,
+						transferId: schemas.warehouseTransferDetails.transferId,
+						productStockId: schemas.warehouseTransferDetails.productStockId,
+						quantityTransferred: schemas.warehouseTransferDetails.quantityTransferred,
+						itemCondition: schemas.warehouseTransferDetails.itemCondition,
+						itemNotes: schemas.warehouseTransferDetails.itemNotes,
+						isReceived: schemas.warehouseTransferDetails.isReceived,
+						receivedDate: schemas.warehouseTransferDetails.receivedDate,
+						receivedBy: schemas.warehouseTransferDetails.receivedBy,
+						createdAt: schemas.warehouseTransferDetails.createdAt,
+						updatedAt: schemas.warehouseTransferDetails.updatedAt,
+						// Product stock information
+						productBarcode: schemas.productStock.barcode,
+						productLastUsed: schemas.productStock.lastUsed,
+						productNumberOfUses: schemas.productStock.numberOfUses,
+						productIsBeingUsed: schemas.productStock.isBeingUsed,
+						productFirstUsed: schemas.productStock.firstUsed,
+					})
+					.from(schemas.warehouseTransferDetails)
+					.leftJoin(
+						schemas.productStock,
+						eq(
+							schemas.warehouseTransferDetails.productStockId,
+							schemas.productStock.id,
+						),
+					)
+					.where(eq(schemas.warehouseTransferDetails.transferId, transferId))
+					.orderBy(schemas.warehouseTransferDetails.createdAt);
+
+				return c.json(
+					{
+						success: true,
+						message: `Warehouse transfer details for ${transferId} retrieved successfully`,
+						data: {
+							transfer: transfer[0],
+							details: transferDetails,
+							summary: {
+								totalItems: transferDetails.length,
+								receivedItems: transferDetails.filter((detail) => detail.isReceived)
+									.length,
+								pendingItems: transferDetails.filter((detail) => !detail.isReceived)
+									.length,
+							},
+						},
+					} satisfies ApiResponse,
+					200,
+				);
+			} catch (error) {
+				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
+				console.error('Error fetching warehouse transfer details by ID:', error);
+
+				return c.json(
+					{
+						success: false,
+						message: 'Failed to fetch warehouse transfer details',
+					} satisfies ApiResponse,
+					500,
+				);
+			}
+		},
+	)
+
+	/**
 	 * POST /api/auth/warehouse-transfers/create - Create a new warehouse transfer with details
 	 *
 	 * Creates a new warehouse transfer record along with its associated transfer details
