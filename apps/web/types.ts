@@ -31,6 +31,14 @@ export type ProductStockWithEmployee = Awaited<
 >;
 
 /**
+ * Type inference for warehouse transfer data
+ * Extracted from the API response of client.api.auth['warehouse-transfers'].external.$get()
+ */
+export type WarehouseTransfer = Awaited<
+	ReturnType<typeof import('./lib/fetch-functions/recepciones').getWarehouseTransferById>
+>;
+
+/**
  * Type for successful inventory data (excludes null case from error handling)
  * This represents the actual data structure when the API call succeeds
  */
