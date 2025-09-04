@@ -19,6 +19,9 @@ interface DisposalState {
 	/** Establecer motivo de baja (o limpiar con undefined) */
 	setReason: (reason: DisposalReason | undefined) => void;
 
+	/** Obtener el artículo actual */
+	getCurrent: () => ProductStockItem | undefined;
+
 	/** Confirmar baja del artículo */
 	confirm: () => Promise<void>;
 }
@@ -47,6 +50,8 @@ export const useDisposalStore = create<DisposalState>()(
 				}),
 
 			setReason: (reason) => set({ reason }),
+
+			getCurrent: () => get().current,
 
 			confirm: async () => {
 				const { current, reason } = get();

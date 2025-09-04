@@ -21,10 +21,12 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from '@/components/ui/select';
+import { useDeleteInventoryItem } from '@/lib/mutations/inventory';
 import { type DisposalReason, useDisposalStore } from '@/stores/disposal-store';
 
 export function DisposeItemDialog() {
 	const { current, reason, open, isLoading, hide, setReason, confirm } = useDisposalStore();
+	const { mutateAsync } = useDeleteInventoryItem();
 
 	const handleConfirm = async () => {
 		if (!reason) {
@@ -33,7 +35,13 @@ export function DisposeItemDialog() {
 		}
 
 		try {
-			await confirm();
+			if (!current) {
+				toast.warning('No se encontró el artículo a dar de baja');
+				return;
+			}
+			await mutateAsync({ id: current.id });
+			hide();
+			confirm();
 			toast.success('Artículo dado de baja exitosamente');
 		} catch (error) {
 			toast.error('Error al dar de baja el artículo');
