@@ -2106,48 +2106,65 @@ const route = app
 	})
 
 	/**
-	 * GET /api/auth/warehouse-transfers/all - Retrieve all warehouse transfers
+	 * GET /api/auth/warehouse-transfers/external - Retrieve external warehouse transfers by destination warehouse
 	 *
-	 * This endpoint fetches all warehouse transfer records from the database with
-	 * their associated source and destination warehouse information.
+	 * This endpoint fetches external warehouse transfer records filtered by destination warehouse ID.
+	 * Returns transfers where the specified warehouse is the destination (incoming transfers).
 	 * Returns comprehensive transfer data including status, timing, and metadata.
 	 *
-	 * @returns {ApiResponse} Success response with warehouse transfers data from DB
+	 * @param {string} warehouseId - UUID of the destination warehouse to filter transfers (query parameter)
+	 * @returns {ApiResponse} Success response with filtered warehouse transfers data from DB
+	 * @throws {400} If warehouse ID is invalid or missing
 	 * @throws {500} If an unexpected error occurs during data retrieval
 	 */
-	.get('/api/auth/warehouse-transfers/external', async (c) => {
-		try {
-			// Query warehouse transfers with basic information - simplified query due to join complexity
-			const warehouseTransfers = await db
-				.select()
-				.from(schemas.warehouseTransfer)
-				.where(eq(schemas.warehouseTransfer.transferType, 'external'))
-				.orderBy(schemas.warehouseTransfer.createdAt);
+	.get(
+		'/api/auth/warehouse-transfers/external',
+		zValidator('query', z.object({ warehouseId: z.string('Invalid warehouse ID') })),
+		async (c) => {
+			try {
+				const { warehouseId } = c.req.valid('query');
 
-			return c.json(
-				{
-					success: true,
-					message:
-						warehouseTransfers.length > 0
-							? 'External warehouse transfers retrieved successfully'
-							: 'No warehouse transfers found',
-					data: warehouseTransfers,
-				} satisfies ApiResponse,
-				200,
-			);
-		} catch (error) {
-			// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
-			console.error('Error fetching external warehouse transfers:', error);
+				// Query external warehouse transfers where the specified warehouse is the destination
+				const warehouseTransfers = await db
+					.select()
+					.from(schemas.warehouseTransfer)
+					.where(
+						and(
+							eq(schemas.warehouseTransfer.transferType, 'external'),
+							eq(schemas.warehouseTransfer.destinationWarehouseId, warehouseId),
+						),
+					)
+					.orderBy(schemas.warehouseTransfer.createdAt);
 
-			return c.json(
-				{
-					success: false,
-					message: 'Failed to fetch external warehouse transfers',
-				} satisfies ApiResponse,
-				500,
-			);
-		}
-	})
+				return c.json(
+					{
+						success: true,
+						message:
+							warehouseTransfers.length > 0
+								? `External warehouse transfers to warehouse ${warehouseId} retrieved successfully`
+								: `No external warehouse transfers found to warehouse ${warehouseId}`,
+						data: warehouseTransfers,
+					} satisfies ApiResponse,
+					200,
+				);
+			} catch (error) {
+				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
+				console.error(
+					'Error fetching external warehouse transfers by destination warehouse:',
+					error,
+				);
+
+				return c.json(
+					{
+						success: false,
+						message:
+							'Failed to fetch external warehouse transfers by destination warehouse',
+					} satisfies ApiResponse,
+					500,
+				);
+			}
+		},
+	)
 
 	/**
 	 * POST /api/auth/warehouse-transfers/create - Create a new warehouse transfer with details
