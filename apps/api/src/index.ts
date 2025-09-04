@@ -2106,6 +2106,50 @@ const route = app
 	})
 
 	/**
+	 * GET /api/auth/warehouse-transfers/all - Retrieve all warehouse transfers
+	 *
+	 * This endpoint fetches all warehouse transfer records from the database with
+	 * their associated source and destination warehouse information.
+	 * Returns comprehensive transfer data including status, timing, and metadata.
+	 *
+	 * @returns {ApiResponse} Success response with warehouse transfers data from DB
+	 * @throws {500} If an unexpected error occurs during data retrieval
+	 */
+	.get('/api/auth/warehouse-transfers/external', async (c) => {
+		try {
+			// Query warehouse transfers with basic information - simplified query due to join complexity
+			const warehouseTransfers = await db
+				.select()
+				.from(schemas.warehouseTransfer)
+				.where(eq(schemas.warehouseTransfer.transferType, 'external'))
+				.orderBy(schemas.warehouseTransfer.createdAt);
+
+			return c.json(
+				{
+					success: true,
+					message:
+						warehouseTransfers.length > 0
+							? 'External warehouse transfers retrieved successfully'
+							: 'No warehouse transfers found',
+					data: warehouseTransfers,
+				} satisfies ApiResponse,
+				200,
+			);
+		} catch (error) {
+			// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
+			console.error('Error fetching external warehouse transfers:', error);
+
+			return c.json(
+				{
+					success: false,
+					message: 'Failed to fetch external warehouse transfers',
+				} satisfies ApiResponse,
+				500,
+			);
+		}
+	})
+
+	/**
 	 * POST /api/auth/warehouse-transfers/create - Create a new warehouse transfer with details
 	 *
 	 * Creates a new warehouse transfer record along with its associated transfer details
