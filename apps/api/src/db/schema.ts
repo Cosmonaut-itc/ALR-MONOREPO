@@ -110,6 +110,7 @@ export const productStock = pgTable('product_stock', {
 	lastUsed: date('last_used'),
 	lastUsedBy: uuid('last_used_by').references(() => employee.id),
 	numberOfUses: integer('number_of_uses').default(0).notNull(),
+	isDeleted: boolean('is_deleted').default(false).notNull(),
 	currentWarehouse: uuid('current_warehouse')
 		.notNull()
 		.references(() => warehouse.id, {

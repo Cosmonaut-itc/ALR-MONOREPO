@@ -1,0 +1,1 @@
+ALTER TABLE "product_stock" ADD COLUMN "is_deleted" boolean DEFAULT false NOT NULL;

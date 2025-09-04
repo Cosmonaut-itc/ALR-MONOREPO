@@ -12,10 +12,11 @@
  * @author NS Inventory Management Team
  * @version 1.0.0
  */
+/** biome-ignore-all lint/complexity/noExcessiveCognitiveComplexity: Logging middleware needs comprehensive coverage */
 /** biome-ignore-all lint/performance/noNamespaceImport: Required for zod */
 
 import { zValidator } from '@hono/zod-validator';
-import { eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
@@ -183,6 +184,13 @@ function getDetailedStatusDescription(status: number): string {
 function handleDatabaseError(error: Error): { response: ApiResponse; status: number } | null {
 	const errorMessage = error.message.toLowerCase();
 
+	// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database error patterns
+	console.error('🔍 Database Error Analysis:', {
+		message: errorMessage,
+		name: error.name,
+		fullMessage: error.message,
+	});
+
 	if (errorMessage.includes('duplicate') || errorMessage.includes('unique')) {
 		// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
 		console.error('🗃️ Database: Duplicate key violation');
@@ -195,15 +203,27 @@ function handleDatabaseError(error: Error): { response: ApiResponse; status: num
 		};
 	}
 
-	if (errorMessage.includes('foreign key') || errorMessage.includes('constraint')) {
+	// Enhanced foreign key constraint detection for both direct PostgreSQL and Drizzle errors
+	const isForeignKeyError =
+		errorMessage.includes('foreign key') ||
+		errorMessage.includes('foreign key constraint') ||
+		errorMessage.includes('violates foreign key') ||
+		errorMessage.includes('still referenced') ||
+		(errorMessage.includes('constraint') && errorMessage.includes('violates')) ||
+		errorMessage.includes('referenced') ||
+		errorMessage.includes('restrict') ||
+		errorMessage.includes('23503') || // PostgreSQL foreign key violation code
+		errorMessage.includes('_fk'); // Foreign key constraint naming pattern
+
+	if (isForeignKeyError) {
 		// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
 		console.error('🔗 Database: Foreign key constraint violation');
 		return {
 			response: {
 				success: false,
-				message: 'Invalid reference - related record does not exist',
+				message: 'Cannot delete record because it is referenced by other records',
 			},
-			status: 400,
+			status: 409, // Changed to 409 for consistency with delete operations
 		};
 	}
 
@@ -401,7 +421,6 @@ const app = new Hono<{
  * Enhanced logging middleware for requests and responses
  * Logs detailed information for debugging API issues
  */
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Logging middleware needs comprehensive coverage
 app.use('*', async (c, next) => {
 	const start = Date.now();
 	const method = c.req.method;
@@ -606,7 +625,15 @@ const route = app
 		try {
 			await next();
 		} catch (error) {
-			// Log detailed error information
+			// Log detailed error information for global handler
+			// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
+			console.error('🌐 Global Error Handler Caught:', {
+				path: c.req.path,
+				method: c.req.method,
+				error: error instanceof Error ? error.message : error,
+				name: error instanceof Error ? error.name : undefined,
+				stack: error instanceof Error ? error.stack : undefined,
+			});
 
 			// Handle HTTP exceptions with proper status codes
 			if (error instanceof HTTPException) {
@@ -639,11 +666,15 @@ const route = app
 			if (error instanceof Error) {
 				const dbError = handleDatabaseError(error);
 				if (dbError) {
-					return c.json(dbError.response, dbError.status as 400 | 409 | 503);
+					return c.json(dbError.response, dbError.status as 409 | 503);
 				}
 			}
 
 			// Handle generic errors with 500 status
+			// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
+			console.error(
+				'🚨 SERVER ERROR DETECTED - 500: Internal Server Error - Generic server error',
+			);
 			return c.json(
 				{
 					success: false,
@@ -886,7 +917,12 @@ const route = app
 						schemas.employee,
 						eq(schemas.productStock.lastUsedBy, schemas.employee.id),
 					)
-					.where(eq(schemas.productStock.currentWarehouse, warehouseId));
+					.where(
+						and(
+							eq(schemas.productStock.currentWarehouse, warehouseId),
+							eq(schemas.productStock.isDeleted, false),
+						),
+					);
 
 				// Query the cabinetWarehouse table for the single cabinet belonging to this warehouse
 				const cabinetWarehouse = await db
@@ -915,7 +951,12 @@ const route = app
 							schemas.employee,
 							eq(schemas.productStock.lastUsedBy, schemas.employee.id),
 						)
-						.where(eq(schemas.productStock.currentCabinet, cabinetWarehouse[0].id));
+						.where(
+							and(
+								eq(schemas.productStock.currentCabinet, cabinetWarehouse[0].id),
+								eq(schemas.productStock.isDeleted, false),
+							),
+						);
 				}
 
 				// If no records exist in either table, return filtered mock data for development/testing
@@ -963,18 +1004,18 @@ const route = app
 	)
 
 	/**
-	 * DELETE /api/auth/product-stock/delete - Delete a product stock record
+	 * DELETE /api/auth/product-stock/delete - Soft delete a product stock record
 	 *
-	 * Deletes a product stock record by ID. Requires an authenticated user
-	 * with role 'encargado'. Returns 404 if the record doesn't exist and 409
-	 * if deletion violates foreign key constraints (referenced by transfers, etc.).
+	 * Marks a product stock record as deleted by setting isDeleted to true instead
+	 * of physically removing it from the database. Requires an authenticated user
+	 * with role 'encargado'. Returns 404 if the record doesn't exist or is already deleted.
 	 *
-	 * @param {string} id - UUID of the product stock to delete (query parameter)
-	 * @returns {ApiResponse} Success response with deleted record
+	 * @param {string} id - UUID of the product stock to mark as deleted (query parameter)
+	 * @returns {ApiResponse} Success response with updated record
 	 */
 	.delete(
 		'/api/auth/product-stock/delete',
-		zValidator('query', z.object({ id: z.string().uuid('Invalid product stock ID') })),
+		zValidator('query', z.object({ id: z.string('Invalid product stock ID') })),
 		async (c) => {
 			try {
 				const { id } = c.req.valid('query');
@@ -1000,16 +1041,22 @@ const route = app
 					);
 				}
 
-				const deleted = await db
-					.delete(schemas.productStock)
-					.where(eq(schemas.productStock.id, id))
+				const updated = await db
+					.update(schemas.productStock)
+					.set({ isDeleted: true })
+					.where(
+						and(
+							eq(schemas.productStock.id, id),
+							eq(schemas.productStock.isDeleted, false),
+						),
+					)
 					.returning();
 
-				if (deleted.length === 0) {
+				if (updated.length === 0) {
 					return c.json(
 						{
 							success: false,
-							message: 'Product stock not found',
+							message: 'Product stock not found or already deleted',
 						} satisfies ApiResponse,
 						404,
 					);
@@ -1018,26 +1065,25 @@ const route = app
 				return c.json(
 					{
 						success: true,
-						message: 'Product stock deleted successfully',
-						data: deleted[0],
+						message: 'Product stock marked as deleted successfully',
+						data: updated[0],
 					} satisfies ApiResponse,
 					200,
 				);
 			} catch (error) {
-				if (error instanceof Error && error.message.toLowerCase().includes('foreign key')) {
-					return c.json(
-						{
-							success: false,
-							message:
-								'Cannot delete product stock because it is referenced by other records',
-						} satisfies ApiResponse,
-						409,
-					);
-				}
+				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging soft delete operation issues
+				console.error('🚨 Soft Delete Error Details:', {
+					error,
+					message: error instanceof Error ? error.message : 'Unknown error',
+					stack: error instanceof Error ? error.stack : undefined,
+					type: typeof error,
+					name: error instanceof Error ? error.name : undefined,
+				});
+
 				return c.json(
 					{
 						success: false,
-						message: 'Failed to delete product stock',
+						message: `Failed to mark product stock as deleted: ${error instanceof Error ? error.message : error}`,
 					} satisfies ApiResponse,
 					500,
 				);
