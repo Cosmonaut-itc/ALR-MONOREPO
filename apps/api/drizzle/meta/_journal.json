@@ -127,6 +127,13 @@
       "when": 1757015723696,
       "tag": "0017_quiet_mister_fear",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1757102608999,
+      "tag": "0018_stale_christian_walker",
+      "breakpoints": true
     }
   ]
 }

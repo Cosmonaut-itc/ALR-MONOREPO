@@ -310,6 +310,70 @@ export const warehouseTransferDetails = pgTable('warehouse_transfer_details', {
 		.notNull(),
 });
 
+/**
+ * Kits table for tracking equipment kits assigned to employees
+ * Each kit contains multiple product stock items that are assigned together
+ */
+export const kits = pgTable('kits', {
+	// Primary identification
+	id: uuid('id').defaultRandom().primaryKey().notNull(),
+
+	// Kit details
+	numProducts: integer('num_products').default(0).notNull(),
+	assignedDate: date('assigned_date').defaultNow().notNull(),
+	assignedEmployee: uuid('assigned_employee')
+		.notNull()
+		.references(() => employee.id, {
+			onUpdate: 'cascade',
+			onDelete: 'restrict',
+		}),
+	observations: text('observations'),
+
+	// Audit fields
+	createdAt: timestamp('created_at')
+		.$defaultFn(() => /* @__PURE__ */ new Date())
+		.notNull(),
+	updatedAt: timestamp('updated_at')
+		.$defaultFn(() => /* @__PURE__ */ new Date())
+		.notNull(),
+});
+
+/**
+ * Kit details table for tracking individual items within each kit
+ * Each record represents one product stock item that is part of a kit
+ */
+export const kitsDetails = pgTable('kits_details', {
+	// Primary identification
+	id: uuid('id').defaultRandom().primaryKey().notNull(),
+
+	// Foreign key relationships
+	kitId: uuid('kit_id')
+		.notNull()
+		.references(() => kits.id, {
+			onUpdate: 'cascade',
+			onDelete: 'cascade',
+		}),
+	productId: uuid('product_id')
+		.notNull()
+		.references(() => productStock.id, {
+			onUpdate: 'cascade',
+			onDelete: 'restrict',
+		}),
+
+	// Item details
+	observations: text('observations'),
+	isReturned: boolean('is_returned').default(false).notNull(),
+	returnedDate: date('returned_date'),
+
+	// Audit fields
+	createdAt: timestamp('created_at')
+		.$defaultFn(() => /* @__PURE__ */ new Date())
+		.notNull(),
+	updatedAt: timestamp('updated_at')
+		.$defaultFn(() => /* @__PURE__ */ new Date())
+		.notNull(),
+});
+
 // Relations
 export const withdrawOrderRelations = relations(withdrawOrder, ({ many }) => ({
 	details: many(withdrawOrderDetails),
@@ -423,6 +487,8 @@ export const productStockRelations = relations(productStock, ({ one, many }) => 
 	withdrawOrderDetails: many(withdrawOrderDetails),
 	// Warehouse transfer details
 	warehouseTransferDetails: many(warehouseTransferDetails),
+	// Kit details (items that are part of kits)
+	kitDetails: many(kitsDetails),
 }));
 
 // Employee relations including transfer activities (external and internal)
@@ -451,6 +517,8 @@ export const employeeRelations = relations(employee, ({ many, one }) => ({
 	receivedItems: many(warehouseTransferDetails, {
 		relationName: 'itemReceiver',
 	}),
+	// Kits assigned to this employee
+	assignedKits: many(kits),
 }));
 
 // User relations for warehouse assignment and account management
@@ -478,5 +546,29 @@ export const userRelations = relations(user, ({ one, many }) => ({
 	// Warehouses last modified by this user
 	lastModifiedWarehouses: many(warehouse, {
 		relationName: 'warehouseModifier',
+	}),
+}));
+
+// Kits relations
+export const kitsRelations = relations(kits, ({ one, many }) => ({
+	// Employee assigned to this kit
+	assignedEmployee: one(employee, {
+		fields: [kits.assignedEmployee],
+		references: [employee.id],
+	}),
+	// Kit details (one-to-many)
+	details: many(kitsDetails),
+}));
+
+export const kitsDetailsRelations = relations(kitsDetails, ({ one }) => ({
+	// Parent kit relation
+	kit: one(kits, {
+		fields: [kitsDetails.kitId],
+		references: [kits.id],
+	}),
+	// Product stock item in this kit
+	productStock: one(productStock, {
+		fields: [kitsDetails.productId],
+		references: [productStock.id],
 	}),
 }));
