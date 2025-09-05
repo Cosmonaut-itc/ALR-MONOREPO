@@ -26,6 +26,12 @@ import {
 } from '@/components/ui/table';
 import { getTransferDetailsById } from '@/lib/fetch-functions/recepciones';
 import { createQueryKey } from '@/lib/helpers';
+import {
+	type UpdateTransferItemStatusPayload,
+	type UpdateTransferStatusPayload,
+	useUpdateTransferItemStatus,
+	useUpdateTransferStatus,
+} from '@/lib/mutations/transfers';
 import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
 import { useReceptionStore } from '@/stores/reception-store';
@@ -122,6 +128,10 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 		isAllReceived,
 	} = useReceptionStore();
 
+	// Mutations for updating transfer and item statuses
+	const { mutateAsync: updateTransferStatus } = useUpdateTransferStatus();
+	const { mutateAsync: updateItemStatus } = useUpdateTransferItemStatus();
+
 	// Extract list of detail items from API response with defensive checks
 	const extractDetailList = (root: APIResponse): UnknownRecord[] => {
 		if (Array.isArray(root)) {
@@ -195,9 +205,18 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 
 	const groupedEntries = Object.entries(groupedItems) as [string, ReceptionItem[]][];
 
-	const handleMarkAllReceived = () => {
+	const handleMarkAllReceived = async () => {
 		markAllReceived();
-		toast('Recepción completada: Todos los artículos han sido marcados como recibidos');
+		try {
+			const payload = {
+				transferId: shipmentId,
+				status: 'complete',
+			} as UpdateTransferStatusPayload;
+			await updateTransferStatus(payload);
+			toast('Recepción completada: Todos los artículos han sido marcados como recibidos');
+		} catch {
+			toast.error('No se pudo actualizar el estado del traspaso');
+		}
 
 		// Navigate back to receptions list
 		setTimeout(() => {
@@ -205,8 +224,17 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 		}, 1500);
 	};
 
-	const handleToggleItem = (itemId: string) => {
+	const handleToggleItem = async (itemId: string, nextReceived: boolean) => {
 		toggleReceived(itemId);
+		try {
+			const payload = {
+				transferDetailId: itemId,
+				isReceived: nextReceived,
+			} as UpdateTransferItemStatusPayload;
+			await updateItemStatus(payload);
+		} catch {
+			toast.error('No se pudo actualizar el estado del ítem');
+		}
 	};
 
 	const receivedCount = getReceivedCount();
@@ -376,8 +404,11 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 														<Checkbox
 															checked={item.received}
 															className="h-5 w-5 data-[state=checked]:border-[#0a7ea4] data-[state=checked]:bg-[#0a7ea4]"
-															onCheckedChange={() =>
-																handleToggleItem(item.id)
+															onCheckedChange={(checked) =>
+																handleToggleItem(
+																	item.id,
+																	Boolean(checked),
+																)
 															}
 														/>
 													</TableCell>
