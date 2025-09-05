@@ -1,10 +1,10 @@
 'use client';
 
+import { useSuspenseQuery } from '@tanstack/react-query';
 import { ArrowLeft, CheckCircle2, Package } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
-import { v4 as uuidv4 } from 'uuid';
 import {
 	Breadcrumb,
 	BreadcrumbItem,
@@ -24,9 +24,72 @@ import {
 	TableHeader,
 	TableRow,
 } from '@/components/ui/table';
+import { getTransferDetailsById } from '@/lib/fetch-functions/recepciones';
+import { createQueryKey } from '@/lib/helpers';
+import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
 import { useReceptionStore } from '@/stores/reception-store';
-import { SkeletonReceptionGroup } from '@/ui/skeletons/Skeleton.ReceptionGroup';
+import type { WarehouseTransferDetails } from '@/types';
+
+// =============================
+// Helper types and utilities for safe extraction
+// =============================
+
+type UnknownRecord = Record<string, unknown>;
+
+const isRecord = (value: unknown): value is UnknownRecord => {
+	if (value === null) {
+		return false;
+	}
+	return typeof value === 'object';
+};
+
+const toStringIfString = (value: unknown): string | undefined => {
+	if (typeof value === 'string') {
+		return value;
+	}
+	return;
+};
+
+const toNumberIfNumber = (value: unknown): number | undefined => {
+	if (typeof value === 'number' && Number.isFinite(value)) {
+		return value;
+	}
+	return;
+};
+
+const readNestedString = (root: UnknownRecord, key: string): string | undefined => {
+	const candidate = root[key];
+	if (typeof candidate === 'string') {
+		return candidate;
+	}
+	if (isRecord(candidate)) {
+		// Try common nested shapes like { product: { name } }
+		const nestedName = toStringIfString(candidate.name);
+		if (nestedName) {
+			return nestedName;
+		}
+	}
+	return;
+};
+
+const readNestedNumber = (root: UnknownRecord, key: string): number | undefined => {
+	const candidate = root[key];
+	if (typeof candidate === 'number' && Number.isFinite(candidate)) {
+		return candidate;
+	}
+	if (isRecord(candidate)) {
+		const nestedBarcode = toNumberIfNumber(candidate.barcode);
+		if (nestedBarcode !== undefined) {
+			return nestedBarcode;
+		}
+	}
+	return;
+};
+
+// =============================
+// Component
+// =============================
 
 type ReceptionItem = {
 	id: string;
@@ -36,14 +99,18 @@ type ReceptionItem = {
 };
 
 interface PageProps {
-	params: {
-		shipmentId: string;
-	};
+	shipmentId: string;
+	warehouseId: string;
 }
 
-export default function ReceptionDetailPage({ params }: PageProps) {
-	const [isLoading, setIsLoading] = useState(true);
+type APIResponse = WarehouseTransferDetails | null;
+
+export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 	const router = useRouter();
+	const { data: transferDetails } = useSuspenseQuery<APIResponse, Error, APIResponse>({
+		queryKey: createQueryKey(queryKeys.recepcionDetail, [shipmentId as string]),
+		queryFn: () => getTransferDetailsById(shipmentId as string),
+	});
 
 	const {
 		items,
@@ -55,83 +122,78 @@ export default function ReceptionDetailPage({ params }: PageProps) {
 		isAllReceived,
 	} = useReceptionStore();
 
-	// Mock data loading - TODO: Replace mock with GET /api/recepciones/{shipmentId}
+	// Extract list of detail items from API response with defensive checks
+	const extractDetailList = (root: APIResponse): UnknownRecord[] => {
+		if (Array.isArray(root)) {
+			return root as unknown as UnknownRecord[];
+		}
+		const source = (root ?? {}) as UnknownRecord;
+		const data = isRecord(source.data) ? (source.data as UnknownRecord) : undefined;
+		const tryLists: unknown[] = [
+			data?.transferDetails,
+			data?.details,
+			source.transferDetails,
+			source.details,
+		];
+		const firstArray = tryLists.find((v) => Array.isArray(v)) as unknown[] | undefined;
+		return Array.isArray(firstArray)
+			? (firstArray.filter((v) => isRecord(v)) as UnknownRecord[])
+			: [];
+	};
+
+	// Derive normalized items from API details
+	// biome-ignore lint/correctness/useExhaustiveDependencies: It will rerender when the transferDetails changes
+	const derivedItems: ReceptionItem[] = useMemo(() => {
+		const list = extractDetailList(transferDetails);
+		return list.map((raw: UnknownRecord, index: number): ReceptionItem => {
+			const id =
+				toStringIfString(raw.id) ||
+				toStringIfString(raw.productStockId) ||
+				toStringIfString(raw.uuid) ||
+				`item-${index + 1}`;
+
+			const barcode =
+				readNestedNumber(raw, 'barcode') ??
+				readNestedNumber(raw, 'product') ??
+				readNestedNumber(raw, 'productInfo') ??
+				0;
+
+			const productName =
+				readNestedString(raw, 'productName') ??
+				readNestedString(raw, 'name') ??
+				readNestedString(raw, 'product') ??
+				'Sin nombre';
+
+			return {
+				id,
+				barcode,
+				productName,
+				received: false,
+			};
+		});
+	}, [transferDetails]);
+
+	// Seed store with derived items when data changes
 	useEffect(() => {
-		setTimeout(() => {
-			const mockItems: ReceptionItem[] = [
-				// Group 1: Barcode 123456
-				{
-					id: 'item-001',
-					barcode: 123_456,
-					productName: 'Esmalte Gel Rosa Pastel',
-					received: false,
-				},
-				{
-					id: 'item-002',
-					barcode: 123_456,
-					productName: 'Esmalte Gel Rosa Pastel',
-					received: false,
-				},
-				{
-					id: 'item-003',
-					barcode: 123_456,
-					productName: 'Esmalte Gel Rosa Pastel',
-					received: true,
-				},
-				// Group 2: Barcode 789012
-				{
-					id: 'item-004',
-					barcode: 789_012,
-					productName: 'Base Coat Profesional',
-					received: false,
-				},
-				{
-					id: 'item-005',
-					barcode: 789_012,
-					productName: 'Base Coat Profesional',
-					received: false,
-				},
-				// Group 3: Barcode 345678
-				{
-					id: 'item-006',
-					barcode: 345_678,
-					productName: 'Top Coat Brillante',
-					received: false,
-				},
-				{
-					id: 'item-007',
-					barcode: 345_678,
-					productName: 'Top Coat Brillante',
-					received: true,
-				},
-				{
-					id: 'item-008',
-					barcode: 345_678,
-					productName: 'Top Coat Brillante',
-					received: false,
-				},
-			];
-			setItems(mockItems);
-			setIsLoading(false);
-		}, 1500);
-	}, [setItems]);
+		setItems(derivedItems);
+	}, [derivedItems, setItems]);
 
 	// Group items by barcode
-	const groupedItems = items.reduce(
-		(groups, item) => {
-			const key = item.barcode;
-			if (!groups[key]) {
-				groups[key] = [];
-			}
-			groups[key].push(item);
-			return groups;
-		},
-		{} as Record<number, ReceptionItem[]>,
-	);
+	const groupedItems = useMemo(() => {
+		return items.reduce(
+			(groups, item) => {
+				const key = item.barcode;
+				if (!groups[key]) {
+					groups[key] = [];
+				}
+				groups[key].push(item);
+				return groups;
+			},
+			{} as Record<number, ReceptionItem[]>,
+		);
+	}, [items]);
 
 	const groupedEntries = Object.entries(groupedItems) as [string, ReceptionItem[]][];
-	// Stable keys for skeleton rows to avoid using array index
-	const skeletonKeys = useMemo(() => Array.from({ length: 3 }, () => uuidv4()), []);
 
 	const handleMarkAllReceived = () => {
 		markAllReceived();
@@ -167,7 +229,7 @@ export default function ReceptionDetailPage({ params }: PageProps) {
 					<BreadcrumbSeparator />
 					<BreadcrumbItem>
 						<BreadcrumbPage className="text-[#11181C] text-transition dark:text-[#ECEDEE]">
-							{params.shipmentId}
+							{shipmentId}
 						</BreadcrumbPage>
 					</BreadcrumbItem>
 				</BreadcrumbList>
@@ -177,16 +239,19 @@ export default function ReceptionDetailPage({ params }: PageProps) {
 			<div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 				<div className="space-y-2">
 					<h1 className="font-bold text-2xl text-[#11181C] text-transition md:text-3xl dark:text-[#ECEDEE]">
-						Recepción de envío {params.shipmentId}
+						Recepción de envío {shipmentId}
 					</h1>
 					<p className="text-[#687076] text-transition dark:text-[#9BA1A6]">
 						Marca los artículos como recibidos
+					</p>
+					<p className="text-[#687076] text-sm text-transition dark:text-[#9BA1A6]">
+						Almacén: {warehouseId}
 					</p>
 				</div>
 
 				<Button
 					className="theme-transition bg-[#0a7ea4] text-white hover:bg-[#0a7ea4]/90 disabled:opacity-50"
-					disabled={isLoading || isAllReceived()}
+					disabled={isAllReceived()}
 					onClick={handleMarkAllReceived}
 				>
 					<CheckCircle2 className="mr-2 h-4 w-4" />
@@ -207,7 +272,7 @@ export default function ReceptionDetailPage({ params }: PageProps) {
 									Progreso de recepción
 								</p>
 								<p className="font-bold text-2xl text-[#11181C] text-transition dark:text-[#ECEDEE]">
-									{isLoading ? '...' : `${receivedCount} / ${totalCount}`}
+									{`${receivedCount} / ${totalCount}`}
 								</p>
 							</div>
 						</div>
@@ -216,9 +281,7 @@ export default function ReceptionDetailPage({ params }: PageProps) {
 								Completado
 							</p>
 							<p className="font-semibold text-[#0a7ea4] text-lg">
-								{isLoading
-									? '0%'
-									: `${totalCount > 0 ? Math.round((receivedCount / totalCount) * 100) : 0}%`}
+								{`${totalCount > 0 ? Math.round((receivedCount / totalCount) * 100) : 0}%`}
 							</p>
 						</div>
 					</div>
@@ -252,10 +315,7 @@ export default function ReceptionDetailPage({ params }: PageProps) {
 								</TableRow>
 							</TableHeader>
 							<TableBody>
-								{isLoading &&
-									skeletonKeys.map((key) => <SkeletonReceptionGroup key={key} />)}
-
-								{!isLoading && groupedEntries.length === 0 && (
+								{groupedEntries.length === 0 && (
 									<TableRow>
 										<TableCell className="py-12 text-center" colSpan={4}>
 											<Package className="mx-auto mb-4 h-12 w-12 text-[#687076] dark:text-[#9BA1A6]" />
@@ -266,8 +326,7 @@ export default function ReceptionDetailPage({ params }: PageProps) {
 									</TableRow>
 								)}
 
-								{!isLoading &&
-									groupedEntries.length > 0 &&
+								{groupedEntries.length > 0 &&
 									groupedEntries.map(([barcode, groupItems]) => (
 										<Fragment key={barcode}>
 											{/* Group header */}

@@ -12,3 +12,16 @@ export const getWarehouseTransferById = async (warehouseId: string) => {
 		return null;
 	}
 };
+
+export const getTransferDetailsById = async (transferId: string) => {
+	try {
+		const response = await client.api.auth['warehouse-transfers'].details.$get({
+			query: { transferId },
+		});
+		return response.json();
+	} catch (error) {
+		// biome-ignore lint/suspicious/noConsole: Needed for debugging
+		console.error(error);
+		return null;
+	}
+};

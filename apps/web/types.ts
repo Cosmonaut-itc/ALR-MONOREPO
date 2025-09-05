@@ -39,6 +39,13 @@ export type WarehouseTransfer = Awaited<
 >;
 
 /**
+ * Type inference for warehouse transfer details data
+ * Extracted from the API response of client.api.auth['warehouse-transfers'].details.$get()
+ */
+export type WarehouseTransferDetails = Awaited<
+	ReturnType<typeof import('./lib/fetch-functions/recepciones').getTransferDetailsById>
+>;
+/**
  * Type for successful inventory data (excludes null case from error handling)
  * This represents the actual data structure when the API call succeeds
  */

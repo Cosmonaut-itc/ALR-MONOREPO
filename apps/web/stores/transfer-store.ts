@@ -125,7 +125,7 @@ export const useTransferStore = create<TransferState>()(
 				transferNumber,
 				transferType: 'internal', // Internal transfer between warehouses
 				sourceWarehouseId,
-				destinationWarehouseId: sourceWarehouseId,
+				destinationWarehouseId,
 				initiatedBy: currentUser.id,
 				cabinetId: destinationWarehouseId,
 				transferDetails: transferList.map((item) => ({

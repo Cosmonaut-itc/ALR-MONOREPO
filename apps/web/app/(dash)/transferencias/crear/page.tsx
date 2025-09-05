@@ -2,49 +2,50 @@
 /** biome-ignore-all lint/suspicious/noConsole: Needed for error logging */
 
 import { dehydrate, HydrationBoundary } from '@tanstack/react-query';
+import { TransferenciasClient } from '@/app/(dash)/transferencias/transferencias';
 import { getQueryClient } from '@/app/get-query-client';
 import { GenericBoundaryWrapper } from '@/components/suspense-generics/general-wrapper';
 import { createQueryKey } from '@/lib/helpers';
 import { queryKeys } from '@/lib/query-keys';
-import { fetchTransferDetailsById } from '@/lib/server-functions/recepciones';
+import {
+	fetchAllProductsServer,
+	fetchStockByWarehouseServer,
+} from '@/lib/server-functions/inventory';
 import { getServerAuth } from '@/lib/server-functions/server-auth';
-import SkeletonReceptionDetailsPage from '@/ui/skeletons/Skeleton.ReceptionDetailsPage';
-import { ReceptionDetailPage } from './transfer-details';
+import { SkeletonCreateTransferPage } from '@/ui/skeletons/Skeleton.CreateTransferPage';
 
 export const dynamic = 'force-dynamic';
 
-export default async function Page({ params }: { params: { shipmentId: string } }) {
+export default async function Page() {
 	const queryClient = getQueryClient();
 	const auth = await getServerAuth();
 	const warehouseId = auth.user?.warehouseId;
 
 	try {
-		// Prefetch inventory data so the client query hydrates
+		// Prefetch only existing ProductStock for the authenticated user's warehouse
 		queryClient.prefetchQuery({
-			queryKey: createQueryKey(queryKeys.recepcionDetail, [params.shipmentId as string]),
-			queryFn: () => fetchTransferDetailsById(params.shipmentId as string),
+			queryKey: createQueryKey(queryKeys.inventory, [warehouseId as string]),
+			queryFn: () => fetchStockByWarehouseServer(warehouseId as string),
+		});
+		queryClient.prefetchQuery({
+			queryKey: queryKeys.productCatalog,
+			queryFn: () => fetchAllProductsServer(),
 		});
 
 		return (
 			<HydrationBoundary state={dehydrate(queryClient)}>
-				<GenericBoundaryWrapper fallbackComponent={<SkeletonReceptionDetailsPage />}>
-					<ReceptionDetailPage
-						shipmentId={params.shipmentId}
-						warehouseId={warehouseId as string}
-					/>
+				<GenericBoundaryWrapper fallbackComponent={<SkeletonCreateTransferPage />}>
+					<TransferenciasClient warehouseId={warehouseId as string} />
 				</GenericBoundaryWrapper>
 			</HydrationBoundary>
 		);
 	} catch (error) {
 		console.error(error);
-		console.error('Error prefetching abastecimiento data');
+		console.error('Error prefetching data for crear transferencia');
 		return (
 			<HydrationBoundary state={dehydrate(queryClient)}>
-				<GenericBoundaryWrapper fallbackComponent={<SkeletonReceptionDetailsPage />}>
-					<ReceptionDetailPage
-						shipmentId={params.shipmentId}
-						warehouseId={warehouseId as string}
-					/>
+				<GenericBoundaryWrapper fallbackComponent={<SkeletonCreateTransferPage />}>
+					<TransferenciasClient warehouseId={warehouseId as string} />
 				</GenericBoundaryWrapper>
 			</HydrationBoundary>
 		);

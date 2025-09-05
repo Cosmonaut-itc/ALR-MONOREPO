@@ -1,6 +1,7 @@
 'use client';
 
 import { useSuspenseQuery } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { ProductCatalogTable } from '@/components/inventory/ProductCatalogTable';
@@ -35,6 +36,7 @@ import type { ProductCatalogResponse, ProductStockWithEmployee } from '@/types';
 type APIResponse = ProductStockWithEmployee | null;
 
 export function TransferenciasClient({ warehouseId }: { warehouseId: string }) {
+	const router = useRouter();
 	const { data: inventory } = useSuspenseQuery<APIResponse, Error, APIResponse>({
 		queryKey: createQueryKey(queryKeys.inventory, [warehouseId as string]),
 		queryFn: () => getInventoryByWarehouse(warehouseId as string),
@@ -135,6 +137,7 @@ export function TransferenciasClient({ warehouseId }: { warehouseId: string }) {
 			sourceWarehouseId: warehouseId,
 		});
 		await createTransferOrder(transferData);
+		router.push('/transferencias');
 	};
 
 	return (
