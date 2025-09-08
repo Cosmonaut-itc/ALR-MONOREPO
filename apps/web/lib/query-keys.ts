@@ -3,4 +3,5 @@ export const queryKeys = {
 	productCatalog: ['productCatalog'],
 	receptions: ['receptions'],
 	recepcionDetail: ['recepcionDetail'],
+	kits: ['kits'],
 };
