@@ -3,7 +3,7 @@
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { CalendarIcon, Plus } from 'lucide-react';
+import { CalendarIcon, Package, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { AssignKitModal } from '@/components/kits/AssignKitModal';
 import { KitCard } from '@/components/kits/KitCard';
@@ -167,19 +167,38 @@ export default function KitsPageClient() {
 			</div>
 
 			{/* Kits Grid */}
-			<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-				{todayKits.map((kit) => (
-					<KitCard
-						key={kit.id}
-						kit={{
-							id: kit.id,
-							employeeId: kit.employeeId,
-							date: new Date(kit.date).toISOString() as unknown as Date,
-							items: kit.items,
-						}}
-					/>
-				))}
-			</div>
+			{todayKits.length > 0 ? (
+				<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+					{todayKits.map((kit) => (
+						<KitCard
+							key={kit.id}
+							kit={{
+								id: kit.id,
+								employeeId: kit.employeeId,
+								date: new Date(kit.date).toISOString() as unknown as Date,
+								items: kit.items,
+							}}
+						/>
+					))}
+				</div>
+			) : (
+				<div className="flex flex-col items-center justify-center py-12 text-center">
+					<div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+						<Package className="h-6 w-6 text-muted-foreground" />
+					</div>
+					<h3 className="mb-2 font-semibold text-[#11181C] text-lg dark:text-[#ECEDEE]">
+						No hay kits asignados
+					</h3>
+					<p className="mb-4 max-w-sm text-[#687076] text-sm dark:text-[#9BA1A6]">
+						No se encontraron kits para el {format(date, "d 'de' MMMM", { locale: es })}
+						. Crea una nueva asignación para comenzar.
+					</p>
+					<Button className="gap-2" onClick={() => setModalOpen(true)}>
+						<Plus className="h-4 w-4" />
+						Crear Primera Asignación
+					</Button>
+				</div>
+			)}
 
 			{/* Assign Kit Modal */}
 			<AssignKitModal onOpenChange={setModalOpen} open={modalOpen} />
