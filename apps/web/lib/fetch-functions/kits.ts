@@ -37,3 +37,16 @@ export const getKitDetails = async (kitId: string) => {
 		return null;
 	}
 };
+
+export const getAllEmployees = async (userId: string) => {
+	try {
+		const response = await client.api.auth.employee.all.$get({
+			query: { userId },
+		});
+		return response.json();
+	} catch (error) {
+		// biome-ignore lint/suspicious/noConsole: Needed for debugging
+		console.error(error);
+		return null;
+	}
+};

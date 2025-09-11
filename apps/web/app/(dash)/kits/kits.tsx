@@ -20,7 +20,7 @@ import { useKitsStore } from '@/stores/kits-store';
 // Infer API response type from fetcher
 type APIResponse = Awaited<ReturnType<typeof getAllKits>> | null;
 
-export default function KitsPageClient() {
+export default function KitsPageClient({ warehouseId }: { warehouseId: string }) {
 	const { setDraft } = useKitsStore();
 	const [date, setDate] = useState<Date>(new Date());
 	const [modalOpen, setModalOpen] = useState(false);
@@ -201,7 +201,11 @@ export default function KitsPageClient() {
 			)}
 
 			{/* Assign Kit Modal */}
-			<AssignKitModal onOpenChange={setModalOpen} open={modalOpen} />
+			<AssignKitModal
+				onOpenChange={setModalOpen}
+				open={modalOpen}
+				warehouseId={warehouseId}
+			/>
 		</div>
 	);
 }

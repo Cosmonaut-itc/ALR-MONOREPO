@@ -89,3 +89,41 @@ export const useUpdateKitItemStatus = () =>
 			console.error(error);
 		},
 	});
+
+// Create kit mutation
+type CreateKitPostOptions = Parameters<(typeof client.api.auth.kits)['create']['$post']>[0];
+export type CreateKitPayload = CreateKitPostOptions extends { json: infer J } ? J : never;
+
+export const useCreateKit = () =>
+	useMutation<unknown, Error, CreateKitPayload>({
+		mutationKey: ['create-kit'],
+		mutationFn: async (data: CreateKitPayload) => {
+			const response = await client.api.auth.kits.create.$post({ json: data });
+			const result: unknown = await response.json();
+			if (
+				result &&
+				typeof result === 'object' &&
+				'success' in (result as Record<string, unknown>) &&
+				(result as { success?: unknown }).success === false
+			) {
+				const message =
+					((result as { message?: unknown }).message as string | undefined) ||
+					'La API devolvió éxito=false al crear el kit';
+				throw new Error(message);
+			}
+			return result;
+		},
+		onMutate: () => {
+			toast.loading('Creando kit...', { id: 'create-kit' });
+		},
+		onSuccess: () => {
+			toast.success('Kit creado', { id: 'create-kit' });
+			const qc = getQueryClient();
+			qc.invalidateQueries({ queryKey: queryKeys.kits });
+		},
+		onError: (error) => {
+			toast.error('Error al crear kit', { id: 'create-kit' });
+			// biome-ignore lint/suspicious/noConsole: Needed for debugging
+			console.error(error);
+		},
+	});
