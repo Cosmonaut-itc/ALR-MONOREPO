@@ -70,20 +70,47 @@ export function AssignKitModal({ open, onOpenChange, warehouseId }: AssignKitMod
 		queryFn: () => getInventoryByWarehouse(warehouseId as string),
 	});
 
+	const toArray = useMemo(
+		() =>
+			(value: unknown): unknown[] =>
+				Array.isArray(value) ? value : [],
+		[],
+	);
+	const toStringOrEmpty = useMemo(
+		() =>
+			(v: unknown): string =>
+				typeof v === 'string' ? v : '',
+		[],
+	);
+	const normalizeEmployee = useMemo(
+		() => (raw: unknown) => {
+			const rec = (raw as { employee?: unknown }).employee ?? raw;
+			const e = (rec ?? {}) as {
+				id?: unknown;
+				name?: unknown;
+				surname?: unknown;
+				avatar?: unknown;
+			};
+			const id = toStringOrEmpty(e.id);
+			const name = toStringOrEmpty(e.name);
+			const surname = toStringOrEmpty(e.surname);
+			const avatar = toStringOrEmpty(e.avatar);
+			const fullName = [name, surname].filter(Boolean).join(' ');
+			return {
+				id,
+				name: fullName || name || 'Empleado',
+				specialty: '',
+				avatar,
+				active: true as const,
+			};
+		},
+		[toStringOrEmpty],
+	);
 	const employees = useMemo(() => {
-		const root = employeesRes ?? { data: [] };
-		const list: unknown = (root as { data?: unknown }).data ?? [];
-		return Array.isArray(list)
-			? (list as Array<{
-					id?: string;
-					name?: string;
-					surname?: string;
-					specialty?: string;
-					avatar?: string;
-					active?: boolean;
-				}>)
-			: [];
-	}, [employeesRes]);
+		const root = (employeesRes ?? { data: [], json: [] }) as { data?: unknown; json?: unknown };
+		const candidate = root.data ?? root.json ?? [];
+		return toArray(candidate).map(normalizeEmployee);
+	}, [employeesRes, toArray, normalizeEmployee]);
 
 	const products = useMemo(() => {
 		const root = inventoryRes ?? { data: { warehouse: [] as unknown[] } };
@@ -241,10 +268,10 @@ export function AssignKitModal({ open, onOpenChange, warehouseId }: AssignKitMod
 										<CommandEmpty>No se encontraron empleadas.</CommandEmpty>
 										<CommandGroup>
 											{employees
-												.filter((emp) => emp.active !== false)
-												.map((employee) => (
+												.filter((emp) => Boolean(emp.active))
+												.map((employee, idx) => (
 													<CommandItem
-														key={employee.id}
+														key={employee.id || `emp-${idx}`}
 														onSelect={() =>
 															handleEmployeeSelect(employee.id || '')
 														}
