@@ -6,7 +6,6 @@ import {
 	Home,
 	LogOut,
 	Package,
-	RefreshCw,
 	Settings,
 	TrendingUp,
 	Truck,
@@ -51,11 +50,7 @@ const navigationItems = [
 		url: '/inventario',
 		icon: Package,
 	},
-	{
-		title: 'Transferencias',
-		url: '/transferencias',
-		icon: RefreshCw,
-	},
+
 	{
 		title: 'Recepciones',
 		url: '/recepciones',
