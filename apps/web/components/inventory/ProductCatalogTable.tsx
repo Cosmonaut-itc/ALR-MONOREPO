@@ -1,3 +1,4 @@
+/** biome-ignore-all lint/complexity/noExcessiveCognitiveComplexity: Needed to render all of the details*/
 'use client';
 
 import type { FilterFn } from '@tanstack/react-table';
@@ -28,7 +29,7 @@ import {
 	Trash2,
 	X,
 } from 'lucide-react';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -53,7 +54,7 @@ import {
 import { useDisposalStore } from '@/stores/disposal-store';
 import type { StockItemWithEmployee } from '@/stores/inventory-store';
 import { type StockItem, useInventoryStore } from '@/stores/inventory-store';
-import type { ProductCatalogItem, ProductCatalogResponse } from '@/types';
+import type { ProductCatalogItem, ProductCatalogResponse, WarehouseMap } from '@/types';
 import { DisposeItemDialog } from './DisposeItemDialog';
 
 // Type for product with inventory data
@@ -97,12 +98,47 @@ interface ProductCatalogTableProps {
 	}) => void;
 	/** List of UUIDs that are already in transfer (to disable checkboxes) */
 	disabledUUIDs?: Set<string>;
+	/** Optional warehouse map response for resolving warehouse names */
+	warehouseMap?: WarehouseMap | null;
+}
+
+type WarehouseMappingEntry = {
+	cabinetId: string;
+	cabinetName: string;
+	warehouseId: string;
+	warehouseName: string;
+};
+
+/**
+ * Type guard that checks whether a warehouse map response indicates success and contains mapping entries.
+ *
+ * Returns true when `map` is a non-null object with a truthy `success` property; in that case the type narrows to
+ * `{ success: true; message: string; data: WarehouseMappingEntry[] }`.
+ *
+ * @param map - The warehouse map response to test (may be null or undefined).
+ * @returns True if `map` represents a successful warehouse map response with mapping data.
+ */
+function isWarehouseMapSuccess(
+	map: WarehouseMap | null | undefined,
+): map is { success: true; message: string; data: WarehouseMappingEntry[] } {
+	return Boolean(map && typeof map === 'object' && 'success' in map && map.success);
 }
 
 // Removed WeakMap cache to avoid stale data; compute item data each render
 
 // Helper to extract inventory item data safely
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: This is as optimized as it can be without making it confusing
+/**
+ * Converts a raw stock item (optionally including employee info) into the normalized InventoryItemDisplay used by the UI.
+ *
+ * When fields are missing or malformed this function supplies safe defaults:
+ * - Generates stable-ish fallback `id`/`uuid` values when none are present.
+ * - Normalizes `barcode`, `numberOfUses`, and boolean `isBeingUsed` to sensible defaults.
+ * - Combines employee `name` and `surname` to populate `lastUsedBy` when available, otherwise falls back to stock's `lastUsedBy`.
+ * - Ensures `firstUsed` is present (current timestamp when absent) and coerces `currentWarehouse` to a string when available.
+ *
+ * @param item - A StockItemWithEmployee object (may be undefined/null-like); the function will not throw for missing properties.
+ * @returns An InventoryItemDisplay with all required display fields populated (using fallbacks where necessary).
+ */
 function extractInventoryItemData(item: StockItemWithEmployee): InventoryItemDisplay {
 	if (item && typeof item === 'object' && 'productStock' in item) {
 		const itemStock = (item as { productStock: StockItem }).productStock;
@@ -124,7 +160,9 @@ function extractInventoryItemData(item: StockItemWithEmployee): InventoryItemDis
 			numberOfUses: itemStock.numberOfUses || 0,
 			isBeingUsed: itemStock.isBeingUsed ?? false,
 			firstUsed: itemStock.firstUsed || new Date().toISOString(),
-			currentWarehouse: itemStock.currentWarehouse?.toString() || '1',
+			currentWarehouse: itemStock.currentWarehouse
+				? itemStock.currentWarehouse.toString()
+				: undefined,
 		};
 
 		return result;
@@ -137,11 +175,20 @@ function extractInventoryItemData(item: StockItemWithEmployee): InventoryItemDis
 		numberOfUses: 0,
 		isBeingUsed: false,
 		firstUsed: new Date().toISOString(),
-		currentWarehouse: '1',
+		currentWarehouse: undefined,
 	};
 }
 
-// Helper to extract warehouse from inventory item
+/**
+ * Derives a warehouse identifier string from a stock item, with safe fallbacks.
+ *
+ * Attempts to return item.currentCabinet first, then item.currentWarehouse. If
+ * `item` is missing, not an object, or neither field is a string, returns the
+ * default identifier `"1"` (general warehouse).
+ *
+ * @param item - The stock item object (may be null/undefined or a partial shape); expected keys: `currentCabinet`, `currentWarehouse`.
+ * @returns The warehouse identifier to use for grouping inventory items (defaults to `"1"`).
+ */
 function getItemWarehouse(item: StockItem): string {
 	if (!item || typeof item !== 'object') {
 		return '1';
@@ -160,7 +207,12 @@ function getItemWarehouse(item: StockItem): string {
 	return '1'; // Default to general warehouse
 }
 
-// Helper to extract barcode from inventory item
+/**
+ * Returns the numeric barcode from a stock item or 0 if unavailable.
+ *
+ * @param item - Stock item object that may contain a numeric `barcode` field.
+ * @returns The `barcode` value when present and a number; otherwise `0`.
+ */
 function getItemBarcode(item: StockItem): number {
 	if (item && typeof item === 'object' && 'barcode' in item) {
 		const barcode = (item as { barcode: number }).barcode;
@@ -171,6 +223,14 @@ function getItemBarcode(item: StockItem): number {
 	return 0;
 }
 
+/**
+ * Formats an ISO date string to "dd/MM/yyyy" using the Spanish locale.
+ *
+ * If `dateString` is falsy or cannot be parsed as a valid date, returns `"N/A"`.
+ *
+ * @param dateString - The date input as a string (e.g., ISO 8601). May be undefined.
+ * @returns The formatted date string in `dd/MM/yyyy` or `"N/A"` when input is missing or invalid.
+ */
 function formatDate(dateString: string | undefined): string {
 	if (!dateString) {
 		return 'N/A';
@@ -182,6 +242,26 @@ function formatDate(dateString: string | undefined): string {
 	}
 }
 
+/**
+ * Renders a product catalog table with per-product expandable inventory details.
+ *
+ * The table shows products derived from `productCatalog` and inventory items from `inventory`,
+ * supports global search (product name, barcode, UUID), category filtering, sorting, pagination,
+ * and per-product expansion to view grouped inventory items by warehouse. Expanded item lists
+ * display UUID (with copy-to-clipboard), usage metadata, status, and optional dispose actions.
+ * When `enableSelection` is true the expanded view allows selecting items and adding them to a
+ * transfer via `onAddToTransfer`. The component also writes incoming inventory and product
+ * catalog data into the inventory store and uses the disposal store to open the dispose dialog.
+ *
+ * @param inventory - Raw inventory payload (used to populate the inventory store).
+ * @param productCatalog - API product catalog response (transformed and stored for table data).
+ * @param warehouse - Optional warehouse identifier to filter inventory items per product.
+ * @param enableSelection - When true, enables per-item selection and "Agregar a transferencia".
+ * @param onAddToTransfer - Callback invoked with { product, items } when items are added to a transfer.
+ * @param disabledUUIDs - Set of item UUIDs that should be rendered disabled for selection.
+ * @param enableDispose - When true, shows a per-item dispose action that opens the dispose dialog.
+ * @param warehouseMap - Optional warehouse mapping response used to resolve human-friendly warehouse names.
+ */
 export function ProductCatalogTable({
 	inventory,
 	productCatalog,
@@ -190,6 +270,7 @@ export function ProductCatalogTable({
 	onAddToTransfer,
 	disabledUUIDs = new Set(),
 	enableDispose = false,
+	warehouseMap = null,
 }: ProductCatalogTableProps) {
 	// Disposal store for dispose dialog
 	const { show: showDisposeDialog } = useDisposalStore();
@@ -202,6 +283,43 @@ export function ProductCatalogTable({
 		productCatalog: storedProductCatalog,
 		inventoryData: storedInventoryData,
 	} = useInventoryStore();
+
+	const warehouseEntries = useMemo<WarehouseMappingEntry[]>(() => {
+		if (isWarehouseMapSuccess(warehouseMap)) {
+			return Array.isArray(warehouseMap.data)
+				? (warehouseMap.data as WarehouseMappingEntry[])
+				: [];
+		}
+		return [];
+	}, [warehouseMap]);
+
+	const warehouseNameLookup = useMemo(() => {
+		const lookup = new Map<string, string>();
+		for (const entry of warehouseEntries) {
+			if (entry?.warehouseId) {
+				lookup.set(entry.warehouseId, entry.warehouseName ?? entry.warehouseId);
+			}
+			if (entry?.cabinetId) {
+				lookup.set(entry.cabinetId, entry.cabinetName ?? entry.cabinetId);
+			}
+		}
+		return lookup;
+	}, [warehouseEntries]);
+
+	const resolveWarehouseName = useCallback(
+		(warehouseId?: string | null) => {
+			const id = warehouseId?.toString().trim() ?? '';
+			if (!id) {
+				return 'Sin almacén asignado';
+			}
+			const mappedName = warehouseNameLookup.get(id);
+			if (mappedName) {
+				return mappedName;
+			}
+			return id.length > 8 ? `Almacén ${id.slice(0, 8)}...` : `Almacén ${id}`;
+		},
+		[warehouseNameLookup],
+	);
 
 	// Set inventory data in store
 	useEffect(() => {
@@ -373,16 +491,36 @@ export function ProductCatalogTable({
 				const product = row.original as ProductWithInventory;
 				const selectionEnabledRef = enableSelection === true;
 				const productSelection = selectedByBarcode[product.barcode] || new Set<string>();
-				const selectedCount = productSelection.size;
+				const detailColumnCount = enableDispose ? 7 : 6;
 
-				const toggleUUID = (uuid: string, enabled: boolean) => {
+				type DisplayItem = {
+					key: string;
+					warehouseKey: string;
+					data: InventoryItemDisplay;
+				};
+
+				const displayItems: DisplayItem[] = product.inventoryItems.map((item) => {
+					const data = extractInventoryItemData(item);
+					const key = data.uuid || data.id || '';
+					const warehouseKey = data.currentWarehouse ?? 'unassigned';
+					return { data, key, warehouseKey };
+				});
+
+				const selectedCount = displayItems.reduce((acc, item) => {
+					return item.key && productSelection.has(item.key) ? acc + 1 : acc;
+				}, 0);
+
+				const toggleUUID = (identifier: string, enabled: boolean) => {
+					if (!identifier) {
+						return;
+					}
 					setSelectedByBarcode((prev) => {
 						const currentSet = prev[product.barcode] || new Set<string>();
 						const nextSet = new Set(currentSet);
 						if (enabled) {
-							nextSet.add(uuid);
+							nextSet.add(identifier);
 						} else {
-							nextSet.delete(uuid);
+							nextSet.delete(identifier);
 						}
 						return { ...prev, [product.barcode]: nextSet };
 					});
@@ -392,9 +530,9 @@ export function ProductCatalogTable({
 					if (!onAddToTransfer) {
 						return;
 					}
-					const selectedItems = product.inventoryItems
-						.map((it) => extractInventoryItemData(it))
-						.filter((it) => productSelection.has(it.id || ''));
+					const selectedItems = displayItems
+						.filter((item) => item.key && productSelection.has(item.key))
+						.map((item) => item.data);
 					onAddToTransfer({ product, items: selectedItems });
 					setSelectedByBarcode((prev) => ({
 						...prev,
@@ -407,7 +545,8 @@ export function ProductCatalogTable({
 						});
 					}
 				};
-				if (product.inventoryItems.length === 0) {
+
+				if (displayItems.length === 0) {
 					return (
 						<div className="border-[#E5E7EB] border-b bg-[#F8FAFC] p-4 text-center dark:border-[#374151] dark:bg-[#1A1B1C]">
 							<p className="text-[#687076] text-sm dark:text-[#9BA1A6]">
@@ -417,11 +556,27 @@ export function ProductCatalogTable({
 					);
 				}
 
+				const groupedByWarehouse = displayItems.reduce((acc, item) => {
+					const locationKey = item.warehouseKey || 'unassigned';
+					const bucket = acc.get(locationKey);
+					if (bucket) {
+						bucket.items.push(item);
+					} else {
+						acc.set(locationKey, {
+							label: resolveWarehouseName(item.data.currentWarehouse),
+							items: [item],
+						});
+					}
+					return acc;
+				}, new Map<string, { label: string; items: DisplayItem[] }>());
+
+				const warehouseGroups = Array.from(groupedByWarehouse.entries());
+
 				return (
 					<div className="border-[#E5E7EB] border-b bg-[#F8FAFC] p-4 dark:border-[#374151] dark:bg-[#1A1B1C]">
 						<div className="mb-3 flex items-center justify-between">
 							<h4 className="font-medium text-[#11181C] text-sm dark:text-[#ECEDEE]">
-								Inventario detallado ({product.inventoryItems.length} items)
+								Inventario detallado ({displayItems.length} items)
 							</h4>
 							{selectionEnabledRef && (
 								<Button
@@ -464,108 +619,134 @@ export function ProductCatalogTable({
 									</TableRow>
 								</TableHeader>
 								<TableBody>
-									{/** biome-ignore lint/complexity/noExcessiveCognitiveComplexity: This is as optimized as it can be without making it confusing */}
-									{product.inventoryItems.map((item) => {
-										const itemData = extractInventoryItemData(item);
-										return (
-											<TableRow
-												className="border-[#E5E7EB] border-b last:border-b-0 dark:border-[#374151]"
-												key={itemData.id}
-											>
-												<TableCell className="font-mono text-[#687076] text-xs dark:text-[#9BA1A6]">
-													<div className="flex items-center gap-2">
-														{selectionEnabledRef && (
-															<Checkbox
-																checked={productSelection.has(
-																	itemData.id || '',
-																)}
-																disabled={
-																	itemData.isBeingUsed ||
-																	disabledUUIDs.has(
-																		itemData.id || '',
-																	)
-																}
-																onCheckedChange={(checked) =>
-																	toggleUUID(
-																		itemData.id || '',
-																		Boolean(checked),
-																	)
-																}
-															/>
-														)}
-														<span className="truncate">
-															{itemData.id?.slice(0, 8)}...
+									{warehouseGroups.map(([groupKey, group]) => (
+										<React.Fragment key={groupKey}>
+											<TableRow className="bg-[#EAEDF0] text-left text-[#11181C] text-xs uppercase tracking-wide dark:bg-[#252729] dark:text-[#ECEDEE]">
+												<TableCell
+													className="font-semibold"
+													colSpan={detailColumnCount}
+												>
+													<div className="flex items-center justify-between">
+														<span>{group.label}</span>
+														<span className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+															{group.items.length} item(s)
 														</span>
-														<Button
-															className="h-4 w-4 p-0 hover:bg-[#E5E7EB] dark:hover:bg-[#2D3033]"
-															onClick={() => {
-																copyToClipboard(itemData.id || '');
-															}}
-															size="sm"
-															variant="ghost"
-														>
-															<Copy className="h-3 w-3" />
-														</Button>
 													</div>
 												</TableCell>
-												<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-													{formatDate(itemData.lastUsed)}
-												</TableCell>
-												<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-													{itemData.lastUsedBy || 'N/A'}
-												</TableCell>
-												<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-													{itemData.numberOfUses}
-												</TableCell>
-												<TableCell>
-													<Badge
-														className={
-															itemData.isBeingUsed
-																? 'bg-[#EF4444] text-white text-xs'
-																: 'bg-[#10B981] text-white text-xs'
-														}
-														variant={
-															itemData.isBeingUsed
-																? 'destructive'
-																: 'default'
-														}
-													>
-														{itemData.isBeingUsed
-															? 'En Uso'
-															: 'Disponible'}
-													</Badge>
-												</TableCell>
-												<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-													{formatDate(itemData.firstUsed)}
-												</TableCell>
-												<TableCell>
-													{enableDispose && (
-														<Button
-															className="h-6 w-6 p-0 text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950 dark:hover:text-red-300"
-															onClick={() => {
-																showDisposeDialog({
-																	id: itemData.id || '',
-																	uuid: itemData.id || '',
-																	barcode: product.barcode,
-																	productInfo: {
-																		name: product.name,
-																		category: product.category,
-																		description:
-																			product.description,
-																	},
-																});
-															}}
-															size="sm"
-															title="Dar de baja artículo"
-															variant="ghost"
-														>
-															<Trash2 className="h-4 w-4" />
-														</Button>
-													)}
-												</TableCell>
 											</TableRow>
-										);
-									})}
+											{group.items.map((item) => {
+												const { data, key: selectionKey } = item;
+												const isSelected = selectionKey
+													? productSelection.has(selectionKey)
+													: false;
+												const isDisabled =
+													data.isBeingUsed ||
+													(selectionKey
+														? disabledUUIDs.has(selectionKey)
+														: false);
+
+												return (
+													<TableRow
+														className="border-[#E5E7EB] border-b last:border-b-0 dark:border-[#374151]"
+														key={selectionKey || data.id}
+													>
+														<TableCell className="font-mono text-[#687076] text-xs dark:text-[#9BA1A6]">
+															<div className="flex items-center gap-2">
+																{selectionEnabledRef && (
+																	<Checkbox
+																		checked={isSelected}
+																		disabled={isDisabled}
+																		onCheckedChange={(
+																			checked,
+																		) =>
+																			toggleUUID(
+																				selectionKey,
+																				Boolean(checked),
+																			)
+																		}
+																	/>
+																)}
+																<span className="truncate">
+																	{(data.id || '').slice(0, 8)}...
+																</span>
+																<Button
+																	className="h-4 w-4 p-0 hover:bg-[#E5E7EB] dark:hover:bg-[#2D3033]"
+																	onClick={() => {
+																		copyToClipboard(
+																			data.uuid ||
+																				data.id ||
+																				'',
+																		);
+																	}}
+																	size="sm"
+																	variant="ghost"
+																>
+																	<Copy className="h-3 w-3" />
+																</Button>
+															</div>
+														</TableCell>
+														<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+															{formatDate(data.lastUsed)}
+														</TableCell>
+														<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+															{data.lastUsedBy || 'N/A'}
+														</TableCell>
+														<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+															{data.numberOfUses}
+														</TableCell>
+														<TableCell>
+															<Badge
+																className={
+																	data.isBeingUsed
+																		? 'bg-[#EF4444] text-white text-xs'
+																		: 'bg-[#10B981] text-white text-xs'
+																}
+																variant={
+																	data.isBeingUsed
+																		? 'destructive'
+																		: 'default'
+																}
+															>
+																{data.isBeingUsed
+																	? 'En Uso'
+																	: 'Disponible'}
+															</Badge>
+														</TableCell>
+														<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+															{formatDate(data.firstUsed)}
+														</TableCell>
+														<TableCell>
+															{enableDispose && (
+																<Button
+																	className="h-6 w-6 p-0 text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950 dark:hover:text-red-300"
+																	onClick={() => {
+																		showDisposeDialog({
+																			id: data.id || '',
+																			uuid: data.id || '',
+																			barcode:
+																				product.barcode,
+																			productInfo: {
+																				name: product.name,
+																				category:
+																					product.category,
+																				description:
+																					product.description,
+																			},
+																		});
+																	}}
+																	size="sm"
+																	title="Dar de baja artículo"
+																	variant="ghost"
+																>
+																	<Trash2 className="h-4 w-4" />
+																</Button>
+															)}
+														</TableCell>
+													</TableRow>
+												);
+											})}
+										</React.Fragment>
+									))}
 								</TableBody>
 							</Table>
 						</div>
@@ -580,6 +761,7 @@ export function ProductCatalogTable({
 			disabledUUIDs,
 			showDisposeDialog,
 			enableDispose,
+			resolveWarehouseName,
 		],
 	);
 
