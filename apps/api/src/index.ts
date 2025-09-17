@@ -1313,6 +1313,82 @@ const route = app
 	})
 
 	/**
+	 * GET /api/auth/cabinet-warehouse/map - Retrieve cabinet and warehouse names
+	 *
+	 * Returns each cabinet along with the warehouse it belongs to so the UI can
+	 * present a direct mapping. This only returns cabinets that have a valid
+	 * warehouse relationship.
+	 *
+	 * Example response payload:
+	 * ```json
+	 * {
+	 *   "success": true,
+	 *   "message": "Cabinet to warehouse mapping retrieved",
+	 *   "data": [
+	 *     {
+	 *       "cabinetId": "0f8fad5b-d9cb-469f-a165-70867728950e",
+	 *       "cabinetName": "Counter A",
+	 *       "warehouseId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+	 *       "warehouseName": "Main Warehouse"
+	 *     }
+	 *   ]
+	 * }
+	 * ```
+	 *
+	 * @returns {ApiResponse} Success response with cabinet and warehouse name pairs
+	 * @throws {500} If an unexpected error occurs during data retrieval
+	 */
+	.get('/api/auth/cabinet-warehouse/map', async (c) => {
+		try {
+			// Build a cabinet-to-warehouse mapping via inner join for quick lookups
+			const cabinetWarehouseMap = await db
+				.select({
+					cabinetId: schemas.cabinetWarehouse.id,
+					cabinetName: schemas.cabinetWarehouse.name,
+					warehouseId: schemas.warehouse.id,
+					warehouseName: schemas.warehouse.name,
+				})
+				.from(schemas.cabinetWarehouse)
+				.innerJoin(
+					schemas.warehouse,
+					eq(schemas.cabinetWarehouse.warehouseId, schemas.warehouse.id),
+				)
+				.orderBy(schemas.warehouse.name, schemas.cabinetWarehouse.name);
+
+			if (cabinetWarehouseMap.length === 0) {
+				return c.json(
+					{
+						success: false,
+						message: 'No cabinet to warehouse mappings found',
+						data: [],
+					} satisfies ApiResponse,
+					200,
+				);
+			}
+
+			return c.json(
+				{
+					success: true,
+					message: 'Cabinet to warehouse mapping retrieved',
+					data: cabinetWarehouseMap,
+				} satisfies ApiResponse,
+				200,
+			);
+		} catch (error) {
+			// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging mapping issues
+			console.error('Error fetching cabinet to warehouse mapping:', error);
+
+			return c.json(
+				{
+					success: false,
+					message: 'Failed to fetch cabinet to warehouse mapping',
+				} satisfies ApiResponse,
+				500,
+			);
+		}
+	})
+
+	/**
 	 * GET /api/employee - Retrieve employee data
 	 *
 	 * This endpoint fetches all employee records from the database.
