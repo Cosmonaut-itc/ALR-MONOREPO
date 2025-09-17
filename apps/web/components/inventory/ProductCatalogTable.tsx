@@ -112,6 +112,15 @@ type WarehouseMappingEntry = {
 	warehouseName: string;
 };
 
+/**
+ * Type guard that checks whether a warehouse map response indicates success and contains mapping entries.
+ *
+ * Returns true when `map` is a non-null object with a truthy `success` property; in that case the type narrows to
+ * `{ success: true; message: string; data: WarehouseMappingEntry[] }`.
+ *
+ * @param map - The warehouse map response to test (may be null or undefined).
+ * @returns True if `map` represents a successful warehouse map response with mapping data.
+ */
 function isWarehouseMapSuccess(
 	map: WarehouseMap | null | undefined,
 ): map is { success: true; message: string; data: WarehouseMappingEntry[] } {
@@ -123,7 +132,18 @@ function isWarehouseMapSuccess(
 // Removed WeakMap cache to avoid stale data; compute item data each render
 
 // Helper to extract inventory item data safely
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: This is as optimized as it can be without making it confusing
+/**
+ * Converts a raw stock item (optionally including employee info) into the normalized InventoryItemDisplay used by the UI.
+ *
+ * When fields are missing or malformed this function supplies safe defaults:
+ * - Generates stable-ish fallback `id`/`uuid` values when none are present.
+ * - Normalizes `barcode`, `numberOfUses`, and boolean `isBeingUsed` to sensible defaults.
+ * - Combines employee `name` and `surname` to populate `lastUsedBy` when available, otherwise falls back to stock's `lastUsedBy`.
+ * - Ensures `firstUsed` is present (current timestamp when absent) and coerces `currentWarehouse` to a string when available.
+ *
+ * @param item - A StockItemWithEmployee object (may be undefined/null-like); the function will not throw for missing properties.
+ * @returns An InventoryItemDisplay with all required display fields populated (using fallbacks where necessary).
+ */
 function extractInventoryItemData(
 	item: StockItemWithEmployee,
 ): InventoryItemDisplay {
@@ -168,7 +188,16 @@ function extractInventoryItemData(
 	};
 }
 
-// Helper to extract warehouse from inventory item
+/**
+ * Derives a warehouse identifier string from a stock item, with safe fallbacks.
+ *
+ * Attempts to return item.currentCabinet first, then item.currentWarehouse. If
+ * `item` is missing, not an object, or neither field is a string, returns the
+ * default identifier `"1"` (general warehouse).
+ *
+ * @param item - The stock item object (may be null/undefined or a partial shape); expected keys: `currentCabinet`, `currentWarehouse`.
+ * @returns The warehouse identifier to use for grouping inventory items (defaults to `"1"`).
+ */
 function getItemWarehouse(item: StockItem): string {
 	if (!item || typeof item !== "object") {
 		return "1";
@@ -187,7 +216,12 @@ function getItemWarehouse(item: StockItem): string {
 	return "1"; // Default to general warehouse
 }
 
-// Helper to extract barcode from inventory item
+/**
+ * Returns the numeric barcode from a stock item or 0 if unavailable.
+ *
+ * @param item - Stock item object that may contain a numeric `barcode` field.
+ * @returns The `barcode` value when present and a number; otherwise `0`.
+ */
 function getItemBarcode(item: StockItem): number {
 	if (item && typeof item === "object" && "barcode" in item) {
 		const barcode = (item as { barcode: number }).barcode;
@@ -198,6 +232,14 @@ function getItemBarcode(item: StockItem): number {
 	return 0;
 }
 
+/**
+ * Formats an ISO date string to "dd/MM/yyyy" using the Spanish locale.
+ *
+ * If `dateString` is falsy or cannot be parsed as a valid date, returns `"N/A"`.
+ *
+ * @param dateString - The date input as a string (e.g., ISO 8601). May be undefined.
+ * @returns The formatted date string in `dd/MM/yyyy` or `"N/A"` when input is missing or invalid.
+ */
 function formatDate(dateString: string | undefined): string {
 	if (!dateString) {
 		return "N/A";
@@ -209,6 +251,26 @@ function formatDate(dateString: string | undefined): string {
 	}
 }
 
+/**
+ * Renders a product catalog table with per-product expandable inventory details.
+ *
+ * The table shows products derived from `productCatalog` and inventory items from `inventory`,
+ * supports global search (product name, barcode, UUID), category filtering, sorting, pagination,
+ * and per-product expansion to view grouped inventory items by warehouse. Expanded item lists
+ * display UUID (with copy-to-clipboard), usage metadata, status, and optional dispose actions.
+ * When `enableSelection` is true the expanded view allows selecting items and adding them to a
+ * transfer via `onAddToTransfer`. The component also writes incoming inventory and product
+ * catalog data into the inventory store and uses the disposal store to open the dispose dialog.
+ *
+ * @param inventory - Raw inventory payload (used to populate the inventory store).
+ * @param productCatalog - API product catalog response (transformed and stored for table data).
+ * @param warehouse - Optional warehouse identifier to filter inventory items per product.
+ * @param enableSelection - When true, enables per-item selection and "Agregar a transferencia".
+ * @param onAddToTransfer - Callback invoked with { product, items } when items are added to a transfer.
+ * @param disabledUUIDs - Set of item UUIDs that should be rendered disabled for selection.
+ * @param enableDispose - When true, shows a per-item dispose action that opens the dispose dialog.
+ * @param warehouseMap - Optional warehouse mapping response used to resolve human-friendly warehouse names.
+ */
 export function ProductCatalogTable({
 	inventory,
 	productCatalog,

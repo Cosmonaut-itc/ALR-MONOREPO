@@ -43,6 +43,16 @@ import type {
 
 type APIResponse = ProductStockWithEmployee | null;
 
+/**
+ * Inventory management page showing warehouse and cabinet stock with transfer workflow.
+ *
+ * Renders two tabs ("General" and "Gabinete") with searchable product tables, lets users select
+ * items to add to a transfer list, review/remove items in a dialog, and approve a transfer
+ * which creates a transfer order.
+ *
+ * @param warehouseId - ID of the source warehouse whose inventory will be displayed and used as the transfer source.
+ * @returns The InventarioPage component's JSX element.
+ */
 export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 	const { data: inventory } = useSuspenseQuery<APIResponse, Error, APIResponse>(
 		{
