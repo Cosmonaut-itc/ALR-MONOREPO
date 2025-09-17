@@ -1,6 +1,7 @@
-"use client";
+/** biome-ignore-all lint/complexity/noExcessiveCognitiveComplexity: Needed to render all of the details*/
+'use client';
 
-import type { FilterFn } from "@tanstack/react-table";
+import type { FilterFn } from '@tanstack/react-table';
 import {
 	type ColumnDef,
 	type ColumnFiltersState,
@@ -14,9 +15,9 @@ import {
 	type PaginationState,
 	type SortingState,
 	useReactTable,
-} from "@tanstack/react-table";
-import { format } from "date-fns";
-import { es } from "date-fns/locale";
+} from '@tanstack/react-table';
+import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
 import {
 	ChevronDown,
 	ChevronLeft,
@@ -27,21 +28,21 @@ import {
 	Search,
 	Trash2,
 	X,
-} from "lucide-react";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
+} from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { toast } from 'sonner';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
 import {
 	Select,
 	SelectContent,
 	SelectItem,
 	SelectTrigger,
 	SelectValue,
-} from "@/components/ui/select";
+} from '@/components/ui/select';
 import {
 	Table,
 	TableBody,
@@ -49,16 +50,12 @@ import {
 	TableHead,
 	TableHeader,
 	TableRow,
-} from "@/components/ui/table";
-import { useDisposalStore } from "@/stores/disposal-store";
-import type { StockItemWithEmployee } from "@/stores/inventory-store";
-import { type StockItem, useInventoryStore } from "@/stores/inventory-store";
-import type {
-	ProductCatalogItem,
-	ProductCatalogResponse,
-	WarehouseMap,
-} from "@/types";
-import { DisposeItemDialog } from "./DisposeItemDialog";
+} from '@/components/ui/table';
+import { useDisposalStore } from '@/stores/disposal-store';
+import type { StockItemWithEmployee } from '@/stores/inventory-store';
+import { type StockItem, useInventoryStore } from '@/stores/inventory-store';
+import type { ProductCatalogItem, ProductCatalogResponse, WarehouseMap } from '@/types';
+import { DisposeItemDialog } from './DisposeItemDialog';
 
 // Type for product with inventory data
 type ProductWithInventory = {
@@ -124,9 +121,7 @@ type WarehouseMappingEntry = {
 function isWarehouseMapSuccess(
 	map: WarehouseMap | null | undefined,
 ): map is { success: true; message: string; data: WarehouseMappingEntry[] } {
-	return Boolean(
-		map && typeof map === "object" && "success" in map && map.success,
-	);
+	return Boolean(map && typeof map === 'object' && 'success' in map && map.success);
 }
 
 // Removed WeakMap cache to avoid stale data; compute item data each render
@@ -144,19 +139,15 @@ function isWarehouseMapSuccess(
  * @param item - A StockItemWithEmployee object (may be undefined/null-like); the function will not throw for missing properties.
  * @returns An InventoryItemDisplay with all required display fields populated (using fallbacks where necessary).
  */
-function extractInventoryItemData(
-	item: StockItemWithEmployee,
-): InventoryItemDisplay {
-	if (item && typeof item === "object" && "productStock" in item) {
+function extractInventoryItemData(item: StockItemWithEmployee): InventoryItemDisplay {
+	if (item && typeof item === 'object' && 'productStock' in item) {
 		const itemStock = (item as { productStock: StockItem }).productStock;
-		const employee = (
-			item as { employee?: { name?: string; surname?: string } }
-		).employee;
+		const employee = (item as { employee?: { name?: string; surname?: string } }).employee;
 
 		const fallbackId = Math.random().toString();
 		const idValue = itemStock.id || fallbackId;
 		const employeeFullName = employee?.name
-			? `${employee.name}${employee?.surname ? ` ${employee.surname}` : ""}`
+			? `${employee.name}${employee?.surname ? ` ${employee.surname}` : ''}`
 			: undefined;
 		const lastUsedBy = employeeFullName || itemStock.lastUsedBy || undefined;
 
@@ -199,21 +190,21 @@ function extractInventoryItemData(
  * @returns The warehouse identifier to use for grouping inventory items (defaults to `"1"`).
  */
 function getItemWarehouse(item: StockItem): string {
-	if (!item || typeof item !== "object") {
-		return "1";
+	if (!item || typeof item !== 'object') {
+		return '1';
 	}
 
 	const obj = item as { currentWarehouse?: string; currentCabinet?: string };
 	const currentWarehouse = obj.currentWarehouse;
 	const currentCabinet = obj.currentCabinet;
-	if (currentCabinet && typeof currentCabinet === "string") {
+	if (currentCabinet && typeof currentCabinet === 'string') {
 		return currentCabinet;
 	}
-	if (currentWarehouse && typeof currentWarehouse === "string") {
+	if (currentWarehouse && typeof currentWarehouse === 'string') {
 		return currentWarehouse;
 	}
 
-	return "1"; // Default to general warehouse
+	return '1'; // Default to general warehouse
 }
 
 /**
@@ -223,9 +214,9 @@ function getItemWarehouse(item: StockItem): string {
  * @returns The `barcode` value when present and a number; otherwise `0`.
  */
 function getItemBarcode(item: StockItem): number {
-	if (item && typeof item === "object" && "barcode" in item) {
+	if (item && typeof item === 'object' && 'barcode' in item) {
 		const barcode = (item as { barcode: number }).barcode;
-		if (barcode && typeof barcode === "number") {
+		if (barcode && typeof barcode === 'number') {
 			return barcode;
 		}
 	}
@@ -242,12 +233,12 @@ function getItemBarcode(item: StockItem): number {
  */
 function formatDate(dateString: string | undefined): string {
 	if (!dateString) {
-		return "N/A";
+		return 'N/A';
 	}
 	try {
-		return format(new Date(dateString), "dd/MM/yyyy", { locale: es });
+		return format(new Date(dateString), 'dd/MM/yyyy', { locale: es });
 	} catch {
-		return "N/A";
+		return 'N/A';
 	}
 }
 
@@ -308,15 +299,18 @@ export function ProductCatalogTable({
 			if (entry?.warehouseId) {
 				lookup.set(entry.warehouseId, entry.warehouseName ?? entry.warehouseId);
 			}
+			if (entry?.cabinetId) {
+				lookup.set(entry.cabinetId, entry.cabinetName ?? entry.cabinetId);
+			}
 		}
 		return lookup;
 	}, [warehouseEntries]);
 
 	const resolveWarehouseName = useCallback(
 		(warehouseId?: string | null) => {
-			const id = warehouseId?.toString().trim() ?? "";
+			const id = warehouseId?.toString().trim() ?? '';
 			if (!id) {
-				return "Sin almacén asignado";
+				return 'Sin almacén asignado';
 			}
 			const mappedName = warehouseNameLookup.get(id);
 			if (mappedName) {
@@ -338,26 +332,20 @@ export function ProductCatalogTable({
 	useEffect(() => {
 		if (productCatalog?.success && productCatalog.data) {
 			// Transform API product data to match our expected structure
-			const transformedProducts = productCatalog.data.map(
-				(product: ProductCatalogItem) => {
-					return {
-						barcode: Number.parseInt(product.barcode, 10) || product.good_id,
-						name: product.title || "Producto sin nombre",
-						category: product.category || "Sin categoría",
-						description: product.comment || "Sin descripción",
-					};
-				},
-			);
+			const transformedProducts = productCatalog.data.map((product: ProductCatalogItem) => {
+				return {
+					barcode: Number.parseInt(product.barcode, 10) || product.good_id,
+					name: product.title || 'Producto sin nombre',
+					category: product.category || 'Sin categoría',
+					description: product.comment || 'Sin descripción',
+				};
+			});
 
 			setProductCatalog(transformedProducts);
 
 			// Extract unique categories from product catalog
 			const uniqueCategories = Array.from(
-				new Set(
-					transformedProducts
-						.map((product) => product.category)
-						.filter(Boolean),
-				),
+				new Set(transformedProducts.map((product) => product.category).filter(Boolean)),
 			);
 			setCategories(uniqueCategories);
 		}
@@ -380,14 +368,13 @@ export function ProductCatalogTable({
 				};
 			}
 
-			const inventoryItems: StockItemWithEmployee[] =
-				storedInventoryData?.filter((item) => {
-					const itemStock = (item as { productStock: StockItem }).productStock;
-					return (
-						getItemBarcode(itemStock) === product.barcode &&
-						getItemWarehouse(itemStock) === warehouse?.toString()
-					);
-				});
+			const inventoryItems: StockItemWithEmployee[] = storedInventoryData?.filter((item) => {
+				const itemStock = (item as { productStock: StockItem }).productStock;
+				return (
+					getItemBarcode(itemStock) === product.barcode &&
+					getItemWarehouse(itemStock) === warehouse?.toString()
+				);
+			});
 
 			return {
 				...product,
@@ -400,17 +387,15 @@ export function ProductCatalogTable({
 	// State for table features
 	const [sorting, setSorting] = useState<SortingState>([]);
 	const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
-	const [globalFilter, setGlobalFilter] = useState("");
-	const [categoryFilter, setCategoryFilter] = useState<string>("all");
+	const [globalFilter, setGlobalFilter] = useState('');
+	const [categoryFilter, setCategoryFilter] = useState<string>('all');
 	const [expanded, setExpanded] = useState<ExpandedState>({});
 	const [pagination, setPagination] = useState<PaginationState>({
 		pageIndex: 0,
 		pageSize: 10,
 	});
 	// Per-product selection state for expanded rows (barcode -> Set of UUIDs)
-	const [selectedByBarcode, setSelectedByBarcode] = useState<
-		Record<number, Set<string>>
-	>({});
+	const [selectedByBarcode, setSelectedByBarcode] = useState<Record<number, Set<string>>>({});
 
 	// Extract unique categories from products
 	const uniqueCategories = useMemo(() => {
@@ -444,26 +429,21 @@ export function ProductCatalogTable({
 	);
 
 	const globalFilterFn = useMemo(
-		() =>
-			(
-				row: { original: ProductWithInventory },
-				_columnId: string,
-				value: string,
-			) => {
-				const product = row.original;
-				const searchValue = value.toLowerCase();
+		() => (row: { original: ProductWithInventory }, _columnId: string, value: string) => {
+			const product = row.original;
+			const searchValue = value.toLowerCase();
 
-				// If no search term, show all products (that match category filter)
-				if (!value.trim()) {
-					return true;
-				}
+			// If no search term, show all products (that match category filter)
+			if (!value.trim()) {
+				return true;
+			}
 
-				// Apply global search filter
-				return (
-					searchInProduct(product, searchValue) ||
-					searchInInventoryItems(product.inventoryItems, searchValue)
-				);
-			},
+			// Apply global search filter
+			return (
+				searchInProduct(product, searchValue) ||
+				searchInInventoryItems(product.inventoryItems, searchValue)
+			);
+		},
 		[searchInProduct, searchInInventoryItems],
 	);
 
@@ -479,7 +459,7 @@ export function ProductCatalogTable({
 				return true;
 			}
 			const rowValue = row.getValue(columnId) as string | undefined;
-			return (rowValue ?? "") === filterValue;
+			return (rowValue ?? '') === filterValue;
 		},
 		[],
 	);
@@ -489,15 +469,15 @@ export function ProductCatalogTable({
 		() => async (text: string) => {
 			try {
 				await navigator.clipboard.writeText(text);
-				toast.success("UUID copiado al portapapeles", {
+				toast.success('UUID copiado al portapapeles', {
 					description: `${text.slice(0, 8)}... ha sido copiado exitosamente`,
 					duration: 2000,
 				});
 			} catch (error) {
 				// biome-ignore lint/suspicious/noConsole: Used for debugging
-				console.error("Error copying to clipboard:", error);
-				toast.error("Error al copiar UUID", {
-					description: "No se pudo copiar el UUID al portapapeles",
+				console.error('Error copying to clipboard:', error);
+				toast.error('Error al copiar UUID', {
+					description: 'No se pudo copiar el UUID al portapapeles',
 					duration: 3000,
 				});
 			}
@@ -510,8 +490,7 @@ export function ProductCatalogTable({
 			({ row }: { row: { original: ProductWithInventory } }) => {
 				const product = row.original as ProductWithInventory;
 				const selectionEnabledRef = enableSelection === true;
-				const productSelection =
-					selectedByBarcode[product.barcode] || new Set<string>();
+				const productSelection = selectedByBarcode[product.barcode] || new Set<string>();
 				const detailColumnCount = enableDispose ? 7 : 6;
 
 				type DisplayItem = {
@@ -520,14 +499,12 @@ export function ProductCatalogTable({
 					data: InventoryItemDisplay;
 				};
 
-				const displayItems: DisplayItem[] = product.inventoryItems.map(
-					(item) => {
-						const data = extractInventoryItemData(item);
-						const key = data.uuid || data.id || "";
-						const warehouseKey = data.currentWarehouse ?? "unassigned";
-						return { data, key, warehouseKey };
-					},
-				);
+				const displayItems: DisplayItem[] = product.inventoryItems.map((item) => {
+					const data = extractInventoryItemData(item);
+					const key = data.uuid || data.id || '';
+					const warehouseKey = data.currentWarehouse ?? 'unassigned';
+					return { data, key, warehouseKey };
+				});
 
 				const selectedCount = displayItems.reduce((acc, item) => {
 					return item.key && productSelection.has(item.key) ? acc + 1 : acc;
@@ -562,7 +539,7 @@ export function ProductCatalogTable({
 						[product.barcode]: new Set<string>(),
 					}));
 					if (selectedItems.length > 0) {
-						toast.success("Agregado a transferencia", {
+						toast.success('Agregado a transferencia', {
 							description: `${selectedItems.length} item(s) agregado(s) desde ${product.name}`,
 							duration: 2000,
 						});
@@ -580,7 +557,7 @@ export function ProductCatalogTable({
 				}
 
 				const groupedByWarehouse = displayItems.reduce((acc, item) => {
-					const locationKey = item.warehouseKey || "unassigned";
+					const locationKey = item.warehouseKey || 'unassigned';
 					const bucket = acc.get(locationKey);
 					if (bucket) {
 						bucket.items.push(item);
@@ -644,10 +621,10 @@ export function ProductCatalogTable({
 								<TableBody>
 									{warehouseGroups.map(([groupKey, group]) => (
 										<React.Fragment key={groupKey}>
-											<TableRow className="bg-[#EAEDF0] text-[#11181C] text-left text-xs uppercase tracking-wide dark:bg-[#252729] dark:text-[#ECEDEE]">
+											<TableRow className="bg-[#EAEDF0] text-left text-[#11181C] text-xs uppercase tracking-wide dark:bg-[#252729] dark:text-[#ECEDEE]">
 												<TableCell
-													colSpan={detailColumnCount}
 													className="font-semibold"
+													colSpan={detailColumnCount}
 												>
 													<div className="flex items-center justify-between">
 														<span>{group.label}</span>
@@ -679,18 +656,27 @@ export function ProductCatalogTable({
 																	<Checkbox
 																		checked={isSelected}
 																		disabled={isDisabled}
-																		onCheckedChange={(checked) =>
-																			toggleUUID(selectionKey, Boolean(checked))
+																		onCheckedChange={(
+																			checked,
+																		) =>
+																			toggleUUID(
+																				selectionKey,
+																				Boolean(checked),
+																			)
 																		}
 																	/>
 																)}
 																<span className="truncate">
-																	{(data.id || "").slice(0, 8)}...
+																	{(data.id || '').slice(0, 8)}...
 																</span>
 																<Button
 																	className="h-4 w-4 p-0 hover:bg-[#E5E7EB] dark:hover:bg-[#2D3033]"
 																	onClick={() => {
-																		copyToClipboard(data.uuid || data.id || "");
+																		copyToClipboard(
+																			data.uuid ||
+																				data.id ||
+																				'',
+																		);
 																	}}
 																	size="sm"
 																	variant="ghost"
@@ -703,7 +689,7 @@ export function ProductCatalogTable({
 															{formatDate(data.lastUsed)}
 														</TableCell>
 														<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-															{data.lastUsedBy || "N/A"}
+															{data.lastUsedBy || 'N/A'}
 														</TableCell>
 														<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
 															{data.numberOfUses}
@@ -712,14 +698,18 @@ export function ProductCatalogTable({
 															<Badge
 																className={
 																	data.isBeingUsed
-																		? "bg-[#EF4444] text-white text-xs"
-																		: "bg-[#10B981] text-white text-xs"
+																		? 'bg-[#EF4444] text-white text-xs'
+																		: 'bg-[#10B981] text-white text-xs'
 																}
 																variant={
-																	data.isBeingUsed ? "destructive" : "default"
+																	data.isBeingUsed
+																		? 'destructive'
+																		: 'default'
 																}
 															>
-																{data.isBeingUsed ? "En Uso" : "Disponible"}
+																{data.isBeingUsed
+																	? 'En Uso'
+																	: 'Disponible'}
 															</Badge>
 														</TableCell>
 														<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
@@ -731,13 +721,16 @@ export function ProductCatalogTable({
 																	className="h-6 w-6 p-0 text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950 dark:hover:text-red-300"
 																	onClick={() => {
 																		showDisposeDialog({
-																			id: data.id || "",
-																			uuid: data.id || "",
-																			barcode: product.barcode,
+																			id: data.id || '',
+																			uuid: data.id || '',
+																			barcode:
+																				product.barcode,
 																			productInfo: {
 																				name: product.name,
-																				category: product.category,
-																				description: product.description,
+																				category:
+																					product.category,
+																				description:
+																					product.description,
 																			},
 																		});
 																	}}
@@ -776,7 +769,7 @@ export function ProductCatalogTable({
 	const columns = useMemo<ColumnDef<ProductWithInventory>[]>(
 		() => [
 			{
-				id: "expander",
+				id: 'expander',
 				header: () => null,
 				cell: ({ row }) => {
 					return (
@@ -797,17 +790,17 @@ export function ProductCatalogTable({
 				enableSorting: false,
 			},
 			{
-				accessorKey: "barcode",
-				header: "Código de Barras",
+				accessorKey: 'barcode',
+				header: 'Código de Barras',
 				cell: ({ row }) => (
 					<div className="font-mono text-[#687076] text-sm dark:text-[#9BA1A6]">
-						{row.getValue("barcode")}
+						{row.getValue('barcode')}
 					</div>
 				),
 			},
 			{
-				accessorKey: "name",
-				header: "Producto",
+				accessorKey: 'name',
+				header: 'Producto',
 				cell: ({ row }) => {
 					const product = row.original;
 					return (
@@ -819,34 +812,34 @@ export function ProductCatalogTable({
 						</div>
 					);
 				},
-				filterFn: "includesString",
+				filterFn: 'includesString',
 			},
 			{
-				accessorKey: "category",
-				header: "Categoría",
+				accessorKey: 'category',
+				header: 'Categoría',
 				cell: ({ row }) => (
 					<Badge
 						className="bg-[#F3F4F6] text-[#374151] dark:bg-[#374151] dark:text-[#D1D5DB]"
 						variant="secondary"
 					>
-						{row.getValue("category")}
+						{row.getValue('category')}
 					</Badge>
 				),
 				filterFn: categoryFilterFn,
 			},
 			{
-				accessorKey: "stockCount",
-				header: "Stock",
+				accessorKey: 'stockCount',
+				header: 'Stock',
 				cell: ({ row }) => {
-					const stockCount = row.getValue("stockCount") as number;
+					const stockCount = row.getValue('stockCount') as number;
 					return (
 						<Badge
 							className={
 								stockCount > 0
-									? "bg-[#10B981] text-white"
-									: "bg-[#F3F4F6] text-[#6B7280] dark:bg-[#374151] dark:text-[#9CA3AF]"
+									? 'bg-[#10B981] text-white'
+									: 'bg-[#F3F4F6] text-[#6B7280] dark:bg-[#374151] dark:text-[#9CA3AF]'
 							}
-							variant={stockCount > 0 ? "default" : "secondary"}
+							variant={stockCount > 0 ? 'default' : 'secondary'}
 						>
 							{stockCount} unidades
 						</Badge>
@@ -884,13 +877,11 @@ export function ProductCatalogTable({
 
 	// Keep the table's category column filter in sync with the select value
 	useEffect(() => {
-		const categoryColumn = table.getColumn("category");
+		const categoryColumn = table.getColumn('category');
 		if (!categoryColumn) {
 			return;
 		}
-		categoryColumn.setFilterValue(
-			categoryFilter === "all" ? undefined : categoryFilter,
-		);
+		categoryColumn.setFilterValue(categoryFilter === 'all' ? undefined : categoryFilter);
 	}, [categoryFilter, table]);
 
 	if (products.length === 0) {
@@ -928,7 +919,7 @@ export function ProductCatalogTable({
 					{globalFilter && (
 						<Button
 							className="-translate-y-1/2 absolute top-1/2 right-1 h-6 w-6 p-0 hover:bg-[#E5E7EB] dark:hover:bg-[#2D3033]"
-							onClick={() => setGlobalFilter("")}
+							onClick={() => setGlobalFilter('')}
 							size="sm"
 							variant="ghost"
 						>
@@ -939,10 +930,7 @@ export function ProductCatalogTable({
 
 				{/* Category Filter */}
 				<div className="min-w-[180px]">
-					<Select
-						onValueChange={handleCategoryFilterChange}
-						value={categoryFilter}
-					>
+					<Select onValueChange={handleCategoryFilterChange} value={categoryFilter}>
 						<SelectTrigger className="border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]">
 							<SelectValue placeholder="Todas las categorías" />
 						</SelectTrigger>
@@ -967,12 +955,12 @@ export function ProductCatalogTable({
 				</div>
 
 				{/* Clear All Filters */}
-				{(globalFilter || categoryFilter !== "all") && (
+				{(globalFilter || categoryFilter !== 'all') && (
 					<Button
 						className="text-[#687076] hover:text-[#11181C] dark:text-[#9BA1A6] dark:hover:text-[#ECEDEE]"
 						onClick={() => {
-							setGlobalFilter("");
-							setCategoryFilter("all");
+							setGlobalFilter('');
+							setCategoryFilter('all');
 						}}
 						size="sm"
 						variant="ghost"
@@ -983,8 +971,7 @@ export function ProductCatalogTable({
 
 				{/* Results Counter */}
 				<div className="whitespace-nowrap text-[#687076] text-sm dark:text-[#9BA1A6]">
-					{table.getFilteredRowModel().rows.length} de {products.length}{" "}
-					productos
+					{table.getFilteredRowModel().rows.length} de {products.length} productos
 				</div>
 			</div>
 
@@ -1020,7 +1007,7 @@ export function ProductCatalogTable({
 									{/* Main row */}
 									<TableRow
 										className="theme-transition border-[#E5E7EB] border-b hover:bg-[#F9FAFB] data-[state=selected]:bg-[#F9FAFB] dark:border-[#2D3033] dark:data-[state=selected]:bg-[#2D3033] dark:hover:bg-[#2D3033]"
-										data-state={row.getIsSelected() && "selected"}
+										data-state={row.getIsSelected() && 'selected'}
 									>
 										{row.getVisibleCells().map((cell) => (
 											<TableCell key={cell.id}>
@@ -1043,10 +1030,7 @@ export function ProductCatalogTable({
 							))
 						) : (
 							<TableRow>
-								<TableCell
-									className="h-24 text-center"
-									colSpan={columns.length}
-								>
+								<TableCell className="h-24 text-center" colSpan={columns.length}>
 									No se encontraron productos.
 								</TableCell>
 							</TableRow>
@@ -1058,9 +1042,7 @@ export function ProductCatalogTable({
 			{/* Pagination Controls */}
 			<div className="flex items-center justify-between px-2">
 				<div className="flex items-center space-x-2">
-					<p className="text-[#687076] text-sm dark:text-[#9BA1A6]">
-						Filas por página
-					</p>
+					<p className="text-[#687076] text-sm dark:text-[#9BA1A6]">Filas por página</p>
 					<Select
 						onValueChange={(value) => {
 							table.setPageSize(Number(value));
@@ -1088,8 +1070,7 @@ export function ProductCatalogTable({
 				</div>
 				<div className="flex items-center space-x-6 lg:space-x-8">
 					<div className="theme-transition flex w-[100px] items-center justify-center font-medium text-[#687076] text-sm dark:text-[#9BA1A6]">
-						Página {table.getState().pagination.pageIndex + 1} de{" "}
-						{table.getPageCount()}
+						Página {table.getState().pagination.pageIndex + 1} de {table.getPageCount()}
 					</div>
 					<div className="flex items-center space-x-2">
 						<Button
