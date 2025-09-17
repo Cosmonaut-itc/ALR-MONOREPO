@@ -2001,6 +2001,7 @@ const route = app
 	 * Creates a new warehouse record in the database with comprehensive validation.
 	 * Requires authentication and validates all input fields according to business rules.
 	 * Automatically sets creation timestamps and audit fields.
+	 * Also creates a default cabinet associated to the warehouse named "<name> Gabinete".
 	 *
 	 * @param {string} name - Warehouse name (required)
 	 * @param {string} code - Unique warehouse identifier code (required)
@@ -2060,41 +2061,43 @@ const route = app
 				const currentUser = c.get('user');
 				const userId = currentUser?.id || null;
 
-				// Insert the new warehouse into the database
-				// Using .returning() to get the inserted record back from the database
-				const insertedWarehouse = await db
-					.insert(schemas.warehouse)
-					.values({
-						...warehouseData,
-						createdBy: userId,
-						lastModifiedBy: userId,
-						createdAt: new Date(),
-						updatedAt: new Date(),
-					})
-					.returning(); // Returns array of inserted records
+				// Create the warehouse and its default cabinet within a single transaction
+				const createdWarehouse = await db.transaction(async (tx) => {
+					// Insert the new warehouse
+					const inserted = await tx
+						.insert(schemas.warehouse)
+						.values({
+							...warehouseData,
+							createdBy: userId,
+							lastModifiedBy: userId,
+							createdAt: new Date(),
+							updatedAt: new Date(),
+						})
+						.returning();
 
-				// Check if the insertion was successful
-				// Drizzle's .returning() always returns an array, even for single inserts
-				if (insertedWarehouse.length === 0) {
-					return c.json(
-						{
-							success: false,
-							message: 'Failed to create warehouse - no record inserted',
-							data: null,
-						} satisfies ApiResponse,
-						500,
-					);
-				}
+					if (inserted.length === 0) {
+						throw new Error('Failed to create warehouse - no record inserted');
+					}
+
+					const warehouseRow = inserted[0];
+
+					// Create a default cabinet for the new warehouse
+					await tx.insert(schemas.cabinetWarehouse).values({
+						name: `${warehouseData.name} Gabinete`,
+						warehouseId: warehouseRow.id,
+					});
+
+					return warehouseRow;
+				});
 
 				// Return successful response with the newly created warehouse
-				// Take the first (and only) element from the returned array
 				return c.json(
 					{
 						success: true,
 						message: 'Warehouse created successfully',
-						data: insertedWarehouse[0], // Return the single created record
+						data: createdWarehouse,
 					} satisfies ApiResponse,
-					201, // 201 Created status for successful resource creation
+					201,
 				);
 			} catch (error) {
 				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
