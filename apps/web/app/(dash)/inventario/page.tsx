@@ -8,6 +8,7 @@ import { createQueryKey } from '@/lib/helpers';
 import { queryKeys } from '@/lib/query-keys';
 import {
 	fetchAllProductsServer,
+	fetchCabinetWarehouseServer,
 	fetchStockByWarehouseServer,
 } from '@/lib/server-functions/inventory';
 import { getServerAuth } from '@/lib/server-functions/server-auth';
@@ -32,6 +33,12 @@ export default async function AbastecimientoPage() {
 		queryClient.prefetchQuery({
 			queryKey: queryKeys.productCatalog,
 			queryFn: () => fetchAllProductsServer(),
+		});
+
+		// Prefetch cabinet warehouse data
+		queryClient.prefetchQuery({
+			queryKey: queryKeys.cabinetWarehouse,
+			queryFn: () => fetchCabinetWarehouseServer(),
 		});
 		return (
 			<HydrationBoundary state={dehydrate(queryClient)}>

@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import type { FilterFn } from '@tanstack/react-table';
+import type { FilterFn } from "@tanstack/react-table";
 import {
 	type ColumnDef,
 	type ColumnFiltersState,
@@ -14,9 +14,9 @@ import {
 	type PaginationState,
 	type SortingState,
 	useReactTable,
-} from '@tanstack/react-table';
-import { format } from 'date-fns';
-import { es } from 'date-fns/locale';
+} from "@tanstack/react-table";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
 import {
 	ChevronDown,
 	ChevronLeft,
@@ -27,21 +27,21 @@ import {
 	Search,
 	Trash2,
 	X,
-} from 'lucide-react';
-import React, { useEffect, useMemo, useState } from 'react';
-import { toast } from 'sonner';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
+} from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import {
 	Select,
 	SelectContent,
 	SelectItem,
 	SelectTrigger,
 	SelectValue,
-} from '@/components/ui/select';
+} from "@/components/ui/select";
 import {
 	Table,
 	TableBody,
@@ -49,12 +49,16 @@ import {
 	TableHead,
 	TableHeader,
 	TableRow,
-} from '@/components/ui/table';
-import { useDisposalStore } from '@/stores/disposal-store';
-import type { StockItemWithEmployee } from '@/stores/inventory-store';
-import { type StockItem, useInventoryStore } from '@/stores/inventory-store';
-import type { ProductCatalogItem, ProductCatalogResponse } from '@/types';
-import { DisposeItemDialog } from './DisposeItemDialog';
+} from "@/components/ui/table";
+import { useDisposalStore } from "@/stores/disposal-store";
+import type { StockItemWithEmployee } from "@/stores/inventory-store";
+import { type StockItem, useInventoryStore } from "@/stores/inventory-store";
+import type {
+	ProductCatalogItem,
+	ProductCatalogResponse,
+	WarehouseMap,
+} from "@/types";
+import { DisposeItemDialog } from "./DisposeItemDialog";
 
 // Type for product with inventory data
 type ProductWithInventory = {
@@ -97,21 +101,42 @@ interface ProductCatalogTableProps {
 	}) => void;
 	/** List of UUIDs that are already in transfer (to disable checkboxes) */
 	disabledUUIDs?: Set<string>;
+	/** Optional warehouse map response for resolving warehouse names */
+	warehouseMap?: WarehouseMap | null;
+}
+
+type WarehouseMappingEntry = {
+	cabinetId: string;
+	cabinetName: string;
+	warehouseId: string;
+	warehouseName: string;
+};
+
+function isWarehouseMapSuccess(
+	map: WarehouseMap | null | undefined,
+): map is { success: true; message: string; data: WarehouseMappingEntry[] } {
+	return Boolean(
+		map && typeof map === "object" && "success" in map && map.success,
+	);
 }
 
 // Removed WeakMap cache to avoid stale data; compute item data each render
 
 // Helper to extract inventory item data safely
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: This is as optimized as it can be without making it confusing
-function extractInventoryItemData(item: StockItemWithEmployee): InventoryItemDisplay {
-	if (item && typeof item === 'object' && 'productStock' in item) {
+function extractInventoryItemData(
+	item: StockItemWithEmployee,
+): InventoryItemDisplay {
+	if (item && typeof item === "object" && "productStock" in item) {
 		const itemStock = (item as { productStock: StockItem }).productStock;
-		const employee = (item as { employee?: { name?: string; surname?: string } }).employee;
+		const employee = (
+			item as { employee?: { name?: string; surname?: string } }
+		).employee;
 
 		const fallbackId = Math.random().toString();
 		const idValue = itemStock.id || fallbackId;
 		const employeeFullName = employee?.name
-			? `${employee.name}${employee?.surname ? ` ${employee.surname}` : ''}`
+			? `${employee.name}${employee?.surname ? ` ${employee.surname}` : ""}`
 			: undefined;
 		const lastUsedBy = employeeFullName || itemStock.lastUsedBy || undefined;
 
@@ -124,7 +149,9 @@ function extractInventoryItemData(item: StockItemWithEmployee): InventoryItemDis
 			numberOfUses: itemStock.numberOfUses || 0,
 			isBeingUsed: itemStock.isBeingUsed ?? false,
 			firstUsed: itemStock.firstUsed || new Date().toISOString(),
-			currentWarehouse: itemStock.currentWarehouse?.toString() || '1',
+			currentWarehouse: itemStock.currentWarehouse
+				? itemStock.currentWarehouse.toString()
+				: undefined,
 		};
 
 		return result;
@@ -137,34 +164,34 @@ function extractInventoryItemData(item: StockItemWithEmployee): InventoryItemDis
 		numberOfUses: 0,
 		isBeingUsed: false,
 		firstUsed: new Date().toISOString(),
-		currentWarehouse: '1',
+		currentWarehouse: undefined,
 	};
 }
 
 // Helper to extract warehouse from inventory item
 function getItemWarehouse(item: StockItem): string {
-	if (!item || typeof item !== 'object') {
-		return '1';
+	if (!item || typeof item !== "object") {
+		return "1";
 	}
 
 	const obj = item as { currentWarehouse?: string; currentCabinet?: string };
 	const currentWarehouse = obj.currentWarehouse;
 	const currentCabinet = obj.currentCabinet;
-	if (currentCabinet && typeof currentCabinet === 'string') {
+	if (currentCabinet && typeof currentCabinet === "string") {
 		return currentCabinet;
 	}
-	if (currentWarehouse && typeof currentWarehouse === 'string') {
+	if (currentWarehouse && typeof currentWarehouse === "string") {
 		return currentWarehouse;
 	}
 
-	return '1'; // Default to general warehouse
+	return "1"; // Default to general warehouse
 }
 
 // Helper to extract barcode from inventory item
 function getItemBarcode(item: StockItem): number {
-	if (item && typeof item === 'object' && 'barcode' in item) {
+	if (item && typeof item === "object" && "barcode" in item) {
 		const barcode = (item as { barcode: number }).barcode;
-		if (barcode && typeof barcode === 'number') {
+		if (barcode && typeof barcode === "number") {
 			return barcode;
 		}
 	}
@@ -173,12 +200,12 @@ function getItemBarcode(item: StockItem): number {
 
 function formatDate(dateString: string | undefined): string {
 	if (!dateString) {
-		return 'N/A';
+		return "N/A";
 	}
 	try {
-		return format(new Date(dateString), 'dd/MM/yyyy', { locale: es });
+		return format(new Date(dateString), "dd/MM/yyyy", { locale: es });
 	} catch {
-		return 'N/A';
+		return "N/A";
 	}
 }
 
@@ -190,6 +217,7 @@ export function ProductCatalogTable({
 	onAddToTransfer,
 	disabledUUIDs = new Set(),
 	enableDispose = false,
+	warehouseMap = null,
 }: ProductCatalogTableProps) {
 	// Disposal store for dispose dialog
 	const { show: showDisposeDialog } = useDisposalStore();
@@ -203,6 +231,40 @@ export function ProductCatalogTable({
 		inventoryData: storedInventoryData,
 	} = useInventoryStore();
 
+	const warehouseEntries = useMemo<WarehouseMappingEntry[]>(() => {
+		if (isWarehouseMapSuccess(warehouseMap)) {
+			return Array.isArray(warehouseMap.data)
+				? (warehouseMap.data as WarehouseMappingEntry[])
+				: [];
+		}
+		return [];
+	}, [warehouseMap]);
+
+	const warehouseNameLookup = useMemo(() => {
+		const lookup = new Map<string, string>();
+		for (const entry of warehouseEntries) {
+			if (entry?.warehouseId) {
+				lookup.set(entry.warehouseId, entry.warehouseName ?? entry.warehouseId);
+			}
+		}
+		return lookup;
+	}, [warehouseEntries]);
+
+	const resolveWarehouseName = useCallback(
+		(warehouseId?: string | null) => {
+			const id = warehouseId?.toString().trim() ?? "";
+			if (!id) {
+				return "Sin almacén asignado";
+			}
+			const mappedName = warehouseNameLookup.get(id);
+			if (mappedName) {
+				return mappedName;
+			}
+			return id.length > 8 ? `Almacén ${id.slice(0, 8)}...` : `Almacén ${id}`;
+		},
+		[warehouseNameLookup],
+	);
+
 	// Set inventory data in store
 	useEffect(() => {
 		if (inventory) {
@@ -214,20 +276,26 @@ export function ProductCatalogTable({
 	useEffect(() => {
 		if (productCatalog?.success && productCatalog.data) {
 			// Transform API product data to match our expected structure
-			const transformedProducts = productCatalog.data.map((product: ProductCatalogItem) => {
-				return {
-					barcode: Number.parseInt(product.barcode, 10) || product.good_id,
-					name: product.title || 'Producto sin nombre',
-					category: product.category || 'Sin categoría',
-					description: product.comment || 'Sin descripción',
-				};
-			});
+			const transformedProducts = productCatalog.data.map(
+				(product: ProductCatalogItem) => {
+					return {
+						barcode: Number.parseInt(product.barcode, 10) || product.good_id,
+						name: product.title || "Producto sin nombre",
+						category: product.category || "Sin categoría",
+						description: product.comment || "Sin descripción",
+					};
+				},
+			);
 
 			setProductCatalog(transformedProducts);
 
 			// Extract unique categories from product catalog
 			const uniqueCategories = Array.from(
-				new Set(transformedProducts.map((product) => product.category).filter(Boolean)),
+				new Set(
+					transformedProducts
+						.map((product) => product.category)
+						.filter(Boolean),
+				),
 			);
 			setCategories(uniqueCategories);
 		}
@@ -250,13 +318,14 @@ export function ProductCatalogTable({
 				};
 			}
 
-			const inventoryItems: StockItemWithEmployee[] = storedInventoryData?.filter((item) => {
-				const itemStock = (item as { productStock: StockItem }).productStock;
-				return (
-					getItemBarcode(itemStock) === product.barcode &&
-					getItemWarehouse(itemStock) === warehouse?.toString()
-				);
-			});
+			const inventoryItems: StockItemWithEmployee[] =
+				storedInventoryData?.filter((item) => {
+					const itemStock = (item as { productStock: StockItem }).productStock;
+					return (
+						getItemBarcode(itemStock) === product.barcode &&
+						getItemWarehouse(itemStock) === warehouse?.toString()
+					);
+				});
 
 			return {
 				...product,
@@ -269,15 +338,17 @@ export function ProductCatalogTable({
 	// State for table features
 	const [sorting, setSorting] = useState<SortingState>([]);
 	const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
-	const [globalFilter, setGlobalFilter] = useState('');
-	const [categoryFilter, setCategoryFilter] = useState<string>('all');
+	const [globalFilter, setGlobalFilter] = useState("");
+	const [categoryFilter, setCategoryFilter] = useState<string>("all");
 	const [expanded, setExpanded] = useState<ExpandedState>({});
 	const [pagination, setPagination] = useState<PaginationState>({
 		pageIndex: 0,
 		pageSize: 10,
 	});
 	// Per-product selection state for expanded rows (barcode -> Set of UUIDs)
-	const [selectedByBarcode, setSelectedByBarcode] = useState<Record<number, Set<string>>>({});
+	const [selectedByBarcode, setSelectedByBarcode] = useState<
+		Record<number, Set<string>>
+	>({});
 
 	// Extract unique categories from products
 	const uniqueCategories = useMemo(() => {
@@ -311,21 +382,26 @@ export function ProductCatalogTable({
 	);
 
 	const globalFilterFn = useMemo(
-		() => (row: { original: ProductWithInventory }, _columnId: string, value: string) => {
-			const product = row.original;
-			const searchValue = value.toLowerCase();
+		() =>
+			(
+				row: { original: ProductWithInventory },
+				_columnId: string,
+				value: string,
+			) => {
+				const product = row.original;
+				const searchValue = value.toLowerCase();
 
-			// If no search term, show all products (that match category filter)
-			if (!value.trim()) {
-				return true;
-			}
+				// If no search term, show all products (that match category filter)
+				if (!value.trim()) {
+					return true;
+				}
 
-			// Apply global search filter
-			return (
-				searchInProduct(product, searchValue) ||
-				searchInInventoryItems(product.inventoryItems, searchValue)
-			);
-		},
+				// Apply global search filter
+				return (
+					searchInProduct(product, searchValue) ||
+					searchInInventoryItems(product.inventoryItems, searchValue)
+				);
+			},
 		[searchInProduct, searchInInventoryItems],
 	);
 
@@ -341,7 +417,7 @@ export function ProductCatalogTable({
 				return true;
 			}
 			const rowValue = row.getValue(columnId) as string | undefined;
-			return (rowValue ?? '') === filterValue;
+			return (rowValue ?? "") === filterValue;
 		},
 		[],
 	);
@@ -351,15 +427,15 @@ export function ProductCatalogTable({
 		() => async (text: string) => {
 			try {
 				await navigator.clipboard.writeText(text);
-				toast.success('UUID copiado al portapapeles', {
+				toast.success("UUID copiado al portapapeles", {
 					description: `${text.slice(0, 8)}... ha sido copiado exitosamente`,
 					duration: 2000,
 				});
 			} catch (error) {
 				// biome-ignore lint/suspicious/noConsole: Used for debugging
-				console.error('Error copying to clipboard:', error);
-				toast.error('Error al copiar UUID', {
-					description: 'No se pudo copiar el UUID al portapapeles',
+				console.error("Error copying to clipboard:", error);
+				toast.error("Error al copiar UUID", {
+					description: "No se pudo copiar el UUID al portapapeles",
 					duration: 3000,
 				});
 			}
@@ -372,17 +448,40 @@ export function ProductCatalogTable({
 			({ row }: { row: { original: ProductWithInventory } }) => {
 				const product = row.original as ProductWithInventory;
 				const selectionEnabledRef = enableSelection === true;
-				const productSelection = selectedByBarcode[product.barcode] || new Set<string>();
-				const selectedCount = productSelection.size;
+				const productSelection =
+					selectedByBarcode[product.barcode] || new Set<string>();
+				const detailColumnCount = enableDispose ? 7 : 6;
 
-				const toggleUUID = (uuid: string, enabled: boolean) => {
+				type DisplayItem = {
+					key: string;
+					warehouseKey: string;
+					data: InventoryItemDisplay;
+				};
+
+				const displayItems: DisplayItem[] = product.inventoryItems.map(
+					(item) => {
+						const data = extractInventoryItemData(item);
+						const key = data.uuid || data.id || "";
+						const warehouseKey = data.currentWarehouse ?? "unassigned";
+						return { data, key, warehouseKey };
+					},
+				);
+
+				const selectedCount = displayItems.reduce((acc, item) => {
+					return item.key && productSelection.has(item.key) ? acc + 1 : acc;
+				}, 0);
+
+				const toggleUUID = (identifier: string, enabled: boolean) => {
+					if (!identifier) {
+						return;
+					}
 					setSelectedByBarcode((prev) => {
 						const currentSet = prev[product.barcode] || new Set<string>();
 						const nextSet = new Set(currentSet);
 						if (enabled) {
-							nextSet.add(uuid);
+							nextSet.add(identifier);
 						} else {
-							nextSet.delete(uuid);
+							nextSet.delete(identifier);
 						}
 						return { ...prev, [product.barcode]: nextSet };
 					});
@@ -392,22 +491,23 @@ export function ProductCatalogTable({
 					if (!onAddToTransfer) {
 						return;
 					}
-					const selectedItems = product.inventoryItems
-						.map((it) => extractInventoryItemData(it))
-						.filter((it) => productSelection.has(it.id || ''));
+					const selectedItems = displayItems
+						.filter((item) => item.key && productSelection.has(item.key))
+						.map((item) => item.data);
 					onAddToTransfer({ product, items: selectedItems });
 					setSelectedByBarcode((prev) => ({
 						...prev,
 						[product.barcode]: new Set<string>(),
 					}));
 					if (selectedItems.length > 0) {
-						toast.success('Agregado a transferencia', {
+						toast.success("Agregado a transferencia", {
 							description: `${selectedItems.length} item(s) agregado(s) desde ${product.name}`,
 							duration: 2000,
 						});
 					}
 				};
-				if (product.inventoryItems.length === 0) {
+
+				if (displayItems.length === 0) {
 					return (
 						<div className="border-[#E5E7EB] border-b bg-[#F8FAFC] p-4 text-center dark:border-[#374151] dark:bg-[#1A1B1C]">
 							<p className="text-[#687076] text-sm dark:text-[#9BA1A6]">
@@ -417,11 +517,27 @@ export function ProductCatalogTable({
 					);
 				}
 
+				const groupedByWarehouse = displayItems.reduce((acc, item) => {
+					const locationKey = item.warehouseKey || "unassigned";
+					const bucket = acc.get(locationKey);
+					if (bucket) {
+						bucket.items.push(item);
+					} else {
+						acc.set(locationKey, {
+							label: resolveWarehouseName(item.data.currentWarehouse),
+							items: [item],
+						});
+					}
+					return acc;
+				}, new Map<string, { label: string; items: DisplayItem[] }>());
+
+				const warehouseGroups = Array.from(groupedByWarehouse.entries());
+
 				return (
 					<div className="border-[#E5E7EB] border-b bg-[#F8FAFC] p-4 dark:border-[#374151] dark:bg-[#1A1B1C]">
 						<div className="mb-3 flex items-center justify-between">
 							<h4 className="font-medium text-[#11181C] text-sm dark:text-[#ECEDEE]">
-								Inventario detallado ({product.inventoryItems.length} items)
+								Inventario detallado ({displayItems.length} items)
 							</h4>
 							{selectionEnabledRef && (
 								<Button
@@ -464,108 +580,118 @@ export function ProductCatalogTable({
 									</TableRow>
 								</TableHeader>
 								<TableBody>
-									{/** biome-ignore lint/complexity/noExcessiveCognitiveComplexity: This is as optimized as it can be without making it confusing */}
-									{product.inventoryItems.map((item) => {
-										const itemData = extractInventoryItemData(item);
-										return (
-											<TableRow
-												className="border-[#E5E7EB] border-b last:border-b-0 dark:border-[#374151]"
-												key={itemData.id}
-											>
-												<TableCell className="font-mono text-[#687076] text-xs dark:text-[#9BA1A6]">
-													<div className="flex items-center gap-2">
-														{selectionEnabledRef && (
-															<Checkbox
-																checked={productSelection.has(
-																	itemData.id || '',
-																)}
-																disabled={
-																	itemData.isBeingUsed ||
-																	disabledUUIDs.has(
-																		itemData.id || '',
-																	)
-																}
-																onCheckedChange={(checked) =>
-																	toggleUUID(
-																		itemData.id || '',
-																		Boolean(checked),
-																	)
-																}
-															/>
-														)}
-														<span className="truncate">
-															{itemData.id?.slice(0, 8)}...
+									{warehouseGroups.map(([groupKey, group]) => (
+										<React.Fragment key={groupKey}>
+											<TableRow className="bg-[#EAEDF0] text-[#11181C] text-left text-xs uppercase tracking-wide dark:bg-[#252729] dark:text-[#ECEDEE]">
+												<TableCell
+													colSpan={detailColumnCount}
+													className="font-semibold"
+												>
+													<div className="flex items-center justify-between">
+														<span>{group.label}</span>
+														<span className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+															{group.items.length} item(s)
 														</span>
-														<Button
-															className="h-4 w-4 p-0 hover:bg-[#E5E7EB] dark:hover:bg-[#2D3033]"
-															onClick={() => {
-																copyToClipboard(itemData.id || '');
-															}}
-															size="sm"
-															variant="ghost"
-														>
-															<Copy className="h-3 w-3" />
-														</Button>
 													</div>
 												</TableCell>
-												<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-													{formatDate(itemData.lastUsed)}
-												</TableCell>
-												<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-													{itemData.lastUsedBy || 'N/A'}
-												</TableCell>
-												<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-													{itemData.numberOfUses}
-												</TableCell>
-												<TableCell>
-													<Badge
-														className={
-															itemData.isBeingUsed
-																? 'bg-[#EF4444] text-white text-xs'
-																: 'bg-[#10B981] text-white text-xs'
-														}
-														variant={
-															itemData.isBeingUsed
-																? 'destructive'
-																: 'default'
-														}
-													>
-														{itemData.isBeingUsed
-															? 'En Uso'
-															: 'Disponible'}
-													</Badge>
-												</TableCell>
-												<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-													{formatDate(itemData.firstUsed)}
-												</TableCell>
-												<TableCell>
-													{enableDispose && (
-														<Button
-															className="h-6 w-6 p-0 text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950 dark:hover:text-red-300"
-															onClick={() => {
-																showDisposeDialog({
-																	id: itemData.id || '',
-																	uuid: itemData.id || '',
-																	barcode: product.barcode,
-																	productInfo: {
-																		name: product.name,
-																		category: product.category,
-																		description:
-																			product.description,
-																	},
-																});
-															}}
-															size="sm"
-															title="Dar de baja artículo"
-															variant="ghost"
-														>
-															<Trash2 className="h-4 w-4" />
-														</Button>
-													)}
-												</TableCell>
 											</TableRow>
-										);
-									})}
+											{group.items.map((item) => {
+												const { data, key: selectionKey } = item;
+												const isSelected = selectionKey
+													? productSelection.has(selectionKey)
+													: false;
+												const isDisabled =
+													data.isBeingUsed ||
+													(selectionKey
+														? disabledUUIDs.has(selectionKey)
+														: false);
+
+												return (
+													<TableRow
+														className="border-[#E5E7EB] border-b last:border-b-0 dark:border-[#374151]"
+														key={selectionKey || data.id}
+													>
+														<TableCell className="font-mono text-[#687076] text-xs dark:text-[#9BA1A6]">
+															<div className="flex items-center gap-2">
+																{selectionEnabledRef && (
+																	<Checkbox
+																		checked={isSelected}
+																		disabled={isDisabled}
+																		onCheckedChange={(checked) =>
+																			toggleUUID(selectionKey, Boolean(checked))
+																		}
+																	/>
+																)}
+																<span className="truncate">
+																	{(data.id || "").slice(0, 8)}...
+																</span>
+																<Button
+																	className="h-4 w-4 p-0 hover:bg-[#E5E7EB] dark:hover:bg-[#2D3033]"
+																	onClick={() => {
+																		copyToClipboard(data.uuid || data.id || "");
+																	}}
+																	size="sm"
+																	variant="ghost"
+																>
+																	<Copy className="h-3 w-3" />
+																</Button>
+															</div>
+														</TableCell>
+														<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+															{formatDate(data.lastUsed)}
+														</TableCell>
+														<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+															{data.lastUsedBy || "N/A"}
+														</TableCell>
+														<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+															{data.numberOfUses}
+														</TableCell>
+														<TableCell>
+															<Badge
+																className={
+																	data.isBeingUsed
+																		? "bg-[#EF4444] text-white text-xs"
+																		: "bg-[#10B981] text-white text-xs"
+																}
+																variant={
+																	data.isBeingUsed ? "destructive" : "default"
+																}
+															>
+																{data.isBeingUsed ? "En Uso" : "Disponible"}
+															</Badge>
+														</TableCell>
+														<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+															{formatDate(data.firstUsed)}
+														</TableCell>
+														<TableCell>
+															{enableDispose && (
+																<Button
+																	className="h-6 w-6 p-0 text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950 dark:hover:text-red-300"
+																	onClick={() => {
+																		showDisposeDialog({
+																			id: data.id || "",
+																			uuid: data.id || "",
+																			barcode: product.barcode,
+																			productInfo: {
+																				name: product.name,
+																				category: product.category,
+																				description: product.description,
+																			},
+																		});
+																	}}
+																	size="sm"
+																	title="Dar de baja artículo"
+																	variant="ghost"
+																>
+																	<Trash2 className="h-4 w-4" />
+																</Button>
+															)}
+														</TableCell>
+													</TableRow>
+												);
+											})}
+										</React.Fragment>
+									))}
 								</TableBody>
 							</Table>
 						</div>
@@ -580,6 +706,7 @@ export function ProductCatalogTable({
 			disabledUUIDs,
 			showDisposeDialog,
 			enableDispose,
+			resolveWarehouseName,
 		],
 	);
 
@@ -587,7 +714,7 @@ export function ProductCatalogTable({
 	const columns = useMemo<ColumnDef<ProductWithInventory>[]>(
 		() => [
 			{
-				id: 'expander',
+				id: "expander",
 				header: () => null,
 				cell: ({ row }) => {
 					return (
@@ -608,17 +735,17 @@ export function ProductCatalogTable({
 				enableSorting: false,
 			},
 			{
-				accessorKey: 'barcode',
-				header: 'Código de Barras',
+				accessorKey: "barcode",
+				header: "Código de Barras",
 				cell: ({ row }) => (
 					<div className="font-mono text-[#687076] text-sm dark:text-[#9BA1A6]">
-						{row.getValue('barcode')}
+						{row.getValue("barcode")}
 					</div>
 				),
 			},
 			{
-				accessorKey: 'name',
-				header: 'Producto',
+				accessorKey: "name",
+				header: "Producto",
 				cell: ({ row }) => {
 					const product = row.original;
 					return (
@@ -630,34 +757,34 @@ export function ProductCatalogTable({
 						</div>
 					);
 				},
-				filterFn: 'includesString',
+				filterFn: "includesString",
 			},
 			{
-				accessorKey: 'category',
-				header: 'Categoría',
+				accessorKey: "category",
+				header: "Categoría",
 				cell: ({ row }) => (
 					<Badge
 						className="bg-[#F3F4F6] text-[#374151] dark:bg-[#374151] dark:text-[#D1D5DB]"
 						variant="secondary"
 					>
-						{row.getValue('category')}
+						{row.getValue("category")}
 					</Badge>
 				),
 				filterFn: categoryFilterFn,
 			},
 			{
-				accessorKey: 'stockCount',
-				header: 'Stock',
+				accessorKey: "stockCount",
+				header: "Stock",
 				cell: ({ row }) => {
-					const stockCount = row.getValue('stockCount') as number;
+					const stockCount = row.getValue("stockCount") as number;
 					return (
 						<Badge
 							className={
 								stockCount > 0
-									? 'bg-[#10B981] text-white'
-									: 'bg-[#F3F4F6] text-[#6B7280] dark:bg-[#374151] dark:text-[#9CA3AF]'
+									? "bg-[#10B981] text-white"
+									: "bg-[#F3F4F6] text-[#6B7280] dark:bg-[#374151] dark:text-[#9CA3AF]"
 							}
-							variant={stockCount > 0 ? 'default' : 'secondary'}
+							variant={stockCount > 0 ? "default" : "secondary"}
 						>
 							{stockCount} unidades
 						</Badge>
@@ -695,11 +822,13 @@ export function ProductCatalogTable({
 
 	// Keep the table's category column filter in sync with the select value
 	useEffect(() => {
-		const categoryColumn = table.getColumn('category');
+		const categoryColumn = table.getColumn("category");
 		if (!categoryColumn) {
 			return;
 		}
-		categoryColumn.setFilterValue(categoryFilter === 'all' ? undefined : categoryFilter);
+		categoryColumn.setFilterValue(
+			categoryFilter === "all" ? undefined : categoryFilter,
+		);
 	}, [categoryFilter, table]);
 
 	if (products.length === 0) {
@@ -737,7 +866,7 @@ export function ProductCatalogTable({
 					{globalFilter && (
 						<Button
 							className="-translate-y-1/2 absolute top-1/2 right-1 h-6 w-6 p-0 hover:bg-[#E5E7EB] dark:hover:bg-[#2D3033]"
-							onClick={() => setGlobalFilter('')}
+							onClick={() => setGlobalFilter("")}
 							size="sm"
 							variant="ghost"
 						>
@@ -748,7 +877,10 @@ export function ProductCatalogTable({
 
 				{/* Category Filter */}
 				<div className="min-w-[180px]">
-					<Select onValueChange={handleCategoryFilterChange} value={categoryFilter}>
+					<Select
+						onValueChange={handleCategoryFilterChange}
+						value={categoryFilter}
+					>
 						<SelectTrigger className="border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]">
 							<SelectValue placeholder="Todas las categorías" />
 						</SelectTrigger>
@@ -773,12 +905,12 @@ export function ProductCatalogTable({
 				</div>
 
 				{/* Clear All Filters */}
-				{(globalFilter || categoryFilter !== 'all') && (
+				{(globalFilter || categoryFilter !== "all") && (
 					<Button
 						className="text-[#687076] hover:text-[#11181C] dark:text-[#9BA1A6] dark:hover:text-[#ECEDEE]"
 						onClick={() => {
-							setGlobalFilter('');
-							setCategoryFilter('all');
+							setGlobalFilter("");
+							setCategoryFilter("all");
 						}}
 						size="sm"
 						variant="ghost"
@@ -789,7 +921,8 @@ export function ProductCatalogTable({
 
 				{/* Results Counter */}
 				<div className="whitespace-nowrap text-[#687076] text-sm dark:text-[#9BA1A6]">
-					{table.getFilteredRowModel().rows.length} de {products.length} productos
+					{table.getFilteredRowModel().rows.length} de {products.length}{" "}
+					productos
 				</div>
 			</div>
 
@@ -825,7 +958,7 @@ export function ProductCatalogTable({
 									{/* Main row */}
 									<TableRow
 										className="theme-transition border-[#E5E7EB] border-b hover:bg-[#F9FAFB] data-[state=selected]:bg-[#F9FAFB] dark:border-[#2D3033] dark:data-[state=selected]:bg-[#2D3033] dark:hover:bg-[#2D3033]"
-										data-state={row.getIsSelected() && 'selected'}
+										data-state={row.getIsSelected() && "selected"}
 									>
 										{row.getVisibleCells().map((cell) => (
 											<TableCell key={cell.id}>
@@ -848,7 +981,10 @@ export function ProductCatalogTable({
 							))
 						) : (
 							<TableRow>
-								<TableCell className="h-24 text-center" colSpan={columns.length}>
+								<TableCell
+									className="h-24 text-center"
+									colSpan={columns.length}
+								>
 									No se encontraron productos.
 								</TableCell>
 							</TableRow>
@@ -860,7 +996,9 @@ export function ProductCatalogTable({
 			{/* Pagination Controls */}
 			<div className="flex items-center justify-between px-2">
 				<div className="flex items-center space-x-2">
-					<p className="text-[#687076] text-sm dark:text-[#9BA1A6]">Filas por página</p>
+					<p className="text-[#687076] text-sm dark:text-[#9BA1A6]">
+						Filas por página
+					</p>
 					<Select
 						onValueChange={(value) => {
 							table.setPageSize(Number(value));
@@ -888,7 +1026,8 @@ export function ProductCatalogTable({
 				</div>
 				<div className="flex items-center space-x-6 lg:space-x-8">
 					<div className="theme-transition flex w-[100px] items-center justify-center font-medium text-[#687076] text-sm dark:text-[#9BA1A6]">
-						Página {table.getState().pagination.pageIndex + 1} de {table.getPageCount()}
+						Página {table.getState().pagination.pageIndex + 1} de{" "}
+						{table.getPageCount()}
 					</div>
 					<div className="flex items-center space-x-2">
 						<Button
