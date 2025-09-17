@@ -12,6 +12,15 @@ import {
 	TableRow,
 } from '@/components/ui/table';
 
+/**
+ * Skeleton loading component for the "Recepciones pendientes" page.
+ *
+ * Renders a static, presentational skeleton UI that mirrors the final layout:
+ * a header, four statistic cards, and a table with five placeholder rows.
+ * Used while actual reception data is loading; accepts no props and has no side effects.
+ *
+ * @returns The skeleton page as a JSX element.
+ */
 export function SkeletonRecepcionesPage() {
 	return (
 		<div className="theme-transition flex-1 space-y-6 bg-white p-4 md:p-6 dark:bg-[#151718]">

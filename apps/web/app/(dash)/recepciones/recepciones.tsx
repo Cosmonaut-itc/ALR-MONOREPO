@@ -257,6 +257,15 @@ type WarehouseMappingEntry = {
 	warehouseName: string;
 };
 
+/**
+ * Type guard that checks whether a warehouse mapping response represents a successful result.
+ *
+ * Returns true when `map` is a non-null object with `success` set to `true` and the expected
+ * `message` and `data` fields (where `data` is an array of WarehouseMappingEntry).
+ *
+ * @param map - The value to test.
+ * @returns `true` if `map` is a success-shaped response: `{ success: true; message: string; data: WarehouseMappingEntry[] }`.
+ */
 function isWarehouseMapSuccess(map: WarehouseMap | null | undefined): map is {
 	success: true;
 	message: string;
@@ -473,7 +482,19 @@ const createWarehouseOptions = (
 	};
 };
 
-// Extract list of transfers from potentially nested API response shapes
+/**
+ * Extracts a flat array of transfer list items from multiple possible API response shapes.
+ *
+ * Accepts an API response that may be:
+ * - an array of transfer items,
+ * - an object with a `data` array,
+ * - an object with a `transfers` array,
+ * - or an object with `data.transfers`.
+ * Returns a validated array of TransferListItemShape; if no valid list is found, returns an empty array.
+ *
+ * @param root - The raw API response to inspect (may be null, an array, or nested objects).
+ * @returns A validated array of TransferListItemShape (never null).
+ */
 function extractTransferItems(root: APIResponse): TransferListItemShape[] {
 	const unknownRoot: unknown = root ?? [];
 	let list: unknown = [] as unknown[];
@@ -529,6 +550,21 @@ function selectArrivalDate(item: TransferListItemShape): string {
 	);
 }
 
+/**
+ * Page component that displays warehouse transfers (receptions) and provides a UI to create internal transfers.
+ *
+ * Renders a dashboard with statistics and a list of receptions derived from warehouse transfer data,
+ * and exposes a "Nuevo traspaso" dialog that allows creating a new internal transfer by selecting
+ * source/destination warehouses, scheduling a date, setting priority/notes, and adding products
+ * from the current warehouse inventory.
+ *
+ * The component fetches transfers, inventory, product catalog, and cabinet-warehouse mappings,
+ * maintains a local transfer draft (items, warehouses, priority, notes, scheduled date) and submits
+ * a create-transfer mutation when the form is submitted.
+ *
+ * @param warehouseId - ID of the current warehouse used to scope data fetching and to prefill the source warehouse.
+ * @returns A React element containing the transfers dashboard, receptions list, and the transfer-creation dialog.
+ */
 export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 	const { data: transfers } = useSuspenseQuery<APIResponse, Error, APIResponse>({
 		queryKey: createQueryKey(queryKeys.receptions, [warehouseId as string]),
