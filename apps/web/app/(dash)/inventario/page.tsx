@@ -17,6 +17,13 @@ import { InventarioPage } from './inventory';
 
 export const dynamic = 'force-dynamic';
 
+/**
+ * Server component page that prefetches inventory-related queries, hydrates the client cache, and renders the inventory UI.
+ *
+ * Prefetches stock for the current user's warehouse, the product catalog, and cabinet warehouse data on the server so the client-side queries start hydrated. If prefetching fails the function logs the error but still returns the same hydrated UI structure (possibly with an empty cache). While client queries resolve, a skeleton table is shown as a fallback.
+ *
+ * @returns A server-rendered React element that wraps InventarioPage with a dehydrated React Query state and a fallback skeleton.
+ */
 export default async function AbastecimientoPage() {
 	const queryClient = getQueryClient();
 	const auth = await getServerAuth();
