@@ -53,6 +53,11 @@ export type WarehouseTransferDetails = Awaited<
 export type WarehouseMap = Awaited<
 	ReturnType<typeof import('./lib/fetch-functions/inventory').getCabinetWarehouse>
 >;
+
+export type WarehouseTransferDetailsItem = Awaited<
+	ReturnType<typeof import('./lib/fetch-functions/recepciones').getTransferDetailsById>
+>;
+
 /**
  * Type for successful inventory data (excludes null case from error handling)
  * This represents the actual data structure when the API call succeeds
@@ -121,4 +126,14 @@ export type InventoryItem = {
 	currentWarehouse: string | number;
 	isBeingUsed: boolean;
 	firstUsed: string | null;
+};
+
+/**
+ * Minimal item shape used by the reception flow UI and store.
+ */
+export type ReceptionItem = {
+	id: string;
+	barcode: number;
+	productName: string;
+	received: boolean;
 };

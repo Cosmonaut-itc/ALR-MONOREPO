@@ -21,7 +21,6 @@
 - Automated tests are not yet configured; add Vitest/Testing Library when introducing coverage-sensitive features and wire new scripts into `package.json`.
 - Co-locate tests within the nearest feature directory (e.g., `app/(dash)/inventario/__tests__`).
 - Document any required test environment variables in the PR description until a sanitized sample file is provided.
-- Run `coderabbit review --plain` to get comprehensive code analysis and improvement suggestions.
 
 ## Commit & Pull Request Guidelines
 - Follow Conventional Commits (`feat:`, `fix:`, `chore:`) as seen in history; keep each commit focused on a single change.

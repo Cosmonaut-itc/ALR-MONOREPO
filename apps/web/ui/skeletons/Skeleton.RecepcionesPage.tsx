@@ -37,9 +37,9 @@ export function SkeletonRecepcionesPage() {
 								<p className="font-medium text-[#687076] text-sm text-transition dark:text-[#9BA1A6]">
 									Pendientes
 								</p>
-								<p className="font-bold text-2xl text-[#11181C] text-transition dark:text-[#ECEDEE]">
+								<div className="font-bold text-2xl text-[#11181C] text-transition dark:text-[#ECEDEE]">
 									<Skeleton className="h-7 w-10" />
-								</p>
+								</div>
 							</div>
 						</div>
 					</CardContent>
@@ -55,9 +55,9 @@ export function SkeletonRecepcionesPage() {
 								<p className="font-medium text-[#687076] text-sm text-transition dark:text-[#9BA1A6]">
 									Completadas
 								</p>
-								<p className="font-bold text-2xl text-[#11181C] text-transition dark:text-[#ECEDEE]">
+								<div className="font-bold text-2xl text-[#11181C] text-transition dark:text-[#ECEDEE]">
 									<Skeleton className="h-7 w-10" />
-								</p>
+								</div>
 							</div>
 						</div>
 					</CardContent>
@@ -73,9 +73,9 @@ export function SkeletonRecepcionesPage() {
 								<p className="font-medium text-[#687076] text-sm text-transition dark:text-[#9BA1A6]">
 									Total items
 								</p>
-								<p className="font-bold text-2xl text-[#11181C] text-transition dark:text-[#ECEDEE]">
+								<div className="font-bold text-2xl text-[#11181C] text-transition dark:text-[#ECEDEE]">
 									<Skeleton className="h-7 w-16" />
-								</p>
+								</div>
 							</div>
 						</div>
 					</CardContent>
@@ -91,9 +91,9 @@ export function SkeletonRecepcionesPage() {
 								<p className="font-medium text-[#687076] text-sm text-transition dark:text-[#9BA1A6]">
 									Hoy
 								</p>
-								<p className="font-bold text-2xl text-[#11181C] text-transition dark:text-[#ECEDEE]">
+								<div className="font-bold text-2xl text-[#11181C] text-transition dark:text-[#ECEDEE]">
 									<Skeleton className="h-7 w-10" />
-								</p>
+								</div>
 							</div>
 						</div>
 					</CardContent>

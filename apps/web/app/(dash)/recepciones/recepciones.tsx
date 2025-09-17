@@ -3,12 +3,56 @@
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { ArrowRight, Calendar, CheckCircle, Clock, Package } from 'lucide-react';
+import {
+	ArrowRight,
+	Calendar,
+	CalendarIcon,
+	Check,
+	CheckCircle,
+	ChevronsUpDown,
+	Clock,
+	Package,
+	Plus,
+	Search,
+	Trash2,
+} from 'lucide-react';
 import Link from 'next/link';
-import { useMemo } from 'react';
+import { type FormEvent, useEffect, useMemo, useState } from 'react';
+import { toast } from 'sonner';
+import { useShallow } from 'zustand/shallow';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Calendar as CalendarPicker } from '@/components/ui/calendar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+	Command,
+	CommandEmpty,
+	CommandGroup,
+	CommandInput,
+	CommandItem,
+	CommandList,
+} from '@/components/ui/command';
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+	DialogTrigger,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import {
+	Select,
+	SelectContent,
+	SelectGroup,
+	SelectItem,
+	SelectLabel,
+	SelectTrigger,
+	SelectValue,
+} from '@/components/ui/select';
 import {
 	Table,
 	TableBody,
@@ -17,12 +61,49 @@ import {
 	TableHeader,
 	TableRow,
 } from '@/components/ui/table';
+import { Textarea } from '@/components/ui/textarea';
+import {
+	getAllProducts,
+	getCabinetWarehouse,
+	getInventoryByWarehouse,
+} from '@/lib/fetch-functions/inventory';
 import { getWarehouseTransferById } from '@/lib/fetch-functions/recepciones';
 import { createQueryKey } from '@/lib/helpers';
+import { useCreateTransferOrder } from '@/lib/mutations/transfers';
 import { queryKeys } from '@/lib/query-keys';
-import type { WarehouseTransfer } from '@/types';
+import { cn } from '@/lib/utils';
+import { useAuthStore } from '@/stores/auth-store';
+import { useReceptionStore } from '@/stores/reception-store';
+import type {
+	ProductCatalogResponse,
+	ProductStockWithEmployee,
+	WarehouseMap,
+	WarehouseTransfer,
+} from '@/types';
 
 type APIResponse = WarehouseTransfer | null;
+type InventoryAPIResponse = ProductStockWithEmployee | null;
+type UnknownRecord = Record<string, unknown>;
+
+type WarehouseOption = {
+	id: string;
+	name: string;
+	detail?: string;
+};
+
+type ProductGroupOption = {
+	barcode: number;
+	description: string;
+	name: string;
+	items: ProductItemOption[];
+};
+
+type ProductItemOption = {
+	productStockId: string;
+	productName: string;
+	barcode: number;
+	description: string;
+};
 
 // Pre-declare regex to comply with lint rule (top-level declaration)
 const completeRegex = /complete/i;
@@ -56,6 +137,341 @@ const isTransferListItem = (value: unknown): value is TransferListItemShape =>
 
 const isArrayOfTransferListItem = (value: unknown): value is TransferListItemShape[] =>
 	Array.isArray(value) && value.every((v) => isTransferListItem(v));
+
+const isRecord = (value: unknown): value is UnknownRecord =>
+	value !== null && typeof value === 'object';
+
+const toStringIfString = (value: unknown): string | undefined =>
+	typeof value === 'string' ? value : undefined;
+
+const toNumberIfNumber = (value: unknown): number | undefined =>
+	typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+
+const toRecord = (value: unknown): UnknownRecord | undefined =>
+	isRecord(value) ? (value as UnknownRecord) : undefined;
+
+const parseNumericString = (value?: string | null): number | undefined => {
+	if (!value) {
+		return;
+	}
+	const parsed = Number.parseInt(value, 10);
+	return Number.isNaN(parsed) ? undefined : parsed;
+};
+
+const toBoolean = (value: unknown): boolean => {
+	if (typeof value === 'boolean') {
+		return value;
+	}
+	if (typeof value === 'string') {
+		const normalized = value.trim().toLowerCase();
+		if (!normalized) {
+			return false;
+		}
+		return ['true', '1', 'yes', 'y', 'activo', 'active'].includes(normalized);
+	}
+	if (typeof value === 'number') {
+		return value !== 0;
+	}
+	if (value instanceof Date) {
+		return !Number.isNaN(value.getTime());
+	}
+	return Boolean(value);
+};
+
+const isItemDeleted = (record: UnknownRecord | undefined): boolean => {
+	if (!record) {
+		return false;
+	}
+	if ('isDeleted' in record && toBoolean(record.isDeleted)) {
+		return true;
+	}
+	if ('deleted' in record && toBoolean(record.deleted)) {
+		return true;
+	}
+	if ('deletedAt' in record && record.deletedAt) {
+		return true;
+	}
+	if ('status' in record && typeof record.status === 'string') {
+		const status = record.status.toLowerCase();
+		if (status.includes('delete') || status === 'inactive') {
+			return true;
+		}
+	}
+	return false;
+};
+
+const isItemInUse = (record: UnknownRecord | undefined): boolean => {
+	if (!record) {
+		return false;
+	}
+	if ('isBeingUsed' in record && toBoolean(record.isBeingUsed)) {
+		return true;
+	}
+	if ('inUse' in record && toBoolean(record.inUse)) {
+		return true;
+	}
+	if ('is_in_use' in record && toBoolean(record.is_in_use)) {
+		return true;
+	}
+	return false;
+};
+
+const extractWarehouseItems = (root: InventoryAPIResponse): UnknownRecord[] => {
+	if (!root) {
+		return [];
+	}
+
+	if (Array.isArray(root)) {
+		return root.filter((item): item is UnknownRecord => isRecord(item));
+	}
+
+	const rootRecord = toRecord(root);
+	const dataRecord = toRecord(rootRecord?.data);
+	const warehouseCandidates: unknown[] = [];
+
+	if (rootRecord?.warehouse) {
+		warehouseCandidates.push(rootRecord.warehouse);
+	}
+	if (dataRecord?.warehouse) {
+		warehouseCandidates.push(dataRecord.warehouse);
+	}
+	if (dataRecord?.warehouseData) {
+		warehouseCandidates.push(dataRecord.warehouseData);
+	}
+	if (rootRecord?.warehouseData) {
+		warehouseCandidates.push(rootRecord.warehouseData);
+	}
+
+	const firstArray = warehouseCandidates.find((candidate) => Array.isArray(candidate));
+	if (Array.isArray(firstArray)) {
+		return firstArray.filter((item): item is UnknownRecord => isRecord(item));
+	}
+
+	return [];
+};
+
+type WarehouseMappingEntry = {
+	cabinetId: string;
+	cabinetName: string;
+	warehouseId: string;
+	warehouseName: string;
+};
+
+function isWarehouseMapSuccess(map: WarehouseMap | null | undefined): map is {
+	success: true;
+	message: string;
+	data: WarehouseMappingEntry[];
+} {
+	return Boolean(map && typeof map === 'object' && 'success' in map && map.success);
+}
+
+const createCatalogLookup = (
+	catalog: ProductCatalogResponse | null,
+): Map<number, { name: string; description: string }> => {
+	const map = new Map<number, { name: string; description: string }>();
+	if (!catalog || typeof catalog !== 'object' || !catalog.success) {
+		return map;
+	}
+	const records = Array.isArray(catalog.data) ? catalog.data : [];
+	for (const recordRaw of records) {
+		const record = toRecord(recordRaw);
+		if (!record) {
+			continue;
+		}
+		const barcode =
+			toNumberIfNumber(record.barcode) ??
+			parseNumericString(toStringIfString(record.barcode)) ??
+			toNumberIfNumber(record.good_id) ??
+			parseNumericString(toStringIfString(record.good_id));
+		if (!barcode || Number.isNaN(barcode)) {
+			continue;
+		}
+		const name =
+			toStringIfString(record.title) ??
+			toStringIfString(record.name) ??
+			`Producto ${barcode}`;
+		const description =
+			toStringIfString(record.comment) ?? toStringIfString(record.description) ?? name;
+		map.set(barcode, { name, description });
+	}
+	return map;
+};
+
+type NormalizedInventoryItem = {
+	productStockId: string;
+	barcode: number;
+	productName: string;
+	productStockRecord: UnknownRecord;
+};
+
+const normalizeInventoryItem = (
+	raw: UnknownRecord,
+	index: number,
+): NormalizedInventoryItem | null => {
+	const productStockRecord = toRecord(raw.productStock) ?? raw;
+	const nestedProduct =
+		toRecord(productStockRecord.product) ??
+		toRecord(productStockRecord.productInfo) ??
+		toRecord(raw.product) ??
+		toRecord(raw.productInfo);
+
+	const productStockId =
+		toStringIfString(raw.productStockId) ||
+		toStringIfString(productStockRecord.id) ||
+		toStringIfString(productStockRecord.uuid) ||
+		toStringIfString(raw.id) ||
+		toStringIfString(raw.uuid);
+
+	if (!productStockId) {
+		return null;
+	}
+
+	const barcode =
+		toNumberIfNumber(raw.barcode) ??
+		toNumberIfNumber(productStockRecord.barcode) ??
+		(nestedProduct ? toNumberIfNumber(nestedProduct.barcode) : undefined) ??
+		0;
+
+	if (!barcode) {
+		return null;
+	}
+
+	const productName =
+		toStringIfString(raw.productName) ||
+		toStringIfString(productStockRecord.productName) ||
+		toStringIfString(productStockRecord.name) ||
+		(nestedProduct ? toStringIfString(nestedProduct.name) : undefined) ||
+		`Producto ${index + 1}`;
+
+	return {
+		productStockId,
+		barcode,
+		productName,
+		productStockRecord,
+	};
+};
+
+const createProductOptions = (
+	inventory: InventoryAPIResponse,
+	catalogLookup: Map<number, { name: string; description: string }>,
+): { productGroups: ProductGroupOption[]; productLookup: Map<string, ProductItemOption> } => {
+	const groups = new Map<number, ProductGroupOption>();
+	const lookup = new Map<string, ProductItemOption>();
+	const items = extractWarehouseItems(inventory);
+	items.forEach((raw, index) => {
+		const normalized = normalizeInventoryItem(raw, index);
+		if (!normalized) {
+			return;
+		}
+		const { productStockId, barcode, productName, productStockRecord } = normalized;
+		if (lookup.has(productStockId)) {
+			return;
+		}
+		if (isItemDeleted(productStockRecord) || isItemDeleted(raw)) {
+			return;
+		}
+		if (isItemInUse(productStockRecord) || isItemInUse(raw)) {
+			return;
+		}
+		const catalogInfo = catalogLookup.get(barcode);
+		const resolvedName = catalogInfo?.name ?? productName;
+		const description = catalogInfo?.description ?? resolvedName;
+
+		const itemOption: ProductItemOption = {
+			productStockId,
+			productName: resolvedName,
+			barcode,
+			description,
+		};
+
+		lookup.set(productStockId, itemOption);
+		const existingGroup = groups.get(barcode);
+		if (existingGroup) {
+			existingGroup.items.push(itemOption);
+		} else {
+			groups.set(barcode, {
+				barcode,
+				description,
+				name: resolvedName,
+				items: [itemOption],
+			});
+		}
+	});
+
+	const productGroups = Array.from(groups.values())
+		.map((group) => ({
+			...group,
+			items: group.items.sort((a, b) =>
+				a.productStockId.localeCompare(b.productStockId, 'es', { sensitivity: 'base' }),
+			),
+		}))
+		.sort((a, b) => a.description.localeCompare(b.description, 'es', { sensitivity: 'base' }));
+
+	return { productGroups, productLookup: lookup };
+};
+
+const toWarehouseOption = (entry: UnknownRecord): WarehouseOption | null => {
+	const warehouseId = toStringIfString(entry.warehouseId);
+	if (!warehouseId) {
+		return null;
+	}
+	const warehouseName =
+		toStringIfString(entry.warehouseName) || `Almacén ${warehouseId.slice(0, 6)}`;
+	return {
+		id: warehouseId,
+		name: warehouseName,
+		detail: `ID: ${warehouseId}`,
+	};
+};
+
+const toCabinetOption = (entry: UnknownRecord, warehouseName?: string): WarehouseOption | null => {
+	const cabinetId = toStringIfString(entry.cabinetId);
+	if (!cabinetId) {
+		return null;
+	}
+	const cabinetName = toStringIfString(entry.cabinetName) || `Gabinete ${cabinetId.slice(0, 6)}`;
+	const detail = warehouseName ? `${warehouseName} • ID: ${cabinetId}` : `ID: ${cabinetId}`;
+	return {
+		id: cabinetId,
+		name: cabinetName,
+		detail,
+	};
+};
+
+const createWarehouseOptions = (
+	cabinetWarehouse: WarehouseMap | null | undefined,
+): { warehouseOptions: WarehouseOption[]; cabinetOptions: WarehouseOption[] } => {
+	if (!isWarehouseMapSuccess(cabinetWarehouse)) {
+		return { warehouseOptions: [], cabinetOptions: [] };
+	}
+	const entries = Array.isArray(cabinetWarehouse.data) ? cabinetWarehouse.data : [];
+	const warehouseMap = new Map<string, WarehouseOption>();
+	const cabinetMap = new Map<string, WarehouseOption>();
+
+	for (const entryRaw of entries) {
+		const entry = toRecord(entryRaw);
+		if (!entry) {
+			continue;
+		}
+		const warehouseOption = toWarehouseOption(entry);
+		if (warehouseOption && !warehouseMap.has(warehouseOption.id)) {
+			warehouseMap.set(warehouseOption.id, warehouseOption);
+		}
+		const cabinetOption = toCabinetOption(entry, warehouseOption?.name);
+		if (cabinetOption && !cabinetMap.has(cabinetOption.id)) {
+			cabinetMap.set(cabinetOption.id, cabinetOption);
+		}
+	}
+
+	return {
+		warehouseOptions: Array.from(warehouseMap.values()).sort((a, b) =>
+			a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }),
+		),
+		cabinetOptions: Array.from(cabinetMap.values()).sort((a, b) =>
+			a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }),
+		),
+	};
+};
 
 // Extract list of transfers from potentially nested API response shapes
 function extractTransferItems(root: APIResponse): TransferListItemShape[] {
@@ -119,6 +535,205 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 		queryFn: () => getWarehouseTransferById(warehouseId as string),
 	});
 
+	const { data: inventory } = useSuspenseQuery<InventoryAPIResponse, Error, InventoryAPIResponse>(
+		{
+			queryKey: createQueryKey(queryKeys.inventory, [warehouseId as string]),
+			queryFn: () => getInventoryByWarehouse(warehouseId as string),
+		},
+	);
+	const { data: productCatalog } = useSuspenseQuery<
+		ProductCatalogResponse | null,
+		Error,
+		ProductCatalogResponse | null
+	>({
+		queryKey: queryKeys.productCatalog,
+		queryFn: getAllProducts,
+	});
+	const { data: cabinetWarehouse } = useSuspenseQuery<WarehouseMap, Error, WarehouseMap>({
+		queryKey: queryKeys.cabinetWarehouse,
+		queryFn: getCabinetWarehouse,
+	});
+
+	const currentUser = useAuthStore((state) => state.user);
+	const {
+		transferDraft,
+		updateTransferDraft,
+		addDraftItem,
+		removeDraftItem,
+		updateDraftItemQuantity,
+		setDraftItemNote,
+		resetTransferDraft,
+	} = useReceptionStore(
+		useShallow((state) => ({
+			transferDraft: state.transferDraft,
+			updateTransferDraft: state.updateTransferDraft,
+			addDraftItem: state.addDraftItem,
+			removeDraftItem: state.removeDraftItem,
+			updateDraftItemQuantity: state.updateDraftItemQuantity,
+			setDraftItemNote: state.setDraftItemNote,
+			resetTransferDraft: state.resetTransferDraft,
+		})),
+	);
+	const draftItemCount = useReceptionStore((state) => state.getDraftItemCount());
+	const draftSummaryLabel = (() => {
+		if (draftItemCount === 0) {
+			return 'Sin productos seleccionados';
+		}
+		if (draftItemCount === 1) {
+			return '1 producto seleccionado';
+		}
+		return `${draftItemCount} productos seleccionados`;
+	})();
+	const { mutateAsync: createTransferOrder, isPending: isCreatingTransfer } =
+		useCreateTransferOrder();
+
+	const [isDialogOpen, setIsDialogOpen] = useState(false);
+	const [productPickerOpen, setProductPickerOpen] = useState(false);
+	const [selectedProductStockId, setSelectedProductStockId] = useState('');
+
+	const catalogLookup = useMemo(() => createCatalogLookup(productCatalog), [productCatalog]);
+
+	const { productGroups, productLookup } = useMemo(() => {
+		return createProductOptions(inventory, catalogLookup);
+	}, [catalogLookup, inventory]);
+
+	const draftedItemIds = useMemo(() => {
+		return new Set(transferDraft.items.map((item) => item.productStockId));
+	}, [transferDraft.items]);
+
+	const productPickerDisabled = useMemo(() => {
+		if (productGroups.length === 0) {
+			return true;
+		}
+		return productGroups.every((group) =>
+			group.items.every((item) => draftedItemIds.has(item.productStockId)),
+		);
+	}, [draftedItemIds, productGroups]);
+
+	useEffect(() => {
+		if (productPickerDisabled) {
+			setProductPickerOpen(false);
+		}
+	}, [productPickerDisabled]);
+
+	const { warehouseOptions } = useMemo(
+		() => createWarehouseOptions(cabinetWarehouse),
+		[cabinetWarehouse],
+	);
+
+	const scheduledDateValue = useMemo(() => {
+		if (!transferDraft.scheduledDate) {
+			return;
+		}
+		const parsed = new Date(transferDraft.scheduledDate);
+		return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+	}, [transferDraft.scheduledDate]);
+
+	const handleDateSelect = (date: Date | undefined) => {
+		if (!date) {
+			updateTransferDraft({ scheduledDate: null });
+			return;
+		}
+		const normalized = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+		updateTransferDraft({ scheduledDate: normalized.toISOString() });
+	};
+
+	useEffect(() => {
+		if (!transferDraft.sourceWarehouseId && warehouseId) {
+			updateTransferDraft({ sourceWarehouseId: warehouseId });
+		}
+	}, [transferDraft.sourceWarehouseId, warehouseId, updateTransferDraft]);
+
+	useEffect(() => {
+		if (!selectedProductStockId) {
+			return;
+		}
+		if (!productLookup.has(selectedProductStockId)) {
+			setSelectedProductStockId('');
+		}
+	}, [productLookup, selectedProductStockId]);
+
+	const selectedInventoryItem = selectedProductStockId
+		? productLookup.get(selectedProductStockId)
+		: undefined;
+
+	const productPickerLabel = useMemo(() => {
+		if (selectedInventoryItem) {
+			return `${selectedInventoryItem.productStockId} · ${selectedInventoryItem.productName}`;
+		}
+		if (productPickerDisabled) {
+			return 'No hay productos disponibles';
+		}
+		return 'Selecciona un producto disponible';
+	}, [productPickerDisabled, selectedInventoryItem]);
+
+	const handleAddProduct = () => {
+		if (!selectedInventoryItem) {
+			toast.error('Selecciona un producto del inventario para agregarlo al traspaso.');
+			return;
+		}
+		addDraftItem({
+			productStockId: selectedInventoryItem.productStockId,
+			productName: selectedInventoryItem.productName,
+			barcode: selectedInventoryItem.barcode,
+			quantity: 1,
+		});
+		setSelectedProductStockId('');
+		setProductPickerOpen(false);
+		toast.success('Producto agregado al traspaso');
+	};
+
+	const handleSubmitTransfer = async (event: FormEvent<HTMLFormElement>) => {
+		event.preventDefault();
+
+		if (!transferDraft.sourceWarehouseId.trim()) {
+			toast.error('Ingresa el almacén de origen');
+			return;
+		}
+		if (!transferDraft.destinationWarehouseId.trim()) {
+			toast.error('Ingresa el almacén de destino');
+			return;
+		}
+		if (transferDraft.items.length === 0) {
+			toast.error('Agrega al menos un producto al traspaso');
+			return;
+		}
+		if (!currentUser?.id) {
+			toast.error('No se encontró el usuario actual. Inicia sesión nuevamente.');
+			return;
+		}
+
+		const rawDate = transferDraft.scheduledDate;
+		const scheduledDate =
+			rawDate && !Number.isNaN(Date.parse(rawDate))
+				? new Date(rawDate).toISOString()
+				: undefined;
+
+		try {
+			await createTransferOrder({
+				transferNumber: `TR-${Date.now()}`,
+				transferType: 'internal',
+				sourceWarehouseId: transferDraft.sourceWarehouseId,
+				destinationWarehouseId: transferDraft.destinationWarehouseId,
+				initiatedBy: currentUser.id,
+				cabinetId: transferDraft.destinationWarehouseId,
+				transferDetails: transferDraft.items.map((item) => ({
+					productStockId: item.productStockId,
+					quantityTransferred: item.quantity,
+					itemNotes: item.itemNotes || undefined,
+				})),
+				transferNotes: transferDraft.transferNotes || undefined,
+				priority: transferDraft.priority,
+				scheduledDate,
+			});
+			resetTransferDraft();
+			setSelectedProductStockId('');
+			setIsDialogOpen(false);
+		} catch {
+			// Los mensajes de error se gestionan en la mutación.
+		}
+	};
+
 	// Derive receptions list from transfers response
 	type DerivedReception = {
 		shipmentId: string;
@@ -159,13 +774,457 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 	return (
 		<div className="theme-transition flex-1 space-y-6 bg-white p-4 md:p-6 dark:bg-[#151718]">
 			{/* Header */}
-			<div className="space-y-2">
-				<h1 className="font-bold text-2xl text-[#11181C] text-transition md:text-3xl dark:text-[#ECEDEE]">
-					Recepciones pendientes
-				</h1>
-				<p className="text-[#687076] text-transition dark:text-[#9BA1A6]">
-					Gestiona las recepciones desde el centro de distribución
-				</p>
+			<div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+				<div className="space-y-2">
+					<h1 className="font-bold text-2xl text-[#11181C] text-transition md:text-3xl dark:text-[#ECEDEE]">
+						Traspasos
+					</h1>
+					<p className="text-[#687076] text-transition dark:text-[#9BA1A6]">
+						Gestiona los traspasos desde el centro de distribución o desde una sucursal
+						a otra.
+					</p>
+				</div>
+				<Dialog onOpenChange={setIsDialogOpen} open={isDialogOpen}>
+					<DialogTrigger asChild>
+						<Button className="flex items-center gap-2 bg-[#0a7ea4] text-white hover:bg-[#0a7ea4]/90">
+							<Plus className="h-4 w-4" />
+							Nuevo traspaso
+						</Button>
+					</DialogTrigger>
+					<DialogContent className="border-[#E5E7EB] bg-white sm:max-w-3xl dark:border-[#2D3033] dark:bg-[#151718]">
+						<form className="space-y-6" onSubmit={handleSubmitTransfer}>
+							<DialogHeader>
+								<DialogTitle className="text-[#11181C] dark:text-[#ECEDEE]">
+									Crear nuevo traspaso
+								</DialogTitle>
+								<DialogDescription className="text-[#687076] dark:text-[#9BA1A6]">
+									Completa los datos requeridos y agrega productos desde el
+									inventario para generar el traspaso.
+								</DialogDescription>
+							</DialogHeader>
+
+							<div className="grid gap-6">
+								<div className="grid gap-4 sm:grid-cols-2">
+									<div className="grid gap-2">
+										<Label
+											className="text-[#11181C] dark:text-[#ECEDEE]"
+											htmlFor="source-warehouse"
+										>
+											Almacén origen *
+										</Label>
+										<Select
+											onValueChange={(value) =>
+												updateTransferDraft({ sourceWarehouseId: value })
+											}
+											value={transferDraft.sourceWarehouseId || undefined}
+										>
+											<SelectTrigger className="border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]">
+												<SelectValue placeholder="Selecciona el almacén de origen" />
+											</SelectTrigger>
+											<SelectContent className="border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
+												<SelectGroup>
+													<SelectLabel className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+														Almacenes
+													</SelectLabel>
+													{warehouseOptions.map((option) => (
+														<SelectItem
+															className="text-[#11181C] dark:text-[#ECEDEE]"
+															key={option.id}
+															value={option.id}
+														>
+															{option.name}
+														</SelectItem>
+													))}
+												</SelectGroup>
+											</SelectContent>
+										</Select>
+									</div>
+									<div className="grid gap-2">
+										<Label
+											className="text-[#11181C] dark:text-[#ECEDEE]"
+											htmlFor="destination-warehouse"
+										>
+											Almacén destino *
+										</Label>
+										<Select
+											onValueChange={(value) =>
+												updateTransferDraft({
+													destinationWarehouseId: value,
+												})
+											}
+											value={
+												transferDraft.destinationWarehouseId || undefined
+											}
+										>
+											<SelectTrigger className="border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]">
+												<SelectValue placeholder="Selecciona el almacén de destino" />
+											</SelectTrigger>
+											<SelectContent className="border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
+												<SelectGroup>
+													<SelectLabel className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+														Almacenes
+													</SelectLabel>
+													{warehouseOptions.map((option) => (
+														<SelectItem
+															className="text-[#11181C] dark:text-[#ECEDEE]"
+															key={option.id}
+															value={option.id}
+														>
+															{option.name}
+														</SelectItem>
+													))}
+												</SelectGroup>
+											</SelectContent>
+										</Select>
+									</div>
+									<div className="grid gap-2">
+										<Label
+											className="text-[#11181C] dark:text-[#ECEDEE]"
+											htmlFor="scheduled-date"
+										>
+											Fecha programada
+										</Label>
+										<Popover>
+											<PopoverTrigger asChild>
+												<Button
+													className={cn(
+														'w-full justify-start border-[#E5E7EB] bg-white text-left font-normal text-[#11181C] hover:bg-[#F9FAFB] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]',
+														!scheduledDateValue &&
+															'text-[#687076] dark:text-[#9BA1A6]',
+													)}
+													id="scheduled-date"
+													variant="outline"
+												>
+													<CalendarIcon className="mr-2 h-4 w-4" />
+													{scheduledDateValue
+														? format(scheduledDateValue, 'PPP', {
+																locale: es,
+															})
+														: 'Selecciona la fecha programada'}
+												</Button>
+											</PopoverTrigger>
+											<PopoverContent
+												align="start"
+												className="w-auto border-[#E5E7EB] bg-white p-0 dark:border-[#2D3033] dark:bg-[#151718]"
+											>
+												<CalendarPicker
+													initialFocus
+													locale={es}
+													mode="single"
+													onSelect={handleDateSelect}
+													selected={scheduledDateValue}
+												/>
+											</PopoverContent>
+										</Popover>
+									</div>
+									<div className="grid gap-2">
+										<Label
+											className="text-[#11181C] dark:text-[#ECEDEE]"
+											htmlFor="transfer-priority"
+										>
+											Prioridad
+										</Label>
+										<Select
+											onValueChange={(value) =>
+												updateTransferDraft({
+													priority: value as 'normal' | 'high' | 'urgent',
+												})
+											}
+											value={transferDraft.priority}
+										>
+											<SelectTrigger className="border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]">
+												<SelectValue placeholder="Selecciona prioridad" />
+											</SelectTrigger>
+											<SelectContent className="border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
+												<SelectItem
+													className="text-[#11181C] dark:text-[#ECEDEE]"
+													value="normal"
+												>
+													Normal
+												</SelectItem>
+												<SelectItem
+													className="text-[#11181C] dark:text-[#ECEDEE]"
+													value="high"
+												>
+													Alta
+												</SelectItem>
+												<SelectItem
+													className="text-[#11181C] dark:text-[#ECEDEE]"
+													value="urgent"
+												>
+													Urgente
+												</SelectItem>
+											</SelectContent>
+										</Select>
+									</div>
+									<div className="grid gap-2 sm:col-span-2">
+										<Label
+											className="text-[#11181C] dark:text-[#ECEDEE]"
+											htmlFor="transfer-notes"
+										>
+											Notas
+										</Label>
+										<Textarea
+											className="border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]"
+											id="transfer-notes"
+											onChange={(event) =>
+												updateTransferDraft({
+													transferNotes: event.target.value,
+												})
+											}
+											placeholder="Detalles adicionales del traspaso"
+											rows={3}
+											value={transferDraft.transferNotes}
+										/>
+									</div>
+								</div>
+
+								<div className="grid gap-2">
+									<Label
+										className="text-[#11181C] dark:text-[#ECEDEE]"
+										htmlFor="inventory-product"
+									>
+										Agregar productos
+									</Label>
+									<div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+										<Popover
+											onOpenChange={setProductPickerOpen}
+											open={productPickerOpen}
+										>
+											<PopoverTrigger asChild>
+												<Button
+													className="w-full justify-between border-[#E5E7EB] bg-white text-left text-[#11181C] hover:bg-[#F9FAFB] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
+													disabled={productPickerDisabled}
+													id="inventory-product"
+													variant="outline"
+												>
+													<div className="flex min-w-0 items-center gap-2">
+														<Search className="h-4 w-4 text-[#687076] dark:text-[#9BA1A6]" />
+														<span className="truncate">
+															{productPickerLabel}
+														</span>
+													</div>
+													<ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+												</Button>
+											</PopoverTrigger>
+											<PopoverContent className="w-[320px] border-[#E5E7EB] bg-white p-0 dark:border-[#2D3033] dark:bg-[#151718]">
+												<Command className="bg-white dark:bg-[#1E1F20]">
+													<CommandInput
+														className="border-0 text-[#11181C] placeholder:text-[#687076] focus:ring-0 dark:text-[#ECEDEE] dark:placeholder:text-[#9BA1A6]"
+														placeholder="Buscar por descripción o ID..."
+													/>
+													<CommandList>
+														<CommandEmpty className="py-6 text-center text-[#687076] text-sm dark:text-[#9BA1A6]">
+															No hay productos disponibles.
+														</CommandEmpty>
+														{productGroups.map((group) => (
+															<CommandGroup
+																heading={group.description}
+																key={group.barcode}
+															>
+																{group.items.map((item) => {
+																	const isDisabled =
+																		draftedItemIds.has(
+																			item.productStockId,
+																		);
+																	const isSelected =
+																		selectedProductStockId ===
+																		item.productStockId;
+																	return (
+																		<CommandItem
+																			disabled={isDisabled}
+																			key={
+																				item.productStockId
+																			}
+																			onSelect={(value) => {
+																				if (isDisabled) {
+																					return;
+																				}
+																				setSelectedProductStockId(
+																					value,
+																				);
+																				setProductPickerOpen(
+																					false,
+																				);
+																			}}
+																			value={
+																				item.productStockId
+																			}
+																		>
+																			<div className="flex w-full items-center justify-between">
+																				<div className="flex min-w-0 flex-col text-left">
+																					<span className="font-medium text-[#11181C] dark:text-[#ECEDEE]">
+																						{
+																							item.productStockId
+																						}
+																					</span>
+																					<span className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+																						{
+																							item.productName
+																						}
+																					</span>
+																				</div>
+																				{isDisabled ? (
+																					<span className="text-[#9BA1A6] text-xs dark:text-[#71767B]">
+																						En traspaso
+																					</span>
+																				) : (
+																					<Check
+																						className={cn(
+																							'h-4 w-4 text-[#0a7ea4]',
+																							isSelected
+																								? 'opacity-100'
+																								: 'opacity-0',
+																						)}
+																					/>
+																				)}
+																			</div>
+																		</CommandItem>
+																	);
+																})}
+															</CommandGroup>
+														))}
+													</CommandList>
+												</Command>
+											</PopoverContent>
+										</Popover>
+									</div>
+									<Button
+										className="flex w-[100px] items-center gap-2 bg-[#0a7ea4] text-white hover:bg-[#0a7ea4]/90"
+										disabled={!selectedProductStockId}
+										onClick={handleAddProduct}
+										type="button"
+									>
+										<Plus className="h-4 w-4" />
+										Agregar
+									</Button>
+									<p className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+										Los productos listados pertenecen al inventario del almacén
+										actual.
+									</p>
+								</div>
+
+								<div className="rounded-md border border-[#E5E7EB] dark:border-[#2D3033]">
+									<Table>
+										<TableHeader>
+											<TableRow className="border-[#E5E7EB] border-b bg-[#F9FAFB] dark:border-[#2D3033] dark:bg-[#1E1F20]">
+												<TableHead className="text-[#11181C] dark:text-[#ECEDEE]">
+													Producto
+												</TableHead>
+												<TableHead className="text-[#11181C] dark:text-[#ECEDEE]">
+													Código
+												</TableHead>
+												<TableHead className="text-[#11181C] dark:text-[#ECEDEE]">
+													Cantidad
+												</TableHead>
+												<TableHead className="text-[#11181C] dark:text-[#ECEDEE]">
+													Nota
+												</TableHead>
+												<TableHead className="text-right text-[#11181C] dark:text-[#ECEDEE]">
+													Acciones
+												</TableHead>
+											</TableRow>
+										</TableHeader>
+										<TableBody>
+											{transferDraft.items.length === 0 ? (
+												<TableRow>
+													<TableCell
+														className="py-10 text-center text-[#687076] dark:text-[#9BA1A6]"
+														colSpan={5}
+													>
+														No hay productos seleccionados.
+													</TableCell>
+												</TableRow>
+											) : (
+												transferDraft.items.map((item) => (
+													<TableRow
+														className="border-[#E5E7EB] border-b last:border-b-0 dark:border-[#2D3033]"
+														key={item.productStockId}
+													>
+														<TableCell className="font-medium text-[#11181C] dark:text-[#ECEDEE]">
+															{item.productName}
+														</TableCell>
+														<TableCell className="font-mono text-[#687076] text-sm dark:text-[#9BA1A6]">
+															{item.barcode || '—'}
+														</TableCell>
+														<TableCell>
+															<Input
+																className="w-24 border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]"
+																min={1}
+																onChange={(event) =>
+																	updateDraftItemQuantity(
+																		item.productStockId,
+																		Number.parseInt(
+																			event.target.value,
+																			10,
+																		),
+																	)
+																}
+																step={1}
+																type="number"
+																value={item.quantity}
+															/>
+														</TableCell>
+														<TableCell>
+															<Input
+																className="border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]"
+																onChange={(event) =>
+																	setDraftItemNote(
+																		item.productStockId,
+																		event.target.value,
+																	)
+																}
+																placeholder="Notas opcionales"
+																value={item.itemNotes ?? ''}
+															/>
+														</TableCell>
+														<TableCell className="text-right">
+															<Button
+																className="text-[#b91c1c] hover:text-[#7f1d1d]"
+																onClick={() =>
+																	removeDraftItem(
+																		item.productStockId,
+																	)
+																}
+																type="button"
+																variant="ghost"
+															>
+																<Trash2 className="h-4 w-4" />
+															</Button>
+														</TableCell>
+													</TableRow>
+												))
+											)}
+										</TableBody>
+									</Table>
+								</div>
+							</div>
+
+							<DialogFooter className="flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+								<span className="text-[#687076] text-sm dark:text-[#9BA1A6]">
+									{draftSummaryLabel}
+								</span>
+								<div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+									<Button
+										className="border-[#E5E7EB] text-[#11181C] hover:bg-[#F9FAFB] dark:border-[#2D3033] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
+										onClick={() => setIsDialogOpen(false)}
+										type="button"
+										variant="outline"
+									>
+										Cancelar
+									</Button>
+									<Button
+										className="bg-[#0a7ea4] text-white hover:bg-[#0a7ea4]/90"
+										disabled={isCreatingTransfer}
+										type="submit"
+									>
+										{isCreatingTransfer ? 'Creando...' : 'Crear traspaso'}
+									</Button>
+								</div>
+							</DialogFooter>
+						</form>
+					</DialogContent>
+				</Dialog>
 			</div>
 
 			{/* Stats Cards */}
