@@ -355,23 +355,41 @@ const createProductOptions = (
 	inventory: InventoryAPIResponse,
 	catalogLookup: Map<number, { name: string; description: string }>,
 ): { productGroups: ProductGroupOption[]; productLookup: Map<string, ProductItemOption> } => {
+	const shouldSkipInventorySelection = (
+		productStockId: string,
+		productStockRecord: UnknownRecord,
+		rawRecord: UnknownRecord,
+		productLookup: Map<string, ProductItemOption>,
+	): boolean => {
+		if (productLookup.has(productStockId)) {
+			return true;
+		}
+		if (isItemDeleted(productStockRecord) || isItemDeleted(rawRecord)) {
+			return true;
+		}
+		if (isItemInUse(productStockRecord) || isItemInUse(rawRecord)) {
+			return true;
+		}
+		return false;
+	};
 	const groups = new Map<number, ProductGroupOption>();
 	const lookup = new Map<string, ProductItemOption>();
 	const items = extractWarehouseItems(inventory);
-	items.forEach((raw, index) => {
-		const normalized = normalizeInventoryItem(raw, index);
+	for (const [index, inventoryRecord] of items.entries()) {
+		const normalized = normalizeInventoryItem(inventoryRecord, index);
 		if (!normalized) {
-			return;
+			continue;
 		}
 		const { productStockId, barcode, productName, productStockRecord } = normalized;
-		if (lookup.has(productStockId)) {
-			return;
-		}
-		if (isItemDeleted(productStockRecord) || isItemDeleted(raw)) {
-			return;
-		}
-		if (isItemInUse(productStockRecord) || isItemInUse(raw)) {
-			return;
+		if (
+			shouldSkipInventorySelection(
+				productStockId,
+				productStockRecord,
+				inventoryRecord,
+				lookup,
+			)
+		) {
+			continue;
 		}
 		const catalogInfo = catalogLookup.get(barcode);
 		const resolvedName = catalogInfo?.name ?? productName;
@@ -396,7 +414,7 @@ const createProductOptions = (
 				items: [itemOption],
 			});
 		}
-	});
+	}
 
 	const productGroups = Array.from(groups.values())
 		.map((group) => ({
@@ -601,6 +619,31 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 		return new Set(transferDraft.items.map((item) => item.productStockId));
 	}, [transferDraft.items]);
 
+	const selectedCabinetId = useMemo(() => {
+		const destinationId = transferDraft.destinationWarehouseId?.trim();
+		if (!destinationId) {
+			return undefined;
+		}
+		if (!isWarehouseMapSuccess(cabinetWarehouse)) {
+			return undefined;
+		}
+		const entries = Array.isArray(cabinetWarehouse.data)
+			? cabinetWarehouse.data
+			: [];
+		const matchingCabinets = entries.filter((entry) => entry.warehouseId === destinationId);
+		if (matchingCabinets.length === 0) {
+			return undefined;
+		}
+		const uniqueCabinets = Array.from(
+			new Set(
+				matchingCabinets
+					.map((entry) => entry.cabinetId)
+					.filter((id): id is string => Boolean(id?.trim())),
+			),
+		);
+		return uniqueCabinets.length === 1 ? uniqueCabinets[0] : undefined;
+	}, [cabinetWarehouse, transferDraft.destinationWarehouseId]);
+
 	const productPickerDisabled = useMemo(() => {
 		if (productGroups.length === 0) {
 			return true;
@@ -686,11 +729,11 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 	const handleSubmitTransfer = async (event: FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
 
-		if (!transferDraft.sourceWarehouseId.trim()) {
+		if (!transferDraft.sourceWarehouseId?.trim()) {
 			toast.error('Ingresa el almacén de origen');
 			return;
 		}
-		if (!transferDraft.destinationWarehouseId.trim()) {
+		if (!transferDraft.destinationWarehouseId?.trim()) {
 			toast.error('Ingresa el almacén de destino');
 			return;
 		}
@@ -700,6 +743,12 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 		}
 		if (!currentUser?.id) {
 			toast.error('No se encontró el usuario actual. Inicia sesión nuevamente.');
+			return;
+		}
+		if (!selectedCabinetId) {
+			toast.error(
+				'No se encontró un gabinete válido para el almacén destino seleccionado.',
+			);
 			return;
 		}
 
@@ -716,7 +765,7 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 				sourceWarehouseId: transferDraft.sourceWarehouseId,
 				destinationWarehouseId: transferDraft.destinationWarehouseId,
 				initiatedBy: currentUser.id,
-				cabinetId: transferDraft.destinationWarehouseId,
+				cabinetId: selectedCabinetId,
 				transferDetails: transferDraft.items.map((item) => ({
 					productStockId: item.productStockId,
 					quantityTransferred: item.quantity,
@@ -786,7 +835,10 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 				</div>
 				<Dialog onOpenChange={setIsDialogOpen} open={isDialogOpen}>
 					<DialogTrigger asChild>
-						<Button className="flex items-center gap-2 bg-[#0a7ea4] text-white hover:bg-[#0a7ea4]/90">
+						<Button
+							className="flex items-center gap-2 bg-[#0a7ea4] text-white hover:bg-[#0a7ea4]/90"
+							type="button"
+						>
 							<Plus className="h-4 w-4" />
 							Nuevo traspaso
 						</Button>
@@ -893,6 +945,7 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 															'text-[#687076] dark:text-[#9BA1A6]',
 													)}
 													id="scheduled-date"
+													type="button"
 													variant="outline"
 												>
 													<CalendarIcon className="mr-2 h-4 w-4" />
@@ -996,6 +1049,7 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 													className="w-full justify-between border-[#E5E7EB] bg-white text-left text-[#11181C] hover:bg-[#F9FAFB] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
 													disabled={productPickerDisabled}
 													id="inventory-product"
+													type="button"
 													variant="outline"
 												>
 													<div className="flex min-w-0 items-center gap-2">
@@ -1019,9 +1073,14 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 														</CommandEmpty>
 														{productGroups.map((group) => (
 															<CommandGroup
-																heading={group.description}
+																heading={group.name}
 																key={group.barcode}
 															>
+																{group.description && (
+																	<p className="px-2 pb-2 text-[#687076] text-xs dark:text-[#9BA1A6]">
+																		{group.description}
+																	</p>
+																)}
 																{group.items.map((item) => {
 																	const isDisabled =
 																		draftedItemIds.has(
@@ -1036,6 +1095,16 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 																			key={
 																				item.productStockId
 																			}
+																			keywords={[
+																				item.productStockId,
+																				item.productName,
+																				group.name,
+																				group.description,
+																				String(
+																					item.barcode ??
+																						'',
+																				),
+																			]}
 																			onSelect={(value) => {
 																				if (isDisabled) {
 																					return;
@@ -1051,7 +1120,7 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 																				item.productStockId
 																			}
 																		>
-																			<div className="flex w-full items-center justify-between">
+																			<div className="flex w-full items-center justify-between gap-2">
 																				<div className="flex min-w-0 flex-col text-left">
 																					<span className="font-medium text-[#11181C] dark:text-[#ECEDEE]">
 																						{
@@ -1060,8 +1129,13 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 																					</span>
 																					<span className="text-[#687076] text-xs dark:text-[#9BA1A6]">
 																						{
-																							item.productName
+																							item.description
 																						}
+																					</span>
+																					<span className="text-[#9BA1A6] text-xs dark:text-[#71767B]">
+																						Código:{' '}
+																						{item.barcode ||
+																							'—'}
 																					</span>
 																				</div>
 																				{isDisabled ? (
@@ -1226,8 +1300,6 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 					</DialogContent>
 				</Dialog>
 			</div>
-
-			{/* Stats Cards */}
 			<div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
 				<Card className="card-transition border-[#E5E7EB] bg-[#F9FAFB] dark:border-[#2D3033] dark:bg-[#1E1F20]">
 					<CardContent className="p-6">
@@ -1307,8 +1379,6 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 					</CardContent>
 				</Card>
 			</div>
-
-			{/* Receptions Table */}
 			<Card className="card-transition border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
 				<CardHeader>
 					<CardTitle className="text-[#11181C] text-transition dark:text-[#ECEDEE]">
