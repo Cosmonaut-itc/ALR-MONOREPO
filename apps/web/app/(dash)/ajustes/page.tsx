@@ -11,6 +11,24 @@ import { Textarea } from '@/components/ui/textarea';
 import { useSignUpMutation } from '@/lib/mutations/auth';
 import { useCreateWarehouseMutation } from '@/lib/mutations/warehouses';
 
+/**
+ * Settings page component that renders forms to create users and warehouses.
+ *
+ * Renders two independent forms (Create User and Create Warehouse) with client-side
+ * validation using react-form. Submitting the user form calls the sign-up mutation;
+ * on success it shows a success toast, resets the form, and refreshes the router.
+ * If the user response lacks an ID it shows an informational toast; on failure it
+ * shows an error toast and logs the error. Submitting the warehouse form trims input,
+ * validates that name and code are present, and calls the create-warehouse mutation;
+ * on success it resets the form and refreshes the router. The warehouse mutation is
+ * responsible for its own error/toast handling.
+ *
+ * UI notes:
+ * - Inputs are disabled while their respective mutation is pending.
+ * - Buttons display loading text when creating.
+ *
+ * @returns The SettingsPage JSX element.
+ */
 export default function SettingsPage() {
 	const router = useRouter();
 	const userForm = useForm({
