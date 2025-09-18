@@ -25,20 +25,39 @@ import {
 	TableRow,
 } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { getAllProducts, getInventoryByWarehouse } from '@/lib/fetch-functions/inventory';
+import {
+	getAllProducts,
+	getCabinetWarehouse,
+	getInventoryByWarehouse,
+} from '@/lib/fetch-functions/inventory';
 import { createQueryKey } from '@/lib/helpers';
 import { useCreateTransferOrder } from '@/lib/mutations/transfers';
 import { queryKeys } from '@/lib/query-keys';
 import type { StockItemWithEmployee } from '@/stores/inventory-store';
 import { useTransferStore } from '@/stores/transfer-store';
-import type { ProductCatalogResponse, ProductStockWithEmployee } from '@/types';
+import type { ProductCatalogResponse, ProductStockWithEmployee, WarehouseMap } from '@/types';
 
 type APIResponse = ProductStockWithEmployee | null;
 
+/**
+ * Inventory management page showing warehouse and cabinet stock with transfer workflow.
+ *
+ * Renders two tabs ("General" and "Gabinete") with searchable product tables, lets users select
+ * items to add to a transfer list, review/remove items in a dialog, and approve a transfer
+ * which creates a transfer order.
+ *
+ * @param warehouseId - ID of the source warehouse whose inventory will be displayed and used as the transfer source.
+ * @returns The InventarioPage component's JSX element.
+ */
 export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 	const { data: inventory } = useSuspenseQuery<APIResponse, Error, APIResponse>({
 		queryKey: createQueryKey(queryKeys.inventory, [warehouseId as string]),
 		queryFn: () => getInventoryByWarehouse(warehouseId as string),
+	});
+
+	const { data: cabinetWarehouse } = useSuspenseQuery<WarehouseMap, Error, WarehouseMap>({
+		queryKey: queryKeys.cabinetWarehouse,
+		queryFn: getCabinetWarehouse,
 	});
 
 	const { data: productCatalog } = useSuspenseQuery<
@@ -295,6 +314,7 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 						onAddToTransfer={handleAddToTransfer}
 						productCatalog={productCatalog}
 						warehouse={warehouseId}
+						warehouseMap={cabinetWarehouse}
 					/>
 				</TabsContent>
 
@@ -312,6 +332,7 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 								? inventory.data?.cabinetId || '1'
 								: '1'
 						}
+						warehouseMap={cabinetWarehouse}
 					/>
 				</TabsContent>
 			</Tabs>

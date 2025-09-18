@@ -45,6 +45,14 @@ export type WarehouseTransfer = Awaited<
 export type WarehouseTransferDetails = Awaited<
 	ReturnType<typeof import('./lib/fetch-functions/recepciones').getTransferDetailsById>
 >;
+
+/**
+ * Type inference for cabinet warehouse data
+ * Extracted from the API response of client.api.auth['cabinet-warehouse'].map.$get()
+ */
+export type WarehouseMap = Awaited<
+	ReturnType<typeof import('./lib/fetch-functions/inventory').getCabinetWarehouse>
+>;
 /**
  * Type for successful inventory data (excludes null case from error handling)
  * This represents the actual data structure when the API call succeeds

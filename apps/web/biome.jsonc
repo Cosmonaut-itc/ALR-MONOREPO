@@ -45,5 +45,7 @@
       "bracketSpacing": true
     }
   },
-  "extends": ["ultracite"]
+  "extends": [
+    "ultracite"
+  ]
 }

@@ -35,3 +35,13 @@ export const getAllProducts = async () => {
 		return null;
 	}
 };
+
+export const getCabinetWarehouse = async () => {
+	try {
+		const response = await client.api.auth['cabinet-warehouse'].map.$get();
+		return response.json();
+	} catch (error) {
+		console.error(error);
+		return null;
+	}
+};
