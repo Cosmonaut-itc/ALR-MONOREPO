@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { useCallback, useMemo, useState } from "react";
@@ -32,8 +32,8 @@ import {
 	TableHead,
 	TableHeader,
 	TableRow,
-} from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+} from '@/components/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
 	getAllProducts,
 	getCabinetWarehouse,
@@ -83,18 +83,12 @@ type QrLabelPayload = {
  * @returns The InventarioPage component's JSX element.
  */
 export function InventarioPage({ warehouseId }: { warehouseId: string }) {
-	const { data: inventory } = useSuspenseQuery<APIResponse, Error, APIResponse>(
-		{
-			queryKey: createQueryKey(queryKeys.inventory, [warehouseId as string]),
-			queryFn: () => getInventoryByWarehouse(warehouseId as string),
-		},
-	);
+	const { data: inventory } = useSuspenseQuery<APIResponse, Error, APIResponse>({
+		queryKey: createQueryKey(queryKeys.inventory, [warehouseId as string]),
+		queryFn: () => getInventoryByWarehouse(warehouseId as string),
+	});
 
-	const { data: cabinetWarehouse } = useSuspenseQuery<
-		WarehouseMap,
-		Error,
-		WarehouseMap
-	>({
+	const { data: cabinetWarehouse } = useSuspenseQuery<WarehouseMap, Error, WarehouseMap>({
 		queryKey: queryKeys.cabinetWarehouse,
 		queryFn: getCabinetWarehouse,
 	});
@@ -113,8 +107,7 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 	const { mutateAsync: createInventoryItem, isPending: isCreatingInventoryItem } =
 		useCreateInventoryItem();
 
-	const { addToTransfer, transferList, removeFromTransfer, approveTransfer } =
-		useTransferStore();
+	const { addToTransfer, transferList, removeFromTransfer, approveTransfer } = useTransferStore();
 	const [isListOpen, setIsListOpen] = useState(false);
 	const [listSearch, setListSearch] = useState("");
 	const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
@@ -409,16 +402,17 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 		selectedProduct,
 		selectedWarehouseId,
 	]);
+	const [listSearch, setListSearch] = useState('');
 
 	const warehouseItems = useMemo<StockItemWithEmployee[]>(() => {
-		const hasData = inventory && "data" in inventory;
+		const hasData = inventory && 'data' in inventory;
 		if (!hasData) {
 			return [];
 		}
 		const items = inventory.data?.warehouse || [];
 		// Exclude items that already have a non-null currentCabinet in productStock
 		return items.filter((item) => {
-			if (item && typeof item === "object" && "productStock" in item) {
+			if (item && typeof item === 'object' && 'productStock' in item) {
 				const stock = (item as { productStock: unknown }).productStock as
 					| { currentCabinet?: string | null }
 					| undefined;
@@ -432,7 +426,7 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 	}, [inventory]);
 
 	const cabinetItems = useMemo<StockItemWithEmployee[]>(() => {
-		const hasData = inventory && "data" in inventory;
+		const hasData = inventory && 'data' in inventory;
 		return hasData ? inventory.data?.cabinet || [] : [];
 	}, [inventory]);
 
@@ -454,6 +448,12 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 		}
 		const candidates = items.flatMap((it) => {
 			const uuid = it.uuid ?? it.id;
+			const completeProductInfo =
+				inventory && 'data' in inventory
+					? inventory.data?.warehouse.find((item) => item.productStock.id === uuid)
+					: null;
+			const warehouse = completeProductInfo?.productStock.currentWarehouse;
+			const cabinet = completeProductInfo?.productStock.currentCabinet;
 			return uuid
 				? [
 						{
@@ -461,6 +461,8 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 							barcode: product.barcode,
 							productName: product.name,
 							category: product.category,
+							warehouse: warehouse ?? '',
+							cabinet_id: cabinet ?? '',
 						},
 					]
 				: [];
@@ -469,7 +471,7 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 			return;
 		}
 		addToTransfer(candidates);
-		toast.success("Agregado a la lista de transferencia", { duration: 2000 });
+		toast.success('Agregado a la lista de transferencia', { duration: 2000 });
 	};
 
 	const filteredTransferList = useMemo(() => {
@@ -536,6 +538,10 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 		const uniqueCabinetIds = Array.from(new Set(matchingCabinetIds));
 		return uniqueCabinetIds.length === 1 ? uniqueCabinetIds[0] : undefined;
 	}, [cabinetWarehouse, warehouseId]);
+	const cabinetWarehouseId = useMemo(() => {
+		return inventory && 'data' in inventory ? inventory.data?.cabinetId || '1' : '1';
+	}, [inventory]);
+
 
 	const handleSubmitTransfer = async () => {
 		if (!cabinetId) {
@@ -698,9 +704,7 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 						</Dialog>
 						<Dialog onOpenChange={setIsListOpen} open={isListOpen}>
 							<DialogTrigger asChild>
-								<Button variant="outline">
-									Ver Lista({transferList.length})
-								</Button>
+								<Button variant="outline">Ver Lista({transferList.length})</Button>
 							</DialogTrigger>
 							<DialogContent className="flex w-full flex-col md:max-h-[90vh] md:w-[95vw] md:max-w-[900px]">
 								<DialogHeader className="flex-shrink-0">
@@ -759,7 +763,9 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 															</TableCell>
 															<TableCell className="text-right">
 																<Button
-																	onClick={() => removeFromTransfer(it.uuid)}
+																	onClick={() =>
+																		removeFromTransfer(it.uuid)
+																	}
 																	size="sm"
 																	variant="ghost"
 																>
@@ -779,7 +785,7 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 										onClick={async () => {
 											await handleSubmitTransfer();
 											setIsListOpen(false);
-											toast.success("Transferencia creada", {
+											toast.success('Transferencia creada', {
 												duration: 2000,
 											});
 										}}
@@ -817,9 +823,9 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 						onAddToTransfer={handleAddToTransfer}
 						productCatalog={productCatalog}
 						warehouse={
-							inventory && "data" in inventory
-								? inventory.data?.cabinetId || "1"
-								: "1"
+							inventory && 'data' in inventory
+								? inventory.data?.cabinetId || '1'
+								: '1'
 						}
 						warehouseMap={cabinetWarehouse}
 					/>

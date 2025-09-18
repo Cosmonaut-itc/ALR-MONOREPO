@@ -9,7 +9,7 @@ interface TransferItem {
 	productName: string;
 	category: string;
 	warehouse: string;
-	quantity: number;
+	cabinet_id: string;
 }
 
 export interface TransferCandidate {
@@ -17,6 +17,8 @@ export interface TransferCandidate {
 	barcode: number;
 	productName: string;
 	category: string;
+	warehouse: string;
+	cabinet_id: string;
 }
 
 interface TransferState {
