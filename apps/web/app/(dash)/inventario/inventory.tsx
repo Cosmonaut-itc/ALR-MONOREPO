@@ -1,10 +1,10 @@
 'use client';
 
 import { useSuspenseQuery } from '@tanstack/react-query';
-import { Badge, Table } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { ProductCatalogTable } from '@/components/inventory/ProductCatalogTable';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
 	Dialog,
@@ -16,7 +16,14 @@ import {
 	DialogTrigger,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+} from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { getAllProducts, getInventoryByWarehouse } from '@/lib/fetch-functions/inventory';
 import { createQueryKey } from '@/lib/helpers';
@@ -94,6 +101,12 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 		}
 		const candidates = items.flatMap((it) => {
 			const uuid = it.uuid ?? it.id;
+			const completeProductInfo =
+				inventory && 'data' in inventory
+					? inventory.data?.warehouse.find((item) => item.productStock.id === uuid)
+					: null;
+			const warehouse = completeProductInfo?.productStock.currentWarehouse;
+			const cabinet = completeProductInfo?.productStock.currentCabinet;
 			return uuid
 				? [
 						{
@@ -101,6 +114,8 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 							barcode: product.barcode,
 							productName: product.name,
 							category: product.category,
+							warehouse: warehouse ?? '',
+							cabinet_id: cabinet ?? '',
 						},
 					]
 				: [];
