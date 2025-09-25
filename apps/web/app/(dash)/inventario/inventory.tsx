@@ -1,11 +1,11 @@
-'use client';
+"use client";
 
-import { useSuspenseQuery } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
-import { toast } from 'sonner';
-import { ProductCatalogTable } from '@/components/inventory/ProductCatalogTable';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { useSuspenseQuery } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { toast } from "sonner";
+import { ProductCatalogTable } from "@/components/inventory/ProductCatalogTable";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
 	Dialog,
 	DialogContent,
@@ -14,8 +14,8 @@ import {
 	DialogHeader,
 	DialogTitle,
 	DialogTrigger,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import {
 	Table,
 	TableBody,
@@ -23,19 +23,24 @@ import {
 	TableHead,
 	TableHeader,
 	TableRow,
-} from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+} from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+	getAllProductStock,
 	getAllProducts,
 	getCabinetWarehouse,
 	getInventoryByWarehouse,
-} from '@/lib/fetch-functions/inventory';
-import { createQueryKey } from '@/lib/helpers';
-import { useCreateTransferOrder } from '@/lib/mutations/transfers';
-import { queryKeys } from '@/lib/query-keys';
-import type { StockItemWithEmployee } from '@/stores/inventory-store';
-import { useTransferStore } from '@/stores/transfer-store';
-import type { ProductCatalogResponse, ProductStockWithEmployee, WarehouseMap } from '@/types';
+} from "@/lib/fetch-functions/inventory";
+import { createQueryKey } from "@/lib/helpers";
+import { useCreateTransferOrder } from "@/lib/mutations/transfers";
+import { queryKeys } from "@/lib/query-keys";
+import type { StockItemWithEmployee } from "@/stores/inventory-store";
+import { useTransferStore } from "@/stores/transfer-store";
+import type {
+	ProductCatalogResponse,
+	ProductStockWithEmployee,
+	WarehouseMap,
+} from "@/types";
 
 type APIResponse = ProductStockWithEmployee | null;
 
@@ -49,13 +54,30 @@ type APIResponse = ProductStockWithEmployee | null;
  * @param warehouseId - ID of the source warehouse whose inventory will be displayed and used as the transfer source.
  * @returns The InventarioPage component's JSX element.
  */
-export function InventarioPage({ warehouseId }: { warehouseId: string }) {
-	const { data: inventory } = useSuspenseQuery<APIResponse, Error, APIResponse>({
-		queryKey: createQueryKey(queryKeys.inventory, [warehouseId as string]),
-		queryFn: () => getInventoryByWarehouse(warehouseId as string),
-	});
+export function InventarioPage({
+	warehouseId,
+	role,
+}: {
+	warehouseId: string;
+	role: string;
+}) {
+	const isEncargado = role === "encargado";
+	const inventoryQueryParams = [isEncargado ? "all" : warehouseId];
+	const inventoryQueryFn = isEncargado
+		? getAllProductStock
+		: () => getInventoryByWarehouse(warehouseId);
+	const { data: inventory } = useSuspenseQuery<APIResponse, Error, APIResponse>(
+		{
+			queryKey: createQueryKey(queryKeys.inventory, inventoryQueryParams),
+			queryFn: inventoryQueryFn,
+		},
+	);
 
-	const { data: cabinetWarehouse } = useSuspenseQuery<WarehouseMap, Error, WarehouseMap>({
+	const { data: cabinetWarehouse } = useSuspenseQuery<
+		WarehouseMap,
+		Error,
+		WarehouseMap
+	>({
 		queryKey: queryKeys.cabinetWarehouse,
 		queryFn: getCabinetWarehouse,
 	});
@@ -72,19 +94,20 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 	//Transfer states and store
 	const { mutateAsync: createTransferOrder } = useCreateTransferOrder();
 
-	const { addToTransfer, transferList, removeFromTransfer, approveTransfer } = useTransferStore();
+	const { addToTransfer, transferList, removeFromTransfer, approveTransfer } =
+		useTransferStore();
 	const [isListOpen, setIsListOpen] = useState(false);
-	const [listSearch, setListSearch] = useState('');
+	const [listSearch, setListSearch] = useState("");
 
 	const warehouseItems = useMemo<StockItemWithEmployee[]>(() => {
-		const hasData = inventory && 'data' in inventory;
+		const hasData = inventory && "data" in inventory;
 		if (!hasData) {
 			return [];
 		}
 		const items = inventory.data?.warehouse || [];
 		// Exclude items that already have a non-null currentCabinet in productStock
 		return items.filter((item) => {
-			if (item && typeof item === 'object' && 'productStock' in item) {
+			if (item && typeof item === "object" && "productStock" in item) {
 				const stock = (item as { productStock: unknown }).productStock as
 					| { currentCabinet?: string | null }
 					| undefined;
@@ -98,7 +121,7 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 	}, [inventory]);
 
 	const cabinetItems = useMemo<StockItemWithEmployee[]>(() => {
-		const hasData = inventory && 'data' in inventory;
+		const hasData = inventory && "data" in inventory;
 		return hasData ? inventory.data?.cabinet || [] : [];
 	}, [inventory]);
 
@@ -121,8 +144,10 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 		const candidates = items.flatMap((it) => {
 			const uuid = it.uuid ?? it.id;
 			const completeProductInfo =
-				inventory && 'data' in inventory
-					? inventory.data?.warehouse.find((item) => item.productStock.id === uuid)
+				inventory && "data" in inventory
+					? inventory.data?.warehouse.find(
+							(item) => item.productStock.id === uuid,
+						)
 					: null;
 			const warehouse = completeProductInfo?.productStock.currentWarehouse;
 			const cabinet = completeProductInfo?.productStock.currentCabinet;
@@ -133,8 +158,8 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 							barcode: product.barcode,
 							productName: product.name,
 							category: product.category,
-							warehouse: warehouse ?? '',
-							cabinet_id: cabinet ?? '',
+							warehouse: warehouse ?? "",
+							cabinet_id: cabinet ?? "",
 						},
 					]
 				: [];
@@ -143,7 +168,7 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 			return;
 		}
 		addToTransfer(candidates);
-		toast.success('Agregado a la lista de transferencia', { duration: 2000 });
+		toast.success("Agregado a la lista de transferencia", { duration: 2000 });
 	};
 
 	const filteredTransferList = useMemo(() => {
@@ -165,7 +190,9 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 	}, [transferList]);
 
 	const cabinetWarehouseId = useMemo(() => {
-		return inventory && 'data' in inventory ? inventory.data?.cabinetId || '1' : '1';
+		return inventory && "data" in inventory
+			? inventory.data?.cabinetId || "1"
+			: "1";
 	}, [inventory]);
 
 	const handleSubmitTransfer = async () => {
@@ -209,7 +236,9 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 					<div className="flex items-center justify-between">
 						<Dialog onOpenChange={setIsListOpen} open={isListOpen}>
 							<DialogTrigger asChild>
-								<Button variant="outline">Ver Lista({transferList.length})</Button>
+								<Button variant="outline">
+									Ver Lista({transferList.length})
+								</Button>
 							</DialogTrigger>
 							<DialogContent className="flex w-full flex-col md:max-h-[90vh] md:w-[95vw] md:max-w-[900px]">
 								<DialogHeader className="flex-shrink-0">
@@ -268,9 +297,7 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 															</TableCell>
 															<TableCell className="text-right">
 																<Button
-																	onClick={() =>
-																		removeFromTransfer(it.uuid)
-																	}
+																	onClick={() => removeFromTransfer(it.uuid)}
 																	size="sm"
 																	variant="ghost"
 																>
@@ -290,7 +317,7 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 										onClick={async () => {
 											await handleSubmitTransfer();
 											setIsListOpen(false);
-											toast.success('Transferencia creada', {
+											toast.success("Transferencia creada", {
 												duration: 2000,
 											});
 										}}
@@ -328,9 +355,9 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 						onAddToTransfer={handleAddToTransfer}
 						productCatalog={productCatalog}
 						warehouse={
-							inventory && 'data' in inventory
-								? inventory.data?.cabinetId || '1'
-								: '1'
+							inventory && "data" in inventory
+								? inventory.data?.cabinetId || "1"
+								: "1"
 						}
 						warehouseMap={cabinetWarehouse}
 					/>

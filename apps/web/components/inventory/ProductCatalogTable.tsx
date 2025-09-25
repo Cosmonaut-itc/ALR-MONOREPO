@@ -35,6 +35,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import {
 	Select,
@@ -394,6 +395,7 @@ export function ProductCatalogTable({
 		pageIndex: 0,
 		pageSize: 10,
 	});
+	const [showOnlyWithStock, setShowOnlyWithStock] = useState(false);
 	// Per-product selection state for expanded rows (barcode -> Set of UUIDs)
 	const [selectedByBarcode, setSelectedByBarcode] = useState<Record<number, Set<string>>>({});
 
@@ -460,6 +462,20 @@ export function ProductCatalogTable({
 			}
 			const rowValue = row.getValue(columnId) as string | undefined;
 			return (rowValue ?? '') === filterValue;
+		},
+		[],
+	);
+
+	const stockAvailabilityFilterFn: FilterFn<ProductWithInventory> = useMemo(
+		() => (row, columnId, filterValue) => {
+			if (!filterValue) {
+				return true;
+			}
+			const stockValue = row.getValue(columnId) as number | undefined;
+			if (filterValue === 'with-stock') {
+				return (stockValue ?? 0) > 0;
+			}
+			return true;
 		},
 		[],
 	);
@@ -845,9 +861,10 @@ export function ProductCatalogTable({
 						</Badge>
 					);
 				},
+				filterFn: stockAvailabilityFilterFn,
 			},
 		],
-		[categoryFilterFn],
+		[categoryFilterFn, stockAvailabilityFilterFn],
 	);
 
 	// Initialize the table
@@ -884,6 +901,14 @@ export function ProductCatalogTable({
 		categoryColumn.setFilterValue(categoryFilter === 'all' ? undefined : categoryFilter);
 	}, [categoryFilter, table]);
 
+	useEffect(() => {
+		const stockColumn = table.getColumn('stockCount');
+		if (!stockColumn) {
+			return;
+		}
+		stockColumn.setFilterValue(showOnlyWithStock ? 'with-stock' : undefined);
+	}, [showOnlyWithStock, table]);
+
 	if (products.length === 0) {
 		return (
 			<Card className="theme-transition border-[#E5E7EB] bg-white dark:border-[#374151] dark:bg-[#1E1F20]">
@@ -906,7 +931,7 @@ export function ProductCatalogTable({
 			<DisposeItemDialog />
 
 			{/* Filters */}
-			<div className="flex items-center space-x-4">
+			<div className="flex flex-wrap items-center gap-4">
 				{/* Search Filter */}
 				<div className="relative max-w-sm flex-1">
 					<Search className="-translate-y-1/2 absolute top-1/2 left-3 h-4 w-4 text-[#687076] dark:text-[#9BA1A6]" />
@@ -954,20 +979,38 @@ export function ProductCatalogTable({
 					</Select>
 				</div>
 
+				{/* Stock Filter */}
+				<div className="flex items-center space-x-2">
+					<Checkbox
+						checked={showOnlyWithStock}
+						id="with-stock"
+						onCheckedChange={(value) => {
+							setShowOnlyWithStock(value === true);
+						}}
+					/>
+					<Label
+						className="cursor-pointer text-[#687076] text-sm dark:text-[#9BA1A6]"
+						htmlFor="with-stock"
+					>
+						Solo productos con stock
+					</Label>
+				</div>
+
 				{/* Clear All Filters */}
-				{(globalFilter || categoryFilter !== 'all') && (
+				{(globalFilter || categoryFilter !== 'all' || showOnlyWithStock) && (
 					<Button
 						className="text-[#687076] hover:text-[#11181C] dark:text-[#9BA1A6] dark:hover:text-[#ECEDEE]"
 						onClick={() => {
 							setGlobalFilter('');
 							setCategoryFilter('all');
+							setShowOnlyWithStock(false);
 						}}
 						size="sm"
 						variant="ghost"
 					>
-						Limpiar filtros
-					</Button>
-				)}
+							Limpiar filtros
+						</Button>
+					)}
 
 				{/* Results Counter */}
 				<div className="whitespace-nowrap text-[#687076] text-sm dark:text-[#9BA1A6]">
