@@ -5,6 +5,57 @@ import { client } from '../client';
 import { createQueryKey } from '../helpers';
 import { queryKeys } from '../query-keys';
 
+type CreateProductStockPostOptions = Parameters<
+	(typeof client.api.auth)['product-stock']['create']['$post']
+>[0];
+
+export type CreateProductStockPayload = CreateProductStockPostOptions extends {
+	json: infer J;
+}
+	? J
+	: never;
+
+export const useCreateInventoryItem = () =>
+	useMutation({
+		mutationKey: ['create-inventory-item'],
+		mutationFn: async (data: CreateProductStockPayload) => {
+			const response = await client.api.auth['product-stock'].create.$post({
+				json: data,
+			});
+			const result = await response.json();
+			if (!result?.success) {
+				throw new Error(
+					result?.message ||
+						'La API devolvió éxito=false al crear el inventario',
+				);
+			}
+			return result;
+		},
+		onMutate: () => {
+			toast.loading('Creando inventario...', {
+				id: 'create-inventory-item',
+			});
+		},
+		onSuccess: (data, variables) => {
+			toast.success('Inventario creado correctamente', {
+				id: 'create-inventory-item',
+			});
+			const queryClient = getQueryClient();
+			if (variables?.currentWarehouse) {
+				queryClient.invalidateQueries({
+					queryKey: createQueryKey(queryKeys.inventory, [variables.currentWarehouse]),
+				});
+			}
+		},
+		onError: (error) => {
+			toast.error('Error al crear inventario', {
+				id: 'create-inventory-item',
+			});
+			// biome-ignore lint/suspicious/noConsole: Needed for debugging
+			console.error(error);
+		},
+	});
+
 export const useDeleteInventoryItem = () =>
 	useMutation({
 		mutationKey: ['delete-inventory-item'],

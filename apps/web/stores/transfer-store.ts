@@ -48,9 +48,11 @@ interface TransferState {
 	approveTransfer: ({
 		destinationWarehouseId,
 		sourceWarehouseId,
+		cabinetId,
 	}: {
 		destinationWarehouseId: string;
 		sourceWarehouseId: string;
+		cabinetId: string;
 	}) => TransferOrderType;
 }
 
@@ -104,9 +106,11 @@ export const useTransferStore = create<TransferState>()(
 		approveTransfer: ({
 			destinationWarehouseId,
 			sourceWarehouseId,
+			cabinetId,
 		}: {
 			destinationWarehouseId: string;
 			sourceWarehouseId: string;
+			cabinetId: string;
 		}) => {
 			const transferList = get().transferList;
 			const currentUser = useAuthStore.getState().user;
@@ -117,6 +121,9 @@ export const useTransferStore = create<TransferState>()(
 
 			if (!(sourceWarehouseId && destinationWarehouseId)) {
 				throw new Error('Almacén de origen o destino no especificado');
+			}
+			if (!cabinetId) {
+				throw new Error('Gabinete de destino no especificado');
 			}
 
 			// Generate unique transfer number using timestamp
@@ -129,7 +136,7 @@ export const useTransferStore = create<TransferState>()(
 				sourceWarehouseId,
 				destinationWarehouseId,
 				initiatedBy: currentUser.id,
-				cabinetId: destinationWarehouseId,
+				cabinetId,
 				transferDetails: transferList.map((item) => ({
 					productStockId: item.uuid,
 					quantityTransferred: 1, // Default quantity (not specified in TransferCandidate)
