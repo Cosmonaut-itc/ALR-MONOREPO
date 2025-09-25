@@ -6,6 +6,7 @@ import { getQueryClient } from '@/app/get-query-client';
 import { GenericBoundaryWrapper } from '@/components/suspense-generics/general-wrapper';
 import { createQueryKey } from '@/lib/helpers';
 import { queryKeys } from '@/lib/query-keys';
+import { fetchCabinetWarehouseServer } from '@/lib/server-functions/inventory';
 import { fetchWarehouseTransferByWarehouseId } from '@/lib/server-functions/recepciones';
 import { getServerAuth } from '@/lib/server-functions/server-auth';
 import SkeletonRecepcionesPage from '@/ui/skeletons/Skeleton.RecepcionesPage';
@@ -13,6 +14,13 @@ import { RecepcionesPage } from './recepciones';
 
 export const dynamic = 'force-dynamic';
 
+/**
+ * Server component that prefetches required React Query data, hydrates the client cache, and renders the RecepcionesPage.
+ *
+ * Prefetches receptions (by the authenticated user's warehouseId) and cabinet warehouse data into a query client so the client can hydrate from the serialized cache. If prefetching fails the error is logged but the page is still rendered with the same hydration boundary and fallback UI.
+ *
+ * @returns A React element containing a HydrationBoundary with the serialized query state and the RecepcionesPage wrapped in a suspense boundary with a Skeleton fallback.
+ */
 export default async function Page() {
 	const queryClient = getQueryClient();
 	const auth = await getServerAuth();
@@ -23,6 +31,12 @@ export default async function Page() {
 		queryClient.prefetchQuery({
 			queryKey: createQueryKey(queryKeys.receptions, [warehouseId as string]),
 			queryFn: () => fetchWarehouseTransferByWarehouseId(warehouseId as string),
+		});
+
+		// Prefetch cabinet warehouse data
+		queryClient.prefetchQuery({
+			queryKey: queryKeys.cabinetWarehouse,
+			queryFn: () => fetchCabinetWarehouseServer(),
 		});
 
 		return (

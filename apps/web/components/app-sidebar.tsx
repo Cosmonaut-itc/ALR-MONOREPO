@@ -52,7 +52,7 @@ const navigationItems = [
 	},
 
 	{
-		title: 'Recepciones',
+		title: 'Traspasos',
 		url: '/recepciones',
 		icon: Truck,
 	},

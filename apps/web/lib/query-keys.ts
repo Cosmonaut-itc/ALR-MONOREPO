@@ -5,4 +5,5 @@ export const queryKeys = {
 	recepcionDetail: ['recepcionDetail'],
 	kits: ['kits'],
 	cabinetWarehouse: ['cabinetWarehouse'],
+	warehouses: ['warehouses'],
 };

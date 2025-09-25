@@ -12,6 +12,15 @@ import {
 	TableRow,
 } from '@/components/ui/table';
 
+/**
+ * Skeleton loading component for the "Recepciones pendientes" page.
+ *
+ * Renders a static, presentational skeleton UI that mirrors the final layout:
+ * a header, four statistic cards, and a table with five placeholder rows.
+ * Used while actual reception data is loading; accepts no props and has no side effects.
+ *
+ * @returns The skeleton page as a JSX element.
+ */
 export function SkeletonRecepcionesPage() {
 	return (
 		<div className="theme-transition flex-1 space-y-6 bg-white p-4 md:p-6 dark:bg-[#151718]">
@@ -37,9 +46,9 @@ export function SkeletonRecepcionesPage() {
 								<p className="font-medium text-[#687076] text-sm text-transition dark:text-[#9BA1A6]">
 									Pendientes
 								</p>
-								<p className="font-bold text-2xl text-[#11181C] text-transition dark:text-[#ECEDEE]">
+								<div className="font-bold text-2xl text-[#11181C] text-transition dark:text-[#ECEDEE]">
 									<Skeleton className="h-7 w-10" />
-								</p>
+								</div>
 							</div>
 						</div>
 					</CardContent>
@@ -55,9 +64,9 @@ export function SkeletonRecepcionesPage() {
 								<p className="font-medium text-[#687076] text-sm text-transition dark:text-[#9BA1A6]">
 									Completadas
 								</p>
-								<p className="font-bold text-2xl text-[#11181C] text-transition dark:text-[#ECEDEE]">
+								<div className="font-bold text-2xl text-[#11181C] text-transition dark:text-[#ECEDEE]">
 									<Skeleton className="h-7 w-10" />
-								</p>
+								</div>
 							</div>
 						</div>
 					</CardContent>
@@ -73,9 +82,9 @@ export function SkeletonRecepcionesPage() {
 								<p className="font-medium text-[#687076] text-sm text-transition dark:text-[#9BA1A6]">
 									Total items
 								</p>
-								<p className="font-bold text-2xl text-[#11181C] text-transition dark:text-[#ECEDEE]">
+								<div className="font-bold text-2xl text-[#11181C] text-transition dark:text-[#ECEDEE]">
 									<Skeleton className="h-7 w-16" />
-								</p>
+								</div>
 							</div>
 						</div>
 					</CardContent>
@@ -91,9 +100,9 @@ export function SkeletonRecepcionesPage() {
 								<p className="font-medium text-[#687076] text-sm text-transition dark:text-[#9BA1A6]">
 									Hoy
 								</p>
-								<p className="font-bold text-2xl text-[#11181C] text-transition dark:text-[#ECEDEE]">
+								<div className="font-bold text-2xl text-[#11181C] text-transition dark:text-[#ECEDEE]">
 									<Skeleton className="h-7 w-10" />
-								</p>
+								</div>
 							</div>
 						</div>
 					</CardContent>

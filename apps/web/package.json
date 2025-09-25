@@ -57,6 +57,7 @@
     "next": "canary",
     "next-themes": "latest",
     "ns-inventory-api-types": "^1.0.27",
+    "qrcode": "^1.5.4",
     "react": "^19",
     "react-day-picker": "latest",
     "react-dom": "^19",
