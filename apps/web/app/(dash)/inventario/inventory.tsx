@@ -433,6 +433,28 @@ export function InventarioPage({
 		selectedProduct,
 		selectedWarehouseId,
 	]);
+
+	const handleReprintItemQr = useCallback(
+		async ({ barcode, uuid, productName }: QrLabelPayload) => {
+			if (!uuid) {
+				toast.error("No se encontró el identificador del artículo.");
+				return;
+			}
+			try {
+				await handlePrintQrLabels([
+					{
+						barcode,
+						uuid,
+						productName,
+					},
+				]);
+				toast.success("Código QR generado nuevamente.", { duration: 2000 });
+			} catch (error) {
+				toast.error("No se pudo generar el código QR.");
+			}
+		},
+		[handlePrintQrLabels],
+	);
 	const [listSearch, setListSearch] = useState("");
 
 	const warehouseItems = useMemo<StockItemWithEmployee[]>(() => {
@@ -856,30 +878,56 @@ export function InventarioPage({
 
 				{/* General Tab */}
 				<TabsContent className="space-y-4" value="general">
-					<ProductCatalogTable
-						disabledUUIDs={disabledUUIDs}
-						enableDispose
-						enableSelection
-						inventory={warehouseItems}
-						onAddToTransfer={handleAddToTransfer}
-						productCatalog={productCatalog}
-						warehouse={warehouseFilter}
-						warehouseMap={cabinetWarehouse}
-					/>
+						<ProductCatalogTable
+							disabledUUIDs={disabledUUIDs}
+							enableDispose
+							enableSelection
+							inventory={warehouseItems}
+							onAddToTransfer={handleAddToTransfer}
+							onReprintQr={({ product, item }) => {
+								const uuid = item?.uuid ?? item?.id ?? "";
+								if (!uuid) {
+									toast.error("No se encontró el identificador del artículo.");
+									return;
+								}
+								const barcode = item?.barcode && item.barcode > 0 ? item.barcode : product.barcode;
+								handleReprintItemQr({
+									barcode,
+									productName: product.name,
+									uuid,
+								});
+							}}
+							productCatalog={productCatalog}
+							warehouse={warehouseFilter}
+							warehouseMap={cabinetWarehouse}
+						/>
 				</TabsContent>
 
 				{/* Gabinete Tab */}
 				<TabsContent className="space-y-4" value="gabinete">
-					<ProductCatalogTable
-						disabledUUIDs={disabledUUIDs}
-						enableDispose
-						enableSelection
-						inventory={cabinetItems}
-						onAddToTransfer={handleAddToTransfer}
-						productCatalog={productCatalog}
-						warehouse={cabinetFilter}
-						warehouseMap={cabinetWarehouse}
-					/>
+						<ProductCatalogTable
+							disabledUUIDs={disabledUUIDs}
+							enableDispose
+							enableSelection
+							inventory={cabinetItems}
+							onAddToTransfer={handleAddToTransfer}
+							onReprintQr={({ product, item }) => {
+								const uuid = item?.uuid ?? item?.id ?? "";
+								if (!uuid) {
+									toast.error("No se encontró el identificador del artículo.");
+									return;
+								}
+								const barcode = item?.barcode && item.barcode > 0 ? item.barcode : product.barcode;
+								handleReprintItemQr({
+									barcode,
+									productName: product.name,
+									uuid,
+								});
+							}}
+							productCatalog={productCatalog}
+							warehouse={cabinetFilter}
+							warehouseMap={cabinetWarehouse}
+						/>
 				</TabsContent>
 			</Tabs>
 		</div>

@@ -25,6 +25,7 @@ import {
 	ChevronUp,
 	Copy,
 	Package,
+	QrCode,
 	Search,
 	Trash2,
 	X,
@@ -44,6 +45,12 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from '@/components/ui/select';
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipProvider,
+	TooltipTrigger,
+} from '@/components/ui/tooltip';
 import {
 	Table,
 	TableBody,
@@ -99,6 +106,10 @@ interface ProductCatalogTableProps {
 	onAddToTransfer?: (args: {
 		product: ProductWithInventory;
 		items: InventoryItemDisplay[];
+	}) => void;
+	onReprintQr?: (args: {
+		product: ProductWithInventory;
+		item: InventoryItemDisplay;
 	}) => void;
 	/** List of UUIDs that are already in transfer (to disable checkboxes) */
 	disabledUUIDs?: Set<string>;
@@ -286,6 +297,7 @@ export function ProductCatalogTable({
 	warehouse,
 	enableSelection = false,
 	onAddToTransfer,
+	onReprintQr,
 	disabledUUIDs = new Set(),
 	enableDispose = false,
 	warehouseMap = null,
@@ -718,21 +730,48 @@ export function ProductCatalogTable({
 																<span className="truncate">
 																	{(data.id || '').slice(0, 8)}...
 																</span>
-																<Button
-																	className="h-4 w-4 p-0 hover:bg-[#E5E7EB] dark:hover:bg-[#2D3033]"
-																	onClick={() => {
-																		copyToClipboard(
-																			data.uuid ||
-																				data.id ||
-																				'',
-																		);
-																	}}
-																	size="sm"
-																	variant="ghost"
-																>
-																	<Copy className="h-3 w-3" />
-																</Button>
-															</div>
+												<Tooltip>
+													<TooltipTrigger asChild>
+														<Button
+															className="h-4 w-4 p-0 hover:bg-[#E5E7EB] dark:hover:bg-[#2D3033]"
+															onClick={() => {
+															copyToClipboard(
+																data.uuid ||
+																	data.id ||
+																	'',
+															);
+														}}
+															size="sm"
+															variant="ghost"
+														>
+															<Copy className="h-3 w-3" />
+														</Button>
+													</TooltipTrigger>
+													<TooltipContent side="top">Copiar UUID</TooltipContent>
+												</Tooltip>
+												<Tooltip>
+													<TooltipTrigger asChild>
+														<Button
+															aria-label="Reimprimir código QR"
+															className="h-4 w-4 p-0 hover:bg-[#E5E7EB] dark:hover:bg-[#2D3033]"
+															disabled={!onReprintQr || !(data.uuid || data.id)}
+															onClick={() => {
+															if (!onReprintQr || !(data.uuid || data.id)) {
+																return;
+															}
+															onReprintQr({ product, item: data });
+														}}
+															size="sm"
+															variant="ghost"
+														>
+															<QrCode className="h-3 w-3" />
+														</Button>
+													</TooltipTrigger>
+													<TooltipContent side="top">
+														Generar nuevamente el código QR
+													</TooltipContent>
+												</Tooltip>
+												</div>
 														</TableCell>
 														<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
 															{formatDate(data.lastUsed)}
@@ -806,6 +845,7 @@ export function ProductCatalogTable({
 			copyToClipboard,
 			enableSelection,
 			onAddToTransfer,
+			onReprintQr,
 			selectedByBarcode,
 			disabledUUIDs,
 			showDisposeDialog,
@@ -959,7 +999,8 @@ export function ProductCatalogTable({
 	}
 
 	return (
-		<div className="space-y-4">
+		<TooltipProvider>
+			<div className="space-y-4">
 			{/* Dispose Item Dialog */}
 			<DisposeItemDialog />
 
@@ -1170,6 +1211,7 @@ export function ProductCatalogTable({
 					</div>
 				</div>
 			</div>
-		</div>
+			</div>
+		</TooltipProvider>
 	);
 }
