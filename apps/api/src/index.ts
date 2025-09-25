@@ -842,7 +842,23 @@ const route = app
 	.get('/api/auth/product-stock/all', async (c) => {
 		try {
 			// Query the productStock table for all records
-			const productStock = await db.select().from(schemas.productStock);
+			// Join with employee table to get only id, name, and surname from employee data
+			const productStock = await db
+				.select({
+					// Select all productStock fields
+					productStock: schemas.productStock,
+					// Select only specific employee fields
+					employee: {
+						id: schemas.employee.id,
+						name: schemas.employee.name,
+						surname: schemas.employee.surname,
+					},
+				})
+				.from(schemas.productStock)
+				.leftJoin(
+					schemas.employee,
+					eq(schemas.productStock.lastUsedBy, schemas.employee.id),
+				);
 
 			// If no records exist, return mock data for development/testing
 			if (productStock.length === 0) {
