@@ -1,8 +1,9 @@
-'use client';
+"use client";
 
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { v4 as uuidv4 } from "uuid";
 import { ProductCatalogTable } from "@/components/inventory/ProductCatalogTable";
 import { ProductCombobox } from "@/components/inventory/ProductCombobox";
 import { Badge } from "@/components/ui/badge";
@@ -32,8 +33,8 @@ import {
 	TableHead,
 	TableHeader,
 	TableRow,
-} from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+} from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
 	getAllProducts,
 	getCabinetWarehouse,
@@ -50,7 +51,6 @@ import type {
 	ProductStockWithEmployee,
 	WarehouseMap,
 } from "@/types";
-import { v4 as uuidv4 } from "uuid";
 
 type APIResponse = ProductStockWithEmployee | null;
 
@@ -83,12 +83,18 @@ type QrLabelPayload = {
  * @returns The InventarioPage component's JSX element.
  */
 export function InventarioPage({ warehouseId }: { warehouseId: string }) {
-	const { data: inventory } = useSuspenseQuery<APIResponse, Error, APIResponse>({
-		queryKey: createQueryKey(queryKeys.inventory, [warehouseId as string]),
-		queryFn: () => getInventoryByWarehouse(warehouseId as string),
-	});
+	const { data: inventory } = useSuspenseQuery<APIResponse, Error, APIResponse>(
+		{
+			queryKey: createQueryKey(queryKeys.inventory, [warehouseId as string]),
+			queryFn: () => getInventoryByWarehouse(warehouseId as string),
+		},
+	);
 
-	const { data: cabinetWarehouse } = useSuspenseQuery<WarehouseMap, Error, WarehouseMap>({
+	const { data: cabinetWarehouse } = useSuspenseQuery<
+		WarehouseMap,
+		Error,
+		WarehouseMap
+	>({
 		queryKey: queryKeys.cabinetWarehouse,
 		queryFn: getCabinetWarehouse,
 	});
@@ -104,12 +110,14 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 
 	//Transfer states and store
 	const { mutateAsync: createTransferOrder } = useCreateTransferOrder();
-	const { mutateAsync: createInventoryItem, isPending: isCreatingInventoryItem } =
-		useCreateInventoryItem();
+	const {
+		mutateAsync: createInventoryItem,
+		isPending: isCreatingInventoryItem,
+	} = useCreateInventoryItem();
 
-	const { addToTransfer, transferList, removeFromTransfer, approveTransfer } = useTransferStore();
+	const { addToTransfer, transferList, removeFromTransfer, approveTransfer } =
+		useTransferStore();
 	const [isListOpen, setIsListOpen] = useState(false);
-	const [listSearch, setListSearch] = useState("");
 	const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
 	const [selectedProductValue, setSelectedProductValue] = useState("");
 	const [selectedWarehouseId, setSelectedWarehouseId] = useState("");
@@ -192,7 +200,8 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 		const parsedBarcode = Number.parseInt(selectedProductValue, 10);
 		if (!Number.isNaN(parsedBarcode)) {
 			return (
-				productOptions.find((product) => product.barcode === parsedBarcode) || null
+				productOptions.find((product) => product.barcode === parsedBarcode) ||
+				null
 			);
 		}
 		return null;
@@ -217,11 +226,13 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 			}
 			const entry = entryRaw as Record<string, unknown>;
 			const idCandidate =
-				typeof entry.warehouseId === "string" && entry.warehouseId.trim().length > 0
+				typeof entry.warehouseId === "string" &&
+				entry.warehouseId.trim().length > 0
 					? entry.warehouseId
-					: typeof (entry as { warehouse_id?: string }).warehouse_id === "string" &&
-						(entry as { warehouse_id?: string }).warehouse_id?.trim().length
-							? (entry as { warehouse_id?: string }).warehouse_id ?? null
+					: typeof (entry as { warehouse_id?: string }).warehouse_id ===
+								"string" &&
+							(entry as { warehouse_id?: string }).warehouse_id?.trim().length
+						? ((entry as { warehouse_id?: string }).warehouse_id ?? null)
 						: null;
 			if (!idCandidate) {
 				continue;
@@ -234,8 +245,11 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 				entry.warehouseName.trim().length > 0
 					? entry.warehouseName
 					: typeof (entry as { warehouse_name?: string }).warehouse_name ===
-							"string" && (entry as { warehouse_name?: string }).warehouse_name?.trim().length
-						? (entry as { warehouse_name?: string }).warehouse_name ?? undefined
+								"string" &&
+							(entry as { warehouse_name?: string }).warehouse_name?.trim()
+								.length
+						? ((entry as { warehouse_name?: string }).warehouse_name ??
+							undefined)
 						: undefined;
 			const warehouseName =
 				nameCandidate && nameCandidate.trim().length > 0
@@ -334,7 +348,8 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 	}, []);
 
 	const isAddSubmitting = isCreatingInventoryItem || isPrintingLabels;
-	const isAddSubmitDisabled = !selectedProduct || !selectedWarehouseId || isAddSubmitting;
+	const isAddSubmitDisabled =
+		!selectedProduct || !selectedWarehouseId || isAddSubmitting;
 
 	const handleAddProductSubmit = useCallback(async () => {
 		if (!selectedProduct) {
@@ -380,9 +395,12 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 		setIsPrintingLabels(true);
 		try {
 			await handlePrintQrLabels(labels);
-			toast.success(`Se generaron ${labels.length} etiqueta(s) para impresión.`, {
-				duration: 2500,
-			});
+			toast.success(
+				`Se generaron ${labels.length} etiqueta(s) para impresión.`,
+				{
+					duration: 2500,
+				},
+			);
 			setIsAddDialogOpen(false);
 			resetAddProductForm();
 		} catch (error) {
@@ -402,17 +420,17 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 		selectedProduct,
 		selectedWarehouseId,
 	]);
-	const [listSearch, setListSearch] = useState('');
+	const [listSearch, setListSearch] = useState("");
 
 	const warehouseItems = useMemo<StockItemWithEmployee[]>(() => {
-		const hasData = inventory && 'data' in inventory;
+		const hasData = inventory && "data" in inventory;
 		if (!hasData) {
 			return [];
 		}
 		const items = inventory.data?.warehouse || [];
 		// Exclude items that already have a non-null currentCabinet in productStock
 		return items.filter((item) => {
-			if (item && typeof item === 'object' && 'productStock' in item) {
+			if (item && typeof item === "object" && "productStock" in item) {
 				const stock = (item as { productStock: unknown }).productStock as
 					| { currentCabinet?: string | null }
 					| undefined;
@@ -426,7 +444,7 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 	}, [inventory]);
 
 	const cabinetItems = useMemo<StockItemWithEmployee[]>(() => {
-		const hasData = inventory && 'data' in inventory;
+		const hasData = inventory && "data" in inventory;
 		return hasData ? inventory.data?.cabinet || [] : [];
 	}, [inventory]);
 
@@ -449,8 +467,10 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 		const candidates = items.flatMap((it) => {
 			const uuid = it.uuid ?? it.id;
 			const completeProductInfo =
-				inventory && 'data' in inventory
-					? inventory.data?.warehouse.find((item) => item.productStock.id === uuid)
+				inventory && "data" in inventory
+					? inventory.data?.warehouse.find(
+							(item) => item.productStock.id === uuid,
+						)
 					: null;
 			const warehouse = completeProductInfo?.productStock.currentWarehouse;
 			const cabinet = completeProductInfo?.productStock.currentCabinet;
@@ -461,8 +481,8 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 							barcode: product.barcode,
 							productName: product.name,
 							category: product.category,
-							warehouse: warehouse ?? '',
-							cabinet_id: cabinet ?? '',
+							warehouse: warehouse ?? "",
+							cabinet_id: cabinet ?? "",
 						},
 					]
 				: [];
@@ -471,7 +491,7 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 			return;
 		}
 		addToTransfer(candidates);
-		toast.success('Agregado a la lista de transferencia', { duration: 2000 });
+		toast.success("Agregado a la lista de transferencia", { duration: 2000 });
 	};
 
 	const filteredTransferList = useMemo(() => {
@@ -515,11 +535,15 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 			}
 			const entry = entryRaw as Record<string, unknown>;
 			const entryWarehouseId =
-				typeof entry.warehouseId === "string" && entry.warehouseId.trim().length > 0
+				typeof entry.warehouseId === "string" &&
+				entry.warehouseId.trim().length > 0
 					? entry.warehouseId.trim()
-					: typeof (entry as { warehouse_id?: string }).warehouse_id === "string" &&
-						(entry as { warehouse_id?: string }).warehouse_id?.trim().length
-							? ((entry as { warehouse_id?: string }).warehouse_id as string).trim()
+					: typeof (entry as { warehouse_id?: string }).warehouse_id ===
+								"string" &&
+							(entry as { warehouse_id?: string }).warehouse_id?.trim().length
+						? (
+								(entry as { warehouse_id?: string }).warehouse_id as string
+							).trim()
 						: null;
 			if (entryWarehouseId !== normalizedWarehouseId) {
 				continue;
@@ -528,8 +552,8 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 				typeof entry.cabinetId === "string" && entry.cabinetId.trim().length > 0
 					? entry.cabinetId.trim()
 					: typeof (entry as { cabinet_id?: string }).cabinet_id === "string" &&
-						(entry as { cabinet_id?: string }).cabinet_id?.trim().length
-							? ((entry as { cabinet_id?: string }).cabinet_id as string).trim()
+							(entry as { cabinet_id?: string }).cabinet_id?.trim().length
+						? ((entry as { cabinet_id?: string }).cabinet_id as string).trim()
 						: null;
 			if (entryCabinetId) {
 				matchingCabinetIds.push(entryCabinetId);
@@ -539,9 +563,10 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 		return uniqueCabinetIds.length === 1 ? uniqueCabinetIds[0] : undefined;
 	}, [cabinetWarehouse, warehouseId]);
 	const cabinetWarehouseId = useMemo(() => {
-		return inventory && 'data' in inventory ? inventory.data?.cabinetId || '1' : '1';
+		return inventory && "data" in inventory
+			? inventory.data?.cabinetId || "1"
+			: "1";
 	}, [inventory]);
-
 
 	const handleSubmitTransfer = async () => {
 		if (!cabinetId) {
@@ -597,7 +622,8 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 								<DialogHeader>
 									<DialogTitle>Agregar producto</DialogTitle>
 									<DialogDescription>
-										Selecciona un producto, el almacén destino y cuántas etiquetas con QR quieres imprimir.
+										Selecciona un producto, el almacén destino y cuántas
+										etiquetas con QR quieres imprimir.
 									</DialogDescription>
 								</DialogHeader>
 								<form
@@ -629,7 +655,10 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 											)}
 										</div>
 										<div className="space-y-2">
-											<Label className="text-[#11181C] dark:text-[#ECEDEE]" htmlFor="warehouse-select">
+											<Label
+												className="text-[#11181C] dark:text-[#ECEDEE]"
+												htmlFor="warehouse-select"
+											>
 												Almacén destino
 											</Label>
 											<Select
@@ -640,10 +669,10 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 												<SelectTrigger className="w-full" id="warehouse-select">
 													<SelectValue
 														placeholder={
-														warehouseOptions.length === 0
-															? "No hay almacenes disponibles"
-															: "Selecciona un almacén"
-													}
+															warehouseOptions.length === 0
+																? "No hay almacenes disponibles"
+																: "Selecciona un almacén"
+														}
 													/>
 												</SelectTrigger>
 												<SelectContent>
@@ -662,7 +691,10 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 											</Select>
 										</div>
 										<div className="space-y-2">
-											<Label className="text-[#11181C] dark:text-[#ECEDEE]" htmlFor="qr-quantity">
+											<Label
+												className="text-[#11181C] dark:text-[#ECEDEE]"
+												htmlFor="qr-quantity"
+											>
 												Cantidad de QR a imprimir
 											</Label>
 											<Input
@@ -672,7 +704,10 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 												min={1}
 												max={50}
 												onChange={(event) => {
-													const nextValue = Number.parseInt(event.target.value, 10);
+													const nextValue = Number.parseInt(
+														event.target.value,
+														10,
+													);
 													if (Number.isNaN(nextValue)) {
 														setQrQuantity(1);
 														return;
@@ -689,12 +724,12 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 									</div>
 									<DialogFooter className="gap-2">
 										<Button
-												onClick={() => setIsAddDialogOpen(false)}
-												type="button"
-												variant="outline"
-											>
-												Cancelar
-											</Button>
+											onClick={() => setIsAddDialogOpen(false)}
+											type="button"
+											variant="outline"
+										>
+											Cancelar
+										</Button>
 										<Button disabled={isAddSubmitDisabled} type="submit">
 											{isAddSubmitting ? "Procesando..." : "Crear e imprimir"}
 										</Button>
@@ -704,7 +739,9 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 						</Dialog>
 						<Dialog onOpenChange={setIsListOpen} open={isListOpen}>
 							<DialogTrigger asChild>
-								<Button variant="outline">Ver Lista({transferList.length})</Button>
+								<Button variant="outline">
+									Ver Lista({transferList.length})
+								</Button>
 							</DialogTrigger>
 							<DialogContent className="flex w-full flex-col md:max-h-[90vh] md:w-[95vw] md:max-w-[900px]">
 								<DialogHeader className="flex-shrink-0">
@@ -763,9 +800,7 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 															</TableCell>
 															<TableCell className="text-right">
 																<Button
-																	onClick={() =>
-																		removeFromTransfer(it.uuid)
-																	}
+																	onClick={() => removeFromTransfer(it.uuid)}
 																	size="sm"
 																	variant="ghost"
 																>
@@ -785,7 +820,7 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 										onClick={async () => {
 											await handleSubmitTransfer();
 											setIsListOpen(false);
-											toast.success('Transferencia creada', {
+											toast.success("Transferencia creada", {
 												duration: 2000,
 											});
 										}}
@@ -823,9 +858,9 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 						onAddToTransfer={handleAddToTransfer}
 						productCatalog={productCatalog}
 						warehouse={
-							inventory && 'data' in inventory
-								? inventory.data?.cabinetId || '1'
-								: '1'
+							inventory && "data" in inventory
+								? inventory.data?.cabinetId || "1"
+								: "1"
 						}
 						warehouseMap={cabinetWarehouse}
 					/>
