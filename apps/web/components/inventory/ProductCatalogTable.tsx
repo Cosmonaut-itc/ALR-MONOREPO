@@ -79,6 +79,9 @@ type InventoryItemDisplay = {
 	isBeingUsed?: boolean;
 	firstUsed?: string;
 	currentWarehouse?: string;
+	currentCabinet?: string;
+	homeWarehouseId?: string;
+	locationType?: 'warehouse' | 'cabinet' | 'unassigned';
 };
 
 interface ProductCatalogTableProps {
@@ -144,6 +147,16 @@ function extractInventoryItemData(item: StockItemWithEmployee): InventoryItemDis
 	if (item && typeof item === 'object' && 'productStock' in item) {
 		const itemStock = (item as { productStock: StockItem }).productStock;
 		const employee = (item as { employee?: { name?: string; surname?: string } }).employee;
+		const locationId = getItemWarehouse(itemStock);
+		const rawCabinet = (itemStock as { currentCabinet?: unknown }).currentCabinet;
+		const rawWarehouse = (itemStock as { currentWarehouse?: unknown }).currentWarehouse;
+		const cabinetId = typeof rawCabinet === 'string' ? rawCabinet : undefined;
+		const warehouseId = typeof rawWarehouse === 'string' ? rawWarehouse : undefined;
+		const locationType: InventoryItemDisplay['locationType'] = cabinetId
+			? 'cabinet'
+			: warehouseId
+				? 'warehouse'
+				: 'unassigned';
 
 		const fallbackId = Math.random().toString();
 		const idValue = itemStock.id || fallbackId;
@@ -161,9 +174,10 @@ function extractInventoryItemData(item: StockItemWithEmployee): InventoryItemDis
 			numberOfUses: itemStock.numberOfUses || 0,
 			isBeingUsed: itemStock.isBeingUsed ?? false,
 			firstUsed: itemStock.firstUsed || new Date().toISOString(),
-			currentWarehouse: itemStock.currentWarehouse
-				? itemStock.currentWarehouse.toString()
-				: undefined,
+			currentWarehouse: locationId,
+			currentCabinet: cabinetId,
+			homeWarehouseId: warehouseId,
+			locationType,
 		};
 
 		return result;
@@ -177,6 +191,9 @@ function extractInventoryItemData(item: StockItemWithEmployee): InventoryItemDis
 		isBeingUsed: false,
 		firstUsed: new Date().toISOString(),
 		currentWarehouse: undefined,
+		currentCabinet: undefined,
+		homeWarehouseId: undefined,
+		locationType: 'unassigned',
 	};
 }
 
@@ -310,7 +327,7 @@ export function ProductCatalogTable({
 	const resolveWarehouseName = useCallback(
 		(warehouseId?: string | null) => {
 			const id = warehouseId?.toString().trim() ?? '';
-			if (!id) {
+			if (!id || id === 'unassigned') {
 				return 'Sin almacén asignado';
 			}
 			const mappedName = warehouseNameLookup.get(id);
@@ -358,6 +375,10 @@ export function ProductCatalogTable({
 		if (!hasProductCatalog) {
 			return [];
 		}
+		const normalizedWarehouse = warehouse?.toString().trim();
+		const shouldFilterByWarehouse = Boolean(
+			normalizedWarehouse && normalizedWarehouse !== 'all',
+		);
 
 		return storedProductCatalog.map((product) => {
 			// Get all inventory items for this product in the specified warehouse
@@ -371,10 +392,13 @@ export function ProductCatalogTable({
 
 			const inventoryItems: StockItemWithEmployee[] = storedInventoryData?.filter((item) => {
 				const itemStock = (item as { productStock: StockItem }).productStock;
-				return (
-					getItemBarcode(itemStock) === product.barcode &&
-					getItemWarehouse(itemStock) === warehouse?.toString()
-				);
+				if (getItemBarcode(itemStock) !== product.barcode) {
+					return false;
+				}
+				if (!shouldFilterByWarehouse) {
+					return true;
+				}
+				return getItemWarehouse(itemStock) === normalizedWarehouse;
 			});
 
 			return {
@@ -518,7 +542,11 @@ export function ProductCatalogTable({
 				const displayItems: DisplayItem[] = product.inventoryItems.map((item) => {
 					const data = extractInventoryItemData(item);
 					const key = data.uuid || data.id || '';
-					const warehouseKey = data.currentWarehouse ?? 'unassigned';
+					const warehouseKey =
+						data.currentWarehouse ??
+						data.currentCabinet ??
+						data.homeWarehouseId ??
+						'unassigned';
 					return { data, key, warehouseKey };
 				});
 
@@ -578,8 +606,13 @@ export function ProductCatalogTable({
 					if (bucket) {
 						bucket.items.push(item);
 					} else {
+						const labelSource =
+							item.data.currentWarehouse ??
+							item.data.currentCabinet ??
+							item.data.homeWarehouseId ??
+							undefined;
 						acc.set(locationKey, {
-							label: resolveWarehouseName(item.data.currentWarehouse),
+							label: resolveWarehouseName(labelSource),
 							items: [item],
 						});
 					}

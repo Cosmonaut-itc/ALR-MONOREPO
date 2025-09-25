@@ -195,6 +195,13 @@ export function InventarioPage({
 			: "1";
 	}, [inventory]);
 
+	const warehouseFilter: string | undefined = isEncargado
+		? "all"
+		: warehouseId || undefined;
+	const cabinetFilter: string | undefined = isEncargado
+		? "all"
+		: cabinetWarehouseId || undefined;
+
 	const handleSubmitTransfer = async () => {
 		const transferData = approveTransfer({
 			destinationWarehouseId: cabinetWarehouseId,
@@ -340,7 +347,7 @@ export function InventarioPage({
 						inventory={warehouseItems}
 						onAddToTransfer={handleAddToTransfer}
 						productCatalog={productCatalog}
-						warehouse={warehouseId}
+						warehouse={warehouseFilter}
 						warehouseMap={cabinetWarehouse}
 					/>
 				</TabsContent>
@@ -354,11 +361,7 @@ export function InventarioPage({
 						inventory={cabinetItems}
 						onAddToTransfer={handleAddToTransfer}
 						productCatalog={productCatalog}
-						warehouse={
-							inventory && "data" in inventory
-								? inventory.data?.cabinetId || "1"
-								: "1"
-						}
+						warehouse={cabinetFilter}
 						warehouseMap={cabinetWarehouse}
 					/>
 				</TabsContent>
