@@ -26,6 +26,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+
 import {
 	Table,
 	TableBody,
@@ -36,6 +37,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+	getAllProductStock,
 	getAllProducts,
 	getCabinetWarehouse,
 	getInventoryByWarehouse,
@@ -82,11 +84,22 @@ type QrLabelPayload = {
  * @param warehouseId - ID of the source warehouse whose inventory will be displayed and used as the transfer source.
  * @returns The InventarioPage component's JSX element.
  */
-export function InventarioPage({ warehouseId }: { warehouseId: string }) {
+export function InventarioPage({
+	warehouseId,
+	role,
+}: {
+	warehouseId: string;
+	role: string;
+}) {
+	const isEncargado = role === "encargado";
+	const inventoryQueryParams = [isEncargado ? "all" : warehouseId];
+	const inventoryQueryFn = isEncargado
+		? getAllProductStock
+		: () => getInventoryByWarehouse(warehouseId);
 	const { data: inventory } = useSuspenseQuery<APIResponse, Error, APIResponse>(
 		{
-			queryKey: createQueryKey(queryKeys.inventory, [warehouseId as string]),
-			queryFn: () => getInventoryByWarehouse(warehouseId as string),
+			queryKey: createQueryKey(queryKeys.inventory, inventoryQueryParams),
+			queryFn: inventoryQueryFn,
 		},
 	);
 
@@ -568,6 +581,13 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 			: "1";
 	}, [inventory]);
 
+	const warehouseFilter: string | undefined = isEncargado
+		? "all"
+		: warehouseId || undefined;
+	const cabinetFilter: string | undefined = isEncargado
+		? "all"
+		: cabinetWarehouseId || undefined;
+
 	const handleSubmitTransfer = async () => {
 		if (!cabinetId) {
 			toast.error("No se encontró un gabinete asignado al almacén destino.");
@@ -843,7 +863,7 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 						inventory={warehouseItems}
 						onAddToTransfer={handleAddToTransfer}
 						productCatalog={productCatalog}
-						warehouse={warehouseId}
+						warehouse={warehouseFilter}
 						warehouseMap={cabinetWarehouse}
 					/>
 				</TabsContent>
@@ -857,11 +877,7 @@ export function InventarioPage({ warehouseId }: { warehouseId: string }) {
 						inventory={cabinetItems}
 						onAddToTransfer={handleAddToTransfer}
 						productCatalog={productCatalog}
-						warehouse={
-							inventory && "data" in inventory
-								? inventory.data?.cabinetId || "1"
-								: "1"
-						}
+						warehouse={cabinetFilter}
 						warehouseMap={cabinetWarehouse}
 					/>
 				</TabsContent>

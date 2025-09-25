@@ -14,6 +14,16 @@ export const getInventory = async () => {
 	}
 };
 
+export const getAllProductStock = async () => {
+	try {
+		const response = await client.api.auth['product-stock'].all.$get();
+		return response.json();
+	} catch (error) {
+		console.error(error);
+		return null;
+	}
+};
+
 export const getInventoryByWarehouse = async (warehouseId: string) => {
 	try {
 		const response = await client.api.auth['product-stock']['by-warehouse'].$get({

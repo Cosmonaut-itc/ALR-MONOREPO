@@ -82,6 +82,24 @@ export const fetchInventoryServer = async () => {
 	return res.json();
 };
 
+export const fetchAllProductStockServer = async () => {
+	const origin = resolveTrustedOrigin();
+	const url = new URL('/api/auth/product-stock/all', origin).toString();
+	const headers = await buildCookieHeader(origin);
+
+	const res = await fetch(url, {
+		headers,
+		cache: 'no-store',
+	});
+
+	if (!res.ok) {
+		const text = await res.text().catch(() => '');
+		throw new Error(`All product stock fetch failed: ${res.status} ${res.statusText} ${text}`);
+	}
+
+	return res.json();
+};
+
 export const fetchAllProductsServer = async () => {
 	const origin = resolveTrustedOrigin();
 	const url = new URL('/api/auth/products/all', origin).toString();

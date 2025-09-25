@@ -35,6 +35,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import {
 	Select,
@@ -78,6 +79,9 @@ type InventoryItemDisplay = {
 	isBeingUsed?: boolean;
 	firstUsed?: string;
 	currentWarehouse?: string;
+	currentCabinet?: string;
+	homeWarehouseId?: string;
+	locationType?: 'warehouse' | 'cabinet' | 'unassigned';
 };
 
 interface ProductCatalogTableProps {
@@ -143,6 +147,16 @@ function extractInventoryItemData(item: StockItemWithEmployee): InventoryItemDis
 	if (item && typeof item === 'object' && 'productStock' in item) {
 		const itemStock = (item as { productStock: StockItem }).productStock;
 		const employee = (item as { employee?: { name?: string; surname?: string } }).employee;
+		const locationId = getItemWarehouse(itemStock);
+		const rawCabinet = (itemStock as { currentCabinet?: unknown }).currentCabinet;
+		const rawWarehouse = (itemStock as { currentWarehouse?: unknown }).currentWarehouse;
+		const cabinetId = typeof rawCabinet === 'string' ? rawCabinet : undefined;
+		const warehouseId = typeof rawWarehouse === 'string' ? rawWarehouse : undefined;
+		const locationType: InventoryItemDisplay['locationType'] = cabinetId
+			? 'cabinet'
+			: warehouseId
+				? 'warehouse'
+				: 'unassigned';
 
 		const fallbackId = Math.random().toString();
 		const idValue = itemStock.id || fallbackId;
@@ -160,9 +174,10 @@ function extractInventoryItemData(item: StockItemWithEmployee): InventoryItemDis
 			numberOfUses: itemStock.numberOfUses || 0,
 			isBeingUsed: itemStock.isBeingUsed ?? false,
 			firstUsed: itemStock.firstUsed || new Date().toISOString(),
-			currentWarehouse: itemStock.currentWarehouse
-				? itemStock.currentWarehouse.toString()
-				: undefined,
+			currentWarehouse: locationId,
+			currentCabinet: cabinetId,
+			homeWarehouseId: warehouseId,
+			locationType,
 		};
 
 		return result;
@@ -176,6 +191,9 @@ function extractInventoryItemData(item: StockItemWithEmployee): InventoryItemDis
 		isBeingUsed: false,
 		firstUsed: new Date().toISOString(),
 		currentWarehouse: undefined,
+		currentCabinet: undefined,
+		homeWarehouseId: undefined,
+		locationType: 'unassigned',
 	};
 }
 
@@ -309,7 +327,7 @@ export function ProductCatalogTable({
 	const resolveWarehouseName = useCallback(
 		(warehouseId?: string | null) => {
 			const id = warehouseId?.toString().trim() ?? '';
-			if (!id) {
+			if (!id || id === 'unassigned') {
 				return 'Sin almacén asignado';
 			}
 			const mappedName = warehouseNameLookup.get(id);
@@ -357,6 +375,10 @@ export function ProductCatalogTable({
 		if (!hasProductCatalog) {
 			return [];
 		}
+		const normalizedWarehouse = warehouse?.toString().trim();
+		const shouldFilterByWarehouse = Boolean(
+			normalizedWarehouse && normalizedWarehouse !== 'all',
+		);
 
 		return storedProductCatalog.map((product) => {
 			// Get all inventory items for this product in the specified warehouse
@@ -370,10 +392,13 @@ export function ProductCatalogTable({
 
 			const inventoryItems: StockItemWithEmployee[] = storedInventoryData?.filter((item) => {
 				const itemStock = (item as { productStock: StockItem }).productStock;
-				return (
-					getItemBarcode(itemStock) === product.barcode &&
-					getItemWarehouse(itemStock) === warehouse?.toString()
-				);
+				if (getItemBarcode(itemStock) !== product.barcode) {
+					return false;
+				}
+				if (!shouldFilterByWarehouse) {
+					return true;
+				}
+				return getItemWarehouse(itemStock) === normalizedWarehouse;
 			});
 
 			return {
@@ -394,6 +419,7 @@ export function ProductCatalogTable({
 		pageIndex: 0,
 		pageSize: 10,
 	});
+	const [showOnlyWithStock, setShowOnlyWithStock] = useState(false);
 	// Per-product selection state for expanded rows (barcode -> Set of UUIDs)
 	const [selectedByBarcode, setSelectedByBarcode] = useState<Record<number, Set<string>>>({});
 
@@ -464,6 +490,20 @@ export function ProductCatalogTable({
 		[],
 	);
 
+	const stockAvailabilityFilterFn: FilterFn<ProductWithInventory> = useMemo(
+		() => (row, columnId, filterValue) => {
+			if (!filterValue) {
+				return true;
+			}
+			const stockValue = row.getValue(columnId) as number | undefined;
+			if (filterValue === 'with-stock') {
+				return (stockValue ?? 0) > 0;
+			}
+			return true;
+		},
+		[],
+	);
+
 	// Utility functions - memoized to prevent recreating on every render
 	const copyToClipboard = useMemo(
 		() => async (text: string) => {
@@ -502,7 +542,11 @@ export function ProductCatalogTable({
 				const displayItems: DisplayItem[] = product.inventoryItems.map((item) => {
 					const data = extractInventoryItemData(item);
 					const key = data.uuid || data.id || '';
-					const warehouseKey = data.currentWarehouse ?? 'unassigned';
+					const warehouseKey =
+						data.currentWarehouse ??
+						data.currentCabinet ??
+						data.homeWarehouseId ??
+						'unassigned';
 					return { data, key, warehouseKey };
 				});
 
@@ -562,8 +606,13 @@ export function ProductCatalogTable({
 					if (bucket) {
 						bucket.items.push(item);
 					} else {
+						const labelSource =
+							item.data.currentWarehouse ??
+							item.data.currentCabinet ??
+							item.data.homeWarehouseId ??
+							undefined;
 						acc.set(locationKey, {
-							label: resolveWarehouseName(item.data.currentWarehouse),
+							label: resolveWarehouseName(labelSource),
 							items: [item],
 						});
 					}
@@ -845,9 +894,10 @@ export function ProductCatalogTable({
 						</Badge>
 					);
 				},
+				filterFn: stockAvailabilityFilterFn,
 			},
 		],
-		[categoryFilterFn],
+		[categoryFilterFn, stockAvailabilityFilterFn],
 	);
 
 	// Initialize the table
@@ -884,6 +934,14 @@ export function ProductCatalogTable({
 		categoryColumn.setFilterValue(categoryFilter === 'all' ? undefined : categoryFilter);
 	}, [categoryFilter, table]);
 
+	useEffect(() => {
+		const stockColumn = table.getColumn('stockCount');
+		if (!stockColumn) {
+			return;
+		}
+		stockColumn.setFilterValue(showOnlyWithStock ? 'with-stock' : undefined);
+	}, [showOnlyWithStock, table]);
+
 	if (products.length === 0) {
 		return (
 			<Card className="theme-transition border-[#E5E7EB] bg-white dark:border-[#374151] dark:bg-[#1E1F20]">
@@ -906,7 +964,7 @@ export function ProductCatalogTable({
 			<DisposeItemDialog />
 
 			{/* Filters */}
-			<div className="flex items-center space-x-4">
+			<div className="flex flex-wrap items-center gap-4">
 				{/* Search Filter */}
 				<div className="relative max-w-sm flex-1">
 					<Search className="-translate-y-1/2 absolute top-1/2 left-3 h-4 w-4 text-[#687076] dark:text-[#9BA1A6]" />
@@ -954,20 +1012,38 @@ export function ProductCatalogTable({
 					</Select>
 				</div>
 
+				{/* Stock Filter */}
+				<div className="flex items-center space-x-2">
+					<Checkbox
+						checked={showOnlyWithStock}
+						id="with-stock"
+						onCheckedChange={(value) => {
+							setShowOnlyWithStock(value === true);
+						}}
+					/>
+					<Label
+						className="cursor-pointer text-[#687076] text-sm dark:text-[#9BA1A6]"
+						htmlFor="with-stock"
+					>
+						Solo productos con stock
+					</Label>
+				</div>
+
 				{/* Clear All Filters */}
-				{(globalFilter || categoryFilter !== 'all') && (
+				{(globalFilter || categoryFilter !== 'all' || showOnlyWithStock) && (
 					<Button
 						className="text-[#687076] hover:text-[#11181C] dark:text-[#9BA1A6] dark:hover:text-[#ECEDEE]"
 						onClick={() => {
 							setGlobalFilter('');
 							setCategoryFilter('all');
+							setShowOnlyWithStock(false);
 						}}
 						size="sm"
 						variant="ghost"
 					>
-						Limpiar filtros
-					</Button>
-				)}
+							Limpiar filtros
+						</Button>
+					)}
 
 				{/* Results Counter */}
 				<div className="whitespace-nowrap text-[#687076] text-sm dark:text-[#9BA1A6]">
