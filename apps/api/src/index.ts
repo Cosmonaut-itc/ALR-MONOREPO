@@ -16,7 +16,7 @@
 /** biome-ignore-all lint/performance/noNamespaceImport: Required for zod */
 
 import { zValidator } from '@hono/zod-validator';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
@@ -841,13 +841,11 @@ const route = app
 	 */
 	.get('/api/auth/product-stock/all', async (c) => {
 		try {
-			// Query the productStock table for all records
-			// Join with employee table to get only id, name, and surname from employee data
-			const productStock = await db
+			// Build two arrays to mirror by-warehouse response shape, but across all data
+			// 1) All items that are in a warehouse (regardless of cabinet)
+			const warehouseProductStock = await db
 				.select({
-					// Select all productStock fields
 					productStock: schemas.productStock,
-					// Select only specific employee fields
 					employee: {
 						id: schemas.employee.id,
 						name: schemas.employee.name,
@@ -858,26 +856,65 @@ const route = app
 				.leftJoin(
 					schemas.employee,
 					eq(schemas.productStock.lastUsedBy, schemas.employee.id),
+				)
+				.where(
+					and(
+						eq(schemas.productStock.isDeleted, false),
+						or(
+							isNotNull(schemas.productStock.currentWarehouse),
+							isNotNull(schemas.productStock.currentCabinet),
+						),
+					),
+				);
+
+			// 2) All items that are in a cabinet (across all cabinets)
+			const cabinetProductStock = await db
+				.select({
+					productStock: schemas.productStock,
+					employee: {
+						id: schemas.employee.id,
+						name: schemas.employee.name,
+						surname: schemas.employee.surname,
+					},
+				})
+				.from(schemas.productStock)
+				.leftJoin(
+					schemas.employee,
+					eq(schemas.productStock.lastUsedBy, schemas.employee.id),
+				)
+				.where(
+					and(
+						isNotNull(schemas.productStock.currentCabinet),
+						eq(schemas.productStock.isDeleted, false),
+					),
 				);
 
 			// If no records exist, return mock data for development/testing
-			if (productStock.length === 0) {
+			if (warehouseProductStock.length === 0 && cabinetProductStock.length === 0) {
 				return c.json(
 					{
 						success: true,
-						message: 'Fetching test data',
-						data: productStockData,
+						message: 'Fetching test data filtered by warehouse',
+						data: {
+							warehouse: [],
+							cabinet: [],
+							cabinetId: '',
+						},
 					} satisfies ApiResponse,
 					200,
 				);
 			}
 
-			// Return actual product stock data from the database
+			// Return actual product stock data from the database, aligned with by-warehouse shape
 			return c.json(
 				{
 					success: true,
 					message: 'Fetching db data',
-					data: productStock,
+					data: {
+						warehouse: warehouseProductStock,
+						cabinet: cabinetProductStock,
+						cabinetId: '',
+					},
 				} satisfies ApiResponse,
 				200,
 			);
