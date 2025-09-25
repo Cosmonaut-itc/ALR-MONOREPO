@@ -1,12 +1,13 @@
 /** biome-ignore-all lint/suspicious/noConsole: Needed for debugging */
 // Client-side fetch functions for inventory, use tRPC as much as possible
 
-'use client';
-import { client } from '../client';
+"use client";
+import { client } from "../client";
 
 export const getInventory = async () => {
 	try {
-		const response = await client.api.auth['product-stock']['with-employee'].$get();
+		const response =
+			await client.api.auth["product-stock"]["with-employee"].$get();
 		return response.json();
 	} catch (error) {
 		console.error(error);
@@ -16,7 +17,7 @@ export const getInventory = async () => {
 
 export const getAllProductStock = async () => {
 	try {
-		const response = await client.api.auth['product-stock'].all.$get();
+		const response = await client.api.auth["product-stock"].all.$get();
 		return response.json();
 	} catch (error) {
 		console.error(error);
@@ -26,7 +27,9 @@ export const getAllProductStock = async () => {
 
 export const getInventoryByWarehouse = async (warehouseId: string) => {
 	try {
-		const response = await client.api.auth['product-stock']['by-warehouse'].$get({
+		const response = await client.api.auth["product-stock"][
+			"by-warehouse"
+		].$get({
 			query: { warehouseId },
 		});
 		return response.json();
@@ -48,7 +51,7 @@ export const getAllProducts = async () => {
 
 export const getCabinetWarehouse = async () => {
 	try {
-		const response = await client.api.auth['cabinet-warehouse'].map.$get();
+		const response = await client.api.auth["cabinet-warehouse"].map.$get();
 		return response.json();
 	} catch (error) {
 		console.error(error);
