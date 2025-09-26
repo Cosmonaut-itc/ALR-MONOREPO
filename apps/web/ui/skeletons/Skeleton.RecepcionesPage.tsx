@@ -13,13 +13,11 @@ import {
 } from '@/components/ui/table';
 
 /**
- * Skeleton loading component for the "Recepciones pendientes" page.
+ * Skeleton loading UI for the "Traspasos" page, showing a header, four statistic cards, and a placeholder table.
  *
- * Renders a static, presentational skeleton UI that mirrors the final layout:
- * a header, four statistic cards, and a table with five placeholder rows.
- * Used while actual reception data is loading; accepts no props and has no side effects.
+ * Renders a static presentational skeleton that mirrors the final layout while transfer data is loading.
  *
- * @returns The skeleton page as a JSX element.
+ * @returns A JSX element containing the full skeleton layout for the Traspasos page.
  */
 export function SkeletonRecepcionesPage() {
 	return (
@@ -27,10 +25,10 @@ export function SkeletonRecepcionesPage() {
 			{/* Header */}
 			<div className="space-y-2">
 				<h1 className="font-bold text-2xl text-[#11181C] text-transition md:text-3xl dark:text-[#ECEDEE]">
-					Recepciones pendientes
+					Traspasos
 				</h1>
 				<p className="text-[#687076] text-transition dark:text-[#9BA1A6]">
-					Gestiona las recepciones desde el centro de distribución
+					Gestiona los traspasos desde el centro de distribución o entre sucursales.
 				</p>
 			</div>
 
@@ -117,10 +115,18 @@ export function SkeletonRecepcionesPage() {
 					</CardTitle>
 				</CardHeader>
 				<CardContent>
+					<div className="flex flex-col gap-3 pb-4 lg:flex-row lg:items-end lg:justify-between">
+						<Skeleton className="h-10 w-full rounded-md bg-[#E5E7EB] dark:bg-[#2D3033] lg:max-w-md" />
+						<div className="grid w-full gap-2 sm:grid-cols-2 lg:w-auto lg:grid-cols-3">
+							<Skeleton className="h-10 w-full rounded-md bg-[#E5E7EB] dark:bg-[#2D3033]" />
+							<Skeleton className="h-10 w-full rounded-md bg-[#E5E7EB] dark:bg-[#2D3033]" />
+							<Skeleton className="h-10 w-full rounded-md bg-[#E5E7EB] dark:bg-[#2D3033]" />
+						</div>
+					</div>
 					<div className="theme-transition rounded-md border border-[#E5E7EB] dark:border-[#2D3033]">
 						<Table>
 							<TableHeader>
-								<TableRow className="border-[#E5E7EB] border-b hover:bg-[#F9FAFB] dark:border-[#2D3033] dark:hover:bg-[#2D3033]">
+								<TableRow className="border-[#E5E7EB] border-b dark:border-[#2D3033]">
 									<TableHead className="font-medium text-[#11181C] text-transition dark:text-[#ECEDEE]">
 										Nº de envío
 									</TableHead>
@@ -128,7 +134,13 @@ export function SkeletonRecepcionesPage() {
 										Fecha de llegada
 									</TableHead>
 									<TableHead className="font-medium text-[#11181C] text-transition dark:text-[#ECEDEE]">
+										Actualizado
+									</TableHead>
+									<TableHead className="font-medium text-[#11181C] text-transition dark:text-[#ECEDEE]">
 										Total de ítems
+									</TableHead>
+									<TableHead className="font-medium text-[#11181C] text-transition dark:text-[#ECEDEE]">
+										Tipo
 									</TableHead>
 									<TableHead className="font-medium text-[#11181C] text-transition dark:text-[#ECEDEE]">
 										Estado
@@ -145,13 +157,16 @@ export function SkeletonRecepcionesPage() {
 										key={index}
 									>
 										<TableCell className="font-mono text-[#11181C] text-sm text-transition dark:text-[#ECEDEE]">
+											<Skeleton className="h-4 w-32" />
+										</TableCell>
+										<TableCell className="text-[#687076] text-transition dark:text-[#9BA1A6]">
 											<Skeleton className="h-4 w-28" />
 										</TableCell>
 										<TableCell className="text-[#687076] text-transition dark:text-[#9BA1A6]">
 											<Skeleton className="h-4 w-24" />
 										</TableCell>
 										<TableCell className="text-[#11181C] text-transition dark:text-[#ECEDEE]">
-											<Skeleton className="h-4 w-10" />
+											<Skeleton className="h-4 w-12" />
 										</TableCell>
 										<TableCell>
 											<div className="inline-flex">
@@ -160,7 +175,12 @@ export function SkeletonRecepcionesPage() {
 										</TableCell>
 										<TableCell>
 											<div className="inline-flex">
-												<Skeleton className="h-8 w-24" />
+												<Skeleton className="h-6 w-24 rounded-full" />
+											</div>
+										</TableCell>
+										<TableCell>
+											<div className="inline-flex">
+												<Skeleton className="h-8 w-24 rounded-md" />
 											</div>
 										</TableCell>
 									</TableRow>

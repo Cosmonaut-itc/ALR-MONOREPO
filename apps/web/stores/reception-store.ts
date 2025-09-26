@@ -59,7 +59,7 @@ export const useReceptionStore = create<ReceptionStore>()(
 				toggleReceived: (itemId) =>
 					set((state) => ({
 						items: state.items.map((item) =>
-							item.id === itemId ? { ...item, received: !item.received } : item,
+							item.id === itemId ? { ...item, isReceived: !item.isReceived } : item,
 						),
 					})),
 
@@ -70,7 +70,7 @@ export const useReceptionStore = create<ReceptionStore>()(
 
 				getReceivedCount: () => {
 					const { items } = get();
-					return items.filter((item) => item.received).length;
+					return items.filter((item) => item.isReceived).length;
 				},
 
 				getTotalCount: () => {
@@ -80,7 +80,7 @@ export const useReceptionStore = create<ReceptionStore>()(
 
 				isAllReceived: () => {
 					const { items } = get();
-					return items.length > 0 && items.every((item) => item.received);
+					return items.length > 0 && items.every((item) => item.isReceived);
 				},
 
 				updateTransferDraft: (partial) =>

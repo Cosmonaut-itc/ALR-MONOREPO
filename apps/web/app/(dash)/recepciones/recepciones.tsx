@@ -1,7 +1,18 @@
 "use client";
 
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { format } from "date-fns";
+import type { ColumnDef, ColumnFiltersState } from "@tanstack/react-table";
+import {
+	flexRender,
+	getCoreRowModel,
+	getFacetedRowModel,
+	getFacetedUniqueValues,
+	getFilteredRowModel,
+	getPaginationRowModel,
+	getSortedRowModel,
+	useReactTable,
+} from "@tanstack/react-table";
+import { format, formatISO } from "date-fns";
 import { es } from "date-fns/locale";
 import {
 	ArrowRight,
@@ -17,7 +28,13 @@ import {
 	Trash2,
 } from "lucide-react";
 import Link from "next/link";
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import {
+	type FormEvent,
+	useCallback,
+	useEffect,
+	useMemo,
+	useState,
+} from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/shallow";
 import { Badge } from "@/components/ui/badge";
@@ -114,6 +131,11 @@ type ProductItemOption = {
 	description: string;
 };
 
+type ColumnMeta = {
+	headerClassName?: string;
+	cellClassName?: string;
+};
+
 // Pre-declare regex to comply with lint rule (top-level declaration)
 const completeRegex = /complete/i;
 
@@ -134,6 +156,7 @@ interface TransferListItemShape {
 	createdAt?: string;
 	updatedAt?: string;
 	totalItems?: number;
+	transferType?: string;
 }
 
 // Type guard utilities
@@ -744,15 +767,13 @@ function selectArrivalDate(item: TransferListItemShape): string {
 }
 
 /**
- * Render the transfers (receptions) dashboard and a dialog-driven UI to create internal transfers.
+ * Render the receptions dashboard with a searchable/filterable list and a dialog-driven UI to create transfers.
  *
- * Fetches transfers, inventory, product catalog, and cabinet mappings; manages a local transfer draft
- * (source/destination, scheduled date, priority, notes, and items); and submits a transfer creation
- * request when the form is submitted.
+ * Renders dashboard cards, a table of receptions with filtering and actions, and a dialog for composing and submitting transfer orders.
  *
  * @param warehouseId - ID of the current warehouse used to scope data and prefill the source warehouse
- * @param isEncargado - When true, scope is expanded to show all transfers instead of only the current warehouse
- * @returns The React element rendering the transfers dashboard, receptions list, and the transfer-creation dialog
+ * @param isEncargado - If true, show all transfers (administrative view); otherwise scope transfers to `warehouseId`
+ * @returns The React element that renders the receptions dashboard and transfer-creation UI
  */
 export function RecepcionesPage({
 	warehouseId,
@@ -835,6 +856,8 @@ export function RecepcionesPage({
 	const [isDialogOpen, setIsDialogOpen] = useState(false);
 	const [productPickerOpen, setProductPickerOpen] = useState(false);
 	const [selectedProductStockId, setSelectedProductStockId] = useState("");
+	const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
+	const [globalFilter, setGlobalFilter] = useState("");
 
 	const catalogLookup = useMemo(
 		() => createCatalogLookup(productCatalog),
@@ -1027,14 +1050,18 @@ export function RecepcionesPage({
 
 	// Derive receptions list from transfers response
 	type DerivedReception = {
+		transferId: string;
 		shipmentId: string;
 		arrivalDate: string;
 		totalItems: number;
 		status: "pendiente" | "completada";
+		transferType: "internal" | "external";
+		updatedAt: string;
 	};
 
 	const receptions: DerivedReception[] = useMemo(() => {
 		const items = extractTransferItems(transfers);
+		const dateOnlyPattern = /^\d{4}-\d{2}-\d{2}$/;
 
 		return items.map((item) => {
 			const status = normalizeTransferStatus(
@@ -1044,31 +1071,310 @@ export function RecepcionesPage({
 				item.transferDetails,
 				item.totalItems,
 			);
-			const arrivalDate = selectArrivalDate(item);
+			const arrivalSourceRaw = selectArrivalDate(item) ?? "";
+			const arrivalSource = arrivalSourceRaw.trim();
+			const arrivalDate = dateOnlyPattern.test(arrivalSource)
+				? arrivalSource
+				: (() => {
+					if (!arrivalSource) {
+						return formatISO(new Date(), { representation: "date" });
+					}
+					const parsed = new Date(arrivalSource);
+					return Number.isNaN(parsed.getTime())
+						? formatISO(new Date(), { representation: "date" })
+						: formatISO(parsed, { representation: "date" });
+				})();
 			const shipmentId = String(
 				item.transferNumber ?? item.shipmentId ?? item.id ?? "N/A",
 			);
+			const transferTypeRaw =
+				toStringIfString(item.transferType) ??
+				toStringIfString((item as { transfer_type?: unknown }).transfer_type);
+			const normalizedTransferType =
+				transferTypeRaw && transferTypeRaw.toLowerCase() === "internal"
+					? "internal"
+					: "external";
+			const updatedAtSource =
+				toStringIfString(item.updatedAt) ??
+				toStringIfString((item as { updated_at?: unknown }).updated_at);
+			const updatedAt = (() => {
+				const trimmed = updatedAtSource?.trim();
+				if (trimmed && dateOnlyPattern.test(trimmed)) {
+					return trimmed;
+				}
+				if (trimmed) {
+					const parsed = new Date(trimmed);
+					if (!Number.isNaN(parsed.getTime())) {
+						return formatISO(parsed, { representation: "date" });
+					}
+				}
+				return arrivalDate;
+			})();
 
 			return {
+				transferId: item.id ?? "",
 				shipmentId,
 				arrivalDate,
 				totalItems,
 				status,
+				transferType: normalizedTransferType,
+				updatedAt,
 			};
 		});
 	}, [transfers]);
 
-	const formatDate = (dateString: string) => {
-		try {
-			return format(new Date(dateString), "dd/MM/yyyy", { locale: es });
-		} catch {
-			return "N/A";
+	const parseDateValue = useCallback((value: string | undefined | null) => {
+		if (!value) {
+			return null;
 		}
-	};
+		const trimmed = value.trim();
+		if (!trimmed) {
+			return null;
+		}
+		if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+			const [year, month, day] = trimmed
+				.split("-")
+				.map((part) => Number.parseInt(part, 10));
+			if ([year, month, day].some((segment) => Number.isNaN(segment))) {
+				return null;
+			}
+			return new Date(year, month - 1, day);
+		}
+		const parsed = new Date(trimmed);
+		return Number.isNaN(parsed.getTime()) ? null : parsed;
+	}, []);
+
+	const formatDate = useCallback(
+		(dateString: string) => {
+			const parsed = parseDateValue(dateString);
+			if (!parsed) {
+				return "N/A";
+			}
+			return format(parsed, "dd/MM/yyyy", { locale: es });
+		},
+		[parseDateValue],
+	);
 
 	const pendingReceptions = receptions.filter((r) => r.status === "pendiente");
 	const completedReceptions = receptions.filter(
 		(r) => r.status === "completada",
+	);
+
+	const columns = useMemo<ColumnDef<DerivedReception, unknown>[]>(
+		() => [
+			{
+				accessorKey: "shipmentId",
+				header: "Nº de envío",
+				enableSorting: false,
+				meta: {
+					headerClassName:
+						"font-medium text-[#11181C] text-transition dark:text-[#ECEDEE]",
+					cellClassName:
+						"font-mono text-[#11181C] text-sm text-transition dark:text-[#ECEDEE]",
+				} satisfies ColumnMeta,
+				cell: ({ getValue }) => {
+					const shipment = getValue<string>();
+					return (
+						<span className="font-mono text-[#11181C] text-sm text-transition dark:text-[#ECEDEE]">
+							{shipment}
+						</span>
+					);
+				},
+			},
+			{
+				accessorKey: "arrivalDate",
+				header: "Fecha de llegada",
+				filterFn: "equals",
+				enableGlobalFilter: false,
+				meta: {
+					headerClassName:
+						"font-medium text-[#11181C] text-transition dark:text-[#ECEDEE]",
+					cellClassName: "text-[#687076] text-transition dark:text-[#9BA1A6]",
+				} satisfies ColumnMeta,
+				cell: ({ getValue }) => {
+					const value = getValue<string>();
+					return (
+						<span className="text-[#687076] text-transition dark:text-[#9BA1A6]">
+							{formatDate(value)}
+						</span>
+					);
+				},
+			},
+			{
+				accessorKey: "updatedAt",
+				header: "Actualizado",
+				enableGlobalFilter: false,
+				meta: {
+					headerClassName:
+						"font-medium text-[#11181C] text-transition dark:text-[#ECEDEE]",
+					cellClassName: "text-[#687076] text-transition dark:text-[#9BA1A6]",
+				} satisfies ColumnMeta,
+				cell: ({ getValue }) => {
+					const value = getValue<string>();
+					return (
+						<span className="text-[#687076] text-transition dark:text-[#9BA1A6]">
+							{formatDate(value)}
+						</span>
+					);
+				},
+			},
+			{
+				accessorKey: "totalItems",
+				header: "Total de ítems",
+				enableGlobalFilter: false,
+				meta: {
+					headerClassName:
+						"font-medium text-[#11181C] text-transition dark:text-[#ECEDEE]",
+					cellClassName: "text-[#11181C] text-transition dark:text-[#ECEDEE]",
+				} satisfies ColumnMeta,
+				cell: ({ getValue }) => (
+					<span className="text-[#11181C] text-transition dark:text-[#ECEDEE]">
+						{getValue<number>()}
+					</span>
+				),
+			},
+			{
+				accessorKey: "transferType",
+				header: "Tipo",
+				filterFn: "equals",
+				enableGlobalFilter: false,
+				meta: {
+					headerClassName:
+						"font-medium text-[#11181C] text-transition dark:text-[#ECEDEE]",
+					cellClassName: "text-[#11181C] text-transition dark:text-[#ECEDEE]",
+				} satisfies ColumnMeta,
+				cell: ({ getValue }) => {
+					const type = getValue<"internal" | "external">();
+					const label = type === "internal" ? "Interno" : "Externo";
+					const badgeClass =
+						type === "internal"
+							? "theme-transition bg-[#0a7ea4]/10 text-[#0a7ea4] hover:bg-[#0a7ea4]/20 dark:bg-[#0a7ea4]/20 dark:text-[#0a7ea4]"
+							: "theme-transition bg-blue-100 text-blue-800 hover:bg-blue-200 dark:bg-blue-900/20 dark:text-blue-400";
+					return (
+						<Badge className={badgeClass} variant="secondary">
+							{label}
+						</Badge>
+					);
+				},
+			},
+			{
+				accessorKey: "status",
+				header: "Estado",
+				filterFn: "equals",
+				enableGlobalFilter: false,
+				meta: {
+					headerClassName:
+						"font-medium text-[#11181C] text-transition dark:text-[#ECEDEE]",
+					cellClassName: "text-[#11181C] text-transition dark:text-[#ECEDEE]",
+				} satisfies ColumnMeta,
+				cell: ({ getValue }) => {
+					const status = getValue<"pendiente" | "completada">();
+					const isPending = status === "pendiente";
+					const badgeClass = isPending
+						? "theme-transition bg-orange-100 text-orange-800 hover:bg-orange-200 dark:bg-orange-900/20 dark:text-orange-400"
+						: "theme-transition bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900/20 dark:text-green-400";
+					const variant = isPending ? "secondary" : "default";
+					return (
+						<Badge className={badgeClass} variant={variant}>
+							{isPending ? "Pendiente" : "Completada"}
+						</Badge>
+					);
+				},
+			},
+			{
+				id: "actions",
+				header: "Acción",
+				enableSorting: false,
+				enableGlobalFilter: false,
+				enableColumnFilter: false,
+				meta: {
+					headerClassName:
+						"font-medium text-[#11181C] text-transition dark:text-[#ECEDEE]",
+					cellClassName: "text-[#687076] text-transition dark:text-[#9BA1A6]",
+				} satisfies ColumnMeta,
+				cell: ({ row }) => {
+					const { status, transferId } = row.original;
+					if (status === "pendiente") {
+						return (
+							<Button
+								asChild
+								className="theme-transition bg-[#0a7ea4] text-white hover:bg-[#0a7ea4]/90"
+								size="sm"
+							>
+								<Link href={`/recepciones/${transferId}`}>
+									<ArrowRight className="mr-1 h-4 w-4" />
+									Recibir
+								</Link>
+							</Button>
+						);
+					}
+					return (
+						<span className="text-[#687076] text-sm text-transition dark:text-[#9BA1A6]">
+							Completada
+						</span>
+					);
+				},
+			},
+		],
+		[formatDate],
+	);
+
+	const statusFilterOptions = useMemo(
+		() => [
+			{ value: "pendiente", label: "Pendiente" },
+			{ value: "completada", label: "Completada" },
+		],
+		[],
+	);
+
+	const transferTypeFilterOptions = useMemo(
+		() => [
+			{ value: "internal", label: "Interno" },
+			{ value: "external", label: "Externo" },
+		],
+		[],
+	);
+
+	const table = useReactTable({
+		data: receptions,
+		columns,
+		state: {
+			columnFilters,
+			globalFilter,
+		},
+		onColumnFiltersChange: setColumnFilters,
+		onGlobalFilterChange: setGlobalFilter,
+		globalFilterFn: "includesString",
+		getCoreRowModel: getCoreRowModel(),
+		getFilteredRowModel: getFilteredRowModel(),
+		getSortedRowModel: getSortedRowModel(),
+		getPaginationRowModel: getPaginationRowModel(),
+		getFacetedRowModel: getFacetedRowModel(),
+		getFacetedUniqueValues: getFacetedUniqueValues(),
+	});
+
+	const arrivalDateColumn = table.getColumn("arrivalDate");
+	const statusColumn = table.getColumn("status");
+	const transferTypeColumn = table.getColumn("transferType");
+	const arrivalDateFilterValue = arrivalDateColumn?.getFilterValue() as
+		| string
+		| undefined;
+	const arrivalDateFilterDate = arrivalDateFilterValue
+		? (parseDateValue(arrivalDateFilterValue) ?? undefined)
+		: undefined;
+	const handleArrivalDateFilterChange = useCallback(
+		(value?: Date) => {
+			if (!arrivalDateColumn) {
+				return;
+			}
+			if (!value) {
+				arrivalDateColumn.setFilterValue(undefined);
+				return;
+			}
+			const normalized = formatISO(value, { representation: "date" });
+			arrivalDateColumn.setFilterValue(normalized);
+		},
+		[arrivalDateColumn],
 	);
 
 	return (
@@ -1594,7 +1900,10 @@ export function RecepcionesPage({
 								<p className="font-bold text-2xl text-[#11181C] text-transition dark:text-[#ECEDEE]">
 									{
 										receptions.filter((rec) => {
-											const recDate = new Date(rec.arrivalDate);
+											const recDate = parseDateValue(rec.arrivalDate);
+											if (!recDate) {
+												return false;
+											}
 											const today = new Date();
 											return recDate.toDateString() === today.toDateString();
 										}).length
@@ -1612,31 +1921,158 @@ export function RecepcionesPage({
 					</CardTitle>
 				</CardHeader>
 				<CardContent>
+					<div className="flex flex-col gap-3 pb-4 lg:flex-row lg:items-end lg:justify-between">
+						<Input
+							className="border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] w-[900px]"
+							placeholder="Buscar Nº de envío"
+							type="search"
+							value={globalFilter ?? ""}
+							onChange={(event) => table.setGlobalFilter(event.target.value)}
+						/>
+						<div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+							<div className="w-full">
+								<Popover>
+									<PopoverTrigger asChild>
+										<Button
+											className={cn(
+												"w-full justify-start border-[#E5E7EB] bg-white text-left font-normal text-[#11181C] hover:bg-[#F9FAFB] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]",
+												!arrivalDateFilterDate &&
+													"text-[#687076] dark:text-[#9BA1A6]",
+											)}
+											data-empty={!arrivalDateFilterDate}
+											variant="outline"
+										>
+											<CalendarIcon className="mr-2 h-4 w-4" />
+											{arrivalDateFilterDate ? (
+												format(arrivalDateFilterDate, "PPP", { locale: es })
+											) : (
+												<span>Fecha de llegada</span>
+											)}
+										</Button>
+									</PopoverTrigger>
+									<PopoverContent className="w-auto border-[#E5E7EB] bg-white p-0 dark:border-[#2D3033] dark:bg-[#151718]">
+										<CalendarPicker
+											locale={es}
+											mode="single"
+											onSelect={handleArrivalDateFilterChange}
+											selected={arrivalDateFilterDate}
+										/>
+										<div className="flex justify-end border-t border-[#E5E7EB] p-2 dark:border-[#2D3033]">
+											<Button
+												className="text-[#687076] hover:text-[#11181C] dark:text-[#9BA1A6] dark:hover:text-[#ECEDEE]"
+												onClick={() => handleArrivalDateFilterChange(undefined)}
+												size="sm"
+												variant="ghost"
+											>
+												Limpiar
+											</Button>
+										</div>
+									</PopoverContent>
+								</Popover>
+							</div>
+							<Select
+								value={
+									(statusColumn?.getFilterValue() as string | undefined) ??
+									"all"
+								}
+								onValueChange={(value) =>
+									statusColumn?.setFilterValue(
+										value === "all" ? undefined : value,
+									)
+								}
+							>
+								<SelectTrigger className="border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]">
+									<SelectValue placeholder="Filtrar por estado" />
+								</SelectTrigger>
+								<SelectContent className="border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
+									<SelectItem
+										className="text-[#11181C] dark:text-[#ECEDEE]"
+										value="all"
+									>
+										Todos los estados
+									</SelectItem>
+									{statusFilterOptions.map((option) => (
+										<SelectItem
+											className="text-[#11181C] dark:text-[#ECEDEE]"
+											key={option.value}
+											value={option.value}
+										>
+											{option.label}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+							<Select
+								value={
+									(transferTypeColumn?.getFilterValue() as
+										| string
+										| undefined) ?? "all"
+								}
+								onValueChange={(value) =>
+									transferTypeColumn?.setFilterValue(
+										value === "all" ? undefined : value,
+									)
+								}
+							>
+								<SelectTrigger className="border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]">
+									<SelectValue placeholder="Filtrar por tipo" />
+								</SelectTrigger>
+								<SelectContent className="border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
+									<SelectItem
+										className="text-[#11181C] dark:text-[#ECEDEE]"
+										value="all"
+									>
+										Todos los tipos
+									</SelectItem>
+									{transferTypeFilterOptions.map((option) => (
+										<SelectItem
+											className="text-[#11181C] dark:text-[#ECEDEE]"
+											key={option.value}
+											value={option.value}
+										>
+											{option.label}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</div>
+					</div>
 					<div className="theme-transition rounded-md border border-[#E5E7EB] dark:border-[#2D3033]">
 						<Table>
 							<TableHeader>
-								<TableRow className="border-[#E5E7EB] border-b hover:bg-[#F9FAFB] dark:border-[#2D3033] dark:hover:bg-[#2D3033]">
-									<TableHead className="font-medium text-[#11181C] text-transition dark:text-[#ECEDEE]">
-										Nº de envío
-									</TableHead>
-									<TableHead className="font-medium text-[#11181C] text-transition dark:text-[#ECEDEE]">
-										Fecha de llegada
-									</TableHead>
-									<TableHead className="font-medium text-[#11181C] text-transition dark:text-[#ECEDEE]">
-										Total de ítems
-									</TableHead>
-									<TableHead className="font-medium text-[#11181C] text-transition dark:text-[#ECEDEE]">
-										Estado
-									</TableHead>
-									<TableHead className="font-medium text-[#11181C] text-transition dark:text-[#ECEDEE]">
-										Acción
-									</TableHead>
-								</TableRow>
+								{table.getHeaderGroups().map((headerGroup) => (
+									<TableRow
+										className="border-[#E5E7EB] border-b dark:border-[#2D3033]"
+										key={headerGroup.id}
+									>
+										{headerGroup.headers.map((header) => {
+											const meta = header.column.columnDef.meta as
+												| ColumnMeta
+												| undefined;
+											const headerClassName =
+												meta?.headerClassName ??
+												"font-medium text-[#11181C] text-transition dark:text-[#ECEDEE]";
+											return (
+												<TableHead className={headerClassName} key={header.id}>
+													{header.isPlaceholder
+														? null
+														: flexRender(
+																header.column.columnDef.header,
+																header.getContext(),
+															)}
+												</TableHead>
+											);
+										})}
+									</TableRow>
+								))}
 							</TableHeader>
 							<TableBody>
-								{receptions.length === 0 ? (
+								{table.getRowModel().rows.length === 0 ? (
 									<TableRow>
-										<TableCell className="py-12 text-center" colSpan={5}>
+										<TableCell
+											className="py-12 text-center"
+											colSpan={table.getAllLeafColumns().length || 1}
+										>
 											<Package className="mx-auto mb-4 h-12 w-12 text-[#687076] dark:text-[#9BA1A6]" />
 											<p className="text-[#687076] text-transition dark:text-[#9BA1A6]">
 												No hay recepciones disponibles
@@ -1644,56 +2080,25 @@ export function RecepcionesPage({
 										</TableCell>
 									</TableRow>
 								) : (
-									receptions.map((reception) => (
+									table.getRowModel().rows.map((row) => (
 										<TableRow
 											className="theme-transition border-[#E5E7EB] border-b hover:bg-[#F9FAFB] dark:border-[#2D3033] dark:hover:bg-[#2D3033]"
-											key={reception.shipmentId}
+											key={row.id}
 										>
-											<TableCell className="font-mono text-[#11181C] text-sm text-transition dark:text-[#ECEDEE]">
-												{reception.shipmentId}
-											</TableCell>
-											<TableCell className="text-[#687076] text-transition dark:text-[#9BA1A6]">
-												{formatDate(reception.arrivalDate)}
-											</TableCell>
-											<TableCell className="text-[#11181C] text-transition dark:text-[#ECEDEE]">
-												{reception.totalItems}
-											</TableCell>
-											<TableCell>
-												<Badge
-													className={
-														reception.status === "pendiente"
-															? "theme-transition bg-orange-100 text-orange-800 hover:bg-orange-200 dark:bg-orange-900/20 dark:text-orange-400"
-															: "theme-transition bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900/20 dark:text-green-400"
-													}
-													variant={
-														reception.status === "pendiente"
-															? "secondary"
-															: "default"
-													}
-												>
-													{reception.status === "pendiente"
-														? "Pendiente"
-														: "Completada"}
-												</Badge>
-											</TableCell>
-											<TableCell>
-												{reception.status === "pendiente" ? (
-													<Button
-														asChild
-														className="theme-transition bg-[#0a7ea4] text-white hover:bg-[#0a7ea4]/90"
-														size="sm"
-													>
-														<Link href={`/recepciones/${reception.shipmentId}`}>
-															<ArrowRight className="mr-1 h-4 w-4" />
-															Recibir
-														</Link>
-													</Button>
-												) : (
-													<span className="text-[#687076] text-sm text-transition dark:text-[#9BA1A6]">
-														Completada
-													</span>
-												)}
-											</TableCell>
+											{row.getVisibleCells().map((cell) => {
+												const meta = cell.column.columnDef.meta as
+													| ColumnMeta
+													| undefined;
+												const cellClassName = meta?.cellClassName;
+												return (
+													<TableCell className={cellClassName} key={cell.id}>
+														{flexRender(
+															cell.column.columnDef.cell,
+															cell.getContext(),
+														)}
+													</TableCell>
+												);
+											})}
 										</TableRow>
 									))
 								)}

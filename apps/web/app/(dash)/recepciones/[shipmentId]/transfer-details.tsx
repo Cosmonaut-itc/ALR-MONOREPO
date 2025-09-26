@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-import { useSuspenseQuery } from '@tanstack/react-query';
-import { ArrowLeft, CheckCircle2, Package } from 'lucide-react';
-import { useRouter } from 'next/navigation';
-import { Fragment, useEffect, useMemo } from 'react';
-import { toast } from 'sonner';
+import { useSuspenseQuery } from "@tanstack/react-query";
+import { ArrowLeft, CheckCircle2, Package } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Fragment, useEffect, useMemo } from "react";
+import { toast } from "sonner";
 import {
 	Breadcrumb,
 	BreadcrumbItem,
@@ -12,10 +12,10 @@ import {
 	BreadcrumbList,
 	BreadcrumbPage,
 	BreadcrumbSeparator,
-} from '@/components/ui/breadcrumb';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
+} from "@/components/ui/breadcrumb";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
 	Table,
 	TableBody,
@@ -23,19 +23,20 @@ import {
 	TableHead,
 	TableHeader,
 	TableRow,
-} from '@/components/ui/table';
-import { getTransferDetailsById } from '@/lib/fetch-functions/recepciones';
-import { createQueryKey } from '@/lib/helpers';
+} from "@/components/ui/table";
+import { getAllProducts } from "@/lib/fetch-functions/products";
+import { getTransferDetailsById } from "@/lib/fetch-functions/recepciones";
+import { createQueryKey } from "@/lib/helpers";
 import {
 	type UpdateTransferItemStatusPayload,
 	type UpdateTransferStatusPayload,
 	useUpdateTransferItemStatus,
 	useUpdateTransferStatus,
-} from '@/lib/mutations/transfers';
-import { queryKeys } from '@/lib/query-keys';
-import { cn } from '@/lib/utils';
-import { useReceptionStore } from '@/stores/reception-store';
-import type { WarehouseTransferDetails } from '@/types';
+} from "@/lib/mutations/transfers";
+import { queryKeys } from "@/lib/query-keys";
+import { cn } from "@/lib/utils";
+import { useReceptionStore } from "@/stores/reception-store";
+import type { ProductCatalogResponse, WarehouseTransferDetails } from "@/types";
 
 // =============================
 // Helper types and utilities for safe extraction
@@ -47,26 +48,29 @@ const isRecord = (value: unknown): value is UnknownRecord => {
 	if (value === null) {
 		return false;
 	}
-	return typeof value === 'object';
+	return typeof value === "object";
 };
 
 const toStringIfString = (value: unknown): string | undefined => {
-	if (typeof value === 'string') {
+	if (typeof value === "string") {
 		return value;
 	}
 	return;
 };
 
 const toNumberIfNumber = (value: unknown): number | undefined => {
-	if (typeof value === 'number' && Number.isFinite(value)) {
+	if (typeof value === "number" && Number.isFinite(value)) {
 		return value;
 	}
 	return;
 };
 
-const readNestedString = (root: UnknownRecord, key: string): string | undefined => {
+const readNestedString = (
+	root: UnknownRecord,
+	key: string,
+): string | undefined => {
 	const candidate = root[key];
-	if (typeof candidate === 'string') {
+	if (typeof candidate === "string") {
 		return candidate;
 	}
 	if (isRecord(candidate)) {
@@ -79,9 +83,12 @@ const readNestedString = (root: UnknownRecord, key: string): string | undefined 
 	return;
 };
 
-const readNestedNumber = (root: UnknownRecord, key: string): number | undefined => {
+const readNestedNumber = (
+	root: UnknownRecord,
+	key: string,
+): number | undefined => {
 	const candidate = root[key];
-	if (typeof candidate === 'number' && Number.isFinite(candidate)) {
+	if (typeof candidate === "number" && Number.isFinite(candidate)) {
 		return candidate;
 	}
 	if (isRecord(candidate)) {
@@ -111,11 +118,30 @@ interface PageProps {
 
 type APIResponse = WarehouseTransferDetails | null;
 
+/**
+ * Renders the reception detail view for a specific transfer, allowing viewing and updating receipt status of items.
+ *
+ * @param shipmentId - The identifier of the transfer shipment to display
+ * @param warehouseId - The identifier of the warehouse where the transfer is being received
+ * @returns The component's JSX for the reception detail page, including progress, item list, and controls to mark items received
+ */
 export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 	const router = useRouter();
-	const { data: transferDetails } = useSuspenseQuery<APIResponse, Error, APIResponse>({
+	const { data: transferDetails } = useSuspenseQuery<
+		APIResponse,
+		Error,
+		APIResponse
+	>({
 		queryKey: createQueryKey(queryKeys.recepcionDetail, [shipmentId as string]),
 		queryFn: () => getTransferDetailsById(shipmentId as string),
+	});
+	const { data: productCatalog } = useSuspenseQuery<
+		ProductCatalogResponse | null,
+		Error,
+		ProductCatalogResponse | null
+	>({
+		queryKey: queryKeys.productCatalog,
+		queryFn: getAllProducts,
 	});
 
 	const {
@@ -132,95 +158,33 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 	const { mutateAsync: updateTransferStatus } = useUpdateTransferStatus();
 	const { mutateAsync: updateItemStatus } = useUpdateTransferItemStatus();
 
-	// Extract list of detail items from API response with defensive checks
-	const extractDetailList = (root: APIResponse): UnknownRecord[] => {
-		if (Array.isArray(root)) {
-			return root as unknown as UnknownRecord[];
-		}
-		const source = (root ?? {}) as UnknownRecord;
-		const data = isRecord(source.data) ? (source.data as UnknownRecord) : undefined;
-		const tryLists: unknown[] = [
-			data?.transferDetails,
-			data?.details,
-			source.transferDetails,
-			source.details,
-		];
-		const firstArray = tryLists.find((v) => Array.isArray(v)) as unknown[] | undefined;
-		return Array.isArray(firstArray)
-			? (firstArray.filter((v) => isRecord(v)) as UnknownRecord[])
-			: [];
-	};
-
-	// Derive normalized items from API details
-	// biome-ignore lint/correctness/useExhaustiveDependencies: It will rerender when the transferDetails changes
-	const derivedItems: ReceptionItem[] = useMemo(() => {
-		const list = extractDetailList(transferDetails);
-		return list.map((raw: UnknownRecord, index: number): ReceptionItem => {
-			const id =
-				toStringIfString(raw.id) ||
-				toStringIfString(raw.productStockId) ||
-				toStringIfString(raw.uuid) ||
-				`item-${index + 1}`;
-
-			const barcode =
-				readNestedNumber(raw, 'barcode') ??
-				readNestedNumber(raw, 'product') ??
-				readNestedNumber(raw, 'productInfo') ??
-				0;
-
-			const productName =
-				readNestedString(raw, 'productName') ??
-				readNestedString(raw, 'name') ??
-				readNestedString(raw, 'product') ??
-				'Sin nombre';
-
-			return {
-				id,
-				barcode,
-				productName,
-				received: false,
-			};
-		});
-	}, [transferDetails]);
-
 	// Seed store with derived items when data changes
 	useEffect(() => {
-		setItems(derivedItems);
-	}, [derivedItems, setItems]);
-
-	// Group items by barcode
-	const groupedItems = useMemo(() => {
-		return items.reduce(
-			(groups, item) => {
-				const key = item.barcode;
-				if (!groups[key]) {
-					groups[key] = [];
-				}
-				groups[key].push(item);
-				return groups;
-			},
-			{} as Record<number, ReceptionItem[]>,
+		setItems(
+			transferDetails && "data" in transferDetails
+				? transferDetails.data.details
+				: [],
 		);
-	}, [items]);
-
-	const groupedEntries = Object.entries(groupedItems) as [string, ReceptionItem[]][];
+	}, [transferDetails]);
 
 	const handleMarkAllReceived = async () => {
 		markAllReceived();
 		try {
 			const payload = {
 				transferId: shipmentId,
-				status: 'complete',
+				status: "complete",
 			} as UpdateTransferStatusPayload;
 			await updateTransferStatus(payload);
-			toast('Recepción completada: Todos los artículos han sido marcados como recibidos');
+			toast(
+				"Recepción completada: Todos los artículos han sido marcados como recibidos",
+			);
 		} catch {
-			toast.error('No se pudo actualizar el estado del traspaso');
+			toast.error("No se pudo actualizar el estado del traspaso");
 		}
 
 		// Navigate back to receptions list
 		setTimeout(() => {
-			router.push('/recepciones');
+			router.push("/recepciones");
 		}, 1500);
 	};
 
@@ -233,7 +197,7 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 			} as UpdateTransferItemStatusPayload;
 			await updateItemStatus(payload);
 		} catch {
-			toast.error('No se pudo actualizar el estado del ítem');
+			toast.error("No se pudo actualizar el estado del ítem");
 		}
 	};
 
@@ -343,7 +307,7 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 								</TableRow>
 							</TableHeader>
 							<TableBody>
-								{groupedEntries.length === 0 && (
+								{items.length === 0 && (
 									<TableRow>
 										<TableCell className="py-12 text-center" colSpan={4}>
 											<Package className="mx-auto mb-4 h-12 w-12 text-[#687076] dark:text-[#9BA1A6]" />
@@ -354,9 +318,9 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 									</TableRow>
 								)}
 
-								{groupedEntries.length > 0 &&
-									groupedEntries.map(([barcode, groupItems]) => (
-										<Fragment key={barcode}>
+								{items.length > 0 &&
+									items.map((item) => (
+										<Fragment key={item.id}>
 											{/* Group header */}
 											<TableRow className="theme-transition bg-[#F9FAFB]/60 dark:bg-[#1E1F20]/60">
 												<TableCell
@@ -365,24 +329,30 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 												>
 													<div className="flex items-center space-x-3">
 														<span className="font-mono text-sm">
-															Código: {barcode}
+															Código: {item.productBarcode}
 														</span>
 														<span className="text-sm">
-															• {groupItems[0].productName}
+															•{" "}
+															{
+																productCatalog?.data.find(
+																	(product) =>
+																		product.good_id === item.productBarcode,
+																)?.title
+															}
 														</span>
 														<span className="rounded-full bg-[#0a7ea4]/10 px-2 py-1 text-[#0a7ea4] text-xs">
-															{groupItems.length} items
+															{items.length} items
 														</span>
 													</div>
 												</TableCell>
 											</TableRow>
 
 											{/* Group items */}
-											{groupItems.map((item) => (
+											{items.map((item) => (
 												<TableRow
 													className={cn(
-														'theme-transition border-[#E5E7EB] border-b hover:bg-[#F9FAFB] dark:border-[#2D3033] dark:hover:bg-[#2D3033]',
-														item.received && 'opacity-75',
+														"theme-transition border-[#E5E7EB] border-b hover:bg-[#F9FAFB] dark:border-[#2D3033] dark:hover:bg-[#2D3033]",
+														item.isReceived && "opacity-75",
 													)}
 													key={item.id}
 												>
@@ -390,25 +360,27 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 														{item.id}
 													</TableCell>
 													<TableCell className="font-mono text-[#687076] text-sm text-transition dark:text-[#9BA1A6]">
-														{item.barcode}
+														{item.productBarcode}
 													</TableCell>
 													<TableCell
 														className={cn(
-															'text-[#11181C] text-transition dark:text-[#ECEDEE]',
-															item.received && 'line-through',
+															"text-[#11181C] text-transition dark:text-[#ECEDEE]",
+															item.isReceived && "line-through",
 														)}
 													>
-														{item.productName}
+														{
+															productCatalog?.data.find(
+																(product) =>
+																	product.good_id === item.productBarcode,
+															)?.title
+														}
 													</TableCell>
 													<TableCell>
 														<Checkbox
-															checked={item.received}
+															checked={item.isReceived ?? false}
 															className="h-5 w-5 data-[state=checked]:border-[#0a7ea4] data-[state=checked]:bg-[#0a7ea4]"
 															onCheckedChange={(checked) =>
-																handleToggleItem(
-																	item.id,
-																	Boolean(checked),
-																)
+																handleToggleItem(item.id, Boolean(checked))
 															}
 														/>
 													</TableCell>

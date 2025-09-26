@@ -1,8 +1,8 @@
-import { type as t } from 'arktype';
+import { type as t } from "arktype";
 
 export const loginSchema = t({
-	email: 'string',
-	password: 'string',
+	email: "string",
+	password: "string",
 });
 
 export const userRoleSchema = t({
@@ -15,9 +15,9 @@ export type UserRole = typeof userRoleSchema.infer;
 
 // Sign Up schema/types
 export const signUpSchema = t({
-	email: 'string',
-	password: 'string',
-	name: 'string',
+	email: "string",
+	password: "string",
+	name: "string",
 });
 
 export type SignUpType = typeof signUpSchema.infer;
@@ -27,7 +27,9 @@ export type SignUpType = typeof signUpSchema.infer;
  * Extracted from the API response of client.api.auth['product-stock']['with-employee'].$get()
  */
 export type ProductStockWithEmployee = Awaited<
-	ReturnType<typeof import('./lib/fetch-functions/inventory').getInventoryByWarehouse>
+	ReturnType<
+		typeof import("./lib/fetch-functions/inventory").getInventoryByWarehouse
+	>
 >;
 
 /**
@@ -35,7 +37,9 @@ export type ProductStockWithEmployee = Awaited<
  * Extracted from the API response of client.api.auth['warehouse-transfers'].external.$get()
  */
 export type WarehouseTransfer = Awaited<
-	ReturnType<typeof import('./lib/fetch-functions/recepciones').getWarehouseTransferById>
+	ReturnType<
+		typeof import("./lib/fetch-functions/recepciones").getWarehouseTransferById
+	>
 >;
 
 /**
@@ -43,7 +47,9 @@ export type WarehouseTransfer = Awaited<
  * Extracted from the API response of client.api.auth['warehouse-transfers'].details.$get()
  */
 export type WarehouseTransferDetails = Awaited<
-	ReturnType<typeof import('./lib/fetch-functions/recepciones').getTransferDetailsById>
+	ReturnType<
+		typeof import("./lib/fetch-functions/recepciones").getTransferDetailsById
+	>
 >;
 
 /**
@@ -51,24 +57,31 @@ export type WarehouseTransferDetails = Awaited<
  * Extracted from the API response of client.api.auth['cabinet-warehouse'].map.$get()
  */
 export type WarehouseMap = Awaited<
-	ReturnType<typeof import('./lib/fetch-functions/inventory').getCabinetWarehouse>
+	ReturnType<
+		typeof import("./lib/fetch-functions/inventory").getCabinetWarehouse
+	>
 >;
 
 export type WarehouseTransferDetailsItem = Awaited<
-	ReturnType<typeof import('./lib/fetch-functions/recepciones').getTransferDetailsById>
+	ReturnType<
+		typeof import("./lib/fetch-functions/recepciones").getTransferDetailsById
+	>
 >;
 
 /**
  * Type for successful inventory data (excludes null case from error handling)
  * This represents the actual data structure when the API call succeeds
  */
-export type ProductStockWithEmployeeData = NonNullable<ProductStockWithEmployee>;
+export type ProductStockWithEmployeeData =
+	NonNullable<ProductStockWithEmployee>;
 
 /**
  * Type for individual inventory item with employee data
  * Extracted from the data array of the successful response
  */
-export type InventoryItemWithEmployee = ProductStockWithEmployeeData extends { data: infer T }
+export type InventoryItemWithEmployee = ProductStockWithEmployeeData extends {
+	data: infer T;
+}
 	? T extends readonly (infer U)[]
 		? U
 		: never
@@ -79,7 +92,7 @@ export type InventoryItemWithEmployee = ProductStockWithEmployeeData extends { d
  * Extracted from the API response of client.api.auth.products.all.$get()
  */
 export type ProductCatalogResponse = Awaited<
-	ReturnType<typeof import('./lib/fetch-functions/inventory').getAllProducts>
+	ReturnType<typeof import("./lib/fetch-functions/inventory").getAllProducts>
 >;
 
 /**
@@ -101,7 +114,7 @@ export type ProductCatalogItem = ProductCatalogData extends { data: infer T }
  */
 export type TransferOrderType = {
 	transferNumber: string;
-	transferType: 'internal' | 'external';
+	transferType: "internal" | "external";
 	sourceWarehouseId: string;
 	destinationWarehouseId: string;
 	initiatedBy: string;
@@ -109,11 +122,11 @@ export type TransferOrderType = {
 	transferDetails: Array<{
 		productStockId: string;
 		quantityTransferred: number;
-		itemCondition?: 'good' | 'damaged' | 'needs_inspection';
+		itemCondition?: "good" | "damaged" | "needs_inspection";
 		itemNotes?: string;
 	}>;
 	transferNotes?: string;
-	priority?: 'high' | 'normal' | 'urgent';
+	priority?: "high" | "normal" | "urgent";
 	scheduledDate?: string;
 };
 
@@ -133,7 +146,19 @@ export type InventoryItem = {
  */
 export type ReceptionItem = {
 	id: string;
-	barcode: number;
-	productName: string;
-	received: boolean;
+	transferId: string | null;
+	productStockId: string | null;
+	quantityTransferred: number;
+	itemCondition: string | null;
+	itemNotes: string | null;
+	isReceived: boolean | null;
+	receivedDate: string | null;
+	receivedBy: string | null;
+	createdAt: string | null;
+	updatedAt: string | null;
+	productBarcode: number | null;
+	productLastUsed: string | null;
+	productNumberOfUses: number | null;
+	productIsBeingUsed: boolean | null;
+	productFirstUsed: string | null;
 };
