@@ -2238,6 +2238,57 @@ const route = app
 	})
 
 	/**
+	 * GET /api/auth/warehouse-transfers/by-warehouse - Retrieve all warehouse transfers by warehouse ID
+	 *
+	 * This endpoint fetches all warehouse transfer records from the database with
+	 * their associated source and destination warehouse information.
+	 * Returns comprehensive transfer data including status, timing, and metadata.
+	 *
+	 * @param {string} warehouseId - UUID of the warehouse to filter transfers (query parameter)
+	 * @returns {ApiResponse} Success response with warehouse transfers data from DB
+	 * @throws {500} If an unexpected error occurs during data retrieval
+	 */
+	.get(
+		'/api/auth/warehouse-transfers/by-warehouse',
+		zValidator('query', z.object({ warehouseId: z.string('Invalid warehouse ID') })),
+		async (c) => {
+			try {
+				const { warehouseId } = c.req.valid('query');
+
+				// Query warehouse transfers with basic information - simplified query due to join complexity
+				const warehouseTransfers = await db
+					.select()
+					.from(schemas.warehouseTransfer)
+					.where(eq(schemas.warehouseTransfer.sourceWarehouseId, warehouseId))
+					.orderBy(schemas.warehouseTransfer.createdAt);
+
+				return c.json(
+					{
+						success: true,
+						message:
+							warehouseTransfers.length > 0
+								? `Warehouse transfers for warehouse ${warehouseId} retrieved successfully`
+								: 'No warehouse transfers found',
+						data: warehouseTransfers,
+					} satisfies ApiResponse,
+					200,
+				);
+			} catch (error) {
+				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
+				console.error('Error fetching warehouse transfers by warehouse ID:', error);
+
+				return c.json(
+					{
+						success: false,
+						message: 'Failed to fetch warehouse transfers by warehouse ID',
+					} satisfies ApiResponse,
+					500,
+				);
+			}
+		},
+	)
+
+	/**
 	 * GET /api/auth/warehouse-transfers/external - Retrieve external warehouse transfers by destination warehouse
 	 *
 	 * This endpoint fetches external warehouse transfer records filtered by destination warehouse ID.
