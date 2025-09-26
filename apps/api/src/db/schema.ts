@@ -107,6 +107,7 @@ export const healthCheck = pgTable('health_check', {
 export const productStock = pgTable('product_stock', {
 	id: uuid('id').defaultRandom().primaryKey().notNull(),
 	barcode: integer('barcode').default(0).notNull(),
+	description: text('description'),
 	lastUsed: date('last_used'),
 	lastUsedBy: uuid('last_used_by').references(() => employee.id),
 	numberOfUses: integer('number_of_uses').default(0).notNull(),
