@@ -13,13 +13,11 @@ import {
 } from '@/components/ui/table';
 
 /**
- * Skeleton loading component for the "Recepciones pendientes" page.
+ * Skeleton loading UI for the "Traspasos" page, showing a header, four statistic cards, and a placeholder table.
  *
- * Renders a static, presentational skeleton UI that mirrors the final layout:
- * a header, four statistic cards, and a table with five placeholder rows.
- * Used while actual reception data is loading; accepts no props and has no side effects.
+ * Renders a static presentational skeleton that mirrors the final layout while transfer data is loading.
  *
- * @returns The skeleton page as a JSX element.
+ * @returns A JSX element containing the full skeleton layout for the Traspasos page.
  */
 export function SkeletonRecepcionesPage() {
 	return (

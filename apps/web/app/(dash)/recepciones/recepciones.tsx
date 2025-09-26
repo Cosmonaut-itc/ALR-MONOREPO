@@ -767,15 +767,13 @@ function selectArrivalDate(item: TransferListItemShape): string {
 }
 
 /**
- * Render the transfers (receptions) dashboard and a dialog-driven UI to create internal transfers.
+ * Render the receptions dashboard with a searchable/filterable list and a dialog-driven UI to create transfers.
  *
- * Fetches transfers, inventory, product catalog, and cabinet mappings; manages a local transfer draft
- * (source/destination, scheduled date, priority, notes, and items); and submits a transfer creation
- * request when the form is submitted.
+ * Renders dashboard cards, a table of receptions with filtering and actions, and a dialog for composing and submitting transfer orders.
  *
  * @param warehouseId - ID of the current warehouse used to scope data and prefill the source warehouse
- * @param isEncargado - When true, scope is expanded to show all transfers instead of only the current warehouse
- * @returns The React element rendering the transfers dashboard, receptions list, and the transfer-creation dialog
+ * @param isEncargado - If true, show all transfers (administrative view); otherwise scope transfers to `warehouseId`
+ * @returns The React element that renders the receptions dashboard and transfer-creation UI
  */
 export function RecepcionesPage({
 	warehouseId,

@@ -118,6 +118,13 @@ interface PageProps {
 
 type APIResponse = WarehouseTransferDetails | null;
 
+/**
+ * Renders the reception detail view for a specific transfer, allowing viewing and updating receipt status of items.
+ *
+ * @param shipmentId - The identifier of the transfer shipment to display
+ * @param warehouseId - The identifier of the warehouse where the transfer is being received
+ * @returns The component's JSX for the reception detail page, including progress, item list, and controls to mark items received
+ */
 export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 	const router = useRouter();
 	const { data: transferDetails } = useSuspenseQuery<
