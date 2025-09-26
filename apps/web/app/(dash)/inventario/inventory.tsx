@@ -885,8 +885,8 @@ export function InventarioPage({
 							inventory={warehouseItems}
 							onAddToTransfer={handleAddToTransfer}
 							onReprintQr={({ product, item }) => {
-								const uuid = item?.uuid ?? item?.id ?? "";
-								if (!uuid) {
+								const uuid = item?.uuid ?? "";
+								if (!uuid || uuid.startsWith("uuid-")) {
 									toast.error("No se encontró el identificador del artículo.");
 									return;
 								}
@@ -912,8 +912,8 @@ export function InventarioPage({
 							inventory={cabinetItems}
 							onAddToTransfer={handleAddToTransfer}
 							onReprintQr={({ product, item }) => {
-								const uuid = item?.uuid ?? item?.id ?? "";
-								if (!uuid) {
+								const uuid = item?.uuid ?? "";
+								if (!uuid || uuid.startsWith("uuid-")) {
 									toast.error("No se encontró el identificador del artículo.");
 									return;
 								}
