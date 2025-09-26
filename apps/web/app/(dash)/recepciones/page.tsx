@@ -1,18 +1,22 @@
 /** biome-ignore-all lint/suspicious/useAwait: Needed for hydration */
 /** biome-ignore-all lint/suspicious/noConsole: Needed for error logging */
 
-import { dehydrate, HydrationBoundary } from '@tanstack/react-query';
-import { getQueryClient } from '@/app/get-query-client';
-import { GenericBoundaryWrapper } from '@/components/suspense-generics/general-wrapper';
-import { createQueryKey } from '@/lib/helpers';
-import { queryKeys } from '@/lib/query-keys';
-import { fetchCabinetWarehouseServer } from '@/lib/server-functions/inventory';
-import { fetchWarehouseTransferByWarehouseId } from '@/lib/server-functions/recepciones';
-import { getServerAuth } from '@/lib/server-functions/server-auth';
-import SkeletonRecepcionesPage from '@/ui/skeletons/Skeleton.RecepcionesPage';
-import { RecepcionesPage } from './recepciones';
+import { dehydrate, HydrationBoundary } from "@tanstack/react-query";
+import { getQueryClient } from "@/app/get-query-client";
+import { GenericBoundaryWrapper } from "@/components/suspense-generics/general-wrapper";
+import { createQueryKey } from "@/lib/helpers";
+import { queryKeys } from "@/lib/query-keys";
+import {
+	fetchAllProductsServer,
+	fetchAllProductStockServer,
+	fetchCabinetWarehouseServer,
+} from "@/lib/server-functions/inventory";
+import { fetchWarehouseTransferByWarehouseId } from "@/lib/server-functions/recepciones";
+import { getServerAuth } from "@/lib/server-functions/server-auth";
+import SkeletonRecepcionesPage from "@/ui/skeletons/Skeleton.RecepcionesPage";
+import { RecepcionesPage } from "./recepciones";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 /**
  * Server component that prefetches required React Query data, hydrates the client cache, and renders the RecepcionesPage.
@@ -29,8 +33,20 @@ export default async function Page() {
 	try {
 		// Prefetch inventory data so the client query hydrates
 		queryClient.prefetchQuery({
+			queryKey: createQueryKey(queryKeys.inventory, ["all"]),
+			queryFn: fetchAllProductStockServer,
+		});
+
+		// Prefetch inventory data so the client query hydrates
+		queryClient.prefetchQuery({
 			queryKey: createQueryKey(queryKeys.receptions, [warehouseId as string]),
 			queryFn: () => fetchWarehouseTransferByWarehouseId(warehouseId as string),
+		});
+
+		// Prefetch product catalog data
+		queryClient.prefetchQuery({
+			queryKey: queryKeys.productCatalog,
+			queryFn: () => fetchAllProductsServer(),
 		});
 
 		// Prefetch cabinet warehouse data
@@ -48,7 +64,7 @@ export default async function Page() {
 		);
 	} catch (error) {
 		console.error(error);
-		console.error('Error prefetching abastecimiento data');
+		console.error("Error prefetching abastecimiento data");
 		return (
 			<HydrationBoundary state={dehydrate(queryClient)}>
 				<GenericBoundaryWrapper fallbackComponent={<SkeletonRecepcionesPage />}>

@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import { useSuspenseQuery } from '@tanstack/react-query';
-import { format } from 'date-fns';
-import { es } from 'date-fns/locale';
+import { useSuspenseQuery } from "@tanstack/react-query";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
 import {
 	ArrowRight,
 	Calendar,
@@ -15,15 +15,15 @@ import {
 	Plus,
 	Search,
 	Trash2,
-} from 'lucide-react';
-import Link from 'next/link';
-import { type FormEvent, useEffect, useMemo, useState } from 'react';
-import { toast } from 'sonner';
-import { useShallow } from 'zustand/shallow';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Calendar as CalendarPicker } from '@/components/ui/calendar';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+} from "lucide-react";
+import Link from "next/link";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+import { useShallow } from "zustand/shallow";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Calendar as CalendarPicker } from "@/components/ui/calendar";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
 	Command,
 	CommandEmpty,
@@ -31,7 +31,7 @@ import {
 	CommandInput,
 	CommandItem,
 	CommandList,
-} from '@/components/ui/command';
+} from "@/components/ui/command";
 import {
 	Dialog,
 	DialogContent,
@@ -40,10 +40,14 @@ import {
 	DialogHeader,
 	DialogTitle,
 	DialogTrigger,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+	Popover,
+	PopoverContent,
+	PopoverTrigger,
+} from "@/components/ui/popover";
 import {
 	Select,
 	SelectContent,
@@ -52,7 +56,7 @@ import {
 	SelectLabel,
 	SelectTrigger,
 	SelectValue,
-} from '@/components/ui/select';
+} from "@/components/ui/select";
 import {
 	Table,
 	TableBody,
@@ -60,26 +64,27 @@ import {
 	TableHead,
 	TableHeader,
 	TableRow,
-} from '@/components/ui/table';
-import { Textarea } from '@/components/ui/textarea';
+} from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
 import {
+	getAllProductStock,
 	getAllProducts,
 	getCabinetWarehouse,
 	getInventoryByWarehouse,
-} from '@/lib/fetch-functions/inventory';
-import { getWarehouseTransferById } from '@/lib/fetch-functions/recepciones';
-import { createQueryKey } from '@/lib/helpers';
-import { useCreateTransferOrder } from '@/lib/mutations/transfers';
-import { queryKeys } from '@/lib/query-keys';
-import { cn } from '@/lib/utils';
-import { useAuthStore } from '@/stores/auth-store';
-import { useReceptionStore } from '@/stores/reception-store';
+} from "@/lib/fetch-functions/inventory";
+import { getWarehouseTransferById } from "@/lib/fetch-functions/recepciones";
+import { createQueryKey } from "@/lib/helpers";
+import { useCreateTransferOrder } from "@/lib/mutations/transfers";
+import { queryKeys } from "@/lib/query-keys";
+import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/stores/auth-store";
+import { useReceptionStore } from "@/stores/reception-store";
 import type {
 	ProductCatalogResponse,
 	ProductStockWithEmployee,
 	WarehouseMap,
 	WarehouseTransfer,
-} from '@/types';
+} from "@/types";
 
 type APIResponse = WarehouseTransfer | null;
 type InventoryAPIResponse = ProductStockWithEmployee | null;
@@ -130,22 +135,25 @@ interface TransferListItemShape {
 // Type guard utilities
 const isTransferDetailArray = (
 	value: unknown,
-): value is readonly TransferDetailItem[] | TransferDetailItem[] => Array.isArray(value);
+): value is readonly TransferDetailItem[] | TransferDetailItem[] =>
+	Array.isArray(value);
 
 const isTransferListItem = (value: unknown): value is TransferListItemShape =>
-	value !== null && typeof value === 'object';
+	value !== null && typeof value === "object";
 
-const isArrayOfTransferListItem = (value: unknown): value is TransferListItemShape[] =>
+const isArrayOfTransferListItem = (
+	value: unknown,
+): value is TransferListItemShape[] =>
 	Array.isArray(value) && value.every((v) => isTransferListItem(v));
 
 const isRecord = (value: unknown): value is UnknownRecord =>
-	value !== null && typeof value === 'object';
+	value !== null && typeof value === "object";
 
 const toStringIfString = (value: unknown): string | undefined =>
-	typeof value === 'string' ? value : undefined;
+	typeof value === "string" ? value : undefined;
 
 const toNumberIfNumber = (value: unknown): number | undefined =>
-	typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+	typeof value === "number" && Number.isFinite(value) ? value : undefined;
 
 const toRecord = (value: unknown): UnknownRecord | undefined =>
 	isRecord(value) ? (value as UnknownRecord) : undefined;
@@ -159,17 +167,17 @@ const parseNumericString = (value?: string | null): number | undefined => {
 };
 
 const toBoolean = (value: unknown): boolean => {
-	if (typeof value === 'boolean') {
+	if (typeof value === "boolean") {
 		return value;
 	}
-	if (typeof value === 'string') {
+	if (typeof value === "string") {
 		const normalized = value.trim().toLowerCase();
 		if (!normalized) {
 			return false;
 		}
-		return ['true', '1', 'yes', 'y', 'activo', 'active'].includes(normalized);
+		return ["true", "1", "yes", "y", "activo", "active"].includes(normalized);
 	}
-	if (typeof value === 'number') {
+	if (typeof value === "number") {
 		return value !== 0;
 	}
 	if (value instanceof Date) {
@@ -182,18 +190,18 @@ const isItemDeleted = (record: UnknownRecord | undefined): boolean => {
 	if (!record) {
 		return false;
 	}
-	if ('isDeleted' in record && toBoolean(record.isDeleted)) {
+	if ("isDeleted" in record && toBoolean(record.isDeleted)) {
 		return true;
 	}
-	if ('deleted' in record && toBoolean(record.deleted)) {
+	if ("deleted" in record && toBoolean(record.deleted)) {
 		return true;
 	}
-	if ('deletedAt' in record && record.deletedAt) {
+	if ("deletedAt" in record && record.deletedAt) {
 		return true;
 	}
-	if ('status' in record && typeof record.status === 'string') {
+	if ("status" in record && typeof record.status === "string") {
 		const status = record.status.toLowerCase();
-		if (status.includes('delete') || status === 'inactive') {
+		if (status.includes("delete") || status === "inactive") {
 			return true;
 		}
 	}
@@ -204,13 +212,13 @@ const isItemInUse = (record: UnknownRecord | undefined): boolean => {
 	if (!record) {
 		return false;
 	}
-	if ('isBeingUsed' in record && toBoolean(record.isBeingUsed)) {
+	if ("isBeingUsed" in record && toBoolean(record.isBeingUsed)) {
 		return true;
 	}
-	if ('inUse' in record && toBoolean(record.inUse)) {
+	if ("inUse" in record && toBoolean(record.inUse)) {
 		return true;
 	}
-	if ('is_in_use' in record && toBoolean(record.is_in_use)) {
+	if ("is_in_use" in record && toBoolean(record.is_in_use)) {
 		return true;
 	}
 	return false;
@@ -242,7 +250,9 @@ const extractWarehouseItems = (root: InventoryAPIResponse): UnknownRecord[] => {
 		warehouseCandidates.push(rootRecord.warehouseData);
 	}
 
-	const firstArray = warehouseCandidates.find((candidate) => Array.isArray(candidate));
+	const firstArray = warehouseCandidates.find((candidate) =>
+		Array.isArray(candidate),
+	);
 	if (Array.isArray(firstArray)) {
 		return firstArray.filter((item): item is UnknownRecord => isRecord(item));
 	}
@@ -271,14 +281,16 @@ function isWarehouseMapSuccess(map: WarehouseMap | null | undefined): map is {
 	message: string;
 	data: WarehouseMappingEntry[];
 } {
-	return Boolean(map && typeof map === 'object' && 'success' in map && map.success);
+	return Boolean(
+		map && typeof map === "object" && "success" in map && map.success,
+	);
 }
 
 const createCatalogLookup = (
 	catalog: ProductCatalogResponse | null,
 ): Map<number, { name: string; description: string }> => {
 	const map = new Map<number, { name: string; description: string }>();
-	if (!catalog || typeof catalog !== 'object' || !catalog.success) {
+	if (!catalog || typeof catalog !== "object" || !catalog.success) {
 		return map;
 	}
 	const records = Array.isArray(catalog.data) ? catalog.data : [];
@@ -300,7 +312,9 @@ const createCatalogLookup = (
 			toStringIfString(record.name) ??
 			`Producto ${barcode}`;
 		const description =
-			toStringIfString(record.comment) ?? toStringIfString(record.description) ?? name;
+			toStringIfString(record.comment) ??
+			toStringIfString(record.description) ??
+			name;
 		map.set(barcode, { name, description });
 	}
 	return map;
@@ -363,7 +377,10 @@ const normalizeInventoryItem = (
 const createProductOptions = (
 	inventory: InventoryAPIResponse,
 	catalogLookup: Map<number, { name: string; description: string }>,
-): { productGroups: ProductGroupOption[]; productLookup: Map<string, ProductItemOption> } => {
+): {
+	productGroups: ProductGroupOption[];
+	productLookup: Map<string, ProductItemOption>;
+} => {
 	const shouldSkipInventorySelection = (
 		productStockId: string,
 		productStockRecord: UnknownRecord,
@@ -389,7 +406,8 @@ const createProductOptions = (
 		if (!normalized) {
 			continue;
 		}
-		const { productStockId, barcode, productName, productStockRecord } = normalized;
+		const { productStockId, barcode, productName, productStockRecord } =
+			normalized;
 		if (
 			shouldSkipInventorySelection(
 				productStockId,
@@ -429,10 +447,14 @@ const createProductOptions = (
 		.map((group) => ({
 			...group,
 			items: group.items.sort((a, b) =>
-				a.productStockId.localeCompare(b.productStockId, 'es', { sensitivity: 'base' }),
+				a.productStockId.localeCompare(b.productStockId, "es", {
+					sensitivity: "base",
+				}),
 			),
 		}))
-		.sort((a, b) => a.description.localeCompare(b.description, 'es', { sensitivity: 'base' }));
+		.sort((a, b) =>
+			a.description.localeCompare(b.description, "es", { sensitivity: "base" }),
+		);
 
 	return { productGroups, productLookup: lookup };
 };
@@ -443,7 +465,8 @@ const toWarehouseOption = (entry: UnknownRecord): WarehouseOption | null => {
 		return null;
 	}
 	const warehouseName =
-		toStringIfString(entry.warehouseName) || `Almacén ${warehouseId.slice(0, 6)}`;
+		toStringIfString(entry.warehouseName) ||
+		`Almacén ${warehouseId.slice(0, 6)}`;
 	return {
 		id: warehouseId,
 		name: warehouseName,
@@ -451,13 +474,19 @@ const toWarehouseOption = (entry: UnknownRecord): WarehouseOption | null => {
 	};
 };
 
-const toCabinetOption = (entry: UnknownRecord, warehouseName?: string): WarehouseOption | null => {
+const toCabinetOption = (
+	entry: UnknownRecord,
+	warehouseName?: string,
+): WarehouseOption | null => {
 	const cabinetId = toStringIfString(entry.cabinetId);
 	if (!cabinetId) {
 		return null;
 	}
-	const cabinetName = toStringIfString(entry.cabinetName) || `Gabinete ${cabinetId.slice(0, 6)}`;
-	const detail = warehouseName ? `${warehouseName} • ID: ${cabinetId}` : `ID: ${cabinetId}`;
+	const cabinetName =
+		toStringIfString(entry.cabinetName) || `Gabinete ${cabinetId.slice(0, 6)}`;
+	const detail = warehouseName
+		? `${warehouseName} • ID: ${cabinetId}`
+		: `ID: ${cabinetId}`;
 	return {
 		id: cabinetId,
 		name: cabinetName,
@@ -467,11 +496,16 @@ const toCabinetOption = (entry: UnknownRecord, warehouseName?: string): Warehous
 
 const createWarehouseOptions = (
 	cabinetWarehouse: WarehouseMap | null | undefined,
-): { warehouseOptions: WarehouseOption[]; cabinetOptions: WarehouseOption[] } => {
+): {
+	warehouseOptions: WarehouseOption[];
+	cabinetOptions: WarehouseOption[];
+} => {
 	if (!isWarehouseMapSuccess(cabinetWarehouse)) {
 		return { warehouseOptions: [], cabinetOptions: [] };
 	}
-	const entries = Array.isArray(cabinetWarehouse.data) ? cabinetWarehouse.data : [];
+	const entries = Array.isArray(cabinetWarehouse.data)
+		? cabinetWarehouse.data
+		: [];
 	const warehouseMap = new Map<string, WarehouseOption>();
 	const cabinetMap = new Map<string, WarehouseOption>();
 
@@ -492,10 +526,10 @@ const createWarehouseOptions = (
 
 	return {
 		warehouseOptions: Array.from(warehouseMap.values()).sort((a, b) =>
-			a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }),
+			a.name.localeCompare(b.name, "es", { sensitivity: "base" }),
 		),
 		cabinetOptions: Array.from(cabinetMap.values()).sort((a, b) =>
-			a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }),
+			a.name.localeCompare(b.name, "es", { sensitivity: "base" }),
 		),
 	};
 };
@@ -527,7 +561,8 @@ function extractTransferItems(root: APIResponse): TransferListItemShape[] {
 		} else if (isArrayOfTransferListItem(withTransfers?.transfers)) {
 			list = withTransfers.transfers as unknown;
 		} else {
-			const maybeData = (unknownRoot as { data?: { transfers?: unknown } })?.data;
+			const maybeData = (unknownRoot as { data?: { transfers?: unknown } })
+				?.data;
 			if (maybeData && isArrayOfTransferListItem(maybeData.transfers)) {
 				list = maybeData.transfers as unknown;
 			}
@@ -537,23 +572,27 @@ function extractTransferItems(root: APIResponse): TransferListItemShape[] {
 	return isArrayOfTransferListItem(list) ? list : [];
 }
 
-function normalizeTransferStatus(raw?: string): 'pendiente' | 'completada' {
+function normalizeTransferStatus(raw?: string): "pendiente" | "completada" {
 	if (!raw) {
-		return 'pendiente';
+		return "pendiente";
 	}
-	return completeRegex.test(raw) ? 'completada' : 'pendiente';
+	return completeRegex.test(raw) ? "completada" : "pendiente";
 }
 
 function computeTotalItems(
-	transferDetails: readonly TransferDetailItem[] | TransferDetailItem[] | undefined,
+	transferDetails:
+		| readonly TransferDetailItem[]
+		| TransferDetailItem[]
+		| undefined,
 	explicitTotal: number | undefined,
 ): number {
-	if (typeof explicitTotal === 'number') {
+	if (typeof explicitTotal === "number") {
 		return explicitTotal;
 	}
 	const details = isTransferDetailArray(transferDetails) ? transferDetails : [];
 	return details.reduce((sum: number, d: TransferDetailItem) => {
-		const qty = typeof d.quantityTransferred === 'number' ? d.quantityTransferred : 0;
+		const qty =
+			typeof d.quantityTransferred === "number" ? d.quantityTransferred : 0;
 		return sum + qty;
 	}, 0);
 }
@@ -584,17 +623,21 @@ function selectArrivalDate(item: TransferListItemShape): string {
  * @returns A React element containing the transfers dashboard, receptions list, and the transfer-creation dialog.
  */
 export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
-	const { data: transfers } = useSuspenseQuery<APIResponse, Error, APIResponse>({
-		queryKey: createQueryKey(queryKeys.receptions, [warehouseId as string]),
-		queryFn: () => getWarehouseTransferById(warehouseId as string),
-	});
-
-	const { data: inventory } = useSuspenseQuery<InventoryAPIResponse, Error, InventoryAPIResponse>(
+	const { data: transfers } = useSuspenseQuery<APIResponse, Error, APIResponse>(
 		{
-			queryKey: createQueryKey(queryKeys.inventory, [warehouseId as string]),
-			queryFn: () => getInventoryByWarehouse(warehouseId as string),
+			queryKey: createQueryKey(queryKeys.receptions, [warehouseId as string]),
+			queryFn: () => getWarehouseTransferById(warehouseId as string),
 		},
 	);
+
+	const { data: inventory } = useSuspenseQuery<
+		InventoryAPIResponse,
+		Error,
+		InventoryAPIResponse
+	>({
+		queryKey: createQueryKey(queryKeys.inventory, ["all"]),
+		queryFn: getAllProductStock,
+	});
 	const { data: productCatalog } = useSuspenseQuery<
 		ProductCatalogResponse | null,
 		Error,
@@ -603,7 +646,11 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 		queryKey: queryKeys.productCatalog,
 		queryFn: getAllProducts,
 	});
-	const { data: cabinetWarehouse } = useSuspenseQuery<WarehouseMap, Error, WarehouseMap>({
+	const { data: cabinetWarehouse } = useSuspenseQuery<
+		WarehouseMap,
+		Error,
+		WarehouseMap
+	>({
 		queryKey: queryKeys.cabinetWarehouse,
 		queryFn: getCabinetWarehouse,
 	});
@@ -628,13 +675,15 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 			resetTransferDraft: state.resetTransferDraft,
 		})),
 	);
-	const draftItemCount = useReceptionStore((state) => state.getDraftItemCount());
+	const draftItemCount = useReceptionStore((state) =>
+		state.getDraftItemCount(),
+	);
 	const draftSummaryLabel = (() => {
 		if (draftItemCount === 0) {
-			return 'Sin productos seleccionados';
+			return "Sin productos seleccionados";
 		}
 		if (draftItemCount === 1) {
-			return '1 producto seleccionado';
+			return "1 producto seleccionado";
 		}
 		return `${draftItemCount} productos seleccionados`;
 	})();
@@ -643,9 +692,12 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 
 	const [isDialogOpen, setIsDialogOpen] = useState(false);
 	const [productPickerOpen, setProductPickerOpen] = useState(false);
-	const [selectedProductStockId, setSelectedProductStockId] = useState('');
+	const [selectedProductStockId, setSelectedProductStockId] = useState("");
 
-	const catalogLookup = useMemo(() => createCatalogLookup(productCatalog), [productCatalog]);
+	const catalogLookup = useMemo(
+		() => createCatalogLookup(productCatalog),
+		[productCatalog],
+	);
 
 	const { productGroups, productLookup } = useMemo(() => {
 		return createProductOptions(inventory, catalogLookup);
@@ -666,7 +718,9 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 		const entries = Array.isArray(cabinetWarehouse.data)
 			? cabinetWarehouse.data
 			: [];
-		const matchingCabinets = entries.filter((entry) => entry.warehouseId === destinationId);
+		const matchingCabinets = entries.filter(
+			(entry) => entry.warehouseId === destinationId,
+		);
 		if (matchingCabinets.length === 0) {
 			return undefined;
 		}
@@ -713,7 +767,9 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 			updateTransferDraft({ scheduledDate: null });
 			return;
 		}
-		const normalized = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+		const normalized = new Date(
+			Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()),
+		);
 		updateTransferDraft({ scheduledDate: normalized.toISOString() });
 	};
 
@@ -728,7 +784,7 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 			return;
 		}
 		if (!productLookup.has(selectedProductStockId)) {
-			setSelectedProductStockId('');
+			setSelectedProductStockId("");
 		}
 	}, [productLookup, selectedProductStockId]);
 
@@ -741,14 +797,16 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 			return `${selectedInventoryItem.productStockId} · ${selectedInventoryItem.productName}`;
 		}
 		if (productPickerDisabled) {
-			return 'No hay productos disponibles';
+			return "No hay productos disponibles";
 		}
-		return 'Selecciona un producto disponible';
+		return "Selecciona un producto disponible";
 	}, [productPickerDisabled, selectedInventoryItem]);
 
 	const handleAddProduct = () => {
 		if (!selectedInventoryItem) {
-			toast.error('Selecciona un producto del inventario para agregarlo al traspaso.');
+			toast.error(
+				"Selecciona un producto del inventario para agregarlo al traspaso.",
+			);
 			return;
 		}
 		addDraftItem({
@@ -757,33 +815,35 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 			barcode: selectedInventoryItem.barcode,
 			quantity: 1,
 		});
-		setSelectedProductStockId('');
+		setSelectedProductStockId("");
 		setProductPickerOpen(false);
-		toast.success('Producto agregado al traspaso');
+		toast.success("Producto agregado al traspaso");
 	};
 
 	const handleSubmitTransfer = async (event: FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
 
 		if (!transferDraft.sourceWarehouseId?.trim()) {
-			toast.error('Ingresa el almacén de origen');
+			toast.error("Ingresa el almacén de origen");
 			return;
 		}
 		if (!transferDraft.destinationWarehouseId?.trim()) {
-			toast.error('Ingresa el almacén de destino');
+			toast.error("Ingresa el almacén de destino");
 			return;
 		}
 		if (transferDraft.items.length === 0) {
-			toast.error('Agrega al menos un producto al traspaso');
+			toast.error("Agrega al menos un producto al traspaso");
 			return;
 		}
 		if (!currentUser?.id) {
-			toast.error('No se encontró el usuario actual. Inicia sesión nuevamente.');
+			toast.error(
+				"No se encontró el usuario actual. Inicia sesión nuevamente.",
+			);
 			return;
 		}
 		if (!selectedCabinetId) {
 			toast.error(
-				'No se encontró un gabinete válido para el almacén destino seleccionado.',
+				"No se encontró un gabinete válido para el almacén destino seleccionado.",
 			);
 			return;
 		}
@@ -797,7 +857,7 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 		try {
 			await createTransferOrder({
 				transferNumber: `TR-${Date.now()}`,
-				transferType: 'internal',
+				transferType: "internal",
 				sourceWarehouseId: transferDraft.sourceWarehouseId,
 				destinationWarehouseId: transferDraft.destinationWarehouseId,
 				initiatedBy: currentUser.id,
@@ -812,7 +872,7 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 				scheduledDate,
 			});
 			resetTransferDraft();
-			setSelectedProductStockId('');
+			setSelectedProductStockId("");
 			setIsDialogOpen(false);
 		} catch {
 			// Los mensajes de error se gestionan en la mutación.
@@ -824,17 +884,24 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 		shipmentId: string;
 		arrivalDate: string;
 		totalItems: number;
-		status: 'pendiente' | 'completada';
+		status: "pendiente" | "completada";
 	};
 
 	const receptions: DerivedReception[] = useMemo(() => {
 		const items = extractTransferItems(transfers);
 
 		return items.map((item) => {
-			const status = normalizeTransferStatus(item.status ?? item.transferStatus);
-			const totalItems = computeTotalItems(item.transferDetails, item.totalItems);
+			const status = normalizeTransferStatus(
+				item.status ?? item.transferStatus,
+			);
+			const totalItems = computeTotalItems(
+				item.transferDetails,
+				item.totalItems,
+			);
 			const arrivalDate = selectArrivalDate(item);
-			const shipmentId = String(item.transferNumber ?? item.shipmentId ?? item.id ?? 'N/A');
+			const shipmentId = String(
+				item.transferNumber ?? item.shipmentId ?? item.id ?? "N/A",
+			);
 
 			return {
 				shipmentId,
@@ -847,14 +914,16 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 
 	const formatDate = (dateString: string) => {
 		try {
-			return format(new Date(dateString), 'dd/MM/yyyy', { locale: es });
+			return format(new Date(dateString), "dd/MM/yyyy", { locale: es });
 		} catch {
-			return 'N/A';
+			return "N/A";
 		}
 	};
 
-	const pendingReceptions = receptions.filter((r) => r.status === 'pendiente');
-	const completedReceptions = receptions.filter((r) => r.status === 'completada');
+	const pendingReceptions = receptions.filter((r) => r.status === "pendiente");
+	const completedReceptions = receptions.filter(
+		(r) => r.status === "completada",
+	);
 
 	return (
 		<div className="theme-transition flex-1 space-y-6 bg-white p-4 md:p-6 dark:bg-[#151718]">
@@ -865,8 +934,8 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 						Traspasos
 					</h1>
 					<p className="text-[#687076] text-transition dark:text-[#9BA1A6]">
-						Gestiona los traspasos desde el centro de distribución o desde una sucursal
-						a otra.
+						Gestiona los traspasos desde el centro de distribución o desde una
+						sucursal a otra.
 					</p>
 				</div>
 				<Dialog onOpenChange={setIsDialogOpen} open={isDialogOpen}>
@@ -940,9 +1009,7 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 													destinationWarehouseId: value,
 												})
 											}
-											value={
-												transferDraft.destinationWarehouseId || undefined
-											}
+											value={transferDraft.destinationWarehouseId || undefined}
 										>
 											<SelectTrigger className="border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]">
 												<SelectValue placeholder="Selecciona el almacén de destino" />
@@ -976,9 +1043,9 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 											<PopoverTrigger asChild>
 												<Button
 													className={cn(
-														'w-full justify-start border-[#E5E7EB] bg-white text-left font-normal text-[#11181C] hover:bg-[#F9FAFB] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]',
+														"w-full justify-start border-[#E5E7EB] bg-white text-left font-normal text-[#11181C] hover:bg-[#F9FAFB] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]",
 														!scheduledDateValue &&
-															'text-[#687076] dark:text-[#9BA1A6]',
+															"text-[#687076] dark:text-[#9BA1A6]",
 													)}
 													id="scheduled-date"
 													type="button"
@@ -986,10 +1053,10 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 												>
 													<CalendarIcon className="mr-2 h-4 w-4" />
 													{scheduledDateValue
-														? format(scheduledDateValue, 'PPP', {
+														? format(scheduledDateValue, "PPP", {
 																locale: es,
 															})
-														: 'Selecciona la fecha programada'}
+														: "Selecciona la fecha programada"}
 												</Button>
 											</PopoverTrigger>
 											<PopoverContent
@@ -1016,7 +1083,7 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 										<Select
 											onValueChange={(value) =>
 												updateTransferDraft({
-													priority: value as 'normal' | 'high' | 'urgent',
+													priority: value as "normal" | "high" | "urgent",
 												})
 											}
 											value={transferDraft.priority}
@@ -1118,60 +1185,42 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 																	</p>
 																)}
 																{group.items.map((item) => {
-																	const isDisabled =
-																		draftedItemIds.has(
-																			item.productStockId,
-																		);
+																	const isDisabled = draftedItemIds.has(
+																		item.productStockId,
+																	);
 																	const isSelected =
 																		selectedProductStockId ===
 																		item.productStockId;
 																	return (
 																		<CommandItem
 																			disabled={isDisabled}
-																			key={
-																				item.productStockId
-																			}
+																			key={item.productStockId}
 																			keywords={[
 																				item.productStockId,
 																				item.productName,
 																				group.name,
 																				group.description,
-																				String(
-																					item.barcode ??
-																						'',
-																				),
+																				String(item.barcode ?? ""),
 																			]}
 																			onSelect={(value) => {
 																				if (isDisabled) {
 																					return;
 																				}
-																				setSelectedProductStockId(
-																					value,
-																				);
-																				setProductPickerOpen(
-																					false,
-																				);
+																				setSelectedProductStockId(value);
+																				setProductPickerOpen(false);
 																			}}
-																			value={
-																				item.productStockId
-																			}
+																			value={item.productStockId}
 																		>
 																			<div className="flex w-full items-center justify-between gap-2">
 																				<div className="flex min-w-0 flex-col text-left">
 																					<span className="font-medium text-[#11181C] dark:text-[#ECEDEE]">
-																						{
-																							item.productStockId
-																						}
+																						{item.productStockId}
 																					</span>
 																					<span className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-																						{
-																							item.description
-																						}
+																						{item.description}
 																					</span>
 																					<span className="text-[#9BA1A6] text-xs dark:text-[#71767B]">
-																						Código:{' '}
-																						{item.barcode ||
-																							'—'}
+																						Código: {item.barcode || "—"}
 																					</span>
 																				</div>
 																				{isDisabled ? (
@@ -1181,10 +1230,10 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 																				) : (
 																					<Check
 																						className={cn(
-																							'h-4 w-4 text-[#0a7ea4]',
+																							"h-4 w-4 text-[#0a7ea4]",
 																							isSelected
-																								? 'opacity-100'
-																								: 'opacity-0',
+																								? "opacity-100"
+																								: "opacity-0",
 																						)}
 																					/>
 																				)}
@@ -1255,7 +1304,7 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 															{item.productName}
 														</TableCell>
 														<TableCell className="font-mono text-[#687076] text-sm dark:text-[#9BA1A6]">
-															{item.barcode || '—'}
+															{item.barcode || "—"}
 														</TableCell>
 														<TableCell>
 															<Input
@@ -1264,10 +1313,7 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 																onChange={(event) =>
 																	updateDraftItemQuantity(
 																		item.productStockId,
-																		Number.parseInt(
-																			event.target.value,
-																			10,
-																		),
+																		Number.parseInt(event.target.value, 10),
 																	)
 																}
 																step={1}
@@ -1285,16 +1331,14 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 																	)
 																}
 																placeholder="Notas opcionales"
-																value={item.itemNotes ?? ''}
+																value={item.itemNotes ?? ""}
 															/>
 														</TableCell>
 														<TableCell className="text-right">
 															<Button
 																className="text-[#b91c1c] hover:text-[#7f1d1d]"
 																onClick={() =>
-																	removeDraftItem(
-																		item.productStockId,
-																	)
+																	removeDraftItem(item.productStockId)
 																}
 																type="button"
 																variant="ghost"
@@ -1328,7 +1372,7 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 										disabled={isCreatingTransfer}
 										type="submit"
 									>
-										{isCreatingTransfer ? 'Creando...' : 'Crear traspaso'}
+										{isCreatingTransfer ? "Creando..." : "Crear traspaso"}
 									</Button>
 								</div>
 							</DialogFooter>
@@ -1471,31 +1515,29 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 											<TableCell>
 												<Badge
 													className={
-														reception.status === 'pendiente'
-															? 'theme-transition bg-orange-100 text-orange-800 hover:bg-orange-200 dark:bg-orange-900/20 dark:text-orange-400'
-															: 'theme-transition bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900/20 dark:text-green-400'
+														reception.status === "pendiente"
+															? "theme-transition bg-orange-100 text-orange-800 hover:bg-orange-200 dark:bg-orange-900/20 dark:text-orange-400"
+															: "theme-transition bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900/20 dark:text-green-400"
 													}
 													variant={
-														reception.status === 'pendiente'
-															? 'secondary'
-															: 'default'
+														reception.status === "pendiente"
+															? "secondary"
+															: "default"
 													}
 												>
-													{reception.status === 'pendiente'
-														? 'Pendiente'
-														: 'Completada'}
+													{reception.status === "pendiente"
+														? "Pendiente"
+														: "Completada"}
 												</Badge>
 											</TableCell>
 											<TableCell>
-												{reception.status === 'pendiente' ? (
+												{reception.status === "pendiente" ? (
 													<Button
 														asChild
 														className="theme-transition bg-[#0a7ea4] text-white hover:bg-[#0a7ea4]/90"
 														size="sm"
 													>
-														<Link
-															href={`/recepciones/${reception.shipmentId}`}
-														>
+														<Link href={`/recepciones/${reception.shipmentId}`}>
 															<ArrowRight className="mr-1 h-4 w-4" />
 															Recibir
 														</Link>
