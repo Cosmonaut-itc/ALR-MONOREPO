@@ -51,7 +51,7 @@ export default async function Page() {
 		// Prefetch inventory data so the client query hydrates
 		queryClient.prefetchQuery({
 			queryKey: createQueryKey(queryKeys.receptions, [transferKeyParam]),
-			queryFn: () => transferPrefetchFn,
+			queryFn: transferPrefetchFn,
 		});
 
 		// Prefetch product catalog data

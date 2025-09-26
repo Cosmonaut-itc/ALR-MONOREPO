@@ -33,7 +33,7 @@ export const fetchWarehouseTransferByWarehouseId = async (
 
 export const fetchTransferDetailsById = async (transferId: string) => {
 	if (!transferId) {
-		throw new Error("warehouseId is required");
+		throw new Error("transferId is required");
 	}
 
 	// Resolve a trusted origin and forward cookies safely using shared utilities
