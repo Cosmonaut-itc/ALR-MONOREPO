@@ -1063,6 +1063,7 @@ export function RecepcionesPage({
 
 	const receptions: DerivedReception[] = useMemo(() => {
 		const items = extractTransferItems(transfers);
+		const dateOnlyPattern = /^\d{4}-\d{2}-\d{2}$/;
 
 		return items.map((item) => {
 			const status = normalizeTransferStatus(
@@ -1072,14 +1073,19 @@ export function RecepcionesPage({
 				item.transferDetails,
 				item.totalItems,
 			);
-			const arrivalSource = selectArrivalDate(item);
-			const arrivalDateFallback = new Date(arrivalSource);
-			const resolvedArrivalDate = Number.isNaN(arrivalDateFallback.getTime())
-				? new Date()
-				: arrivalDateFallback;
-			const arrivalDate = formatISO(resolvedArrivalDate, {
-				representation: "date",
-			});
+			const arrivalSourceRaw = selectArrivalDate(item) ?? "";
+			const arrivalSource = arrivalSourceRaw.trim();
+			const arrivalDate = dateOnlyPattern.test(arrivalSource)
+				? arrivalSource
+				: (() => {
+					if (!arrivalSource) {
+						return formatISO(new Date(), { representation: "date" });
+					}
+					const parsed = new Date(arrivalSource);
+					return Number.isNaN(parsed.getTime())
+						? formatISO(new Date(), { representation: "date" })
+						: formatISO(parsed, { representation: "date" });
+				})();
 			const shipmentId = String(
 				item.transferNumber ?? item.shipmentId ?? item.id ?? "N/A",
 			);
@@ -1093,15 +1099,19 @@ export function RecepcionesPage({
 			const updatedAtSource =
 				toStringIfString(item.updatedAt) ??
 				toStringIfString((item as { updated_at?: unknown }).updated_at);
-			const updatedAtFallback = updatedAtSource
-				? new Date(updatedAtSource)
-				: resolvedArrivalDate;
-			const updatedAt = formatISO(
-				Number.isNaN(updatedAtFallback.getTime())
-					? resolvedArrivalDate
-					: updatedAtFallback,
-				{ representation: "date" },
-			);
+			const updatedAt = (() => {
+				const trimmed = updatedAtSource?.trim();
+				if (trimmed && dateOnlyPattern.test(trimmed)) {
+					return trimmed;
+				}
+				if (trimmed) {
+					const parsed = new Date(trimmed);
+					if (!Number.isNaN(parsed.getTime())) {
+						return formatISO(parsed, { representation: "date" });
+					}
+				}
+				return arrivalDate;
+			})();
 
 			return {
 				transferId: item.id ?? "",
