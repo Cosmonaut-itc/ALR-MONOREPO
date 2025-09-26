@@ -72,7 +72,11 @@ import {
 	getCabinetWarehouse,
 	getInventoryByWarehouse,
 } from "@/lib/fetch-functions/inventory";
-import { getWarehouseTransferById } from "@/lib/fetch-functions/recepciones";
+import {
+	getWarehouseTransferAll,
+	getWarehouseTransferAllByWarehouseId,
+	getWarehouseTransferById,
+} from "@/lib/fetch-functions/recepciones";
 import { createQueryKey } from "@/lib/helpers";
 import { useCreateTransferOrder } from "@/lib/mutations/transfers";
 import { queryKeys } from "@/lib/query-keys";
@@ -166,6 +170,17 @@ const parseNumericString = (value?: string | null): number | undefined => {
 	return Number.isNaN(parsed) ? undefined : parsed;
 };
 
+const normalizeWarehouseIdentifier = (value: unknown): string | undefined => {
+	if (typeof value === "string") {
+		const trimmed = value.trim();
+		return trimmed.length > 0 ? trimmed : undefined;
+	}
+	if (typeof value === "number" && Number.isFinite(value)) {
+		return String(value);
+	}
+	return undefined;
+};
+
 const toBoolean = (value: unknown): boolean => {
 	if (typeof value === "boolean") {
 		return value;
@@ -222,6 +237,76 @@ const isItemInUse = (record: UnknownRecord | undefined): boolean => {
 		return true;
 	}
 	return false;
+};
+
+const collectWarehouseIdentifiers = (
+	record: UnknownRecord | undefined,
+): string[] => {
+	if (!record) {
+		return [];
+	}
+
+	const candidateValues: unknown[] = [
+		(record as { warehouseId?: unknown }).warehouseId,
+		(record as { warehouse_id?: unknown }).warehouse_id,
+		(record as { currentWarehouseId?: unknown }).currentWarehouseId,
+		(record as { currentWarehouse?: unknown }).currentWarehouse,
+		(record as { sourceWarehouseId?: unknown }).sourceWarehouseId,
+		(record as { originWarehouseId?: unknown }).originWarehouseId,
+		(record as { originWarehouse?: unknown }).originWarehouse,
+		(record as { locationWarehouseId?: unknown }).locationWarehouseId,
+		(record as { warehouse?: unknown }).warehouse,
+	];
+
+	const warehouseRecord = toRecord(
+		(record as { warehouse?: unknown }).warehouse,
+	);
+	if (warehouseRecord) {
+		candidateValues.push(warehouseRecord.id);
+		candidateValues.push(
+			(warehouseRecord as { warehouseId?: unknown }).warehouseId,
+		);
+		candidateValues.push(
+			(warehouseRecord as { warehouse_id?: unknown }).warehouse_id,
+		);
+		candidateValues.push((warehouseRecord as { uuid?: unknown }).uuid);
+		candidateValues.push((warehouseRecord as { code?: unknown }).code);
+	}
+
+	const currentWarehouseRecord = toRecord(
+		(record as { currentWarehouse?: unknown }).currentWarehouse,
+	);
+	if (currentWarehouseRecord) {
+		candidateValues.push(currentWarehouseRecord.id);
+		candidateValues.push(
+			(currentWarehouseRecord as { warehouseId?: unknown }).warehouseId,
+		);
+		candidateValues.push(
+			(currentWarehouseRecord as { warehouse_id?: unknown }).warehouse_id,
+		);
+		candidateValues.push((currentWarehouseRecord as { uuid?: unknown }).uuid);
+	}
+
+	const locationRecord = toRecord((record as { location?: unknown }).location);
+	if (locationRecord) {
+		candidateValues.push(locationRecord.id);
+		candidateValues.push(
+			(locationRecord as { warehouseId?: unknown }).warehouseId,
+		);
+		candidateValues.push(
+			(locationRecord as { warehouse_id?: unknown }).warehouse_id,
+		);
+	}
+
+	const identifiers = new Set<string>();
+	for (const value of candidateValues) {
+		const normalized = normalizeWarehouseIdentifier(value);
+		if (normalized) {
+			identifiers.add(normalized);
+		}
+	}
+
+	return Array.from(identifiers);
 };
 
 const extractWarehouseItems = (root: InventoryAPIResponse): UnknownRecord[] => {
@@ -377,10 +462,22 @@ const normalizeInventoryItem = (
 const createProductOptions = (
 	inventory: InventoryAPIResponse,
 	catalogLookup: Map<number, { name: string; description: string }>,
+	sourceWarehouseId?: string,
 ): {
 	productGroups: ProductGroupOption[];
 	productLookup: Map<string, ProductItemOption>;
 } => {
+	const normalizedSourceWarehouseId =
+		sourceWarehouseId && sourceWarehouseId.trim().length > 0
+			? sourceWarehouseId.trim()
+			: undefined;
+	const effectiveWarehouseId =
+		normalizedSourceWarehouseId &&
+		normalizedSourceWarehouseId.toLowerCase() !== "all"
+			? normalizedSourceWarehouseId
+			: undefined;
+	const effectiveWarehouseIdLower = effectiveWarehouseId?.toLowerCase();
+
 	const shouldSkipInventorySelection = (
 		productStockId: string,
 		productStockRecord: UnknownRecord,
@@ -408,6 +505,32 @@ const createProductOptions = (
 		}
 		const { productStockId, barcode, productName, productStockRecord } =
 			normalized;
+		if (effectiveWarehouseId) {
+			// Skip inventory entries that do not belong to the selected source warehouse.
+			const warehouseIdentifiers = new Set<string>();
+			for (const identifier of collectWarehouseIdentifiers(
+				productStockRecord,
+			)) {
+				warehouseIdentifiers.add(identifier);
+			}
+			for (const identifier of collectWarehouseIdentifiers(inventoryRecord)) {
+				warehouseIdentifiers.add(identifier);
+			}
+			if (
+				warehouseIdentifiers.size === 0 ||
+				!Array.from(warehouseIdentifiers).some((identifier) => {
+					if (identifier === effectiveWarehouseId) {
+						return true;
+					}
+					return (
+						effectiveWarehouseIdLower &&
+						identifier.toLowerCase() === effectiveWarehouseIdLower
+					);
+				})
+			) {
+				continue;
+			}
+		}
 		if (
 			shouldSkipInventorySelection(
 				productStockId,
@@ -622,11 +745,21 @@ function selectArrivalDate(item: TransferListItemShape): string {
  * @param warehouseId - ID of the current warehouse used to scope data fetching and to prefill the source warehouse.
  * @returns A React element containing the transfers dashboard, receptions list, and the transfer-creation dialog.
  */
-export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
+export function RecepcionesPage({
+	warehouseId,
+	isEncargado,
+}: {
+	warehouseId: string;
+	isEncargado: boolean;
+}) {
+	const transferQueryParams = [isEncargado ? "all" : warehouseId];
+	const transferQueryFn = isEncargado
+		? getWarehouseTransferAll
+		: () => getWarehouseTransferAllByWarehouseId(warehouseId as string);
 	const { data: transfers } = useSuspenseQuery<APIResponse, Error, APIResponse>(
 		{
-			queryKey: createQueryKey(queryKeys.receptions, [warehouseId as string]),
-			queryFn: () => getWarehouseTransferById(warehouseId as string),
+			queryKey: createQueryKey(queryKeys.receptions, transferQueryParams),
+			queryFn: transferQueryFn,
 		},
 	);
 
@@ -700,8 +833,12 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 	);
 
 	const { productGroups, productLookup } = useMemo(() => {
-		return createProductOptions(inventory, catalogLookup);
-	}, [catalogLookup, inventory]);
+		return createProductOptions(
+			inventory,
+			catalogLookup,
+			transferDraft.sourceWarehouseId,
+		);
+	}, [catalogLookup, inventory, transferDraft.sourceWarehouseId]);
 
 	const draftedItemIds = useMemo(() => {
 		return new Set(transferDraft.items.map((item) => item.productStockId));
@@ -857,7 +994,7 @@ export function RecepcionesPage({ warehouseId }: { warehouseId: string }) {
 		try {
 			await createTransferOrder({
 				transferNumber: `TR-${Date.now()}`,
-				transferType: "internal",
+				transferType: "external",
 				sourceWarehouseId: transferDraft.sourceWarehouseId,
 				destinationWarehouseId: transferDraft.destinationWarehouseId,
 				initiatedBy: currentUser.id,

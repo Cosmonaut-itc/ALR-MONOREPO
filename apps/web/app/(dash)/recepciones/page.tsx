@@ -7,11 +7,16 @@ import { GenericBoundaryWrapper } from "@/components/suspense-generics/general-w
 import { createQueryKey } from "@/lib/helpers";
 import { queryKeys } from "@/lib/query-keys";
 import {
-	fetchAllProductsServer,
 	fetchAllProductStockServer,
+	fetchAllProductsServer,
 	fetchCabinetWarehouseServer,
+	fetchStockByWarehouseServer,
 } from "@/lib/server-functions/inventory";
-import { fetchWarehouseTransferByWarehouseId } from "@/lib/server-functions/recepciones";
+import {
+	fetchWarehouseTransferByWarehouseId,
+	fetchWarehouseTransferByWarehouseIdServer,
+	fetchWarehouseTrasnferAll,
+} from "@/lib/server-functions/recepciones";
 import { getServerAuth } from "@/lib/server-functions/server-auth";
 import SkeletonRecepcionesPage from "@/ui/skeletons/Skeleton.RecepcionesPage";
 import { RecepcionesPage } from "./recepciones";
@@ -29,6 +34,12 @@ export default async function Page() {
 	const queryClient = getQueryClient();
 	const auth = await getServerAuth();
 	const warehouseId = auth.user?.warehouseId;
+	const role = auth.user?.role ?? "";
+	const isEncargado = role === "encargado";
+	const transferKeyParam = isEncargado ? "all" : (warehouseId as string);
+	const transferPrefetchFn = isEncargado
+		? fetchWarehouseTrasnferAll
+		: () => fetchWarehouseTransferByWarehouseIdServer(warehouseId as string);
 
 	try {
 		// Prefetch inventory data so the client query hydrates
@@ -39,8 +50,8 @@ export default async function Page() {
 
 		// Prefetch inventory data so the client query hydrates
 		queryClient.prefetchQuery({
-			queryKey: createQueryKey(queryKeys.receptions, [warehouseId as string]),
-			queryFn: () => fetchWarehouseTransferByWarehouseId(warehouseId as string),
+			queryKey: createQueryKey(queryKeys.receptions, [transferKeyParam]),
+			queryFn: () => transferPrefetchFn,
 		});
 
 		// Prefetch product catalog data
@@ -58,7 +69,10 @@ export default async function Page() {
 		return (
 			<HydrationBoundary state={dehydrate(queryClient)}>
 				<GenericBoundaryWrapper fallbackComponent={<SkeletonRecepcionesPage />}>
-					<RecepcionesPage warehouseId={warehouseId as string} />
+					<RecepcionesPage
+						warehouseId={warehouseId as string}
+						isEncargado={isEncargado}
+					/>
 				</GenericBoundaryWrapper>
 			</HydrationBoundary>
 		);
@@ -68,7 +82,10 @@ export default async function Page() {
 		return (
 			<HydrationBoundary state={dehydrate(queryClient)}>
 				<GenericBoundaryWrapper fallbackComponent={<SkeletonRecepcionesPage />}>
-					<RecepcionesPage warehouseId={warehouseId as string} />
+					<RecepcionesPage
+						warehouseId={warehouseId as string}
+						isEncargado={isEncargado}
+					/>
 				</GenericBoundaryWrapper>
 			</HydrationBoundary>
 		);
