@@ -24,11 +24,11 @@ import { RecepcionesPage } from "./recepciones";
 export const dynamic = "force-dynamic";
 
 /**
- * Server component that prefetches required React Query data, hydrates the client cache, and renders the RecepcionesPage.
+ * Server React component that prefetches required React Query data, hydrates the client cache, and renders the RecepcionesPage.
  *
- * Prefetches receptions (by the authenticated user's warehouseId) and cabinet warehouse data into a query client so the client can hydrate from the serialized cache. If prefetching fails the error is logged but the page is still rendered with the same hydration boundary and fallback UI.
+ * Prefetches inventory, receptions (role-aware), product catalog, and cabinet warehouse data into the server query client so the client can hydrate from the serialized cache. If prefetching fails the error is logged and the page is rendered with the same hydration boundary and fallback UI.
  *
- * @returns A React element containing a HydrationBoundary with the serialized query state and the RecepcionesPage wrapped in a suspense boundary with a Skeleton fallback.
+ * @returns A React element containing a HydrationBoundary with the serialized query state and the RecepcionesPage wrapped in a suspense boundary using SkeletonRecepcionesPage as the fallback.
  */
 export default async function Page() {
 	const queryClient = getQueryClient();

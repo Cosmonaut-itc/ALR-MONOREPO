@@ -353,13 +353,12 @@ type WarehouseMappingEntry = {
 };
 
 /**
- * Type guard that checks whether a warehouse mapping response represents a successful result.
+ * Determines whether the given value is a successful warehouse-map response.
  *
- * Returns true when `map` is a non-null object with `success` set to `true` and the expected
- * `message` and `data` fields (where `data` is an array of WarehouseMappingEntry).
+ * Only validates that `map` is an object with a `success` property that is `true`.
  *
- * @param map - The value to test.
- * @returns `true` if `map` is a success-shaped response: `{ success: true; message: string; data: WarehouseMappingEntry[] }`.
+ * @param map - The value to test
+ * @returns `true` if `map.success` is `true`, `false` otherwise
  */
 function isWarehouseMapSuccess(map: WarehouseMap | null | undefined): map is {
 	success: true;
@@ -658,17 +657,16 @@ const createWarehouseOptions = (
 };
 
 /**
- * Extracts a flat array of transfer list items from multiple possible API response shapes.
+ * Extracts a flat array of transfer list items from various API response shapes.
  *
- * Accepts an API response that may be:
+ * Accepts responses shaped as:
  * - an array of transfer items,
  * - an object with a `data` array,
  * - an object with a `transfers` array,
  * - or an object with `data.transfers`.
- * Returns a validated array of TransferListItemShape; if no valid list is found, returns an empty array.
  *
- * @param root - The raw API response to inspect (may be null, an array, or nested objects).
- * @returns A validated array of TransferListItemShape (never null).
+ * @param root - The raw API response to inspect (may be null, an array, or nested objects)
+ * @returns A validated array of TransferListItemShape; empty array if no valid items are found
  */
 function extractTransferItems(root: APIResponse): TransferListItemShape[] {
 	const unknownRoot: unknown = root ?? [];
@@ -695,6 +693,12 @@ function extractTransferItems(root: APIResponse): TransferListItemShape[] {
 	return isArrayOfTransferListItem(list) ? list : [];
 }
 
+/**
+ * Convert a raw transfer status string into the normalized values "pendiente" or "completada".
+ *
+ * @param raw - Raw status string (e.g., from an API) that may indicate completion
+ * @returns `"completada"` if `raw` indicates the transfer is complete, `"pendiente"` otherwise (including when `raw` is `undefined`)
+ */
 function normalizeTransferStatus(raw?: string): "pendiente" | "completada" {
 	if (!raw) {
 		return "pendiente";
@@ -702,6 +706,15 @@ function normalizeTransferStatus(raw?: string): "pendiente" | "completada" {
 	return completeRegex.test(raw) ? "completada" : "pendiente";
 }
 
+/**
+ * Compute the total number of items for a transfer.
+ *
+ * If `explicitTotal` is provided it is returned as-is; otherwise the function sums
+ * `quantityTransferred` across `transferDetails`, treating missing or non-number quantities as `0`.
+ *
+ * @param explicitTotal - An authoritative total provided by the API; when present this value is used directly.
+ * @returns The total number of items for the transfer
+ */
 function computeTotalItems(
 	transferDetails:
 		| readonly TransferDetailItem[]
@@ -731,19 +744,15 @@ function selectArrivalDate(item: TransferListItemShape): string {
 }
 
 /**
- * Page component that displays warehouse transfers (receptions) and provides a UI to create internal transfers.
+ * Render the transfers (receptions) dashboard and a dialog-driven UI to create internal transfers.
  *
- * Renders a dashboard with statistics and a list of receptions derived from warehouse transfer data,
- * and exposes a "Nuevo traspaso" dialog that allows creating a new internal transfer by selecting
- * source/destination warehouses, scheduling a date, setting priority/notes, and adding products
- * from the current warehouse inventory.
+ * Fetches transfers, inventory, product catalog, and cabinet mappings; manages a local transfer draft
+ * (source/destination, scheduled date, priority, notes, and items); and submits a transfer creation
+ * request when the form is submitted.
  *
- * The component fetches transfers, inventory, product catalog, and cabinet-warehouse mappings,
- * maintains a local transfer draft (items, warehouses, priority, notes, scheduled date) and submits
- * a create-transfer mutation when the form is submitted.
- *
- * @param warehouseId - ID of the current warehouse used to scope data fetching and to prefill the source warehouse.
- * @returns A React element containing the transfers dashboard, receptions list, and the transfer-creation dialog.
+ * @param warehouseId - ID of the current warehouse used to scope data and prefill the source warehouse
+ * @param isEncargado - When true, scope is expanded to show all transfers instead of only the current warehouse
+ * @returns The React element rendering the transfers dashboard, receptions list, and the transfer-creation dialog
  */
 export function RecepcionesPage({
 	warehouseId,
