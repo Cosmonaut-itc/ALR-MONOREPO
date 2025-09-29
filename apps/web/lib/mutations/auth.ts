@@ -158,7 +158,7 @@ export type UpdateUserType = {
 	/**
 	 * The new role for the user (optional)
 	 */
-	role: "employee" | "encargado";
+	role?: "employee" | "encargado";
 	/**
 	 * The new warehouse ID for the user (optional)
 	 */

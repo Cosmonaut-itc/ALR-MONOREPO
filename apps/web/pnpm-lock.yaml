@@ -150,8 +150,8 @@ importers:
         specifier: latest
         version: 0.4.6(react-dom@19.1.1(react@19.1.1))(react@19.1.1)
       ns-inventory-api-types:
-        specifier: ^1.0.35
-        version: 1.0.35(hono@4.9.8)
+        specifier: ^1.0.36
+        version: 1.0.36(hono@4.9.8)
       qrcode:
         specifier: ^1.5.4
         version: 1.5.4
@@ -2224,8 +2224,8 @@ packages:
     resolution: {integrity: sha512-bdok/XvKII3nUpklnV6P2hxtMNrCboOjAcyBuQnWEhO665FwrSNRxU+AqpsyvO6LgGYPspN+lu5CLtw4jPRKNA==}
     engines: {node: '>=0.10.0'}
 
-  ns-inventory-api-types@1.0.35:
-    resolution: {integrity: sha512-G5iy71imzD2QJELUosMAbU3WQR20Y6m/ygXyX5y2RMujxNzA6mJvKd5ZJkqLTU1GqIIDy9M13Hx5IMSyIBbE4Q==}
+  ns-inventory-api-types@1.0.36:
+    resolution: {integrity: sha512-f4FPh/Sa8luwPavova25s5Es5k/Mb2QUYh6odNtbn2GbEthCpcLwhr3w0ikGc2gNI2txbil7PID03xf2dS1BUw==}
     peerDependencies:
       hono: '>=4.0.0'
 
@@ -4547,7 +4547,7 @@ snapshots:
 
   normalize-range@0.1.2: {}
 
-  ns-inventory-api-types@1.0.35(hono@4.9.8):
+  ns-inventory-api-types@1.0.36(hono@4.9.8):
     dependencies:
       hono: 4.9.8
 

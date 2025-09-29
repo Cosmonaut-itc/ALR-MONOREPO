@@ -58,3 +58,23 @@ export const getCabinetWarehouse = async () => {
 		return null;
 	}
 };
+
+export const getAllUsers = async () => {
+	try {
+		const response = await client.api.auth.users.all.$get();
+		return response.json();
+	} catch (error) {
+		console.error(error);
+		return null;
+	}
+};
+
+export const getAllWarehouses = async () => {
+	try {
+		const response = await client.api.auth.warehouse.all.$get();
+		return response.json();
+	} catch (error) {
+		console.error(error);
+		return null;
+	}
+};

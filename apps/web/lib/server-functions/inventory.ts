@@ -111,3 +111,43 @@ export const fetchStockByWarehouseServer = async (warehouseId: string) => {
 
 	return res.json();
 };
+
+export const fetchAllUsersServer = async () => {
+	const origin = resolveTrustedOrigin();
+	const url = new URL("/api/auth/users/all", origin).toString();
+	const headers = await buildCookieHeader(origin);
+
+	const res = await fetch(url, {
+		headers,
+		cache: "no-store",
+	});
+
+	if (!res.ok) {
+		const text = await res.text().catch(() => "");
+		throw new Error(
+			`Users fetch failed: ${res.status} ${res.statusText} ${text}`,
+		);
+	}
+
+	return res.json();
+};
+
+export const fetchAllWarehousesServer = async () => {
+	const origin = resolveTrustedOrigin();
+	const url = new URL("/api/auth/warehouse/all", origin).toString();
+	const headers = await buildCookieHeader(origin);
+
+	const res = await fetch(url, {
+		headers,
+		cache: "no-store",
+	});
+
+	if (!res.ok) {
+		const text = await res.text().catch(() => "");
+		throw new Error(
+			`Warehouses fetch failed: ${res.status} ${res.statusText} ${text}`,
+		);
+	}
+
+	return res.json();
+};
