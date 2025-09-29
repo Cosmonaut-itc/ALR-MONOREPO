@@ -3668,7 +3668,78 @@ const route = app
 				);
 			}
 		},
-	);
+	)
+
+	/**
+	 * GET /api/auth/users/all - Retrieve all users with basic information
+	 *
+	 * Fetches all user records from the database, returning only essential
+	 * user information (id, name, and email). This endpoint is designed for
+	 * administrative purposes and user management interfaces where a complete
+	 * list of system users is needed.
+	 *
+	 * Returned fields:
+	 * - id: Unique user identifier (text format)
+	 * - name: User's full name
+	 * - email: User's email address
+	 *
+	 * @returns {ApiResponse} Success response with array of user objects containing id, name, and email
+	 * @throws {500} If an unexpected database error occurs during data retrieval
+	 *
+	 * @example
+	 * // Successful response
+	 * {
+	 *   "success": true,
+	 *   "message": "Users retrieved successfully",
+	 *   "data": [
+	 *     {
+	 *       "id": "user_abc123",
+	 *       "name": "John Doe",
+	 *       "email": "john.doe@example.com"
+	 *     },
+	 *     {
+	 *       "id": "user_xyz789",
+	 *       "name": "Jane Smith",
+	 *       "email": "jane.smith@example.com"
+	 *     }
+	 *   ]
+	 * }
+	 */
+	.get('/api/auth/users/all', async (c) => {
+		try {
+			// Query the user table and select only id, name, and email fields
+			const users = await db
+				.select({
+					id: schemas.user.id,
+					name: schemas.user.name,
+					email: schemas.user.email,
+				})
+				.from(schemas.user)
+				.orderBy(schemas.user.createdAt);
+
+			// Return the users list with appropriate message based on results
+			return c.json(
+				{
+					success: true,
+					message: users.length > 0 ? 'Users retrieved successfully' : 'No users found',
+					data: users,
+				} satisfies ApiResponse,
+				200,
+			);
+		} catch (error) {
+			// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
+			console.error('Error fetching users:', error);
+
+			// Return error response with generic failure message
+			return c.json(
+				{
+					success: false,
+					message: 'Failed to fetch users',
+				} satisfies ApiResponse,
+				500,
+			);
+		}
+	});
 
 /**
  * Better Auth handler for authentication endpoints
