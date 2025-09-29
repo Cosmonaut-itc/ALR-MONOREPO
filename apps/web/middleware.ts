@@ -2,7 +2,7 @@
 /** biome-ignore-all lint/suspicious/noExplicitAny: we need to use any here */
 import { type NextRequest, NextResponse } from 'next/server';
 
-const PUBLIC_PATHS = ['/login', '/_next', '/favicon.ico', '/robots.txt', '/sitemap.xml'];
+const PUBLIC_PATHS = ['/login', '/_next', '/favicon.ico', '/robots.txt', '/sitemap.xml', '/signup'];
 
 function isPublicPath(pathname: string) {
 	return PUBLIC_PATHS.some((p) =>
