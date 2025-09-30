@@ -247,7 +247,7 @@ export const warehouseTransfer = pgTable('warehouse_transfer', {
 
 	// User tracking
 	initiatedBy: text('initiated_by').notNull(),
-	completedBy: uuid('completed_by').references(() => employee.id, {
+	completedBy: text('completed_by').references(() => user.id, {
 		onUpdate: 'cascade',
 		onDelete: 'restrict',
 	}),
@@ -297,7 +297,7 @@ export const warehouseTransferDetails = pgTable('warehouse_transfer_details', {
 	// Status tracking for individual items
 	isReceived: boolean('is_received').default(false).notNull(),
 	receivedDate: timestamp('received_date'),
-	receivedBy: uuid('received_by').references(() => employee.id, {
+	receivedBy: text('received_by').references(() => user.id, {
 		onUpdate: 'cascade',
 		onDelete: 'restrict',
 	}),

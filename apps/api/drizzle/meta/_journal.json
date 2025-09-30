@@ -141,6 +141,20 @@
       "when": 1758916812215,
       "tag": "0019_boring_psynapse",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1759260871765,
+      "tag": "0020_mute_the_spike",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1759262551721,
+      "tag": "0021_slippery_excalibur",
+      "breakpoints": true
     }
   ]
 }

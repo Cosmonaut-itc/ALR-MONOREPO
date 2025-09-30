@@ -16,7 +16,7 @@
 /** biome-ignore-all lint/performance/noNamespaceImport: Required for zod */
 
 import { zValidator } from '@hono/zod-validator';
-import { and, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
@@ -2210,7 +2210,7 @@ const route = app
 			const warehouseTransfers = await db
 				.select()
 				.from(schemas.warehouseTransfer)
-				.orderBy(schemas.warehouseTransfer.createdAt);
+				.orderBy(desc(schemas.warehouseTransfer.createdAt));
 
 			return c.json(
 				{
@@ -2260,7 +2260,7 @@ const route = app
 					.select()
 					.from(schemas.warehouseTransfer)
 					.where(eq(schemas.warehouseTransfer.sourceWarehouseId, warehouseId))
-					.orderBy(schemas.warehouseTransfer.createdAt);
+					.orderBy(desc(schemas.warehouseTransfer.createdAt));
 
 				return c.json(
 					{
@@ -2565,7 +2565,7 @@ const route = app
 							totalItems: transferDetails.length,
 							transferDate: new Date(),
 							isCompleted: isTransferTypeInternal(transferType),
-							isPending: isTransferTypeInternal(transferType),
+							isPending: false,
 							isCancelled: false,
 						})
 						.returning();
@@ -2701,7 +2701,7 @@ const route = app
 		zValidator(
 			'json',
 			z.object({
-				transferId: z.string().uuid('Invalid transfer ID'),
+				transferId: z.string(),
 				isCompleted: z.boolean().optional(),
 				isPending: z.boolean().optional(),
 				isCancelled: z.boolean().optional(),
