@@ -5,6 +5,7 @@ import { ArrowLeft, CheckCircle2, Package } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Fragment, useEffect, useMemo } from "react";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
 import {
 	Breadcrumb,
 	BreadcrumbItem,
@@ -24,6 +25,7 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
+import { getCabinetWarehouse } from "@/lib/fetch-functions/inventory";
 import { getAllProducts } from "@/lib/fetch-functions/products";
 import { getTransferDetailsById } from "@/lib/fetch-functions/recepciones";
 import { createQueryKey } from "@/lib/helpers";
@@ -34,82 +36,18 @@ import {
 	useUpdateTransferStatus,
 } from "@/lib/mutations/transfers";
 import { queryKeys } from "@/lib/query-keys";
-import { cn } from "@/lib/utils";
+import { cn, createWarehouseOptions } from "@/lib/utils";
+import { useAuthStore } from "@/stores/auth-store";
 import { useReceptionStore } from "@/stores/reception-store";
-import type { ProductCatalogResponse, WarehouseTransferDetails } from "@/types";
-
-// =============================
-// Helper types and utilities for safe extraction
-// =============================
-
-type UnknownRecord = Record<string, unknown>;
-
-const isRecord = (value: unknown): value is UnknownRecord => {
-	if (value === null) {
-		return false;
-	}
-	return typeof value === "object";
-};
-
-const toStringIfString = (value: unknown): string | undefined => {
-	if (typeof value === "string") {
-		return value;
-	}
-	return;
-};
-
-const toNumberIfNumber = (value: unknown): number | undefined => {
-	if (typeof value === "number" && Number.isFinite(value)) {
-		return value;
-	}
-	return;
-};
-
-const readNestedString = (
-	root: UnknownRecord,
-	key: string,
-): string | undefined => {
-	const candidate = root[key];
-	if (typeof candidate === "string") {
-		return candidate;
-	}
-	if (isRecord(candidate)) {
-		// Try common nested shapes like { product: { name } }
-		const nestedName = toStringIfString(candidate.name);
-		if (nestedName) {
-			return nestedName;
-		}
-	}
-	return;
-};
-
-const readNestedNumber = (
-	root: UnknownRecord,
-	key: string,
-): number | undefined => {
-	const candidate = root[key];
-	if (typeof candidate === "number" && Number.isFinite(candidate)) {
-		return candidate;
-	}
-	if (isRecord(candidate)) {
-		const nestedBarcode = toNumberIfNumber(candidate.barcode);
-		if (nestedBarcode !== undefined) {
-			return nestedBarcode;
-		}
-	}
-	return;
-};
+import type {
+	ProductCatalogResponse,
+	WarehouseMap,
+	WarehouseTransferDetails,
+} from "@/types";
 
 // =============================
 // Component
 // =============================
-
-type ReceptionItem = {
-	id: string;
-	barcode: number;
-	productName: string;
-	received: boolean;
-};
 
 interface PageProps {
 	shipmentId: string;
@@ -144,6 +82,15 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 		queryFn: getAllProducts,
 	});
 
+	const { data: cabinetWarehouse } = useSuspenseQuery<
+		WarehouseMap,
+		Error,
+		WarehouseMap
+	>({
+		queryKey: queryKeys.cabinetWarehouse,
+		queryFn: getCabinetWarehouse,
+	});
+
 	const {
 		items,
 		setItems,
@@ -153,6 +100,8 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 		getTotalCount,
 		isAllReceived,
 	} = useReceptionStore();
+
+	const { user } = useAuthStore();
 
 	// Mutations for updating transfer and item statuses
 	const { mutateAsync: updateTransferStatus } = useUpdateTransferStatus();
@@ -167,12 +116,63 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 		);
 	}, [transferDetails]);
 
+	const generalTransferDetails = useMemo(() => {
+		return transferDetails && "data" in transferDetails
+			? transferDetails.data.transfer
+			: null;
+	}, [transferDetails]);
+
+	/**
+	 * Group items by productBarcode to display products with the same barcode together.
+	 * Multiple items can have the same barcode but different UUIDs (productStockId).
+	 */
+	const groupedItems = useMemo(() => {
+		const groups = new Map<
+			number,
+			{
+				barcode: number;
+				productName: string;
+				items: typeof items;
+			}
+		>();
+
+		for (const item of items) {
+			const barcode = item.productBarcode;
+			// Skip items without a valid barcode
+			if (barcode === null || barcode === undefined) {
+				continue;
+			}
+			// Create a new group if this barcode hasn't been seen yet
+			if (!groups.has(barcode)) {
+				const productName =
+					productCatalog?.data.find((product) => product.good_id === barcode)
+						?.title || `Producto ${barcode}`;
+				groups.set(barcode, {
+					barcode,
+					productName,
+					items: [],
+				});
+			}
+			// Add the item to its corresponding barcode group
+			groups.get(barcode)?.items.push(item);
+		}
+
+		return Array.from(groups.values());
+	}, [items, productCatalog]);
+
+	const { warehouseOptions } = useMemo(
+		() => createWarehouseOptions(cabinetWarehouse),
+		[cabinetWarehouse],
+	);
+
 	const handleMarkAllReceived = async () => {
 		markAllReceived();
 		try {
 			const payload = {
-				transferId: shipmentId,
-				status: "complete",
+				transferId: generalTransferDetails?.id,
+				isCompleted: true,
+				completedBy: user?.id,
+				isPending: false,
 			} as UpdateTransferStatusPayload;
 			await updateTransferStatus(payload);
 			toast(
@@ -181,11 +181,6 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 		} catch {
 			toast.error("No se pudo actualizar el estado del traspaso");
 		}
-
-		// Navigate back to receptions list
-		setTimeout(() => {
-			router.push("/recepciones");
-		}, 1500);
 	};
 
 	const handleToggleItem = async (itemId: string, nextReceived: boolean) => {
@@ -194,8 +189,17 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 			const payload = {
 				transferDetailId: itemId,
 				isReceived: nextReceived,
+				receivedBy: user?.id,
 			} as UpdateTransferItemStatusPayload;
+			const generalPayload = {
+				transferId: generalTransferDetails?.id,
+				isCompleted: false,
+				completedBy: user?.id,
+				isPending: true,
+			} as UpdateTransferStatusPayload;
 			await updateItemStatus(payload);
+
+			await updateTransferStatus(generalPayload);
 		} catch {
 			toast.error("No se pudo actualizar el estado del ítem");
 		}
@@ -221,7 +225,7 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 					<BreadcrumbSeparator />
 					<BreadcrumbItem>
 						<BreadcrumbPage className="text-[#11181C] text-transition dark:text-[#ECEDEE]">
-							{shipmentId}
+							{generalTransferDetails?.transferNumber}
 						</BreadcrumbPage>
 					</BreadcrumbItem>
 				</BreadcrumbList>
@@ -231,13 +235,24 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 			<div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 				<div className="space-y-2">
 					<h1 className="font-bold text-2xl text-[#11181C] text-transition md:text-3xl dark:text-[#ECEDEE]">
-						Recepción de envío {shipmentId}
+						Recepción de envío{" "}
+						{generalTransferDetails?.transferNumber || shipmentId}
 					</h1>
 					<p className="text-[#687076] text-transition dark:text-[#9BA1A6]">
 						Marca los artículos como recibidos
 					</p>
 					<p className="text-[#687076] text-sm text-transition dark:text-[#9BA1A6]">
-						Almacén: {warehouseId}
+						Almacén de Origen:{" "}
+						{warehouseOptions.find((option) => option.id === warehouseId)?.name}
+					</p>
+					<p className="text-[#687076] text-sm text-transition dark:text-[#9BA1A6]">
+						Almacén de Destino:{" "}
+						{
+							warehouseOptions.find(
+								(option) =>
+									option.id === generalTransferDetails?.destinationWarehouseId,
+							)?.name
+						}
 					</p>
 				</div>
 
@@ -247,7 +262,7 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 					onClick={handleMarkAllReceived}
 				>
 					<CheckCircle2 className="mr-2 h-4 w-4" />
-					Marcar todo como recibido
+					Terminar recepción
 				</Button>
 			</div>
 
@@ -318,9 +333,9 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 									</TableRow>
 								)}
 
-								{items.length > 0 &&
-									items.map((item) => (
-										<Fragment key={item.id}>
+								{groupedItems.length > 0 &&
+									groupedItems.map((group) => (
+										<Fragment key={group.barcode}>
 											{/* Group header */}
 											<TableRow className="theme-transition bg-[#F9FAFB]/60 dark:bg-[#1E1F20]/60">
 												<TableCell
@@ -329,26 +344,21 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 												>
 													<div className="flex items-center space-x-3">
 														<span className="font-mono text-sm">
-															Código: {item.productBarcode}
+															Código: {group.barcode}
 														</span>
 														<span className="text-sm">
-															•{" "}
-															{
-																productCatalog?.data.find(
-																	(product) =>
-																		product.good_id === item.productBarcode,
-																)?.title
-															}
+															• {group.productName}
 														</span>
 														<span className="rounded-full bg-[#0a7ea4]/10 px-2 py-1 text-[#0a7ea4] text-xs">
-															{items.length} items
+															{group.items.length}{" "}
+															{group.items.length === 1 ? "item" : "items"}
 														</span>
 													</div>
 												</TableCell>
 											</TableRow>
 
 											{/* Group items */}
-											{items.map((item) => (
+											{group.items.map((item) => (
 												<TableRow
 													className={cn(
 														"theme-transition border-[#E5E7EB] border-b hover:bg-[#F9FAFB] dark:border-[#2D3033] dark:hover:bg-[#2D3033]",
@@ -368,21 +378,34 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 															item.isReceived && "line-through",
 														)}
 													>
-														{
-															productCatalog?.data.find(
-																(product) =>
-																	product.good_id === item.productBarcode,
-															)?.title
-														}
+														{group.productName}
 													</TableCell>
 													<TableCell>
-														<Checkbox
-															checked={item.isReceived ?? false}
-															className="h-5 w-5 data-[state=checked]:border-[#0a7ea4] data-[state=checked]:bg-[#0a7ea4]"
-															onCheckedChange={(checked) =>
-																handleToggleItem(item.id, Boolean(checked))
-															}
-														/>
+														<div className="flex items-center gap-2">
+															<Checkbox
+																checked={
+																	item.isReceived ||
+																	generalTransferDetails?.isCompleted
+																}
+																disabled={
+																	generalTransferDetails?.isCompleted ||
+																	(item.isReceived as boolean)
+																}
+																className="h-5 w-5 data-[state=checked]:border-[#0a7ea4] data-[state=checked]:bg-[#0a7ea4]"
+																onCheckedChange={(checked) =>
+																	handleToggleItem(item.id, Boolean(checked))
+																}
+															/>
+															{generalTransferDetails?.isCompleted &&
+																!item.isReceived && (
+																	<Badge
+																		className="theme-transition bg-orange-100 text-orange-800 hover:bg-orange-200 dark:bg-orange-900/20 dark:text-orange-400"
+																		variant="secondary"
+																	>
+																		Sin recibir
+																	</Badge>
+																)}
+														</div>
 													</TableCell>
 												</TableRow>
 											))}
@@ -393,6 +416,12 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 					</div>
 				</CardContent>
 			</Card>
+			<div className="flex justify-end">
+				<Button onClick={() => router.back()}>
+					<ArrowLeft className="mr-2 h-4 w-4" />
+					Volver a recepciones
+				</Button>
+			</div>
 		</div>
 	);
 }
