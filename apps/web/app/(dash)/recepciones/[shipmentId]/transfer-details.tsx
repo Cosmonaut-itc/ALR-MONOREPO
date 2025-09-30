@@ -105,8 +105,7 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 
 	// Mutations for updating transfer and item statuses
 	const { mutateAsync: updateTransferStatus } = useUpdateTransferStatus();
-	const { mutateAsync: updateItemStatus, isSuccess: isItemStatusSuccess } =
-		useUpdateTransferItemStatus();
+	const { mutateAsync: updateItemStatus } = useUpdateTransferItemStatus();
 
 	// Seed store with derived items when data changes
 	useEffect(() => {
@@ -199,9 +198,8 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 				isPending: true,
 			} as UpdateTransferStatusPayload;
 			await updateItemStatus(payload);
-			if (isItemStatusSuccess) {
-				await updateTransferStatus(generalPayload);
-			}
+
+			await updateTransferStatus(generalPayload);
 		} catch {
 			toast.error("No se pudo actualizar el estado del ítem");
 		}

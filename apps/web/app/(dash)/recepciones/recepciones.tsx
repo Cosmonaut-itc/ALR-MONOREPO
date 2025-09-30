@@ -95,7 +95,13 @@ import {
 import { createQueryKey } from "@/lib/helpers";
 import { useCreateTransferOrder } from "@/lib/mutations/transfers";
 import { queryKeys } from "@/lib/query-keys";
-import { cn, createWarehouseOptions } from "@/lib/utils";
+import {
+	cn,
+	createWarehouseOptions,
+	isRecord,
+	toRecord,
+	toStringIfString,
+} from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth-store";
 import { useReceptionStore } from "@/stores/reception-store";
 import type {
@@ -176,17 +182,8 @@ const isArrayOfTransferListItem = (
 ): value is TransferListItemShape[] =>
 	Array.isArray(value) && value.every((v) => isTransferListItem(v));
 
-const isRecord = (value: unknown): value is UnknownRecord =>
-	value !== null && typeof value === "object";
-
-const toStringIfString = (value: unknown): string | undefined =>
-	typeof value === "string" ? value : undefined;
-
 const toNumberIfNumber = (value: unknown): number | undefined =>
 	typeof value === "number" && Number.isFinite(value) ? value : undefined;
-
-const toRecord = (value: unknown): UnknownRecord | undefined =>
-	isRecord(value) ? (value as UnknownRecord) : undefined;
 
 const parseNumericString = (value?: string | null): number | undefined => {
 	if (!value) {
