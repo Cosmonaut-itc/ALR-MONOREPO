@@ -5,6 +5,7 @@ import { ArrowLeft, CheckCircle2, Package } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Fragment, useEffect, useMemo } from "react";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
 import {
 	Breadcrumb,
 	BreadcrumbItem,
@@ -121,6 +122,44 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 			? transferDetails.data.transfer
 			: null;
 	}, [transferDetails]);
+
+	/**
+	 * Group items by productBarcode to display products with the same barcode together.
+	 * Multiple items can have the same barcode but different UUIDs (productStockId).
+	 */
+	const groupedItems = useMemo(() => {
+		const groups = new Map<
+			number,
+			{
+				barcode: number;
+				productName: string;
+				items: typeof items;
+			}
+		>();
+
+		for (const item of items) {
+			const barcode = item.productBarcode;
+			// Skip items without a valid barcode
+			if (barcode === null || barcode === undefined) {
+				continue;
+			}
+			// Create a new group if this barcode hasn't been seen yet
+			if (!groups.has(barcode)) {
+				const productName =
+					productCatalog?.data.find((product) => product.good_id === barcode)
+						?.title || `Producto ${barcode}`;
+				groups.set(barcode, {
+					barcode,
+					productName,
+					items: [],
+				});
+			}
+			// Add the item to its corresponding barcode group
+			groups.get(barcode)?.items.push(item);
+		}
+
+		return Array.from(groups.values());
+	}, [items, productCatalog]);
 
 	const { warehouseOptions } = useMemo(
 		() => createWarehouseOptions(cabinetWarehouse),
@@ -296,9 +335,9 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 									</TableRow>
 								)}
 
-								{items.length > 0 &&
-									items.map((item) => (
-										<Fragment key={item.id}>
+								{groupedItems.length > 0 &&
+									groupedItems.map((group) => (
+										<Fragment key={group.barcode}>
 											{/* Group header */}
 											<TableRow className="theme-transition bg-[#F9FAFB]/60 dark:bg-[#1E1F20]/60">
 												<TableCell
@@ -307,26 +346,21 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 												>
 													<div className="flex items-center space-x-3">
 														<span className="font-mono text-sm">
-															Código: {item.productBarcode}
+															Código: {group.barcode}
 														</span>
 														<span className="text-sm">
-															•{" "}
-															{
-																productCatalog?.data.find(
-																	(product) =>
-																		product.good_id === item.productBarcode,
-																)?.title
-															}
+															• {group.productName}
 														</span>
 														<span className="rounded-full bg-[#0a7ea4]/10 px-2 py-1 text-[#0a7ea4] text-xs">
-															{items.length} items
+															{group.items.length}{" "}
+															{group.items.length === 1 ? "item" : "items"}
 														</span>
 													</div>
 												</TableCell>
 											</TableRow>
 
 											{/* Group items */}
-											{items.map((item) => (
+											{group.items.map((item) => (
 												<TableRow
 													className={cn(
 														"theme-transition border-[#E5E7EB] border-b hover:bg-[#F9FAFB] dark:border-[#2D3033] dark:hover:bg-[#2D3033]",
@@ -346,28 +380,34 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 															item.isReceived && "line-through",
 														)}
 													>
-														{
-															productCatalog?.data.find(
-																(product) =>
-																	product.good_id === item.productBarcode,
-															)?.title
-														}
+														{group.productName}
 													</TableCell>
 													<TableCell>
-														<Checkbox
-															checked={
-																item.isReceived ||
-																generalTransferDetails?.isCompleted
-															}
-															disabled={
-																generalTransferDetails?.isCompleted ||
-																(item.isReceived as boolean)
-															}
-															className="h-5 w-5 data-[state=checked]:border-[#0a7ea4] data-[state=checked]:bg-[#0a7ea4]"
-															onCheckedChange={(checked) =>
-																handleToggleItem(item.id, Boolean(checked))
-															}
-														/>
+														<div className="flex items-center gap-2">
+															<Checkbox
+																checked={
+																	item.isReceived ||
+																	generalTransferDetails?.isCompleted
+																}
+																disabled={
+																	generalTransferDetails?.isCompleted ||
+																	(item.isReceived as boolean)
+																}
+																className="h-5 w-5 data-[state=checked]:border-[#0a7ea4] data-[state=checked]:bg-[#0a7ea4]"
+																onCheckedChange={(checked) =>
+																	handleToggleItem(item.id, Boolean(checked))
+																}
+															/>
+															{generalTransferDetails?.isCompleted &&
+																!item.isReceived && (
+																	<Badge
+																		className="theme-transition bg-orange-100 text-orange-800 hover:bg-orange-200 dark:bg-orange-900/20 dark:text-orange-400"
+																		variant="secondary"
+																	>
+																		Sin recibir
+																	</Badge>
+																)}
+														</div>
 													</TableCell>
 												</TableRow>
 											))}

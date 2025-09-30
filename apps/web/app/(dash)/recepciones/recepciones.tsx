@@ -1154,7 +1154,7 @@ export function RecepcionesPage({
 			},
 			{
 				accessorKey: "arrivalDate",
-				header: "Fecha de llegada",
+				header: "Fecha de Creación",
 				filterFn: "equals",
 				enableGlobalFilter: false,
 				meta: {
@@ -1173,7 +1173,7 @@ export function RecepcionesPage({
 			},
 			{
 				accessorKey: "updatedAt",
-				header: "Actualizado",
+				header: "Fecha de Actualización",
 				enableGlobalFilter: false,
 				meta: {
 					headerClassName:
