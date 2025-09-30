@@ -16,15 +16,13 @@ import { AjustesPage } from "./ajustes";
 export const dynamic = "force-dynamic";
 
 /**
- * Server component page that prefetches settings-related queries and hydrates the client cache.
+ * Render the settings page after prefetching and hydrating server-side query data.
  *
- * This component prefetches users and warehouses data on the server so the client-side queries
- * start with a hydrated state. The current user's role is extracted from the session and passed
- * to the client component for permission-based rendering.
+ * Prefetches users and warehouses on the server, extracts the current user's role from the session,
+ * and returns the settings page wrapped with a dehydrated React Query state and a skeleton fallback
+ * for client hydration.
  *
- * During client query resolution, a skeleton loader is shown as a fallback to prevent layout shifts.
- *
- * @returns A server-rendered React element that wraps AjustesPage with dehydrated React Query state
+ * @returns A React element for the settings page wrapped with dehydrated React Query state
  */
 export default async function SettingsPage() {
 	const queryClient = getQueryClient();

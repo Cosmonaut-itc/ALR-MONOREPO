@@ -14,6 +14,15 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useSignUpMutation } from '@/lib/mutations/auth';
 
+/**
+ * Render a development-only user sign-up page with client-side validation and account creation.
+ *
+ * The component redirects to the login page and displays a toast if accessed in production,
+ * and renders a form that validates name, email, password, and confirmation before calling
+ * the sign-up mutation in development mode.
+ *
+ * @returns The sign-up page UI when NODE_ENV is not "production"; `null` in production.
+ */
 export default function SignUpPage() {
 	const router = useRouter();
 	const form = useForm({

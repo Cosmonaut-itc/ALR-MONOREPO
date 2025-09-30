@@ -75,14 +75,14 @@ type QrLabelPayload = {
 };
 
 /**
- * Inventory management page showing warehouse and cabinet stock with transfer workflow.
+ * Inventory management page for viewing warehouse and cabinet stock and managing transfers.
  *
- * Renders two tabs ("General" and "Gabinete") with searchable product tables, lets users select
- * items to add to a transfer list, review/remove items in a dialog, and approve a transfer
- * which creates a transfer order.
+ * Renders two tabs ("General" and "Gabinete") with product tables, lets users add items to a transfer
+ * list, review/remove items in a dialog, and approve a transfer which creates a transfer order.
  *
- * @param warehouseId - ID of the source warehouse whose inventory will be displayed and used as the transfer source.
- * @returns The InventarioPage component's JSX element.
+ * @param warehouseId - ID of the warehouse used as the primary context for inventory and transfers
+ * @param role - User role affecting available actions and visible inventory (e.g., `"encargado"`)
+ * @returns The component's rendered JSX element
  */
 export function InventarioPage({
 	warehouseId,

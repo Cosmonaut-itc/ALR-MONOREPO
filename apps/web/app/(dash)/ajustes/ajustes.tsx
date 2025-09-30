@@ -97,20 +97,13 @@ type WarehousesResponse =
 	| null;
 
 /**
- * Client component for the Settings page that renders tabbed forms for managing users and warehouses.
+ * Render the settings page with tabs for managing users (create and, for encargados, update) and warehouses.
  *
- * This component provides two main tabs:
- * 1. Users Tab - Contains forms to create and update users (update form only visible to encargados)
- * 2. Warehouses Tab - Contains form to create warehouses
+ * The update user form is restricted to users with the "encargado" role and includes comboboxes for selecting
+ * users and warehouses; create forms perform client-side validation and invoke server mutations.
  *
- * Each form uses TanStack Form for client-side validation and React Query mutations
- * for server communication. Success/error states are communicated via toast notifications.
- *
- * The update user form includes comboboxes for selecting users and warehouses, and is
- * only accessible to users with the "encargado" role.
- *
- * @param role - The role of the current user (used for permission checks)
- * @returns The AjustesPage JSX element.
+ * @param role - Current user's role; used to determine whether the update-user form is accessible
+ * @returns The AjustesPage JSX element
  */
 export function AjustesPage({ role }: { role: string }) {
 	const router = useRouter();
