@@ -146,6 +146,8 @@ interface TransferDetailItem {
 
 interface TransferListItemShape {
 	id?: string;
+	sourceWarehouseId?: string;
+	destinationWarehouseId?: string;
 	transferNumber?: string;
 	shipmentId?: string;
 	status?: string;
@@ -1039,6 +1041,7 @@ export function RecepcionesPage({
 				transferNotes: transferDraft.transferNotes || undefined,
 				priority: transferDraft.priority,
 				scheduledDate,
+				isCabinetToWarehouse: false,
 			});
 			resetTransferDraft();
 			setSelectedProductStockId("");
@@ -1053,6 +1056,8 @@ export function RecepcionesPage({
 		transferId: string;
 		shipmentId: string;
 		arrivalDate: string;
+		sourceWarehouseName: string | undefined;
+		destinationWarehouseName: string | undefined;
 		totalItems: number;
 		status: "pendiente" | "completada";
 		transferType: "internal" | "external";
@@ -1076,17 +1081,28 @@ export function RecepcionesPage({
 			const arrivalDate = dateOnlyPattern.test(arrivalSource)
 				? arrivalSource
 				: (() => {
-					if (!arrivalSource) {
-						return formatISO(new Date(), { representation: "date" });
-					}
-					const parsed = new Date(arrivalSource);
-					return Number.isNaN(parsed.getTime())
-						? formatISO(new Date(), { representation: "date" })
-						: formatISO(parsed, { representation: "date" });
-				})();
+						if (!arrivalSource) {
+							return formatISO(new Date(), { representation: "date" });
+						}
+						const parsed = new Date(arrivalSource);
+						return Number.isNaN(parsed.getTime())
+							? formatISO(new Date(), { representation: "date" })
+							: formatISO(parsed, { representation: "date" });
+					})();
 			const shipmentId = String(
 				item.transferNumber ?? item.shipmentId ?? item.id ?? "N/A",
 			);
+			const warehouseId = toStringIfString(item.sourceWarehouseId);
+			const destinationWarehouseId = toStringIfString(
+				item.destinationWarehouseId,
+			);
+
+			const sourceWarehouseName = warehouseOptions.find(
+				(option) => option.id === warehouseId,
+			)?.name;
+			const destinationWarehouseName = warehouseOptions.find(
+				(option) => option.id === destinationWarehouseId,
+			)?.name;
 			const transferTypeRaw =
 				toStringIfString(item.transferType) ??
 				toStringIfString((item as { transfer_type?: unknown }).transfer_type);
@@ -1114,6 +1130,8 @@ export function RecepcionesPage({
 			return {
 				transferId: item.id ?? "",
 				shipmentId,
+				sourceWarehouseName,
+				destinationWarehouseName,
 				arrivalDate,
 				totalItems,
 				status,
@@ -1121,7 +1139,7 @@ export function RecepcionesPage({
 				updatedAt,
 			};
 		});
-	}, [transfers]);
+	}, [transfers, warehouseOptions]);
 
 	const parseDateValue = useCallback((value: string | undefined | null) => {
 		if (!value) {
@@ -1177,6 +1195,42 @@ export function RecepcionesPage({
 					return (
 						<span className="font-mono text-[#11181C] text-sm text-transition dark:text-[#ECEDEE]">
 							{shipment}
+						</span>
+					);
+				},
+			},
+			{
+				accessorKey: "sourceWarehouseName",
+				header: "Almacén de origen",
+				enableGlobalFilter: false,
+				meta: {
+					headerClassName:
+						"font-medium text-[#11181C] text-transition dark:text-[#ECEDEE]",
+					cellClassName: "text-[#687076] text-transition dark:text-[#9BA1A6]",
+				} satisfies ColumnMeta,
+				cell: ({ getValue }) => {
+					const value = getValue<string>();
+					return (
+						<span className="text-[#687076] text-transition dark:text-[#9BA1A6]">
+							{value ?? "N/A"}
+						</span>
+					);
+				},
+			},
+			{
+				accessorKey: "destinationWarehouseName",
+				header: "Almacén de destino",
+				enableGlobalFilter: false,
+				meta: {
+					headerClassName:
+						"font-medium text-[#11181C] text-transition dark:text-[#ECEDEE]",
+					cellClassName: "text-[#687076] text-transition dark:text-[#9BA1A6]",
+				} satisfies ColumnMeta,
+				cell: ({ getValue }) => {
+					const value = getValue<string>();
+					return (
+						<span className="text-[#687076] text-transition dark:text-[#9BA1A6]">
+							{value ?? "N/A"}
 						</span>
 					);
 				},
