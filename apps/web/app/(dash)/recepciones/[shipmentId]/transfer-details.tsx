@@ -104,7 +104,8 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 
 	// Mutations for updating transfer and item statuses
 	const { mutateAsync: updateTransferStatus } = useUpdateTransferStatus();
-	const { mutateAsync: updateItemStatus } = useUpdateTransferItemStatus();
+	const { mutateAsync: updateItemStatus, isSuccess: isItemStatusSuccess } =
+		useUpdateTransferItemStatus();
 
 	// Seed store with derived items when data changes
 	useEffect(() => {
@@ -131,7 +132,9 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 		try {
 			const payload = {
 				transferId: generalTransferDetails?.id,
-				status: "complete",
+				isCompleted: true,
+				completedBy: user?.id,
+				isPending: false,
 			} as UpdateTransferStatusPayload;
 			await updateTransferStatus(payload);
 			toast(
@@ -140,11 +143,6 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 		} catch {
 			toast.error("No se pudo actualizar el estado del traspaso");
 		}
-
-		// Navigate back to receptions list
-		setTimeout(() => {
-			router.push("/recepciones");
-		}, 1500);
 	};
 
 	const handleToggleItem = async (itemId: string, nextReceived: boolean) => {
@@ -153,10 +151,18 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 			const payload = {
 				transferDetailId: itemId,
 				isReceived: nextReceived,
-				receivedBy: user?.id
-				,
+				receivedBy: user?.id,
 			} as UpdateTransferItemStatusPayload;
+			const generalPayload = {
+				transferId: generalTransferDetails?.id,
+				isCompleted: false,
+				completedBy: user?.id,
+				isPending: true,
+			} as UpdateTransferStatusPayload;
 			await updateItemStatus(payload);
+			if (isItemStatusSuccess) {
+				await updateTransferStatus(generalPayload);
+			}
 		} catch {
 			toast.error("No se pudo actualizar el estado del ítem");
 		}
@@ -219,7 +225,7 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 					onClick={handleMarkAllReceived}
 				>
 					<CheckCircle2 className="mr-2 h-4 w-4" />
-					Marcar todo como recibido
+					Terminar recepción
 				</Button>
 			</div>
 

@@ -12,7 +12,7 @@ import {
 	getSortedRowModel,
 	useReactTable,
 } from "@tanstack/react-table";
-import { format, formatISO } from "date-fns";
+import { addDays, format, formatISO } from "date-fns";
 import { es } from "date-fns/locale";
 import {
 	ArrowRight,
@@ -739,7 +739,6 @@ export function RecepcionesPage({
 		updateTransferDraft,
 		addDraftItem,
 		removeDraftItem,
-		updateDraftItemQuantity,
 		setDraftItemNote,
 		resetTransferDraft,
 	} = useReceptionStore(
@@ -842,7 +841,7 @@ export function RecepcionesPage({
 		if (!transferDraft.scheduledDate) {
 			return;
 		}
-		const parsed = new Date(transferDraft.scheduledDate);
+		const parsed = addDays(new Date(transferDraft.scheduledDate), 1);
 		return Number.isNaN(parsed.getTime()) ? undefined : parsed;
 	}, [transferDraft.scheduledDate]);
 
@@ -1239,16 +1238,27 @@ export function RecepcionesPage({
 						"font-medium text-[#11181C] text-transition dark:text-[#ECEDEE]",
 					cellClassName: "text-[#11181C] text-transition dark:text-[#ECEDEE]",
 				} satisfies ColumnMeta,
-				cell: ({ getValue }) => {
+				cell: ({ getValue, row }) => {
 					const isCompleted = getValue<boolean>();
-					const isPending = !isCompleted;
-					const badgeClass = isPending
-						? "theme-transition bg-orange-100 text-orange-800 hover:bg-orange-200 dark:bg-orange-900/20 dark:text-orange-400"
-						: "theme-transition bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900/20 dark:text-green-400";
-					const variant = isPending ? "secondary" : "default";
+					const isPending = row.original.isPending;
+					if (!isPending && !isCompleted) {
+						return (
+							<Badge
+								className="theme-transition bg-gray-100 text-gray-800 hover:bg-gray-200 dark:bg-gray-900/20 dark:text-gray-400"
+								variant="secondary"
+							>
+								Sin recibir
+							</Badge>
+						);
+					}
+					const badgeClass =
+						isPending && !isCompleted
+							? "theme-transition bg-orange-100 text-orange-800 hover:bg-orange-200 dark:bg-orange-900/20 dark:text-orange-400"
+							: "theme-transition bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900/20 dark:text-green-400";
+					const variant = isPending && !isCompleted ? "secondary" : "default";
 					return (
 						<Badge className={badgeClass} variant={variant}>
-							{isPending ? "Pendiente" : "Completada"}
+							{isPending && !isCompleted ? "Pendiente" : "Completada"}
 						</Badge>
 					);
 				},
