@@ -1,7 +1,7 @@
-import { create } from 'zustand';
-import { devtools } from 'zustand/middleware';
-import type { TransferOrderType } from '@/types';
-import { useAuthStore } from './auth-store';
+import { create } from "zustand";
+import { devtools } from "zustand/middleware";
+import type { TransferOrderType } from "@/types";
+import { useAuthStore } from "./auth-store";
 
 interface TransferItem {
 	id: string;
@@ -19,6 +19,11 @@ export interface TransferCandidate {
 	category: string;
 	warehouse: string;
 	cabinet_id: string;
+	/**
+	 * Source of the item: 'warehouse' (almacén) or 'cabinet' (gabinete)
+	 * Used to determine transfer direction
+	 */
+	source: "warehouse" | "cabinet";
 }
 
 interface TransferState {
@@ -49,10 +54,12 @@ interface TransferState {
 		destinationWarehouseId,
 		sourceWarehouseId,
 		cabinetId,
+		isCabinetToWarehouse,
 	}: {
 		destinationWarehouseId: string;
 		sourceWarehouseId: string;
 		cabinetId: string;
+		isCabinetToWarehouse: boolean;
 	}) => TransferOrderType;
 }
 
@@ -61,10 +68,11 @@ export const useTransferStore = create<TransferState>()(
 		items: [],
 		selectedIds: [],
 		transferList: [],
-		destinationWarehouseId: '',
+		destinationWarehouseId: "",
 
 		setItems: (items) => set({ items }),
-		setDestinationWarehouseId: (destinationWarehouseId) => set({ destinationWarehouseId }),
+		setDestinationWarehouseId: (destinationWarehouseId) =>
+			set({ destinationWarehouseId }),
 
 		toggleSelection: (id) =>
 			set((state) => ({
@@ -75,8 +83,12 @@ export const useTransferStore = create<TransferState>()(
 
 		selectGroup: (barcode) =>
 			set((state) => {
-				const groupIds = state.items.filter((i) => i.barcode === barcode).map((i) => i.id);
-				const allSelected = groupIds.every((id) => state.selectedIds.includes(id));
+				const groupIds = state.items
+					.filter((i) => i.barcode === barcode)
+					.map((i) => i.id);
+				const allSelected = groupIds.every((id) =>
+					state.selectedIds.includes(id),
+				);
 				return {
 					selectedIds: allSelected
 						? state.selectedIds.filter((id) => !groupIds.includes(id))
@@ -107,23 +119,25 @@ export const useTransferStore = create<TransferState>()(
 			destinationWarehouseId,
 			sourceWarehouseId,
 			cabinetId,
+			isCabinetToWarehouse,
 		}: {
 			destinationWarehouseId: string;
 			sourceWarehouseId: string;
 			cabinetId: string;
+			isCabinetToWarehouse: boolean;
 		}) => {
 			const transferList = get().transferList;
 			const currentUser = useAuthStore.getState().user;
 
 			if (!currentUser) {
-				throw new Error('Usuario no autenticado');
+				throw new Error("Usuario no autenticado");
 			}
 
 			if (!(sourceWarehouseId && destinationWarehouseId)) {
-				throw new Error('Almacén de origen o destino no especificado');
+				throw new Error("Almacén de origen o destino no especificado");
 			}
 			if (!cabinetId) {
-				throw new Error('Gabinete de destino no especificado');
+				throw new Error("Gabinete de destino no especificado");
 			}
 
 			// Generate unique transfer number using timestamp
@@ -132,7 +146,7 @@ export const useTransferStore = create<TransferState>()(
 			// Transform the transfer list to the expected API format
 			const transformedData: TransferOrderType = {
 				transferNumber,
-				transferType: 'internal', // Internal transfer between warehouses
+				transferType: "internal", // Internal transfer between warehouses
 				sourceWarehouseId,
 				destinationWarehouseId,
 				initiatedBy: currentUser.id,
@@ -140,10 +154,11 @@ export const useTransferStore = create<TransferState>()(
 				transferDetails: transferList.map((item) => ({
 					productStockId: item.uuid,
 					quantityTransferred: 1, // Default quantity (not specified in TransferCandidate)
-					itemCondition: 'good' as const, // Default to good condition
+					itemCondition: "good" as const, // Default to good condition
 				})),
-				transferNotes: `Transfer from AG to Gabinete - ${transferList.length} items`,
-				priority: 'normal' as const,
+				transferNotes: `Transfer from ${isCabinetToWarehouse ? "Gabinete" : "AG"} to ${isCabinetToWarehouse ? "AG" : "Gabinete"} - ${transferList.length} items`,
+				priority: "normal" as const,
+				isCabinetToWarehouse,
 			};
 
 			// Clear the transfer list after creating the order

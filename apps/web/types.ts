@@ -128,6 +128,7 @@ export type TransferOrderType = {
 	transferNotes?: string;
 	priority?: "high" | "normal" | "urgent";
 	scheduledDate?: string;
+	isCabinetToWarehouse: boolean;
 };
 
 export type InventoryItem = {

@@ -75,14 +75,14 @@ type QrLabelPayload = {
 };
 
 /**
- * Inventory management page showing warehouse and cabinet stock with transfer workflow.
+ * Inventory management page for viewing warehouse and cabinet stock and managing transfers.
  *
- * Renders two tabs ("General" and "Gabinete") with searchable product tables, lets users select
- * items to add to a transfer list, review/remove items in a dialog, and approve a transfer
- * which creates a transfer order.
+ * Renders two tabs ("General" and "Gabinete") with product tables, lets users add items to a transfer
+ * list, review/remove items in a dialog, and approve a transfer which creates a transfer order.
  *
- * @param warehouseId - ID of the source warehouse whose inventory will be displayed and used as the transfer source.
- * @returns The InventarioPage component's JSX element.
+ * @param warehouseId - ID of the warehouse used as the primary context for inventory and transfers
+ * @param role - User role affecting available actions and visible inventory (e.g., `"encargado"`)
+ * @returns The component's rendered JSX element
  */
 export function InventarioPage({
 	warehouseId,
@@ -136,6 +136,9 @@ export function InventarioPage({
 	const [selectedWarehouseId, setSelectedWarehouseId] = useState("");
 	const [qrQuantity, setQrQuantity] = useState(1);
 	const [isPrintingLabels, setIsPrintingLabels] = useState(false);
+	const [currentTab, setCurrentTab] = useState<"general" | "gabinete">(
+		"general",
+	);
 
 	const resetAddProductForm = useCallback(() => {
 		setSelectedProductValue("");
@@ -499,11 +502,16 @@ export function InventarioPage({
 		if (items.length === 0) {
 			return;
 		}
+		const source = currentTab === "general" ? "warehouse" : "cabinet";
 		const candidates = items.flatMap((it) => {
 			const uuid = it.uuid ?? it.id;
+			// Search in both warehouse and cabinet data
 			const completeProductInfo =
 				inventory && "data" in inventory
 					? inventory.data?.warehouse.find(
+							(item) => item.productStock.id === uuid,
+						) ||
+						inventory.data?.cabinet.find(
 							(item) => item.productStock.id === uuid,
 						)
 					: null;
@@ -518,6 +526,7 @@ export function InventarioPage({
 							category: product.category,
 							warehouse: warehouse ?? "",
 							cabinet_id: cabinet ?? "",
+							source: source as "warehouse" | "cabinet",
 						},
 					]
 				: [];
@@ -526,7 +535,10 @@ export function InventarioPage({
 			return;
 		}
 		addToTransfer(candidates);
-		toast.success("Agregado a la lista de transferencia", { duration: 2000 });
+		const direction = source === "warehouse" ? "al gabinete" : "al almacén";
+		toast.success(`Agregado a la lista de transferencia ${direction}`, {
+			duration: 2000,
+		});
 	};
 
 	const filteredTransferList = useMemo(() => {
@@ -542,33 +554,36 @@ export function InventarioPage({
 		);
 	}, [transferList, listSearch]);
 
-	// Create a set of UUIDs that are in the transfer list to disable checkboxes
-	const disabledUUIDs = useMemo(() => {
-		return new Set(transferList.map((item) => item.uuid));
-	}, [transferList]);
+	/**
+	 * Helper to extract warehouse and cabinet IDs from cabinetWarehouse data
+	 * Creates a map for easy lookup: warehouseId -> { cabinetId, warehouseName, cabinetName }
+	 */
+	const warehouseCabinetMap = useMemo(() => {
+		const map = new Map<
+			string,
+			{ cabinetId: string; warehouseId: string; warehouseName: string }
+		>();
 
-	const cabinetId = useMemo(() => {
 		if (
 			!cabinetWarehouse ||
 			typeof cabinetWarehouse !== "object" ||
 			!("success" in cabinetWarehouse) ||
 			!cabinetWarehouse.success
 		) {
-			return undefined;
+			return map;
 		}
-		const normalizedWarehouseId = warehouseId?.trim();
-		if (!normalizedWarehouseId) {
-			return undefined;
-		}
+
 		const entries = Array.isArray(cabinetWarehouse.data)
 			? (cabinetWarehouse.data as Array<Record<string, unknown>>)
 			: [];
-		const matchingCabinetIds: string[] = [];
+
 		for (const entryRaw of entries) {
 			if (!entryRaw || typeof entryRaw !== "object") {
 				continue;
 			}
 			const entry = entryRaw as Record<string, unknown>;
+
+			// Extract warehouse ID
 			const entryWarehouseId =
 				typeof entry.warehouseId === "string" &&
 				entry.warehouseId.trim().length > 0
@@ -580,9 +595,8 @@ export function InventarioPage({
 								(entry as { warehouse_id?: string }).warehouse_id as string
 							).trim()
 						: null;
-			if (entryWarehouseId !== normalizedWarehouseId) {
-				continue;
-			}
+
+			// Extract cabinet ID
 			const entryCabinetId =
 				typeof entry.cabinetId === "string" && entry.cabinetId.trim().length > 0
 					? entry.cabinetId.trim()
@@ -590,35 +604,230 @@ export function InventarioPage({
 							(entry as { cabinet_id?: string }).cabinet_id?.trim().length
 						? ((entry as { cabinet_id?: string }).cabinet_id as string).trim()
 						: null;
-			if (entryCabinetId) {
-				matchingCabinetIds.push(entryCabinetId);
+
+			// Extract warehouse name
+			const entryWarehouseName =
+				typeof entry.warehouseName === "string" &&
+				entry.warehouseName.trim().length > 0
+					? entry.warehouseName.trim()
+					: typeof (entry as { warehouse_name?: string }).warehouse_name ===
+								"string" &&
+							(entry as { warehouse_name?: string }).warehouse_name?.trim()
+								.length
+						? (
+								(entry as { warehouse_name?: string }).warehouse_name as string
+							).trim()
+						: null;
+
+			if (entryWarehouseId && entryCabinetId) {
+				map.set(entryWarehouseId, {
+					cabinetId: entryCabinetId,
+					warehouseId: entryWarehouseId,
+					warehouseName:
+						entryWarehouseName ?? `Almacén ${entryWarehouseId.slice(0, 6)}`,
+				});
 			}
 		}
-		const uniqueCabinetIds = Array.from(new Set(matchingCabinetIds));
-		return uniqueCabinetIds.length === 1 ? uniqueCabinetIds[0] : undefined;
-	}, [cabinetWarehouse, warehouseId]);
-	const cabinetWarehouseId = useMemo(() => {
-		return inventory && "data" in inventory
-			? inventory.data?.cabinetId || "1"
-			: "1";
-	}, [inventory]);
+
+		return map;
+	}, [cabinetWarehouse]);
+
+	/**
+	 * Get the source warehouse/cabinet info from the first item in transfer list
+	 * This is used to restrict adding items from different sources
+	 */
+	const transferSourceInfo = useMemo(() => {
+		if (transferList.length === 0) {
+			return null;
+		}
+
+		const firstItem = transferList[0];
+		if (!firstItem) {
+			return null;
+		}
+
+		// If from warehouse, the source is the warehouse ID
+		// If from cabinet, the source is the cabinet's warehouse ID
+		const sourceWarehouseId =
+			firstItem.source === "warehouse"
+				? firstItem.warehouse
+				: firstItem.warehouse; // Cabinet items also have warehouse field
+
+		const sourceCabinetId =
+			firstItem.source === "cabinet" ? firstItem.cabinet_id : null;
+
+		return {
+			warehouseId: sourceWarehouseId,
+			cabinetId: sourceCabinetId,
+			source: firstItem.source,
+		};
+	}, [transferList]);
+
+	/**
+	 * Create a set of UUIDs that should be disabled:
+	 * 1. Items already in the transfer list
+	 * 2. Items from different warehouses/cabinets (for encargados)
+	 */
+	const disabledUUIDs = useMemo(() => {
+		const disabled = new Set(transferList.map((item) => item.uuid));
+
+		// If there are items in the transfer list and user is encargado,
+		// disable items from different sources
+		if (transferList.length > 0 && transferSourceInfo) {
+			const allItems = [
+				...(inventory && "data" in inventory
+					? inventory.data?.warehouse || []
+					: []),
+				...(inventory && "data" in inventory
+					? inventory.data?.cabinet || []
+					: []),
+			];
+
+			for (const item of allItems) {
+				if (!item || typeof item !== "object" || !("productStock" in item)) {
+					continue;
+				}
+
+				const stock = (item as { productStock: unknown }).productStock as
+					| {
+							id?: string;
+							currentWarehouse?: string;
+							currentCabinet?: string | null;
+					  }
+					| undefined;
+
+				const itemUuid = stock?.id;
+				if (!itemUuid) {
+					continue;
+				}
+
+				// If item is already in transfer list, skip
+				if (disabled.has(itemUuid)) {
+					continue;
+				}
+
+				const itemWarehouse = stock?.currentWarehouse ?? "";
+				const itemCabinet = stock?.currentCabinet;
+
+				// Determine if this item should be disabled based on transfer source
+				if (transferSourceInfo.source === "warehouse") {
+					// We're transferring from warehouse, disable items from:
+					// 1. Different warehouses
+					// 2. Items that are already in a cabinet (currentCabinet is not null)
+					if (
+						itemWarehouse !== transferSourceInfo.warehouseId ||
+						itemCabinet != null
+					) {
+						disabled.add(itemUuid);
+					}
+				} else {
+					// We're transferring from cabinet, disable items from:
+					// 1. Items not in a cabinet
+					// 2. Items in different cabinets
+					if (
+						!itemCabinet ||
+						itemCabinet !== transferSourceInfo.cabinetId ||
+						itemWarehouse !== transferSourceInfo.warehouseId
+					) {
+						disabled.add(itemUuid);
+					}
+				}
+			}
+		}
+
+		return disabled;
+	}, [transferList, transferSourceInfo, inventory]);
 
 	const warehouseFilter: string | undefined = isEncargado
 		? "all"
 		: warehouseId || undefined;
+
+	/**
+	 * Get cabinet warehouse ID for the current user's warehouse
+	 * This uses the warehouseCabinetMap to look up the corresponding cabinet
+	 */
+	const cabinetWarehouseId = useMemo(() => {
+		// For non-encargado users, use their warehouseId to find the cabinet
+		const mappingInfo = warehouseCabinetMap.get(warehouseId);
+		return mappingInfo?.cabinetId ?? warehouseId;
+	}, [warehouseCabinetMap, warehouseId]);
+
 	const cabinetFilter: string | undefined = isEncargado
 		? "all"
 		: cabinetWarehouseId || undefined;
 
+	/**
+	 * Determines the transfer direction based on items in the transfer list.
+	 * Returns 'warehouse-to-cabinet' or 'cabinet-to-warehouse'
+	 */
+	const transferDirection = useMemo(() => {
+		if (transferList.length === 0) {
+			return null;
+		}
+		// Check the source of the first item (all should be from the same source)
+		const firstItemSource = transferList[0]?.source;
+		return firstItemSource === "warehouse"
+			? "warehouse-to-cabinet"
+			: "cabinet-to-warehouse";
+	}, [transferList]);
+
+	/**
+	 * Gets the warehouse name from warehouse ID using the map
+	 */
+	const getWarehouseName = useCallback(
+		(warehouseIdToFind: string): string => {
+			const mappingInfo = warehouseCabinetMap.get(warehouseIdToFind);
+			if (mappingInfo) {
+				return mappingInfo.warehouseName;
+			}
+			const warehouse = warehouseOptions.find(
+				(w) => w.id === warehouseIdToFind,
+			);
+			return warehouse?.name ?? `Almacén ${warehouseIdToFind.slice(0, 6)}`;
+		},
+		[warehouseCabinetMap, warehouseOptions],
+	);
+
 	const handleSubmitTransfer = async () => {
-		if (!cabinetId) {
-			toast.error("No se encontró un gabinete asignado al almacén destino.");
+		if (!transferSourceInfo) {
+			toast.error("No hay items en la lista de transferencia.");
 			return;
 		}
+
+		// Get the warehouse-cabinet mapping for the source warehouse
+		const sourceMapping = warehouseCabinetMap.get(
+			transferSourceInfo.warehouseId,
+		);
+		if (!sourceMapping) {
+			toast.error(
+				"No se encontró la configuración de almacén-gabinete para este almacén.",
+			);
+			return;
+		}
+
+		const cabinetId = sourceMapping.cabinetId;
+		if (!cabinetId) {
+			toast.error("No se encontró un gabinete asignado al almacén.");
+			return;
+		}
+
+		if (!transferDirection) {
+			toast.error("No hay items en la lista de transferencia.");
+			return;
+		}
+
+		// Determine source and destination based on transfer direction
+		const isWarehouseToCabinet = transferDirection === "warehouse-to-cabinet";
+		const sourceWarehouseId = transferSourceInfo.warehouseId;
+		const destinationWarehouseId = isWarehouseToCabinet
+			? (transferSourceInfo.cabinetId ?? cabinetWarehouseId)
+			: cabinetWarehouseId;
+
 		const transferData = approveTransfer({
-			destinationWarehouseId: cabinetId,
-			sourceWarehouseId: warehouseId,
+			destinationWarehouseId,
+			sourceWarehouseId,
 			cabinetId,
+			isCabinetToWarehouse: !isWarehouseToCabinet,
 		});
 		await createTransferOrder(transferData);
 	};
@@ -636,7 +845,13 @@ export function InventarioPage({
 			</div>
 
 			{/* Tabs */}
-			<Tabs className="space-y-6" defaultValue="general">
+			<Tabs
+				className="space-y-6"
+				defaultValue="general"
+				onValueChange={(value) =>
+					setCurrentTab(value as "general" | "gabinete")
+				}
+			>
 				<div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
 					<TabsList className="theme-transition grid w-full max-w-md grid-cols-2 bg-[#F9FAFB] dark:bg-[#2D3033]">
 						<TabsTrigger
@@ -792,6 +1007,72 @@ export function InventarioPage({
 										Revisa y gestiona los items seleccionados para transferir.
 									</DialogDescription>
 								</DialogHeader>
+
+								{/* Transfer Direction Info */}
+								{transferDirection && transferList.length > 0 && (
+									<div className="flex-shrink-0 space-y-2 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-4 dark:border-[#2D3033] dark:bg-[#1E1F20]">
+										<div className="flex items-center justify-between">
+											<div className="space-y-1">
+												<p className="font-medium text-[#11181C] text-sm dark:text-[#ECEDEE]">
+													Origen
+												</p>
+												<p className="text-[#687076] text-sm dark:text-[#9BA1A6]">
+													{transferSourceInfo
+														? getWarehouseName(transferSourceInfo.warehouseId)
+														: "N/A"}
+													{transferSourceInfo?.source === "cabinet" &&
+														" (Gabinete)"}
+												</p>
+											</div>
+											<div className="px-4">
+												<svg
+													className="h-6 w-6 text-[#0a7ea4]"
+													fill="none"
+													stroke="currentColor"
+													strokeWidth={2}
+													viewBox="0 0 24 24"
+												>
+													<path
+														d="M13 7l5 5m0 0l-5 5m5-5H6"
+														strokeLinecap="round"
+														strokeLinejoin="round"
+													/>
+												</svg>
+											</div>
+											<div className="space-y-1">
+												<p className="font-medium text-[#11181C] text-sm dark:text-[#ECEDEE]">
+													Destino
+												</p>
+												<p className="text-[#687076] text-sm dark:text-[#9BA1A6]">
+													{transferDirection === "warehouse-to-cabinet"
+														? `${transferSourceInfo ? getWarehouseName(transferSourceInfo.warehouseId) : "N/A"} (Gabinete)`
+														: transferSourceInfo
+															? getWarehouseName(transferSourceInfo.warehouseId)
+															: "N/A"}
+												</p>
+											</div>
+										</div>
+										<div className="border-t border-[#E5E7EB] pt-2 dark:border-[#2D3033]">
+											<p className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+												{transferList.length}{" "}
+												{transferList.length === 1 ? "item" : "items"} en lista
+											</p>
+										</div>
+										{transferSourceInfo && (
+											<div className="rounded-md border border-blue-200 bg-blue-50 p-2 dark:border-blue-800 dark:bg-blue-950/20">
+												<p className="text-blue-800 text-xs dark:text-blue-300">
+													<strong>Nota:</strong> Solo puedes agregar items del
+													mismo{" "}
+													{transferSourceInfo.source === "warehouse"
+														? "almacén"
+														: "gabinete"}{" "}
+													a esta transferencia.
+												</p>
+											</div>
+										)}
+									</div>
+								)}
+
 								<div className="flex flex-col space-y-4">
 									<div className="flex-shrink-0">
 										<Input
@@ -822,6 +1103,9 @@ export function InventarioPage({
 														<TableHead className="text-[#687076] dark:text-[#9BA1A6]">
 															Categoría
 														</TableHead>
+														<TableHead className="text-[#687076] dark:text-[#9BA1A6]">
+															Origen
+														</TableHead>
 														<TableHead className="text-right text-[#687076] dark:text-[#9BA1A6]">
 															Acciones
 														</TableHead>
@@ -838,6 +1122,19 @@ export function InventarioPage({
 															<TableCell>
 																<Badge className="bg-[#F3F4F6] text-[#374151] dark:bg-[#374151] dark:text-[#D1D5DB]">
 																	{it.category}
+																</Badge>
+															</TableCell>
+															<TableCell>
+																<Badge
+																	className={
+																		it.source === "warehouse"
+																			? "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+																			: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200"
+																	}
+																>
+																	{it.source === "warehouse"
+																		? "Almacén"
+																		: "Gabinete"}
 																</Badge>
 															</TableCell>
 															<TableCell className="text-right">
@@ -878,56 +1175,62 @@ export function InventarioPage({
 
 				{/* General Tab */}
 				<TabsContent className="space-y-4" value="general">
-						<ProductCatalogTable
-							disabledUUIDs={disabledUUIDs}
-							enableDispose
-							enableSelection
-							inventory={warehouseItems}
-							onAddToTransfer={handleAddToTransfer}
-							onReprintQr={({ product, item }) => {
-								const uuid = item?.uuid ?? "";
-								if (!uuid || uuid.startsWith("uuid-")) {
-									toast.error("No se encontró el identificador del artículo.");
-									return;
-								}
-								const barcode = item?.barcode && item.barcode > 0 ? item.barcode : product.barcode;
-								handleReprintItemQr({
-									barcode,
-									productName: product.name,
-									uuid,
-								});
-							}}
-							productCatalog={productCatalog}
-							warehouse={warehouseFilter}
-							warehouseMap={cabinetWarehouse}
-						/>
+					<ProductCatalogTable
+						disabledUUIDs={disabledUUIDs}
+						enableDispose
+						enableSelection
+						inventory={warehouseItems}
+						onAddToTransfer={handleAddToTransfer}
+						onReprintQr={({ product, item }) => {
+							const uuid = item?.uuid ?? "";
+							if (!uuid || uuid.startsWith("uuid-")) {
+								toast.error("No se encontró el identificador del artículo.");
+								return;
+							}
+							const barcode =
+								item?.barcode && item.barcode > 0
+									? item.barcode
+									: product.barcode;
+							handleReprintItemQr({
+								barcode,
+								productName: product.name,
+								uuid,
+							});
+						}}
+						productCatalog={productCatalog}
+						warehouse={warehouseFilter}
+						warehouseMap={cabinetWarehouse}
+					/>
 				</TabsContent>
 
 				{/* Gabinete Tab */}
 				<TabsContent className="space-y-4" value="gabinete">
-						<ProductCatalogTable
-							disabledUUIDs={disabledUUIDs}
-							enableDispose
-							enableSelection
-							inventory={cabinetItems}
-							onAddToTransfer={handleAddToTransfer}
-							onReprintQr={({ product, item }) => {
-								const uuid = item?.uuid ?? "";
-								if (!uuid || uuid.startsWith("uuid-")) {
-									toast.error("No se encontró el identificador del artículo.");
-									return;
-								}
-								const barcode = item?.barcode && item.barcode > 0 ? item.barcode : product.barcode;
-								handleReprintItemQr({
-									barcode,
-									productName: product.name,
-									uuid,
-								});
-							}}
-							productCatalog={productCatalog}
-							warehouse={cabinetFilter}
-							warehouseMap={cabinetWarehouse}
-						/>
+					<ProductCatalogTable
+						disabledUUIDs={disabledUUIDs}
+						enableDispose
+						enableSelection
+						inventory={cabinetItems}
+						onAddToTransfer={handleAddToTransfer}
+						onReprintQr={({ product, item }) => {
+							const uuid = item?.uuid ?? "";
+							if (!uuid || uuid.startsWith("uuid-")) {
+								toast.error("No se encontró el identificador del artículo.");
+								return;
+							}
+							const barcode =
+								item?.barcode && item.barcode > 0
+									? item.barcode
+									: product.barcode;
+							handleReprintItemQr({
+								barcode,
+								productName: product.name,
+								uuid,
+							});
+						}}
+						productCatalog={productCatalog}
+						warehouse={cabinetFilter}
+						warehouseMap={cabinetWarehouse}
+					/>
 				</TabsContent>
 			</Tabs>
 		</div>

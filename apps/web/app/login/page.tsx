@@ -1,26 +1,41 @@
 /** biome-ignore-all lint/correctness/noChildrenProp: Needed for form usage */
-'use client';
+"use client";
 
-import { useForm } from '@tanstack/react-form';
-import { Eye, EyeOff, Lock } from 'lucide-react';
-import { useRouter } from 'next/navigation';
-import type React from 'react';
-import { useState } from 'react';
-import { toast } from 'sonner';
-import { ThemeToggle } from '@/components/theme-toggle';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { useLoginMutation } from '@/lib/mutations/auth';
-import { useAuthStore } from '@/stores/auth-store';
+import { useForm } from "@tanstack/react-form";
+import { Eye, EyeOff, Lock } from "lucide-react";
+import { useRouter } from "next/navigation";
+import type React from "react";
+import { useState } from "react";
+import { toast } from "sonner";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { Button } from "@/components/ui/button";
+import {
+	Card,
+	CardContent,
+	CardDescription,
+	CardHeader,
+	CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useLoginMutation } from "@/lib/mutations/auth";
+import { useAuthStore } from "@/stores/auth-store";
 
+/**
+ * Render the login page UI and manage the authentication flow.
+ *
+ * Displays a themed sign-in form with email/username and password fields, toggles password visibility,
+ * submits credentials to the login mutation, shows success or error toasts, updates global auth state on success,
+ * and navigates to "/dashboard" after successful authentication. Renders an additional development-only signup link when NODE_ENV is "development".
+ *
+ * @returns The login page as a React element.
+ */
 export default function LoginPage() {
 	const router = useRouter();
 	const form = useForm({
 		defaultValues: {
-			emailOrUsername: '',
-			password: '',
+			emailOrUsername: "",
+			password: "",
 		},
 	});
 	const { login } = useAuthStore();
@@ -38,12 +53,14 @@ export default function LoginPage() {
 			});
 
 			if (success) {
-				toast.success('¡Bienvenido! Inicio de sesión exitoso');
+				toast.success("¡Bienvenido! Inicio de sesión exitoso");
 				login(success);
-				router.push('/dashboard');
+				router.push("/dashboard");
 			}
 		} catch (error) {
-			toast.error('Error de autenticación: Credenciales inválidas. Intenta de nuevo.');
+			toast.error(
+				"Error de autenticación: Credenciales inválidas. Intenta de nuevo.",
+			);
 			// biome-ignore lint/suspicious/noConsole: Needed for error logging
 			console.error(error);
 		}
@@ -92,9 +109,7 @@ export default function LoginPage() {
 													id="emailOrUsername"
 													name={field.name}
 													onBlur={field.handleBlur}
-													onChange={(e) =>
-														field.handleChange(e.target.value)
-													}
+													onChange={(e) => field.handleChange(e.target.value)}
 													placeholder="correo@ejemplo.com o usuario123"
 													required
 													type="text"
@@ -102,7 +117,7 @@ export default function LoginPage() {
 												/>
 												{!field.state.meta.isValid && (
 													<em className="mt-1 text-red-500 text-xs">
-														{field.state.meta.errors.join(',')}
+														{field.state.meta.errors.join(",")}
 													</em>
 												)}
 											</>
@@ -113,7 +128,7 @@ export default function LoginPage() {
 											onChange: ({ value }) => {
 												return value.length > 0
 													? undefined
-													: 'El campo es requerido';
+													: "El campo es requerido";
 											},
 										}}
 									/>
@@ -137,17 +152,15 @@ export default function LoginPage() {
 													id="password"
 													name={field.name}
 													onBlur={field.handleBlur}
-													onChange={(e) =>
-														field.handleChange(e.target.value)
-													}
+													onChange={(e) => field.handleChange(e.target.value)}
 													placeholder="********"
 													required
-													type={showPassword ? 'text' : 'password'}
+													type={showPassword ? "text" : "password"}
 													value={field.state.value}
 												/>
 												{!field.state.meta.isValid && (
 													<em className="mt-1 text-red-500 text-xs">
-														{field.state.meta.errors.join(',')}
+														{field.state.meta.errors.join(",")}
 													</em>
 												)}
 											</>
@@ -158,7 +171,7 @@ export default function LoginPage() {
 											onChange: ({ value }) => {
 												return value.length > 0
 													? undefined
-													: 'El campo es requerido';
+													: "El campo es requerido";
 											},
 										}}
 									/>
@@ -177,8 +190,8 @@ export default function LoginPage() {
 										)}
 										<span className="sr-only">
 											{showPassword
-												? 'Ocultar contraseña'
-												: 'Mostrar contraseña'}
+												? "Ocultar contraseña"
+												: "Mostrar contraseña"}
 										</span>
 									</Button>
 								</div>
@@ -190,7 +203,7 @@ export default function LoginPage() {
 									disabled={isPending}
 									type="submit"
 								>
-									{isPending ? 'Iniciando sesión...' : 'Iniciar Sesión'}
+									{isPending ? "Iniciando sesión..." : "Iniciar Sesión"}
 								</Button>
 
 								<div className="text-center">
@@ -205,13 +218,19 @@ export default function LoginPage() {
 							</div>
 						</form>
 
-						{/* Demo credentials info */}
-						<div className="mt-6 rounded-md border border-[#0a7ea4]/20 bg-[#0a7ea4]/5 p-4">
-							<p className="text-center text-[#687076] text-xs dark:text-[#9BA1A6]">
-								<strong>Demo:</strong> Usa cualquier email y contraseña de 6+
-								caracteres
-							</p>
-						</div>
+						{/* Development sign-up link */}
+						{process.env.NODE_ENV === "development" && (
+							<div className="mt-4 text-center">
+								<Button
+									className="theme-transition h-auto p-0 font-normal text-[#0a7ea4] text-sm hover:text-[#0a7ea4]/90"
+									onClick={() => router.push("/signup")}
+									type="button"
+									variant="link"
+								>
+									🔧 Crear cuenta de desarrollo
+								</Button>
+							</div>
+						)}
 					</CardContent>
 				</Card>
 			</div>
