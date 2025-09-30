@@ -2485,17 +2485,17 @@ const route = app
 					.describe(
 						'Type of transfer: external (DC → Almacen) or internal (Almacen → Counter)',
 					),
-				sourceWarehouseId: z.string().uuid('Invalid source warehouse ID'),
-				destinationWarehouseId: z.string().uuid('Invalid destination warehouse ID'),
+				sourceWarehouseId: z.string(),
+				destinationWarehouseId: z.string(),
 				initiatedBy: z.string('Invalid employee ID'),
-				cabinetId: z.string().uuid('Invalid cabinet ID').optional(),
+				cabinetId: z.string().optional(),
 				transferReason: z.string().max(500, 'Transfer reason too long').optional(),
 				notes: z.string().max(1000, 'Notes too long').optional(),
 				priority: z.enum(['normal', 'high', 'urgent']).optional().default('normal'),
 				transferDetails: z
 					.array(
 						z.object({
-							productStockId: z.string().uuid('Invalid product stock ID'),
+							productStockId: z.string(),
 							quantityTransferred: z
 								.number()
 								.int()
@@ -2509,6 +2509,7 @@ const route = app
 					)
 					.min(1, 'At least one transfer detail is required')
 					.max(100, 'Too many items in single transfer'),
+				isCabinetToWarehouse: z.boolean().optional().default(false),
 			}),
 		),
 		async (c) => {
@@ -2524,6 +2525,7 @@ const route = app
 					notes,
 					priority,
 					transferDetails,
+					isCabinetToWarehouse,
 				} = c.req.valid('json');
 
 				// Validate that source and destination warehouses are different
@@ -2591,6 +2593,15 @@ const route = app
 
 					// If internal transfer, immediately move the involved product stock to the cabinet
 					if (transferType === 'internal' && productStockIds.length > 0) {
+						if (isCabinetToWarehouse) {
+							await tx
+								.update(schemas.productStock)
+								.set({
+									currentWarehouse: sourceWarehouseId,
+									currentCabinet: null,
+								})
+								.where(inArray(schemas.productStock.id, productStockIds));
+						}
 						await tx
 							.update(schemas.productStock)
 							.set({
@@ -2690,7 +2701,7 @@ const route = app
 				isCompleted: z.boolean().optional(),
 				isPending: z.boolean().optional(),
 				isCancelled: z.boolean().optional(),
-				completedBy: z.string().uuid('Invalid employee ID').optional(),
+				completedBy: z.string().optional(),
 				notes: z.string().max(1000, 'Notes too long').optional(),
 			}),
 		),
@@ -2792,9 +2803,9 @@ const route = app
 		zValidator(
 			'json',
 			z.object({
-				transferDetailId: z.string().uuid('Invalid transfer detail ID'),
+				transferDetailId: z.string(),
 				isReceived: z.boolean().optional(),
-				receivedBy: z.string().uuid('Invalid employee ID').optional(),
+				receivedBy: z.string().optional(),
 				itemCondition: z.enum(['good', 'damaged', 'needs_inspection']).optional(),
 				itemNotes: z.string().max(500, 'Item notes too long').optional(),
 			}),
