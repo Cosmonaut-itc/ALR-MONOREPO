@@ -43,6 +43,14 @@ export const useCreateTransferOrder = () =>
 				queryClient.invalidateQueries({
 					queryKey: createQueryKey(queryKeys.inventory, ["all"]),
 				});
+				queryClient.invalidateQueries({
+					queryKey: createQueryKey(queryKeys.receptions, [
+						data.data.transfer.sourceWarehouseId,
+					]),
+				});
+				queryClient.invalidateQueries({
+					queryKey: createQueryKey(queryKeys.receptions, ["all"]),
+				});
 			}
 		},
 		onError: (error) => {

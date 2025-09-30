@@ -36,6 +36,7 @@ import {
 } from "@/lib/mutations/transfers";
 import { queryKeys } from "@/lib/query-keys";
 import { cn, createWarehouseOptions } from "@/lib/utils";
+import { useAuthStore } from "@/stores/auth-store";
 import { useReceptionStore } from "@/stores/reception-store";
 import type {
 	ProductCatalogResponse,
@@ -99,6 +100,8 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 		isAllReceived,
 	} = useReceptionStore();
 
+	const { user } = useAuthStore();
+
 	// Mutations for updating transfer and item statuses
 	const { mutateAsync: updateTransferStatus } = useUpdateTransferStatus();
 	const { mutateAsync: updateItemStatus } = useUpdateTransferItemStatus();
@@ -150,6 +153,8 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 			const payload = {
 				transferDetailId: itemId,
 				isReceived: nextReceived,
+				receivedBy: user?.id
+				,
 			} as UpdateTransferItemStatusPayload;
 			await updateItemStatus(payload);
 		} catch {

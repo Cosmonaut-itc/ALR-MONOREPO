@@ -1734,9 +1734,6 @@ export function RecepcionesPage({
 													Código
 												</TableHead>
 												<TableHead className="text-[#11181C] dark:text-[#ECEDEE]">
-													Cantidad
-												</TableHead>
-												<TableHead className="text-[#11181C] dark:text-[#ECEDEE]">
 													Nota
 												</TableHead>
 												<TableHead className="text-right text-[#11181C] dark:text-[#ECEDEE]">
@@ -1765,21 +1762,6 @@ export function RecepcionesPage({
 														</TableCell>
 														<TableCell className="font-mono text-[#687076] text-sm dark:text-[#9BA1A6]">
 															{item.barcode || "—"}
-														</TableCell>
-														<TableCell>
-															<Input
-																className="w-24 border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]"
-																min={1}
-																onChange={(event) =>
-																	updateDraftItemQuantity(
-																		item.productStockId,
-																		Number.parseInt(event.target.value, 10),
-																	)
-																}
-																step={1}
-																type="number"
-																value={item.quantity}
-															/>
 														</TableCell>
 														<TableCell>
 															<Input
