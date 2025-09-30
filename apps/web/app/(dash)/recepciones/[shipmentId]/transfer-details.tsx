@@ -24,6 +24,7 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
+import { getCabinetWarehouse } from "@/lib/fetch-functions/inventory";
 import { getAllProducts } from "@/lib/fetch-functions/products";
 import { getTransferDetailsById } from "@/lib/fetch-functions/recepciones";
 import { createQueryKey } from "@/lib/helpers";
@@ -34,82 +35,17 @@ import {
 	useUpdateTransferStatus,
 } from "@/lib/mutations/transfers";
 import { queryKeys } from "@/lib/query-keys";
-import { cn } from "@/lib/utils";
+import { cn, createWarehouseOptions } from "@/lib/utils";
 import { useReceptionStore } from "@/stores/reception-store";
-import type { ProductCatalogResponse, WarehouseTransferDetails } from "@/types";
-
-// =============================
-// Helper types and utilities for safe extraction
-// =============================
-
-type UnknownRecord = Record<string, unknown>;
-
-const isRecord = (value: unknown): value is UnknownRecord => {
-	if (value === null) {
-		return false;
-	}
-	return typeof value === "object";
-};
-
-const toStringIfString = (value: unknown): string | undefined => {
-	if (typeof value === "string") {
-		return value;
-	}
-	return;
-};
-
-const toNumberIfNumber = (value: unknown): number | undefined => {
-	if (typeof value === "number" && Number.isFinite(value)) {
-		return value;
-	}
-	return;
-};
-
-const readNestedString = (
-	root: UnknownRecord,
-	key: string,
-): string | undefined => {
-	const candidate = root[key];
-	if (typeof candidate === "string") {
-		return candidate;
-	}
-	if (isRecord(candidate)) {
-		// Try common nested shapes like { product: { name } }
-		const nestedName = toStringIfString(candidate.name);
-		if (nestedName) {
-			return nestedName;
-		}
-	}
-	return;
-};
-
-const readNestedNumber = (
-	root: UnknownRecord,
-	key: string,
-): number | undefined => {
-	const candidate = root[key];
-	if (typeof candidate === "number" && Number.isFinite(candidate)) {
-		return candidate;
-	}
-	if (isRecord(candidate)) {
-		const nestedBarcode = toNumberIfNumber(candidate.barcode);
-		if (nestedBarcode !== undefined) {
-			return nestedBarcode;
-		}
-	}
-	return;
-};
+import type {
+	ProductCatalogResponse,
+	WarehouseMap,
+	WarehouseTransferDetails,
+} from "@/types";
 
 // =============================
 // Component
 // =============================
-
-type ReceptionItem = {
-	id: string;
-	barcode: number;
-	productName: string;
-	received: boolean;
-};
 
 interface PageProps {
 	shipmentId: string;
@@ -144,6 +80,15 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 		queryFn: getAllProducts,
 	});
 
+	const { data: cabinetWarehouse } = useSuspenseQuery<
+		WarehouseMap,
+		Error,
+		WarehouseMap
+	>({
+		queryKey: queryKeys.cabinetWarehouse,
+		queryFn: getCabinetWarehouse,
+	});
+
 	const {
 		items,
 		setItems,
@@ -167,11 +112,22 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 		);
 	}, [transferDetails]);
 
+	const generalTransferDetails = useMemo(() => {
+		return transferDetails && "data" in transferDetails
+			? transferDetails.data.transfer
+			: null;
+	}, [transferDetails]);
+
+	const { warehouseOptions } = useMemo(
+		() => createWarehouseOptions(cabinetWarehouse),
+		[cabinetWarehouse],
+	);
+
 	const handleMarkAllReceived = async () => {
 		markAllReceived();
 		try {
 			const payload = {
-				transferId: shipmentId,
+				transferId: generalTransferDetails?.id,
 				status: "complete",
 			} as UpdateTransferStatusPayload;
 			await updateTransferStatus(payload);
@@ -221,7 +177,7 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 					<BreadcrumbSeparator />
 					<BreadcrumbItem>
 						<BreadcrumbPage className="text-[#11181C] text-transition dark:text-[#ECEDEE]">
-							{shipmentId}
+							{generalTransferDetails?.transferNumber}
 						</BreadcrumbPage>
 					</BreadcrumbItem>
 				</BreadcrumbList>
@@ -231,13 +187,24 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 			<div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 				<div className="space-y-2">
 					<h1 className="font-bold text-2xl text-[#11181C] text-transition md:text-3xl dark:text-[#ECEDEE]">
-						Recepción de envío {shipmentId}
+						Recepción de envío{" "}
+						{generalTransferDetails?.transferNumber || shipmentId}
 					</h1>
 					<p className="text-[#687076] text-transition dark:text-[#9BA1A6]">
 						Marca los artículos como recibidos
 					</p>
 					<p className="text-[#687076] text-sm text-transition dark:text-[#9BA1A6]">
-						Almacén: {warehouseId}
+						Almacén de Origen:{" "}
+						{warehouseOptions.find((option) => option.id === warehouseId)?.name}
+					</p>
+					<p className="text-[#687076] text-sm text-transition dark:text-[#9BA1A6]">
+						Almacén de Destino:{" "}
+						{
+							warehouseOptions.find(
+								(option) =>
+									option.id === generalTransferDetails?.destinationWarehouseId,
+							)?.name
+						}
 					</p>
 				</div>
 
@@ -377,7 +344,14 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 													</TableCell>
 													<TableCell>
 														<Checkbox
-															checked={item.isReceived ?? false}
+															checked={
+																item.isReceived ||
+																generalTransferDetails?.isCompleted
+															}
+															disabled={
+																generalTransferDetails?.isCompleted ||
+																(item.isReceived as boolean)
+															}
 															className="h-5 w-5 data-[state=checked]:border-[#0a7ea4] data-[state=checked]:bg-[#0a7ea4]"
 															onCheckedChange={(checked) =>
 																handleToggleItem(item.id, Boolean(checked))
@@ -393,6 +367,12 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 					</div>
 				</CardContent>
 			</Card>
+			<div className="flex justify-end">
+				<Button onClick={() => router.back()}>
+					<ArrowLeft className="mr-2 h-4 w-4" />
+					Volver a recepciones
+				</Button>
+			</div>
 		</div>
 	);
 }

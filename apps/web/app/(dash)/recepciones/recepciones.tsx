@@ -87,17 +87,15 @@ import {
 	getAllProductStock,
 	getAllProducts,
 	getCabinetWarehouse,
-	getInventoryByWarehouse,
 } from "@/lib/fetch-functions/inventory";
 import {
 	getWarehouseTransferAll,
 	getWarehouseTransferAllByWarehouseId,
-	getWarehouseTransferById,
 } from "@/lib/fetch-functions/recepciones";
 import { createQueryKey } from "@/lib/helpers";
 import { useCreateTransferOrder } from "@/lib/mutations/transfers";
 import { queryKeys } from "@/lib/query-keys";
-import { cn } from "@/lib/utils";
+import { cn, createWarehouseOptions } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth-store";
 import { useReceptionStore } from "@/stores/reception-store";
 import type {
@@ -151,6 +149,9 @@ interface TransferListItemShape {
 	transferNumber?: string;
 	shipmentId?: string;
 	status?: string;
+	isCompleted?: boolean;
+	isPending?: boolean;
+	isCancelled?: boolean;
 	transferStatus?: string;
 	transferDetails?: readonly TransferDetailItem[] | TransferDetailItem[];
 	scheduledDate?: string;
@@ -606,81 +607,6 @@ const createProductOptions = (
 	return { productGroups, productLookup: lookup };
 };
 
-const toWarehouseOption = (entry: UnknownRecord): WarehouseOption | null => {
-	const warehouseId = toStringIfString(entry.warehouseId);
-	if (!warehouseId) {
-		return null;
-	}
-	const warehouseName =
-		toStringIfString(entry.warehouseName) ||
-		`Almacén ${warehouseId.slice(0, 6)}`;
-	return {
-		id: warehouseId,
-		name: warehouseName,
-		detail: `ID: ${warehouseId}`,
-	};
-};
-
-const toCabinetOption = (
-	entry: UnknownRecord,
-	warehouseName?: string,
-): WarehouseOption | null => {
-	const cabinetId = toStringIfString(entry.cabinetId);
-	if (!cabinetId) {
-		return null;
-	}
-	const cabinetName =
-		toStringIfString(entry.cabinetName) || `Gabinete ${cabinetId.slice(0, 6)}`;
-	const detail = warehouseName
-		? `${warehouseName} • ID: ${cabinetId}`
-		: `ID: ${cabinetId}`;
-	return {
-		id: cabinetId,
-		name: cabinetName,
-		detail,
-	};
-};
-
-const createWarehouseOptions = (
-	cabinetWarehouse: WarehouseMap | null | undefined,
-): {
-	warehouseOptions: WarehouseOption[];
-	cabinetOptions: WarehouseOption[];
-} => {
-	if (!isWarehouseMapSuccess(cabinetWarehouse)) {
-		return { warehouseOptions: [], cabinetOptions: [] };
-	}
-	const entries = Array.isArray(cabinetWarehouse.data)
-		? cabinetWarehouse.data
-		: [];
-	const warehouseMap = new Map<string, WarehouseOption>();
-	const cabinetMap = new Map<string, WarehouseOption>();
-
-	for (const entryRaw of entries) {
-		const entry = toRecord(entryRaw);
-		if (!entry) {
-			continue;
-		}
-		const warehouseOption = toWarehouseOption(entry);
-		if (warehouseOption && !warehouseMap.has(warehouseOption.id)) {
-			warehouseMap.set(warehouseOption.id, warehouseOption);
-		}
-		const cabinetOption = toCabinetOption(entry, warehouseOption?.name);
-		if (cabinetOption && !cabinetMap.has(cabinetOption.id)) {
-			cabinetMap.set(cabinetOption.id, cabinetOption);
-		}
-	}
-
-	return {
-		warehouseOptions: Array.from(warehouseMap.values()).sort((a, b) =>
-			a.name.localeCompare(b.name, "es", { sensitivity: "base" }),
-		),
-		cabinetOptions: Array.from(cabinetMap.values()).sort((a, b) =>
-			a.name.localeCompare(b.name, "es", { sensitivity: "base" }),
-		),
-	};
-};
-
 /**
  * Extracts a flat array of transfer list items from various API response shapes.
  *
@@ -716,19 +642,6 @@ function extractTransferItems(root: APIResponse): TransferListItemShape[] {
 	}
 
 	return isArrayOfTransferListItem(list) ? list : [];
-}
-
-/**
- * Convert a raw transfer status string into the normalized values "pendiente" or "completada".
- *
- * @param raw - Raw status string (e.g., from an API) that may indicate completion
- * @returns `"completada"` if `raw` indicates the transfer is complete, `"pendiente"` otherwise (including when `raw` is `undefined`)
- */
-function normalizeTransferStatus(raw?: string): "pendiente" | "completada" {
-	if (!raw) {
-		return "pendiente";
-	}
-	return completeRegex.test(raw) ? "completada" : "pendiente";
 }
 
 /**
@@ -1059,7 +972,9 @@ export function RecepcionesPage({
 		sourceWarehouseName: string | undefined;
 		destinationWarehouseName: string | undefined;
 		totalItems: number;
-		status: "pendiente" | "completada";
+		isCompleted: boolean;
+		isPending: boolean;
+		isCancelled: boolean;
 		transferType: "internal" | "external";
 		updatedAt: string;
 	};
@@ -1069,9 +984,10 @@ export function RecepcionesPage({
 		const dateOnlyPattern = /^\d{4}-\d{2}-\d{2}$/;
 
 		return items.map((item) => {
-			const status = normalizeTransferStatus(
-				item.status ?? item.transferStatus,
-			);
+			const isCompleted = item.isCompleted ?? false;
+			const isPending = item.isPending ?? false;
+			const isCancelled = item.isCancelled ?? false;
+
 			const totalItems = computeTotalItems(
 				item.transferDetails,
 				item.totalItems,
@@ -1134,7 +1050,9 @@ export function RecepcionesPage({
 				destinationWarehouseName,
 				arrivalDate,
 				totalItems,
-				status,
+				isCompleted,
+				isPending,
+				isCancelled,
 				transferType: normalizedTransferType,
 				updatedAt,
 			};
@@ -1173,10 +1091,8 @@ export function RecepcionesPage({
 		[parseDateValue],
 	);
 
-	const pendingReceptions = receptions.filter((r) => r.status === "pendiente");
-	const completedReceptions = receptions.filter(
-		(r) => r.status === "completada",
-	);
+	const pendingReceptions = receptions.filter((r) => r.isPending);
+	const completedReceptions = receptions.filter((r) => r.isCompleted);
 
 	const columns = useMemo<ColumnDef<DerivedReception, unknown>[]>(
 		() => [
@@ -1314,7 +1230,7 @@ export function RecepcionesPage({
 				},
 			},
 			{
-				accessorKey: "status",
+				accessorKey: "isCompleted",
 				header: "Estado",
 				filterFn: "equals",
 				enableGlobalFilter: false,
@@ -1324,8 +1240,8 @@ export function RecepcionesPage({
 					cellClassName: "text-[#11181C] text-transition dark:text-[#ECEDEE]",
 				} satisfies ColumnMeta,
 				cell: ({ getValue }) => {
-					const status = getValue<"pendiente" | "completada">();
-					const isPending = status === "pendiente";
+					const isCompleted = getValue<boolean>();
+					const isPending = !isCompleted;
 					const badgeClass = isPending
 						? "theme-transition bg-orange-100 text-orange-800 hover:bg-orange-200 dark:bg-orange-900/20 dark:text-orange-400"
 						: "theme-transition bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900/20 dark:text-green-400";
@@ -1349,8 +1265,8 @@ export function RecepcionesPage({
 					cellClassName: "text-[#687076] text-transition dark:text-[#9BA1A6]",
 				} satisfies ColumnMeta,
 				cell: ({ row }) => {
-					const { status, transferId } = row.original;
-					if (status === "pendiente") {
+					const { isCompleted, transferId } = row.original;
+					if (!isCompleted) {
 						return (
 							<Button
 								asChild
@@ -1365,9 +1281,16 @@ export function RecepcionesPage({
 						);
 					}
 					return (
-						<span className="text-[#687076] text-sm text-transition dark:text-[#9BA1A6]">
-							Completada
-						</span>
+						<Button
+							asChild
+							className="theme-transition bg-[#0a7ea4] text-white hover:bg-[#0a7ea4]/90"
+							size="sm"
+						>
+							<Link href={`/recepciones/${transferId}`}>
+								<ArrowRight className="mr-1 h-4 w-4" />
+								Ver
+							</Link>
+						</Button>
 					);
 				},
 			},
@@ -1410,7 +1333,7 @@ export function RecepcionesPage({
 	});
 
 	const arrivalDateColumn = table.getColumn("arrivalDate");
-	const statusColumn = table.getColumn("status");
+	const statusColumn = table.getColumn("isCompleted");
 	const transferTypeColumn = table.getColumn("transferType");
 	const sourceWarehouseNameColumn = table.getColumn("sourceWarehouseName");
 	const destinationWarehouseNameColumn = table.getColumn(
@@ -1440,6 +1363,7 @@ export function RecepcionesPage({
 	return (
 		<div className="theme-transition flex-1 space-y-6 bg-white p-4 md:p-6 dark:bg-[#151718]">
 			{/* Header */}
+			{/* Page header with title and create transfer button */}
 			<div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
 				<div className="space-y-2">
 					<h1 className="font-bold text-2xl text-[#11181C] text-transition md:text-3xl dark:text-[#ECEDEE]">
@@ -1450,6 +1374,8 @@ export function RecepcionesPage({
 						sucursal a otra.
 					</p>
 				</div>
+
+				{/* Dialog for creating new transfer orders */}
 				<Dialog onOpenChange={setIsDialogOpen} open={isDialogOpen}>
 					<DialogTrigger asChild>
 						<Button
@@ -1460,6 +1386,8 @@ export function RecepcionesPage({
 							Nuevo traspaso
 						</Button>
 					</DialogTrigger>
+
+					{/* Dialog content - transfer creation form */}
 					<DialogContent className="border-[#E5E7EB] bg-white sm:max-w-3xl dark:border-[#2D3033] dark:bg-[#151718]">
 						<form className="space-y-6" onSubmit={handleSubmitTransfer}>
 							<DialogHeader>
@@ -1472,8 +1400,11 @@ export function RecepcionesPage({
 								</DialogDescription>
 							</DialogHeader>
 
+							{/* Form fields container */}
 							<div className="grid gap-6">
+								{/* Basic transfer information - responsive 2-column grid */}
 								<div className="grid gap-4 sm:grid-cols-2">
+									{/* Source warehouse selector */}
 									<div className="grid gap-2">
 										<Label
 											className="text-[#11181C] dark:text-[#ECEDEE]"
@@ -1508,6 +1439,8 @@ export function RecepcionesPage({
 											</SelectContent>
 										</Select>
 									</div>
+
+									{/* Destination warehouse selector */}
 									<div className="grid gap-2">
 										<Label
 											className="text-[#11181C] dark:text-[#ECEDEE]"
@@ -1544,6 +1477,8 @@ export function RecepcionesPage({
 											</SelectContent>
 										</Select>
 									</div>
+
+									{/* Scheduled date picker */}
 									<div className="grid gap-2">
 										<Label
 											className="text-[#11181C] dark:text-[#ECEDEE]"
@@ -1585,6 +1520,8 @@ export function RecepcionesPage({
 											</PopoverContent>
 										</Popover>
 									</div>
+
+									{/* Priority selector */}
 									<div className="grid gap-2">
 										<Label
 											className="text-[#11181C] dark:text-[#ECEDEE]"
@@ -1625,6 +1562,8 @@ export function RecepcionesPage({
 											</SelectContent>
 										</Select>
 									</div>
+
+									{/* Transfer notes - spans full width */}
 									<div className="grid gap-2 sm:col-span-2">
 										<Label
 											className="text-[#11181C] dark:text-[#ECEDEE]"
@@ -1647,6 +1586,7 @@ export function RecepcionesPage({
 									</div>
 								</div>
 
+								{/* Product selection section */}
 								<div className="grid gap-2">
 									<Label
 										className="text-[#11181C] dark:text-[#ECEDEE]"
@@ -1654,7 +1594,10 @@ export function RecepcionesPage({
 									>
 										Agregar productos
 									</Label>
+
+									{/* Product picker - responsive flex layout */}
 									<div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+										{/* Product combobox with search */}
 										<Popover
 											onOpenChange={setProductPickerOpen}
 											open={productPickerOpen}
@@ -1760,6 +1703,8 @@ export function RecepcionesPage({
 											</PopoverContent>
 										</Popover>
 									</div>
+
+									{/* Add product button */}
 									<Button
 										className="flex w-[100px] items-center gap-2 bg-[#0a7ea4] text-white hover:bg-[#0a7ea4]/90"
 										disabled={!selectedProductStockId}
@@ -1769,12 +1714,15 @@ export function RecepcionesPage({
 										<Plus className="h-4 w-4" />
 										Agregar
 									</Button>
+
+									{/* Helper text */}
 									<p className="text-[#687076] text-xs dark:text-[#9BA1A6]">
 										Los productos listados pertenecen al inventario del almacén
 										actual.
 									</p>
 								</div>
 
+								{/* Selected products table */}
 								<div className="rounded-md border border-[#E5E7EB] dark:border-[#2D3033]">
 									<Table>
 										<TableHeader>
@@ -1866,10 +1814,14 @@ export function RecepcionesPage({
 								</div>
 							</div>
 
+							{/* Dialog footer with summary and action buttons */}
 							<DialogFooter className="flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+								{/* Item count summary */}
 								<span className="text-[#687076] text-sm dark:text-[#9BA1A6]">
 									{draftSummaryLabel}
 								</span>
+
+								{/* Action buttons - responsive flex layout */}
 								<div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
 									<Button
 										className="border-[#E5E7EB] text-[#11181C] hover:bg-[#F9FAFB] dark:border-[#2D3033] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
@@ -1892,7 +1844,10 @@ export function RecepcionesPage({
 					</DialogContent>
 				</Dialog>
 			</div>
+
+			{/* Dashboard metrics cards - displays key statistics */}
 			<div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+				{/* Pending transfers card */}
 				<Card className="card-transition border-[#E5E7EB] bg-[#F9FAFB] dark:border-[#2D3033] dark:bg-[#1E1F20]">
 					<CardContent className="p-6">
 						<div className="flex items-center space-x-4">
@@ -1911,6 +1866,7 @@ export function RecepcionesPage({
 					</CardContent>
 				</Card>
 
+				{/* Completed transfers card */}
 				<Card className="card-transition border-[#E5E7EB] bg-[#F9FAFB] dark:border-[#2D3033] dark:bg-[#1E1F20]">
 					<CardContent className="p-6">
 						<div className="flex items-center space-x-4">
@@ -1929,6 +1885,7 @@ export function RecepcionesPage({
 					</CardContent>
 				</Card>
 
+				{/* Total items card */}
 				<Card className="card-transition border-[#E5E7EB] bg-[#F9FAFB] dark:border-[#2D3033] dark:bg-[#1E1F20]">
 					<CardContent className="p-6">
 						<div className="flex items-center space-x-4">
@@ -1947,6 +1904,7 @@ export function RecepcionesPage({
 					</CardContent>
 				</Card>
 
+				{/* Today's transfers card */}
 				<Card className="card-transition border-[#E5E7EB] bg-[#F9FAFB] dark:border-[#2D3033] dark:bg-[#1E1F20]">
 					<CardContent className="p-6">
 						<div className="flex items-center space-x-4">
@@ -1974,6 +1932,8 @@ export function RecepcionesPage({
 					</CardContent>
 				</Card>
 			</div>
+
+			{/* Main data table card */}
 			<Card className="card-transition border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
 				<CardHeader>
 					<CardTitle className="text-[#11181C] text-transition dark:text-[#ECEDEE]">
@@ -1981,55 +1941,60 @@ export function RecepcionesPage({
 					</CardTitle>
 				</CardHeader>
 				<CardContent>
-					<div className="flex flex-col gap-3 pb-4 lg:flex-row lg:items-end lg:justify-between">
+					{/* Filters section - search and column filters */}
+					<div className="flex flex-col gap-3 pb-4">
+						{/* Global search input for shipment number */}
 						<Input
-							className="border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] w-[900px]"
+							className="border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] w-full max-w-md"
 							placeholder="Buscar Nº de envío"
 							type="search"
 							value={globalFilter ?? ""}
 							onChange={(event) => table.setGlobalFilter(event.target.value)}
 						/>
-						<div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-							<div className="w-full">
-								<Popover>
-									<PopoverTrigger asChild>
+
+						{/* Column filters - responsive grid layout */}
+						<div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
+							{/* Arrival date filter */}
+							<Popover>
+								<PopoverTrigger asChild>
+									<Button
+										className={cn(
+											"w-full justify-start border-[#E5E7EB] bg-white text-left font-normal text-[#11181C] hover:bg-[#F9FAFB] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]",
+											!arrivalDateFilterDate &&
+												"text-[#687076] dark:text-[#9BA1A6]",
+										)}
+										data-empty={!arrivalDateFilterDate}
+										variant="outline"
+									>
+										<CalendarIcon className="mr-2 h-4 w-4" />
+										{arrivalDateFilterDate ? (
+											format(arrivalDateFilterDate, "PPP", { locale: es })
+										) : (
+											<span>Fecha de llegada</span>
+										)}
+									</Button>
+								</PopoverTrigger>
+								<PopoverContent className="w-auto border-[#E5E7EB] bg-white p-0 dark:border-[#2D3033] dark:bg-[#151718]">
+									<CalendarPicker
+										locale={es}
+										mode="single"
+										onSelect={handleArrivalDateFilterChange}
+										selected={arrivalDateFilterDate}
+									/>
+									<div className="flex justify-end border-t border-[#E5E7EB] p-2 dark:border-[#2D3033]">
 										<Button
-											className={cn(
-												"w-full justify-start border-[#E5E7EB] bg-white text-left font-normal text-[#11181C] hover:bg-[#F9FAFB] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]",
-												!arrivalDateFilterDate &&
-													"text-[#687076] dark:text-[#9BA1A6]",
-											)}
-											data-empty={!arrivalDateFilterDate}
-											variant="outline"
+											className="text-[#687076] hover:text-[#11181C] dark:text-[#9BA1A6] dark:hover:text-[#ECEDEE]"
+											onClick={() => handleArrivalDateFilterChange(undefined)}
+											size="sm"
+											variant="ghost"
 										>
-											<CalendarIcon className="mr-2 h-4 w-4" />
-											{arrivalDateFilterDate ? (
-												format(arrivalDateFilterDate, "PPP", { locale: es })
-											) : (
-												<span>Fecha de llegada</span>
-											)}
+											Limpiar
 										</Button>
-									</PopoverTrigger>
-									<PopoverContent className="w-auto border-[#E5E7EB] bg-white p-0 dark:border-[#2D3033] dark:bg-[#151718]">
-										<CalendarPicker
-											locale={es}
-											mode="single"
-											onSelect={handleArrivalDateFilterChange}
-											selected={arrivalDateFilterDate}
-										/>
-										<div className="flex justify-end border-t border-[#E5E7EB] p-2 dark:border-[#2D3033]">
-											<Button
-												className="text-[#687076] hover:text-[#11181C] dark:text-[#9BA1A6] dark:hover:text-[#ECEDEE]"
-												onClick={() => handleArrivalDateFilterChange(undefined)}
-												size="sm"
-												variant="ghost"
-											>
-												Limpiar
-											</Button>
-										</div>
-									</PopoverContent>
-								</Popover>
-							</div>
+									</div>
+								</PopoverContent>
+							</Popover>
+
+							{/* Source warehouse filter */}
 							<Select
 								value={
 									(sourceWarehouseNameColumn?.getFilterValue() as
@@ -2063,6 +2028,8 @@ export function RecepcionesPage({
 									))}
 								</SelectContent>
 							</Select>
+
+							{/* Destination warehouse filter */}
 							<Select
 								value={
 									(destinationWarehouseNameColumn?.getFilterValue() as
@@ -2096,6 +2063,8 @@ export function RecepcionesPage({
 									))}
 								</SelectContent>
 							</Select>
+
+							{/* Status filter (pending/completed) */}
 							<Select
 								value={
 									(statusColumn?.getFilterValue() as string | undefined) ??
@@ -2128,6 +2097,8 @@ export function RecepcionesPage({
 									))}
 								</SelectContent>
 							</Select>
+
+							{/* Transfer type filter (internal/external) */}
 							<Select
 								value={
 									(transferTypeColumn?.getFilterValue() as
@@ -2163,8 +2134,11 @@ export function RecepcionesPage({
 							</Select>
 						</div>
 					</div>
+
+					{/* Data table container */}
 					<div className="theme-transition rounded-md border border-[#E5E7EB] dark:border-[#2D3033]">
 						<Table>
+							{/* Table header */}
 							<TableHeader>
 								{table.getHeaderGroups().map((headerGroup) => (
 									<TableRow
@@ -2192,6 +2166,8 @@ export function RecepcionesPage({
 									</TableRow>
 								))}
 							</TableHeader>
+
+							{/* Table body - displays reception rows or empty state */}
 							<TableBody>
 								{table.getRowModel().rows.length === 0 ? (
 									<TableRow>
