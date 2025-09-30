@@ -1202,6 +1202,7 @@ export function RecepcionesPage({
 			{
 				accessorKey: "sourceWarehouseName",
 				header: "Almacén de origen",
+				filterFn: "equals",
 				enableGlobalFilter: false,
 				meta: {
 					headerClassName:
@@ -1220,6 +1221,7 @@ export function RecepcionesPage({
 			{
 				accessorKey: "destinationWarehouseName",
 				header: "Almacén de destino",
+				filterFn: "equals",
 				enableGlobalFilter: false,
 				meta: {
 					headerClassName:
@@ -1410,6 +1412,10 @@ export function RecepcionesPage({
 	const arrivalDateColumn = table.getColumn("arrivalDate");
 	const statusColumn = table.getColumn("status");
 	const transferTypeColumn = table.getColumn("transferType");
+	const sourceWarehouseNameColumn = table.getColumn("sourceWarehouseName");
+	const destinationWarehouseNameColumn = table.getColumn(
+		"destinationWarehouseName",
+	);
 	const arrivalDateFilterValue = arrivalDateColumn?.getFilterValue() as
 		| string
 		| undefined;
@@ -1983,7 +1989,7 @@ export function RecepcionesPage({
 							value={globalFilter ?? ""}
 							onChange={(event) => table.setGlobalFilter(event.target.value)}
 						/>
-						<div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+						<div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
 							<div className="w-full">
 								<Popover>
 									<PopoverTrigger asChild>
@@ -2024,6 +2030,72 @@ export function RecepcionesPage({
 									</PopoverContent>
 								</Popover>
 							</div>
+							<Select
+								value={
+									(sourceWarehouseNameColumn?.getFilterValue() as
+										| string
+										| undefined) ?? "all"
+								}
+								onValueChange={(value) =>
+									sourceWarehouseNameColumn?.setFilterValue(
+										value === "all" ? undefined : value,
+									)
+								}
+							>
+								<SelectTrigger className="border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]">
+									<SelectValue placeholder="Almacén origen" />
+								</SelectTrigger>
+								<SelectContent className="border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
+									<SelectItem
+										className="text-[#11181C] dark:text-[#ECEDEE]"
+										value="all"
+									>
+										Todos los orígenes
+									</SelectItem>
+									{warehouseOptions.map((option) => (
+										<SelectItem
+											className="text-[#11181C] dark:text-[#ECEDEE]"
+											key={option.id}
+											value={option.name}
+										>
+											{option.name}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+							<Select
+								value={
+									(destinationWarehouseNameColumn?.getFilterValue() as
+										| string
+										| undefined) ?? "all"
+								}
+								onValueChange={(value) =>
+									destinationWarehouseNameColumn?.setFilterValue(
+										value === "all" ? undefined : value,
+									)
+								}
+							>
+								<SelectTrigger className="border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]">
+									<SelectValue placeholder="Almacén destino" />
+								</SelectTrigger>
+								<SelectContent className="border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
+									<SelectItem
+										className="text-[#11181C] dark:text-[#ECEDEE]"
+										value="all"
+									>
+										Todos los destinos
+									</SelectItem>
+									{warehouseOptions.map((option) => (
+										<SelectItem
+											className="text-[#11181C] dark:text-[#ECEDEE]"
+											key={option.id}
+											value={option.name}
+										>
+											{option.name}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
 							<Select
 								value={
 									(statusColumn?.getFilterValue() as string | undefined) ??
