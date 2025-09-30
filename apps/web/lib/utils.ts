@@ -2,6 +2,12 @@ import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 import type { WarehouseMap } from "@/types";
 
+/**
+ * Compose and merge CSS class names into a single string, resolving Tailwind utility conflicts.
+ *
+ * @param inputs - Class name values (strings, arrays, objects, etc.) to be merged
+ * @returns The merged class name string; when Tailwind utility classes conflict, later values override earlier ones
+ */
 export function cn(...inputs: ClassValue[]) {
 	return twMerge(clsx(inputs));
 }
