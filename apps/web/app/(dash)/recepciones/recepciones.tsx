@@ -682,9 +682,9 @@ function selectArrivalDate(item: TransferListItemShape): string {
 }
 
 /**
- * Render the receptions dashboard with a searchable/filterable list and a dialog-driven UI to create transfers.
+ * Renders the receptions dashboard with metrics, a searchable/filterable list, and a dialog-driven UI for creating transfer orders.
  *
- * Renders dashboard cards, a table of receptions with filtering and actions, and a dialog for composing and submitting transfer orders.
+ * Displays dashboard metric cards (pending, completed, total items, today), a table of receptions with column and global filters, and a modal form to compose and submit transfer orders including warehouse selection, scheduling, priority, notes, and product selection from inventory.
  *
  * @param warehouseId - ID of the current warehouse used to scope data and prefill the source warehouse
  * @param isEncargado - If true, show all transfers (administrative view); otherwise scope transfers to `warehouseId`
