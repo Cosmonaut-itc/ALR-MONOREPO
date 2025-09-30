@@ -2591,24 +2591,28 @@ const route = app
 						)
 						.returning();
 
-					// If internal transfer, immediately move the involved product stock to the cabinet
+					// If internal transfer, immediately move the involved product stock to/from the cabinet
 					if (transferType === 'internal' && productStockIds.length > 0) {
 						if (isCabinetToWarehouse) {
+							// Moving FROM cabinet TO warehouse - set currentCabinet to null
 							await tx
 								.update(schemas.productStock)
 								.set({
 									currentWarehouse: sourceWarehouseId,
 									currentCabinet: null,
 								})
+								.where(inArray(schemas.productStock.id, productStockIds))
+								.returning();
+						} else {
+							// Moving FROM warehouse TO cabinet - set currentCabinet to the target cabinet
+							await tx
+								.update(schemas.productStock)
+								.set({
+									currentWarehouse: sourceWarehouseId,
+									currentCabinet: cabinetId ?? null,
+								})
 								.where(inArray(schemas.productStock.id, productStockIds));
 						}
-						await tx
-							.update(schemas.productStock)
-							.set({
-								currentWarehouse: sourceWarehouseId,
-								currentCabinet: cabinetId ?? null,
-							})
-							.where(inArray(schemas.productStock.id, productStockIds));
 					}
 
 					return {
