@@ -21,6 +21,15 @@ import { Label } from "@/components/ui/label";
 import { useLoginMutation } from "@/lib/mutations/auth";
 import { useAuthStore } from "@/stores/auth-store";
 
+/**
+ * Render the login page UI and manage the authentication flow.
+ *
+ * Displays a themed sign-in form with email/username and password fields, toggles password visibility,
+ * submits credentials to the login mutation, shows success or error toasts, updates global auth state on success,
+ * and navigates to "/dashboard" after successful authentication. Renders an additional development-only signup link when NODE_ENV is "development".
+ *
+ * @returns The login page as a React element.
+ */
 export default function LoginPage() {
 	const router = useRouter();
 	const form = useForm({

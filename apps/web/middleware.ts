@@ -4,6 +4,14 @@ import { type NextRequest, NextResponse } from 'next/server';
 
 const PUBLIC_PATHS = ['/login', '/_next', '/favicon.ico', '/robots.txt', '/sitemap.xml', '/signup'];
 
+/**
+ * Determines whether a URL pathname corresponds to a configured public route.
+ *
+ * Entries in `PUBLIC_PATHS` that end with a slash are treated as prefixes; other entries match either exactly or as a prefix.
+ *
+ * @param pathname - The request URL pathname to test (e.g., "/about" or "/posts/1")
+ * @returns `true` if `pathname` matches any configured public path, `false` otherwise.
+ */
 function isPublicPath(pathname: string) {
 	return PUBLIC_PATHS.some((p) =>
 		p.endsWith('/') ? pathname.startsWith(p) : pathname === p || pathname.startsWith(p),
