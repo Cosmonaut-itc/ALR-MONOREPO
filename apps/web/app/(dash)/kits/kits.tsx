@@ -1,33 +1,67 @@
-'use client';
+"use client";
 
-import { useSuspenseQuery } from '@tanstack/react-query';
-import { format } from 'date-fns';
-import { es } from 'date-fns/locale';
-import { CalendarIcon, Package, Plus } from 'lucide-react';
-import { useMemo, useState } from 'react';
-import { AssignKitModal } from '@/components/kits/AssignKitModal';
-import { KitCard } from '@/components/kits/KitCard';
-import { Button } from '@/components/ui/button';
-import { Calendar } from '@/components/ui/calendar';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { getAllKits } from '@/lib/fetch-functions/kits';
-import { createQueryKey } from '@/lib/helpers';
-import { queryKeys } from '@/lib/query-keys';
-import { cn } from '@/lib/utils';
-import { useKitsStore } from '@/stores/kits-store';
+import { useSuspenseQuery } from "@tanstack/react-query";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
+import { CalendarIcon, Package, Plus } from "lucide-react";
+import { useMemo, useState } from "react";
+import { AssignKitModal } from "@/components/kits/AssignKitModal";
+import { KitCard } from "@/components/kits/KitCard";
+import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+	Popover,
+	PopoverContent,
+	PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+	getAllEmployees,
+	getAllKits,
+	getEmployeesByWarehouseId,
+} from "@/lib/fetch-functions/kits";
+import { createQueryKey } from "@/lib/helpers";
+import { queryKeys } from "@/lib/query-keys";
+import { cn } from "@/lib/utils";
+import { useKitsStore } from "@/stores/kits-store";
+import type { EmployeesResponse } from "@/types";
 
 // Infer API response type from fetcher
 type APIResponse = Awaited<ReturnType<typeof getAllKits>> | null;
 
-export default function KitsPageClient({ warehouseId }: { warehouseId: string }) {
+export default function KitsPageClient({
+	warehouseId,
+	isEncargado,
+}: {
+	warehouseId: string;
+	isEncargado: boolean;
+}) {
 	const { setDraft } = useKitsStore();
 	const [date, setDate] = useState<Date>(new Date());
 	const [modalOpen, setModalOpen] = useState(false);
+	const kitsQueryParams = [isEncargado ? "all" : warehouseId];
+	const kitsQueryFn = getAllKits;
+	const employeesQueryParams = [isEncargado ? "all" : warehouseId];
+	const employeesQueryFn = isEncargado
+		? getAllEmployees
+		: () => getEmployeesByWarehouseId(warehouseId);
 
-	const { data: kitsResponse } = useSuspenseQuery<APIResponse, Error, APIResponse>({
-		queryKey: createQueryKey(queryKeys.kits, []),
-		queryFn: () => getAllKits(),
+	const { data: kitsResponse } = useSuspenseQuery<
+		APIResponse,
+		Error,
+		APIResponse
+	>({
+		queryKey: createQueryKey(queryKeys.kits, kitsQueryParams),
+		queryFn: kitsQueryFn,
+	});
+
+	const { data: employeesResponse } = useSuspenseQuery<
+		EmployeesResponse,
+		Error,
+		EmployeesResponse
+	>({
+		queryKey: createQueryKey(["employees"], employeesQueryParams),
+		queryFn: employeesQueryFn,
 	});
 
 	// Normalize the API response into the shape the UI expects
@@ -63,7 +97,8 @@ export default function KitsPageClient({ warehouseId }: { warehouseId: string })
 		(sum, kit) =>
 			sum +
 			kit.items.reduce(
-				(kitSum, item) => kitSum + (typeof item.qty === 'number' ? item.qty : 0),
+				(kitSum, item) =>
+					kitSum + (typeof item.qty === "number" ? item.qty : 0),
 				0,
 			),
 		0,
@@ -94,13 +129,13 @@ export default function KitsPageClient({ warehouseId }: { warehouseId: string })
 					<PopoverTrigger asChild>
 						<Button
 							className={cn(
-								'w-[240px] justify-start text-left font-normal',
-								!date && 'text-muted-foreground',
+								"w-[240px] justify-start text-left font-normal",
+								!date && "text-muted-foreground",
 							)}
 							variant="outline"
 						>
 							<CalendarIcon className="mr-2 h-4 w-4" />
-							{date ? format(date, 'PPP', { locale: es }) : 'Seleccionar fecha'}
+							{date ? format(date, "PPP", { locale: es }) : "Seleccionar fecha"}
 						</Button>
 					</PopoverTrigger>
 					<PopoverContent align="start" className="w-auto p-0">
@@ -190,8 +225,9 @@ export default function KitsPageClient({ warehouseId }: { warehouseId: string })
 						No hay kits asignados
 					</h3>
 					<p className="mb-4 max-w-sm text-[#687076] text-sm dark:text-[#9BA1A6]">
-						No se encontraron kits para el {format(date, "d 'de' MMMM", { locale: es })}
-						. Crea una nueva asignación para comenzar.
+						No se encontraron kits para el{" "}
+						{format(date, "d 'de' MMMM", { locale: es })}. Crea una nueva
+						asignación para comenzar.
 					</p>
 					<Button className="gap-2" onClick={() => setModalOpen(true)}>
 						<Plus className="h-4 w-4" />

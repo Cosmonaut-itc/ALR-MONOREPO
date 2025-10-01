@@ -1,14 +1,14 @@
-'use client';
+"use client";
 
-import { useSuspenseQuery } from '@tanstack/react-query';
-import { Check, ChevronsUpDown, Minus, Plus } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
-import { toast } from 'sonner';
-import { v4 as uuidv4 } from 'uuid';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import { useSuspenseQuery } from "@tanstack/react-query";
+import { Check, ChevronsUpDown, Minus, Plus } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+import { v4 as uuidv4 } from "uuid";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import {
 	Command,
 	CommandEmpty,
@@ -16,7 +16,7 @@ import {
 	CommandInput,
 	CommandItem,
 	CommandList,
-} from '@/components/ui/command';
+} from "@/components/ui/command";
 import {
 	Dialog,
 	DialogContent,
@@ -24,18 +24,22 @@ import {
 	DialogFooter,
 	DialogHeader,
 	DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { getInventoryByWarehouse } from '@/lib/fetch-functions/inventory';
-import { getAllEmployees } from '@/lib/fetch-functions/kits';
-import { createQueryKey } from '@/lib/helpers';
-import { useCreateKit } from '@/lib/mutations/kits';
-import { queryKeys } from '@/lib/query-keys';
-import { cn } from '@/lib/utils';
-import { useAuthStore } from '@/stores/auth-store';
-import { useKitsStore } from '@/stores/kits-store';
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+	Popover,
+	PopoverContent,
+	PopoverTrigger,
+} from "@/components/ui/popover";
+import { getInventoryByWarehouse } from "@/lib/fetch-functions/inventory";
+import { getEmployeesByUserId } from "@/lib/fetch-functions/kits";
+import { createQueryKey } from "@/lib/helpers";
+import { useCreateKit } from "@/lib/mutations/kits";
+import { queryKeys } from "@/lib/query-keys";
+import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/stores/auth-store";
+import { useKitsStore } from "@/stores/kits-store";
 
 interface AssignKitModalProps {
 	open: boolean;
@@ -43,29 +47,45 @@ interface AssignKitModalProps {
 	warehouseId: string;
 }
 
-type EmployeesResponse = Awaited<ReturnType<typeof getAllEmployees>> | null;
-type InventoryResponse = Awaited<ReturnType<typeof getInventoryByWarehouse>> | null;
+type EmployeesResponse = Awaited<
+	ReturnType<typeof getEmployeesByUserId>
+> | null;
+type InventoryResponse = Awaited<
+	ReturnType<typeof getInventoryByWarehouse>
+> | null;
 
-export function AssignKitModal({ open, onOpenChange, warehouseId }: AssignKitModalProps) {
+export function AssignKitModal({
+	open,
+	onOpenChange,
+	warehouseId,
+}: AssignKitModalProps) {
 	const { draft, setDraft, clearDraft, addKit } = useKitsStore();
 	const [employeeOpen, setEmployeeOpen] = useState(false);
-	const [kitId, setKitId] = useState('');
+	const [kitId, setKitId] = useState("");
 	const [selectedProducts, setSelectedProducts] = useState<
 		Array<{ productId: string; qty: number }>
 	>([]);
 
 	const user = useAuthStore((s) => s.user);
-	const userId = user?.id ?? '';
+	const userId = user?.id ?? "";
 
-	const { data: employeesRes } = useSuspenseQuery<EmployeesResponse, Error, EmployeesResponse>({
-		queryKey: createQueryKey(['employees'], [userId]),
+	const { data: employeesRes } = useSuspenseQuery<
+		EmployeesResponse,
+		Error,
+		EmployeesResponse
+	>({
+		queryKey: createQueryKey(["employees"], [userId]),
 		queryFn: () =>
 			userId
-				? getAllEmployees(userId)
+				? getEmployeesByUserId(userId)
 				: Promise.resolve({ data: [] } as unknown as EmployeesResponse),
 	});
 
-	const { data: inventoryRes } = useSuspenseQuery<InventoryResponse, Error, InventoryResponse>({
+	const { data: inventoryRes } = useSuspenseQuery<
+		InventoryResponse,
+		Error,
+		InventoryResponse
+	>({
 		queryKey: createQueryKey(queryKeys.inventory, [warehouseId as string]),
 		queryFn: () => getInventoryByWarehouse(warehouseId as string),
 	});
@@ -79,7 +99,7 @@ export function AssignKitModal({ open, onOpenChange, warehouseId }: AssignKitMod
 	const toStringOrEmpty = useMemo(
 		() =>
 			(v: unknown): string =>
-				typeof v === 'string' ? v : '',
+				typeof v === "string" ? v : "",
 		[],
 	);
 	const normalizeEmployee = useMemo(
@@ -95,11 +115,11 @@ export function AssignKitModal({ open, onOpenChange, warehouseId }: AssignKitMod
 			const name = toStringOrEmpty(e.name);
 			const surname = toStringOrEmpty(e.surname);
 			const avatar = toStringOrEmpty(e.avatar);
-			const fullName = [name, surname].filter(Boolean).join(' ');
+			const fullName = [name, surname].filter(Boolean).join(" ");
 			return {
 				id,
-				name: fullName || name || 'Empleado',
-				specialty: '',
+				name: fullName || name || "Empleado",
+				specialty: "",
 				avatar,
 				active: true as const,
 			};
@@ -107,7 +127,10 @@ export function AssignKitModal({ open, onOpenChange, warehouseId }: AssignKitMod
 		[toStringOrEmpty],
 	);
 	const employees = useMemo(() => {
-		const root = (employeesRes ?? { data: [], json: [] }) as { data?: unknown; json?: unknown };
+		const root = (employeesRes ?? { data: [], json: [] }) as {
+			data?: unknown;
+			json?: unknown;
+		};
 		const candidate = root.data ?? root.json ?? [];
 		return toArray(candidate).map(normalizeEmployee);
 	}, [employeesRes, toArray, normalizeEmployee]);
@@ -115,13 +138,19 @@ export function AssignKitModal({ open, onOpenChange, warehouseId }: AssignKitMod
 	const products = useMemo(() => {
 		const root = inventoryRes ?? { data: { warehouse: [] as unknown[] } };
 		const wh = (root as { data?: { warehouse?: unknown } }).data?.warehouse as
-			| Array<{ productStock?: { id?: string }; productName?: string; productBrand?: string }>
+			| Array<{
+					productStock?: { id?: string };
+					productName?: string;
+					productBrand?: string;
+			  }>
 			| undefined;
 		return Array.isArray(wh)
 			? wh.map((row) => ({
-					id: String((row.productStock as { id?: string })?.id ?? ''),
-					name: String((row as { productName?: string }).productName ?? 'Producto'),
-					brand: String((row as { productBrand?: string }).productBrand ?? ''),
+					id: String((row.productStock as { id?: string })?.id ?? ""),
+					name: String(
+						(row as { productName?: string }).productName ?? "Producto",
+					),
+					brand: String((row as { productBrand?: string }).productBrand ?? ""),
 					stock: 1,
 				}))
 			: [];
@@ -146,7 +175,9 @@ export function AssignKitModal({ open, onOpenChange, warehouseId }: AssignKitMod
 		const existing = selectedProducts.find((p) => p.productId === productId);
 		if (existing) {
 			setSelectedProducts((prev) =>
-				prev.map((p) => (p.productId === productId ? { ...p, qty: p.qty + 1 } : p)),
+				prev.map((p) =>
+					p.productId === productId ? { ...p, qty: p.qty + 1 } : p,
+				),
 			);
 		} else {
 			setSelectedProducts((prev) => [...prev, { productId, qty: 1 }]);
@@ -155,7 +186,9 @@ export function AssignKitModal({ open, onOpenChange, warehouseId }: AssignKitMod
 
 	const handleUpdateQuantity = (productId: string, qty: number) => {
 		if (qty <= 0) {
-			setSelectedProducts((prev) => prev.filter((p) => p.productId !== productId));
+			setSelectedProducts((prev) =>
+				prev.filter((p) => p.productId !== productId),
+			);
 		} else {
 			setSelectedProducts((prev) =>
 				prev.map((p) => (p.productId === productId ? { ...p, qty } : p)),
@@ -167,16 +200,16 @@ export function AssignKitModal({ open, onOpenChange, warehouseId }: AssignKitMod
 
 	const handleAssign = async () => {
 		if (!draft.employeeId || selectedProducts.length === 0) {
-			toast.error('Por favor completa todos los campos requeridos');
+			toast.error("Por favor completa todos los campos requeridos");
 			return;
 		}
 		try {
 			await createKit({
 				assignedEmployee: draft.employeeId as string,
-				observations: 'Kit diario',
+				observations: "Kit diario",
 				kitItems: selectedProducts.map((p) => ({
 					productId: p.productId,
-					observations: '',
+					observations: "",
 				})),
 			});
 			addKit({
@@ -185,22 +218,25 @@ export function AssignKitModal({ open, onOpenChange, warehouseId }: AssignKitMod
 				date: ((draft.date as unknown as Date) || new Date()) as Date,
 				items: selectedProducts,
 			});
-			toast.success('Kit asignado exitosamente');
+			toast.success("Kit asignado exitosamente");
 			onOpenChange(false);
 			handleCancel();
 		} catch {
-			toast.error('Error al crear el kit');
+			toast.error("Error al crear el kit");
 		}
 	};
 
 	const handleCancel = () => {
 		clearDraft();
 		setSelectedProducts([]);
-		setKitId('');
+		setKitId("");
 		onOpenChange(false);
 	};
 
-	const totalProducts = selectedProducts.reduce((sum, item) => sum + item.qty, 0);
+	const totalProducts = selectedProducts.reduce(
+		(sum, item) => sum + item.qty,
+		0,
+	);
 
 	return (
 		<Dialog onOpenChange={onOpenChange} open={open}>
@@ -238,16 +274,13 @@ export function AssignKitModal({ open, onOpenChange, warehouseId }: AssignKitMod
 										<div className="flex items-center gap-2">
 											<Avatar className="h-6 w-6">
 												<AvatarImage
-													src={
-														selectedEmployee.avatar ||
-														'/placeholder.svg'
-													}
+													src={selectedEmployee.avatar || "/placeholder.svg"}
 												/>
 												<AvatarFallback>
-													{(selectedEmployee.name || 'U')
-														.split(' ')
+													{(selectedEmployee.name || "U")
+														.split(" ")
 														.map((n) => n[0])
-														.join('')}
+														.join("")}
 												</AvatarFallback>
 											</Avatar>
 											<span>{selectedEmployee.name}</span>
@@ -256,7 +289,7 @@ export function AssignKitModal({ open, onOpenChange, warehouseId }: AssignKitMod
 											</Badge>
 										</div>
 									) : (
-										'Seleccionar empleada...'
+										"Seleccionar empleada..."
 									)}
 									<ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
 								</Button>
@@ -273,20 +306,17 @@ export function AssignKitModal({ open, onOpenChange, warehouseId }: AssignKitMod
 													<CommandItem
 														key={employee.id || `emp-${idx}`}
 														onSelect={() =>
-															handleEmployeeSelect(employee.id || '')
+															handleEmployeeSelect(employee.id || "")
 														}
-														value={employee.name || ''}
+														value={employee.name || ""}
 													>
 														<div className="flex flex-1 items-center gap-2">
 															<Avatar className="h-6 w-6">
 																<AvatarImage
-																	src={
-																		employee.avatar ||
-																		'/placeholder.svg'
-																	}
+																	src={employee.avatar || "/placeholder.svg"}
 																/>
 																<AvatarFallback>
-																	{(employee.name || 'U')[0]}
+																	{(employee.name || "U")[0]}
 																</AvatarFallback>
 															</Avatar>
 															<div className="flex flex-col">
@@ -300,10 +330,10 @@ export function AssignKitModal({ open, onOpenChange, warehouseId }: AssignKitMod
 														</div>
 														<Check
 															className={cn(
-																'ml-auto h-4 w-4',
+																"ml-auto h-4 w-4",
 																draft.employeeId === employee.id
-																	? 'opacity-100'
-																	: 'opacity-0',
+																	? "opacity-100"
+																	: "opacity-0",
 															)}
 														/>
 													</CommandItem>
@@ -412,7 +442,9 @@ export function AssignKitModal({ open, onOpenChange, warehouseId }: AssignKitMod
 						Cancelar
 					</Button>
 					<Button
-						disabled={!draft.employeeId || selectedProducts.length === 0 || isPending}
+						disabled={
+							!draft.employeeId || selectedProducts.length === 0 || isPending
+						}
 						onClick={handleAssign}
 					>
 						Asignar Kit

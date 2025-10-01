@@ -163,3 +163,7 @@ export type ReceptionItem = {
 	productIsBeingUsed: boolean | null;
 	productFirstUsed: string | null;
 };
+
+export type EmployeesResponse = Awaited<
+	ReturnType<typeof import("./lib/fetch-functions/kits").getEmployeesByUserId>
+> | null;
