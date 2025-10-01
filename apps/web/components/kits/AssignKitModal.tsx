@@ -1,6 +1,5 @@
 "use client";
 
-import { useSuspenseQuery } from "@tanstack/react-query";
 import { Check, ChevronsUpDown, Minus, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -32,20 +31,11 @@ import {
 	PopoverContent,
 	PopoverTrigger,
 } from "@/components/ui/popover";
-import { getInventoryByWarehouse } from "@/lib/fetch-functions/inventory";
-import { getEmployeesByUserId } from "@/lib/fetch-functions/kits";
-import { createQueryKey } from "@/lib/helpers";
+import type { getInventoryByWarehouse } from "@/lib/fetch-functions/inventory";
+import type { getEmployeesByUserId } from "@/lib/fetch-functions/kits";
 import { useCreateKit } from "@/lib/mutations/kits";
-import { queryKeys } from "@/lib/query-keys";
 import { cn } from "@/lib/utils";
-import { useAuthStore } from "@/stores/auth-store";
 import { useKitsStore } from "@/stores/kits-store";
-
-interface AssignKitModalProps {
-	open: boolean;
-	onOpenChange: (open: boolean) => void;
-	warehouseId: string;
-}
 
 type EmployeesResponse = Awaited<
 	ReturnType<typeof getEmployeesByUserId>
@@ -54,10 +44,22 @@ type InventoryResponse = Awaited<
 	ReturnType<typeof getInventoryByWarehouse>
 > | null;
 
+interface AssignKitModalProps {
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+	warehouseId: string;
+	/** Employees data passed from parent */
+	employeesData: EmployeesResponse;
+	/** Inventory data passed from parent */
+	inventoryData: InventoryResponse;
+}
+
 export function AssignKitModal({
 	open,
 	onOpenChange,
 	warehouseId,
+	employeesData,
+	inventoryData,
 }: AssignKitModalProps) {
 	const { draft, setDraft, clearDraft, addKit } = useKitsStore();
 	const [employeeOpen, setEmployeeOpen] = useState(false);
@@ -65,30 +67,6 @@ export function AssignKitModal({
 	const [selectedProducts, setSelectedProducts] = useState<
 		Array<{ productId: string; qty: number }>
 	>([]);
-
-	const user = useAuthStore((s) => s.user);
-	const userId = user?.id ?? "";
-
-	const { data: employeesRes } = useSuspenseQuery<
-		EmployeesResponse,
-		Error,
-		EmployeesResponse
-	>({
-		queryKey: createQueryKey(["employees"], [userId]),
-		queryFn: () =>
-			userId
-				? getEmployeesByUserId(userId)
-				: Promise.resolve({ data: [] } as unknown as EmployeesResponse),
-	});
-
-	const { data: inventoryRes } = useSuspenseQuery<
-		InventoryResponse,
-		Error,
-		InventoryResponse
-	>({
-		queryKey: createQueryKey(queryKeys.inventory, [warehouseId as string]),
-		queryFn: () => getInventoryByWarehouse(warehouseId as string),
-	});
 
 	const toArray = useMemo(
 		() =>
@@ -127,16 +105,16 @@ export function AssignKitModal({
 		[toStringOrEmpty],
 	);
 	const employees = useMemo(() => {
-		const root = (employeesRes ?? { data: [], json: [] }) as {
+		const root = (employeesData ?? { data: [], json: [] }) as {
 			data?: unknown;
 			json?: unknown;
 		};
 		const candidate = root.data ?? root.json ?? [];
 		return toArray(candidate).map(normalizeEmployee);
-	}, [employeesRes, toArray, normalizeEmployee]);
+	}, [employeesData, toArray, normalizeEmployee]);
 
 	const products = useMemo(() => {
-		const root = inventoryRes ?? { data: { warehouse: [] as unknown[] } };
+		const root = inventoryData ?? { data: { warehouse: [] as unknown[] } };
 		const wh = (root as { data?: { warehouse?: unknown } }).data?.warehouse as
 			| Array<{
 					productStock?: { id?: string };
@@ -154,7 +132,7 @@ export function AssignKitModal({
 					stock: 1,
 				}))
 			: [];
-	}, [inventoryRes]);
+	}, [inventoryData]);
 
 	// Generate new kit ID when modal opens
 	useEffect(() => {
