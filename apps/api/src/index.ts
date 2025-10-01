@@ -1221,6 +1221,7 @@ const route = app
 						numberOfUses: requestData.numberOfUses ?? 0,
 						isBeingUsed: requestData.isBeingUsed ?? false,
 						isKit: requestData.isKit ?? false,
+						description: requestData.description || null,
 					})
 					.returning();
 
