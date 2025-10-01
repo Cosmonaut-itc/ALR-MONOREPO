@@ -397,6 +397,8 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 																}
 															/>
 															{generalTransferDetails?.isCompleted &&
+																generalTransferDetails?.transferType ===
+																	"external" &&
 																!item.isReceived && (
 																	<Badge
 																		className="theme-transition bg-orange-100 text-orange-800 hover:bg-orange-200 dark:bg-orange-900/20 dark:text-orange-400"
