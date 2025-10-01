@@ -1192,6 +1192,7 @@ const route = app
 					.default(false)
 					.describe('Whether currently being used'),
 				isKit: z.boolean().optional().default(false).describe('Whether it is a kit'),
+				description: z.string().optional().describe('Description'),
 			}),
 		),
 		async (c) => {
