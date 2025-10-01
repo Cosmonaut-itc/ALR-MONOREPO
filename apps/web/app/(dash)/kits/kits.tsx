@@ -62,7 +62,6 @@ export default function KitsPageClient({
 	isEncargado: boolean;
 }) {
 	const { setDraft } = useKitsStore();
-	const [date, setDate] = useState<Date>(new Date());
 	const [modalOpen, setModalOpen] = useState(false);
 	const [selectedWarehouseFilter, setSelectedWarehouseFilter] = useState<
 		string | "all"
@@ -185,20 +184,14 @@ export default function KitsPageClient({
 			: [];
 	}, [kitsResponse]);
 
-	const handleDateSelect = (selectedDate: Date | undefined) => {
-		if (selectedDate) {
-			setDate(selectedDate);
-			// Store as Date in draft to satisfy kit schema type
-			setDraft({ date: selectedDate as unknown as Date });
-		}
-	};
-
-	// Filter kits for the selected date
-	const todayKits = kits.filter((kit) => {
-		const kitDate = new Date(kit.date).toDateString();
-		const selectedDate = date.toDateString();
-		return kitDate === selectedDate;
-	});
+	// Get today's kits (based on actual today's date, not a selector)
+	const todayKits = useMemo(() => {
+		const today = new Date().toDateString();
+		return kits.filter((kit) => {
+			const kitDate = new Date(kit.date).toDateString();
+			return kitDate === today;
+		});
+	}, [kits]);
 
 	// Filter employees by selected warehouse
 	const filteredEmployees = useMemo(() => {
@@ -269,82 +262,84 @@ export default function KitsPageClient({
 				</Button>
 			</div>
 
-			{/* Filters */}
-			<div className="flex items-center gap-4">
-				<Popover
-					onOpenChange={setWarehouseComboboxOpen}
-					open={warehouseComboboxOpen}
-				>
-					<PopoverTrigger asChild>
-						<Button
-							className="w-[280px] justify-between"
-							role="combobox"
-							variant="outline"
-						>
-							<div className="flex items-center gap-2">
-								<Warehouse className="h-4 w-4" />
-								{selectedWarehouseFilter === "all"
-									? "Todas las bodegas"
-									: warehouses.find((w) => w.id === selectedWarehouseFilter)
-											?.name || "Seleccionar bodega"}
-							</div>
-							<ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-						</Button>
-					</PopoverTrigger>
-					<PopoverContent className="w-[280px] p-0">
-						<Command>
-							<CommandInput placeholder="Buscar bodega..." />
-							<CommandList>
-								<CommandEmpty>No se encontraron bodegas.</CommandEmpty>
-								<CommandGroup>
-									<CommandItem
-										onSelect={() => {
-											setSelectedWarehouseFilter("all");
-											setWarehouseComboboxOpen(false);
-										}}
-										value="all"
-									>
-										<Check
-											className={cn(
-												"mr-2 h-4 w-4",
-												selectedWarehouseFilter === "all"
-													? "opacity-100"
-													: "opacity-0",
-											)}
-										/>
-										Todas las bodegas
-									</CommandItem>
-									{warehouses.map((warehouse) => (
+			{/* Filters - Only visible for encargado */}
+			{isEncargado && (
+				<div className="flex items-center gap-4">
+					<Popover
+						onOpenChange={setWarehouseComboboxOpen}
+						open={warehouseComboboxOpen}
+					>
+						<PopoverTrigger asChild>
+							<Button
+								className="w-[280px] justify-between"
+								role="combobox"
+								variant="outline"
+							>
+								<div className="flex items-center gap-2">
+									<Warehouse className="h-4 w-4" />
+									{selectedWarehouseFilter === "all"
+										? "Todas las bodegas"
+										: warehouses.find((w) => w.id === selectedWarehouseFilter)
+												?.name || "Seleccionar bodega"}
+								</div>
+								<ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+							</Button>
+						</PopoverTrigger>
+						<PopoverContent className="w-[280px] p-0">
+							<Command>
+								<CommandInput placeholder="Buscar bodega..." />
+								<CommandList>
+									<CommandEmpty>No se encontraron bodegas.</CommandEmpty>
+									<CommandGroup>
 										<CommandItem
-											key={warehouse.id}
 											onSelect={() => {
-												setSelectedWarehouseFilter(warehouse.id);
+												setSelectedWarehouseFilter("all");
 												setWarehouseComboboxOpen(false);
 											}}
-											value={warehouse.name}
+											value="all"
 										>
 											<Check
 												className={cn(
 													"mr-2 h-4 w-4",
-													selectedWarehouseFilter === warehouse.id
+													selectedWarehouseFilter === "all"
 														? "opacity-100"
 														: "opacity-0",
 												)}
 											/>
-											<div className="flex flex-col">
-												<span className="font-medium">{warehouse.name}</span>
-												<span className="text-muted-foreground text-xs">
-													{warehouse.code}
-												</span>
-											</div>
+											Todas las bodegas
 										</CommandItem>
-									))}
-								</CommandGroup>
-							</CommandList>
-						</Command>
-					</PopoverContent>
-				</Popover>
-			</div>
+										{warehouses.map((warehouse) => (
+											<CommandItem
+												key={warehouse.id}
+												onSelect={() => {
+													setSelectedWarehouseFilter(warehouse.id);
+													setWarehouseComboboxOpen(false);
+												}}
+												value={warehouse.name}
+											>
+												<Check
+													className={cn(
+														"mr-2 h-4 w-4",
+														selectedWarehouseFilter === warehouse.id
+															? "opacity-100"
+															: "opacity-0",
+													)}
+												/>
+												<div className="flex flex-col">
+													<span className="font-medium">{warehouse.name}</span>
+													<span className="text-muted-foreground text-xs">
+														{warehouse.code}
+													</span>
+												</div>
+											</CommandItem>
+										))}
+									</CommandGroup>
+								</CommandList>
+							</Command>
+						</PopoverContent>
+					</Popover>
+				</div>
+			)}
 
 			{/* Statistics Cards */}
 			<div className="grid gap-4 md:grid-cols-4">
@@ -375,7 +370,7 @@ export default function KitsPageClient({
 							{activeEmployees}
 						</div>
 						<p className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-							para {format(date, "d 'de' MMMM", { locale: es })}
+							para hoy
 						</p>
 					</CardContent>
 				</Card>
@@ -423,7 +418,6 @@ export default function KitsPageClient({
 								currentKit={currentKit}
 								employee={employee}
 								key={employee.id}
-								selectedDate={date}
 								warehouseName={warehouseName}
 							/>
 						),

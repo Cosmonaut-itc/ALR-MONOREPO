@@ -3,24 +3,31 @@
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import {
-	Calendar,
+	Calendar as CalendarIcon,
 	ChevronDown,
 	ChevronUp,
 	Eye,
 	History,
 	Package,
 	User,
+	X,
 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import {
 	Collapsible,
 	CollapsibleContent,
 	CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import {
+	Popover,
+	PopoverContent,
+	PopoverTrigger,
+} from "@/components/ui/popover";
 import { useKitsStore } from "@/stores/kits-store";
 
 /**
@@ -46,12 +53,10 @@ interface Kit {
 interface EmployeeKitCardProps {
 	/** Employee data */
 	employee: Employee;
-	/** Current kit for the selected date */
+	/** Current kit for today */
 	currentKit: Kit | undefined;
 	/** All kits for this employee (for history) */
 	allKitsForEmployee: Kit[];
-	/** Selected date for filtering current kit */
-	selectedDate: Date;
 	/** Warehouse name for display */
 	warehouseName?: string;
 }
@@ -60,22 +65,37 @@ interface EmployeeKitCardProps {
  * EmployeeKitCard Component
  *
  * Displays an employee card with their current kit and expandable kit history.
- * The history section allows viewing past kits with date information.
+ * The history section allows viewing past kits with date filtering.
  */
 export function EmployeeKitCard({
 	employee,
 	currentKit,
 	allKitsForEmployee,
-	selectedDate,
 	warehouseName,
 }: EmployeeKitCardProps) {
 	const { products } = useKitsStore();
 	const [isHistoryOpen, setIsHistoryOpen] = useState(false);
-
-	// Filter history to exclude the current kit
-	const historyKits = allKitsForEmployee.filter(
-		(kit) => new Date(kit.date).toDateString() !== selectedDate.toDateString(),
+	const [historyDateFilter, setHistoryDateFilter] = useState<Date | undefined>(
+		undefined,
 	);
+
+	// Filter history to exclude the current kit and apply date filter
+	const historyKits = useMemo(() => {
+		const today = new Date().toDateString();
+		let filtered = allKitsForEmployee.filter(
+			(kit) => new Date(kit.date).toDateString() !== today,
+		);
+
+		// Apply date filter if selected
+		if (historyDateFilter) {
+			const filterDate = historyDateFilter.toDateString();
+			filtered = filtered.filter(
+				(kit) => new Date(kit.date).toDateString() === filterDate,
+			);
+		}
+
+		return filtered;
+	}, [allKitsForEmployee, historyDateFilter]);
 
 	/**
 	 * Formats a date string to a localized format
@@ -190,8 +210,7 @@ export function EmployeeKitCard({
 				) : (
 					<div className="pb-3 border-b border-[#E5E7EB] dark:border-[#2D3033]">
 						<p className="text-center text-sm text-[#687076] dark:text-[#9BA1A6]">
-							Sin kit asignado para{" "}
-							{format(selectedDate, "PPP", { locale: es })}
+							Sin kit asignado para hoy
 						</p>
 					</div>
 				)}
@@ -206,7 +225,17 @@ export function EmployeeKitCard({
 						>
 							<div className="flex items-center gap-2">
 								<History className="h-4 w-4" />
-								<span>Historial de Kits ({historyKits.length})</span>
+								<span>
+									Historial de Kits (
+									{
+										allKitsForEmployee.filter(
+											(kit) =>
+												new Date(kit.date).toDateString() !==
+												new Date().toDateString(),
+										).length
+									}
+									)
+								</span>
 							</div>
 							{isHistoryOpen ? (
 								<ChevronUp className="h-4 w-4" />
@@ -217,6 +246,45 @@ export function EmployeeKitCard({
 					</CollapsibleTrigger>
 
 					<CollapsibleContent className="pt-3 space-y-2">
+						{/* Date Filter */}
+						<div className="flex items-center gap-2">
+							<Popover>
+								<PopoverTrigger asChild>
+									<Button
+										className="w-full justify-start text-left font-normal"
+										size="sm"
+										variant="outline"
+									>
+										<CalendarIcon className="mr-2 h-4 w-4" />
+										{historyDateFilter ? (
+											format(historyDateFilter, "PPP", { locale: es })
+										) : (
+											<span>Filtrar por fecha</span>
+										)}
+									</Button>
+								</PopoverTrigger>
+								<PopoverContent align="start" className="w-auto p-0">
+									<Calendar
+										initialFocus
+										locale={es}
+										mode="single"
+										onSelect={(date) => setHistoryDateFilter(date)}
+										selected={historyDateFilter}
+									/>
+								</PopoverContent>
+							</Popover>
+							{historyDateFilter && (
+								<Button
+									onClick={() => setHistoryDateFilter(undefined)}
+									size="sm"
+									variant="ghost"
+								>
+									<X className="h-4 w-4" />
+								</Button>
+							)}
+						</div>
+
+						{/* History Kits List */}
 						{historyKits.length > 0 ? (
 							<div className="space-y-2 max-h-64 overflow-y-auto">
 								{historyKits
@@ -251,7 +319,9 @@ export function EmployeeKitCard({
 							</div>
 						) : (
 							<p className="text-center text-xs text-[#687076] dark:text-[#9BA1A6] py-2">
-								No hay kits anteriores
+								{historyDateFilter
+									? "No hay kits para la fecha seleccionada"
+									: "No hay kits anteriores"}
 							</p>
 						)}
 					</CollapsibleContent>
