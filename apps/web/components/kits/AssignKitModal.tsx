@@ -49,6 +49,7 @@ interface KitProduct {
 		id?: string;
 		currentWarehouse?: string;
 		isKit?: boolean;
+		description?: string | null;
 	};
 	productName?: string;
 	productBrand?: string;
@@ -144,7 +145,11 @@ export function AssignKitModal({
 			)
 			.map((row) => ({
 				id: String(row.productStock?.id ?? ""),
-				name: String(row.productName ?? "Producto"),
+				name: String(
+					row.productStock?.description ||
+						row.productName ||
+						"Producto sin nombre",
+				),
 				brand: String(row.productBrand ?? ""),
 				stock: 1,
 			}));
