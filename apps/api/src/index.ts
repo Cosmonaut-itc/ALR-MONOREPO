@@ -1343,6 +1343,27 @@ const route = app
 					);
 				}
 
+				// Fetch the current product stock to check if firstUsed is already set
+				const existingProductStock = await db
+					.select({
+						id: schemas.productStock.id,
+						firstUsed: schemas.productStock.firstUsed,
+					})
+					.from(schemas.productStock)
+					.where(eq(schemas.productStock.id, productStockId))
+					.limit(1);
+
+				// Check if product stock exists
+				if (existingProductStock.length === 0) {
+					return c.json(
+						{
+							success: false,
+							message: 'Product stock not found',
+						} satisfies ApiResponse,
+						404,
+					);
+				}
+
 				// Build update values object dynamically
 				const updateValues: Record<string, unknown> = {};
 
@@ -1358,7 +1379,9 @@ const route = app
 					updateValues.lastUsed = lastUsed;
 				}
 
-				if (firstUsed !== undefined) {
+				// Only set firstUsed if it was not previously set (is null) and a new value is provided
+				// If firstUsed is already set, we skip updating it to preserve the original first use date
+				if (firstUsed !== undefined && existingProductStock[0].firstUsed === null) {
 					updateValues.firstUsed = firstUsed;
 				}
 
@@ -1384,17 +1407,6 @@ const route = app
 					.set(updateValues)
 					.where(eq(schemas.productStock.id, productStockId))
 					.returning();
-
-				// Check if the product stock was found and updated
-				if (updatedProductStock.length === 0) {
-					return c.json(
-						{
-							success: false,
-							message: 'Product stock not found',
-						} satisfies ApiResponse,
-						404,
-					);
-				}
 
 				// Return successful response with the updated product stock record
 				return c.json(
