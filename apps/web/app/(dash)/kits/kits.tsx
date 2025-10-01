@@ -23,6 +23,7 @@ import {
 	PopoverTrigger,
 } from "@/components/ui/popover";
 import {
+	getAllProductStock,
 	getAllWarehouses,
 	getInventoryByWarehouse,
 } from "@/lib/fetch-functions/inventory";
@@ -39,9 +40,10 @@ import type { EmployeesResponse } from "@/types";
 
 // Infer API response type from fetcher
 type APIResponse = Awaited<ReturnType<typeof getAllKits>> | null;
-type InventoryResponse = Awaited<
-	ReturnType<typeof getInventoryByWarehouse>
-> | null;
+type InventoryResponse =
+	| Awaited<ReturnType<typeof getAllProductStock>>
+	| Awaited<ReturnType<typeof getInventoryByWarehouse>>
+	| null;
 type WarehousesResponse = Awaited<ReturnType<typeof getAllWarehouses>>;
 
 /**
@@ -61,7 +63,6 @@ export default function KitsPageClient({
 	warehouseId: string;
 	isEncargado: boolean;
 }) {
-	const { setDraft } = useKitsStore();
 	const [modalOpen, setModalOpen] = useState(false);
 	const [selectedWarehouseFilter, setSelectedWarehouseFilter] = useState<
 		string | "all"
@@ -74,6 +75,10 @@ export default function KitsPageClient({
 	const employeesQueryFn = isEncargado
 		? getAllEmployees
 		: () => getEmployeesByWarehouseId(warehouseId);
+	const inventoryQueryParams = [isEncargado ? "all" : warehouseId];
+	const inventoryQueryFn = isEncargado
+		? getAllProductStock
+		: () => getInventoryByWarehouse(warehouseId);
 
 	const { data: kitsResponse } = useSuspenseQuery<
 		APIResponse,
@@ -98,8 +103,8 @@ export default function KitsPageClient({
 		Error,
 		InventoryResponse
 	>({
-		queryKey: createQueryKey(queryKeys.inventory, [warehouseId]),
-		queryFn: () => getInventoryByWarehouse(warehouseId),
+		queryKey: createQueryKey(queryKeys.inventory, inventoryQueryParams),
+		queryFn: inventoryQueryFn,
 	});
 
 	// Fetch warehouses data for filtering
@@ -126,6 +131,14 @@ export default function KitsPageClient({
 				typeof v === "string" ? v : "",
 		[],
 	);
+
+	const kitProducts = useMemo(() => {
+		return inventoryResponse && "data" in inventoryResponse
+			? inventoryResponse.data.warehouse.filter(
+					(product) => product.productStock?.isKit,
+				)
+			: [];
+	}, [inventoryResponse]);
 
 	// Normalize employees response to match ajustes type
 	const normalizeEmployee = useMemo(
@@ -443,10 +456,9 @@ export default function KitsPageClient({
 			{/* Assign Kit Modal */}
 			<AssignKitModal
 				employeesData={employeesResponse}
-				inventoryData={inventoryResponse}
+				kitProducts={kitProducts}
 				onOpenChange={setModalOpen}
 				open={modalOpen}
-				warehouseId={warehouseId}
 			/>
 		</div>
 	);

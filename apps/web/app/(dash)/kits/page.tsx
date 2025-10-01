@@ -7,6 +7,7 @@ import { GenericBoundaryWrapper } from "@/components/suspense-generics/general-w
 import { createQueryKey } from "@/lib/helpers";
 import { queryKeys } from "@/lib/query-keys";
 import {
+	fetchAllProductStockServer,
 	fetchAllWarehousesServer,
 	fetchStockByWarehouseServer,
 } from "@/lib/server-functions/inventory";
@@ -25,15 +26,19 @@ export const dynamic = "force-dynamic";
 export default async function Page() {
 	const queryClient = getQueryClient();
 	const auth = await getServerAuth();
-	const warehouseId = auth.user?.warehouseId;
+	const warehouseId = auth.user?.warehouseId ?? "";
 	const role = auth.user?.role ?? "";
 	const isEncargado = role === "encargado";
 	const kitKeyParam = isEncargado ? "all" : warehouseId;
 	const employeesKeyParam = isEncargado ? "all" : warehouseId;
+	const inventoryKeyParam = isEncargado ? "all" : warehouseId;
 	const employeesPrefetchFn = isEncargado
 		? fetchAllEmployeesServer
-		: () => fetchEmployeesByWarehouseIdServer(warehouseId as string);
+		: () => fetchEmployeesByWarehouseIdServer(warehouseId);
 	const kitsPrefetchFn = isEncargado ? fetchAllKitsServer : fetchAllKitsServer;
+	const inventoryPrefetchFn = isEncargado
+		? fetchAllProductStockServer
+		: () => fetchStockByWarehouseServer(warehouseId);
 
 	try {
 		queryClient.prefetchQuery({
@@ -48,8 +53,8 @@ export default async function Page() {
 
 		// Prefetch inventory data so the client query hydrates
 		queryClient.prefetchQuery({
-			queryKey: createQueryKey(queryKeys.inventory, [warehouseId as string]),
-			queryFn: () => fetchStockByWarehouseServer(warehouseId as string),
+			queryKey: createQueryKey(queryKeys.inventory, [inventoryKeyParam]),
+			queryFn: inventoryPrefetchFn,
 		});
 
 		// Prefetch warehouses data so the client query hydrates

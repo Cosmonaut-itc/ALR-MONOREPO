@@ -44,22 +44,30 @@ type InventoryResponse = Awaited<
 	ReturnType<typeof getInventoryByWarehouse>
 > | null;
 
+interface KitProduct {
+	productStock?: {
+		id?: string;
+		currentWarehouse?: string;
+		isKit?: boolean;
+	};
+	productName?: string;
+	productBrand?: string;
+}
+
 interface AssignKitModalProps {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
-	warehouseId: string;
 	/** Employees data passed from parent */
 	employeesData: EmployeesResponse;
-	/** Inventory data passed from parent */
-	inventoryData: InventoryResponse;
+	/** Kit products filtered by isKit flag */
+	kitProducts: KitProduct[];
 }
 
 export function AssignKitModal({
 	open,
 	onOpenChange,
-	warehouseId,
 	employeesData,
-	inventoryData,
+	kitProducts,
 }: AssignKitModalProps) {
 	const { draft, setDraft, clearDraft, addKit } = useKitsStore();
 	const [employeeOpen, setEmployeeOpen] = useState(false);
@@ -88,11 +96,13 @@ export function AssignKitModal({
 				name?: unknown;
 				surname?: unknown;
 				avatar?: unknown;
+				warehouseId?: unknown;
 			};
 			const id = toStringOrEmpty(e.id);
 			const name = toStringOrEmpty(e.name);
 			const surname = toStringOrEmpty(e.surname);
 			const avatar = toStringOrEmpty(e.avatar);
+			const warehouseId = toStringOrEmpty(e.warehouseId);
 			const fullName = [name, surname].filter(Boolean).join(" ");
 			return {
 				id,
@@ -100,6 +110,7 @@ export function AssignKitModal({
 				specialty: "",
 				avatar,
 				active: true as const,
+				warehouseId,
 			};
 		},
 		[toStringOrEmpty],
@@ -113,26 +124,31 @@ export function AssignKitModal({
 		return toArray(candidate).map(normalizeEmployee);
 	}, [employeesData, toArray, normalizeEmployee]);
 
+	// Filter kit products by selected employee's warehouse ID
 	const products = useMemo(() => {
-		const root = inventoryData ?? { data: { warehouse: [] as unknown[] } };
-		const wh = (root as { data?: { warehouse?: unknown } }).data?.warehouse as
-			| Array<{
-					productStock?: { id?: string };
-					productName?: string;
-					productBrand?: string;
-			  }>
-			| undefined;
-		return Array.isArray(wh)
-			? wh.map((row) => ({
-					id: String((row.productStock as { id?: string })?.id ?? ""),
-					name: String(
-						(row as { productName?: string }).productName ?? "Producto",
-					),
-					brand: String((row as { productBrand?: string }).productBrand ?? ""),
-					stock: 1,
-				}))
-			: [];
-	}, [inventoryData]);
+		const selectedEmployee = employees.find(
+			(emp) => emp.id === draft.employeeId,
+		);
+		const employeeWarehouseId = selectedEmployee?.warehouseId;
+
+		// If no employee selected, return empty array
+		if (!employeeWarehouseId) {
+			return [];
+		}
+
+		// Filter kitProducts by employee's warehouse
+		return kitProducts
+			.filter(
+				(product) =>
+					product.productStock?.currentWarehouse === employeeWarehouseId,
+			)
+			.map((row) => ({
+				id: String(row.productStock?.id ?? ""),
+				name: String(row.productName ?? "Producto"),
+				brand: String(row.productBrand ?? ""),
+				stock: 1,
+			}));
+	}, [kitProducts, employees, draft.employeeId]);
 
 	// Generate new kit ID when modal opens
 	useEffect(() => {
@@ -147,6 +163,8 @@ export function AssignKitModal({
 	const handleEmployeeSelect = (employeeId: string) => {
 		setDraft({ employeeId });
 		setEmployeeOpen(false);
+		// Clear selected products when employee changes
+		setSelectedProducts([]);
 	};
 
 	const handleAddProduct = (productId: string) => {
@@ -326,67 +344,81 @@ export function AssignKitModal({
 					{/* Products Selection */}
 					<div className="space-y-3">
 						<Label>Productos Disponibles</Label>
-						<div className="grid max-h-48 gap-2 overflow-y-auto">
-							{products.map((product) => {
-								const selectedProduct = selectedProducts.find(
-									(p) => p.productId === product.id,
-								);
-								return (
-									<Card className="p-3" key={product.id}>
-										<div className="flex items-center justify-between">
-											<div className="flex-1">
-												<div className="font-medium">{product.name}</div>
-												<div className="text-muted-foreground text-sm">
-													{product.brand} • Stock: {product.stock}
+						{!draft.employeeId ? (
+							<div className="flex items-center justify-center rounded-lg border border-dashed border-[#E5E7EB] p-8 dark:border-[#2D3033]">
+								<p className="text-center text-[#687076] text-sm dark:text-[#9BA1A6]">
+									Selecciona una empleada para ver los productos disponibles
+								</p>
+							</div>
+						) : products.length === 0 ? (
+							<div className="flex items-center justify-center rounded-lg border border-dashed border-[#E5E7EB] p-8 dark:border-[#2D3033]">
+								<p className="text-center text-[#687076] text-sm dark:text-[#9BA1A6]">
+									No hay productos de kit disponibles en esta bodega
+								</p>
+							</div>
+						) : (
+							<div className="grid max-h-48 gap-2 overflow-y-auto">
+								{products.map((product) => {
+									const selectedProduct = selectedProducts.find(
+										(p) => p.productId === product.id,
+									);
+									return (
+										<Card className="p-3" key={product.id}>
+											<div className="flex items-center justify-between">
+												<div className="flex-1">
+													<div className="font-medium">{product.name}</div>
+													<div className="text-muted-foreground text-sm">
+														{product.brand} • Stock: {product.stock}
+													</div>
+												</div>
+												<div className="flex items-center gap-2">
+													{selectedProduct ? (
+														<div className="flex items-center gap-2">
+															<Button
+																onClick={() =>
+																	handleUpdateQuantity(
+																		product.id,
+																		selectedProduct.qty - 1,
+																	)
+																}
+																size="sm"
+																variant="outline"
+															>
+																<Minus className="h-3 w-3" />
+															</Button>
+															<span className="w-8 text-center font-medium">
+																{selectedProduct.qty}
+															</span>
+															<Button
+																onClick={() =>
+																	handleUpdateQuantity(
+																		product.id,
+																		selectedProduct.qty + 1,
+																	)
+																}
+																size="sm"
+																variant="outline"
+															>
+																<Plus className="h-3 w-3" />
+															</Button>
+														</div>
+													) : (
+														<Button
+															onClick={() => handleAddProduct(product.id)}
+															size="sm"
+															variant="outline"
+														>
+															<Plus className="mr-1 h-3 w-3" />
+															Agregar
+														</Button>
+													)}
 												</div>
 											</div>
-											<div className="flex items-center gap-2">
-												{selectedProduct ? (
-													<div className="flex items-center gap-2">
-														<Button
-															onClick={() =>
-																handleUpdateQuantity(
-																	product.id,
-																	selectedProduct.qty - 1,
-																)
-															}
-															size="sm"
-															variant="outline"
-														>
-															<Minus className="h-3 w-3" />
-														</Button>
-														<span className="w-8 text-center font-medium">
-															{selectedProduct.qty}
-														</span>
-														<Button
-															onClick={() =>
-																handleUpdateQuantity(
-																	product.id,
-																	selectedProduct.qty + 1,
-																)
-															}
-															size="sm"
-															variant="outline"
-														>
-															<Plus className="h-3 w-3" />
-														</Button>
-													</div>
-												) : (
-													<Button
-														onClick={() => handleAddProduct(product.id)}
-														size="sm"
-														variant="outline"
-													>
-														<Plus className="mr-1 h-3 w-3" />
-														Agregar
-													</Button>
-												)}
-											</div>
-										</div>
-									</Card>
-								);
-							})}
-						</div>
+										</Card>
+									);
+								})}
+							</div>
+						)}
 					</div>
 
 					{/* Selected Products Summary */}
