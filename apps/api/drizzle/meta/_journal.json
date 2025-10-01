@@ -169,6 +169,13 @@
       "when": 1759340979648,
       "tag": "0023_outgoing_demogoblin",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1759353596438,
+      "tag": "0024_orange_ares",
+      "breakpoints": true
     }
   ]
 }

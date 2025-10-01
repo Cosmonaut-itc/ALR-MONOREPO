@@ -1115,6 +1115,27 @@ const route = app
 					);
 				}
 
+				// Get the employee ID for the current user to track deletion history
+				const employeeRecord = await db
+					.select({ id: schemas.employee.id })
+					.from(schemas.employee)
+					.where(eq(schemas.employee.userId, user.id))
+					.limit(1);
+
+				// Create usage history record for product deletion
+				if (employeeRecord.length > 0) {
+					await db.insert(schemas.productStockUsageHistory).values({
+						productStockId: updated[0].id,
+						employeeId: employeeRecord[0].id,
+						warehouseId: updated[0].currentWarehouse,
+						movementType: 'other',
+						action: 'checkout',
+						notes: 'Product stock marked as deleted',
+						usageDate: new Date(),
+						previousWarehouseId: updated[0].currentWarehouse,
+					});
+				}
+
 				return c.json(
 					{
 						success: true,
@@ -1235,6 +1256,20 @@ const route = app
 						} satisfies ApiResponse,
 						500,
 					);
+				}
+
+				// Create usage history record for product creation if we have an employee
+				if (requestData.lastUsedBy) {
+					await db.insert(schemas.productStockUsageHistory).values({
+						productStockId: insertedProductStock[0].id,
+						employeeId: requestData.lastUsedBy,
+						warehouseId: requestData.currentWarehouse,
+						movementType: 'other',
+						action: 'checkin',
+						notes: 'Product stock created and added to inventory',
+						usageDate: new Date(),
+						newWarehouseId: requestData.currentWarehouse,
+					});
 				}
 
 				// Return successful response with the newly created product stock record
@@ -1408,6 +1443,30 @@ const route = app
 					.set(updateValues)
 					.where(eq(schemas.productStock.id, productStockId))
 					.returning();
+
+				// Create usage history record for usage update if we have an employee
+				if (lastUsedBy) {
+					let action = 'other';
+					if (isBeingUsed === true) {
+						action = 'checkout';
+					} else if (isBeingUsed === false) {
+						action = 'checkin';
+					}
+
+					const notes = isBeingUsed
+						? 'Product usage updated - checked out'
+						: 'Product usage updated - checked in';
+
+					await db.insert(schemas.productStockUsageHistory).values({
+						productStockId,
+						employeeId: lastUsedBy,
+						warehouseId: updatedProductStock[0].currentWarehouse,
+						movementType: 'other',
+						action,
+						notes,
+						usageDate: new Date(),
+					});
+				}
 
 				// Return successful response with the updated product stock record
 				return c.json(
@@ -2366,6 +2425,17 @@ const route = app
 					})
 					.where(eq(schemas.productStock.id, productId));
 
+				// Create usage history record for withdraw order
+				await db.insert(schemas.productStockUsageHistory).values({
+					productStockId: productId,
+					employeeId: userId,
+					warehouseId: productStockCheck[0].currentWarehouse,
+					movementType: 'withdraw',
+					action: 'checkout',
+					notes: `Product withdrawn via order ${withdrawOrderId}`,
+					usageDate: new Date(dateWithdraw),
+				});
+
 				if (insertedWithdrawOrderDetails.length === 0) {
 					return c.json(
 						{
@@ -2473,6 +2543,19 @@ const route = app
 							} satisfies ApiResponse,
 							500,
 						);
+					}
+
+					// Create usage history record for product return
+					if (productStockCheck[0].lastUsedBy) {
+						await db.insert(schemas.productStockUsageHistory).values({
+							productStockId: productId,
+							employeeId: productStockCheck[0].lastUsedBy,
+							warehouseId: productStockCheck[0].currentWarehouse,
+							movementType: 'return',
+							action: 'checkin',
+							notes: 'Product returned from withdraw order',
+							usageDate: new Date(dateReturn),
+						});
 					}
 				}
 
@@ -3116,6 +3199,42 @@ const route = app
 								})
 								.where(inArray(schemas.productStock.id, productStockIds));
 						}
+
+						// Create usage history records for internal transfer
+						const internalHistoryRecords = transferDetails.map((detail) => ({
+							productStockId: detail.productStockId,
+							employeeId: initiatedBy,
+							warehouseId: sourceWarehouseId,
+							warehouseTransferId: insertedTransfer[0].id,
+							movementType: 'transfer' as const,
+							action: 'transfer' as const,
+							notes: `Internal transfer - ${isCabinetToWarehouse ? 'cabinet to warehouse' : 'warehouse to cabinet'}`,
+							usageDate: new Date(),
+							previousWarehouseId: sourceWarehouseId,
+							newWarehouseId: sourceWarehouseId,
+						}));
+
+						await tx
+							.insert(schemas.productStockUsageHistory)
+							.values(internalHistoryRecords);
+					} else if (transferType === 'external' && productStockIds.length > 0) {
+						// Create usage history records for external transfer
+						const externalHistoryRecords = transferDetails.map((detail) => ({
+							productStockId: detail.productStockId,
+							employeeId: initiatedBy,
+							warehouseId: sourceWarehouseId,
+							warehouseTransferId: insertedTransfer[0].id,
+							movementType: 'transfer' as const,
+							action: 'transfer' as const,
+							notes: `External transfer initiated from ${sourceWarehouseId} to ${destinationWarehouseId}`,
+							usageDate: new Date(),
+							previousWarehouseId: sourceWarehouseId,
+							newWarehouseId: destinationWarehouseId,
+						}));
+
+						await tx
+							.insert(schemas.productStockUsageHistory)
+							.values(externalHistoryRecords);
 					}
 
 					return {
@@ -3384,11 +3503,28 @@ const route = app
 					}
 
 					// If received, update the product stock current warehouse
-					if (isReceived === true) {
-						await tx
+					if (isReceived === true && receivedBy) {
+						const productStock = await tx
 							.update(schemas.productStock)
 							.set({ currentWarehouse: transfer.destinationWarehouseId })
-							.where(eq(schemas.productStock.id, updatedDetail.productStockId));
+							.where(eq(schemas.productStock.id, updatedDetail.productStockId))
+							.returning();
+
+						// Create usage history record for receiving transferred item
+						if (productStock.length > 0) {
+							await tx.insert(schemas.productStockUsageHistory).values({
+								productStockId: updatedDetail.productStockId,
+								employeeId: receivedBy,
+								warehouseId: transfer.destinationWarehouseId,
+								warehouseTransferId: updatedDetail.transferId,
+								movementType: 'transfer',
+								action: 'checkin',
+								notes: 'Transfer item received at destination warehouse',
+								usageDate: new Date(),
+								previousWarehouseId: productStock[0].currentWarehouse,
+								newWarehouseId: transfer.destinationWarehouseId,
+							});
+						}
 					}
 
 					return { type: 'ok' as const, updatedDetail };
@@ -3780,7 +3916,7 @@ const route = app
 						.returning();
 
 					// Update product stock items to mark them as being used
-					await tx
+					const updatedProducts = await tx
 						.update(schemas.productStock)
 						.set({
 							isBeingUsed: true,
@@ -3788,7 +3924,22 @@ const route = app
 							lastUsedBy: assignedEmployee,
 							numberOfUses: sql`${schemas.productStock.numberOfUses} + 1`,
 						})
-						.where(inArray(schemas.productStock.id, productStockIds));
+						.where(inArray(schemas.productStock.id, productStockIds))
+						.returning();
+
+					// Create usage history records for kit assignment
+					const kitHistoryRecords = updatedProducts.map((product) => ({
+						productStockId: product.id,
+						employeeId: assignedEmployee,
+						warehouseId: product.currentWarehouse,
+						kitId: insertedKit[0].id,
+						movementType: 'kit_assignment' as const,
+						action: 'assign' as const,
+						notes: `Product assigned to kit ${insertedKit[0].id}`,
+						usageDate: new Date(),
+					}));
+
+					await tx.insert(schemas.productStockUsageHistory).values(kitHistoryRecords);
 
 					return {
 						kit: insertedKit[0],
@@ -3990,13 +4141,28 @@ const route = app
 
 					// Update the product stock status based on return status
 					if (isReturned !== undefined) {
-						await tx
+						const productStock = await tx
 							.update(schemas.productStock)
 							.set({
 								isBeingUsed: !isReturned,
 								lastUsed: new Date().toISOString().split('T')[0],
 							})
-							.where(eq(schemas.productStock.id, updatedItem.productId));
+							.where(eq(schemas.productStock.id, updatedItem.productId))
+							.returning();
+
+						// Create usage history record for kit return
+						if (productStock.length > 0 && productStock[0].lastUsedBy) {
+							await tx.insert(schemas.productStockUsageHistory).values({
+								productStockId: updatedItem.productId,
+								employeeId: productStock[0].lastUsedBy,
+								warehouseId: productStock[0].currentWarehouse,
+								kitId: updatedItem.kitId,
+								movementType: 'kit_return',
+								action: isReturned ? 'return' : 'assign',
+								notes: `Kit item ${isReturned ? 'returned' : 'assigned back'}`,
+								usageDate: new Date(),
+							});
+						}
 					}
 
 					return { type: 'ok' as const, updatedItem };

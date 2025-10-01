@@ -381,6 +381,75 @@ export const kitsDetails = pgTable('kits_details', {
 		.notNull(),
 });
 
+/**
+ * Product stock usage history table for tracking all product movements and usage
+ * This table maintains a complete audit trail of how products are used throughout the system
+ * Each record represents a single usage/movement event of a product stock item
+ */
+export const productStockUsageHistory = pgTable('product_stock_usage_history', {
+	// Primary identification
+	id: uuid('id').defaultRandom().primaryKey().notNull(),
+
+	// Product and employee references (required)
+	productStockId: uuid('product_stock_id')
+		.notNull()
+		.references(() => productStock.id, {
+			onUpdate: 'cascade',
+			onDelete: 'restrict',
+		}),
+	employeeId: uuid('employee_id')
+		.notNull()
+		.references(() => employee.id, {
+			onUpdate: 'cascade',
+			onDelete: 'restrict',
+		}),
+
+	// Warehouse where the movement/usage occurred (required)
+	warehouseId: uuid('warehouse_id')
+		.notNull()
+		.references(() => warehouse.id, {
+			onUpdate: 'cascade',
+			onDelete: 'restrict',
+		}),
+
+	// Optional references - only one should be set depending on the type of usage
+	// If used in a warehouse transfer
+	warehouseTransferId: uuid('warehouse_transfer_id').references(() => warehouseTransfer.id, {
+		onUpdate: 'cascade',
+		onDelete: 'set null',
+	}),
+	// If used in a kit
+	kitId: uuid('kit_id').references(() => kits.id, {
+		onUpdate: 'cascade',
+		onDelete: 'set null',
+	}),
+
+	// Movement/usage type and details
+	movementType: text('movement_type').notNull(), // 'transfer', 'kit_assignment', 'kit_return', 'withdraw', 'return', 'other'
+	action: text('action').notNull(), // 'checkout', 'checkin', 'transfer', 'assign', 'return'
+	notes: text('notes'), // Additional notes about the usage/movement
+
+	// Timestamp of when this usage occurred
+	usageDate: timestamp('usage_date')
+		.$defaultFn(() => /* @__PURE__ */ new Date())
+		.notNull(),
+
+	// Previous and new warehouse (for tracking location changes)
+	previousWarehouseId: uuid('previous_warehouse_id').references(() => warehouse.id, {
+		onUpdate: 'cascade',
+		onDelete: 'set null',
+	}),
+	newWarehouseId: uuid('new_warehouse_id').references(() => warehouse.id, {
+		onUpdate: 'cascade',
+		onDelete: 'set null',
+	}),
+
+	// Audit fields
+	createdAt: timestamp('created_at')
+		.$defaultFn(() => /* @__PURE__ */ new Date())
+		.notNull(),
+});
+
 // Relations
 export const withdrawOrderRelations = relations(withdrawOrder, ({ many }) => ({
 	details: many(withdrawOrderDetails),
@@ -422,6 +491,18 @@ export const warehouseRelations = relations(warehouse, ({ one, many }) => ({
 	incomingTransfers: many(warehouseTransfer, {
 		relationName: 'destinationWarehouse',
 	}),
+	// Product usage history at this warehouse
+	usageHistory: many(productStockUsageHistory, {
+		relationName: 'usageWarehouse',
+	}),
+	// Usage history where this was the previous warehouse
+	usageHistoryAsPrevious: many(productStockUsageHistory, {
+		relationName: 'previousWarehouse',
+	}),
+	// Usage history where this is the new warehouse
+	usageHistoryAsNew: many(productStockUsageHistory, {
+		relationName: 'newWarehouse',
+	}),
 }));
 
 // Warehouse transfer relations
@@ -457,6 +538,8 @@ export const warehouseTransferRelations = relations(warehouseTransfer, ({ one, m
 	}),
 	// Transfer details (one-to-many)
 	details: many(warehouseTransferDetails),
+	// Usage history related to this transfer
+	usageHistory: many(productStockUsageHistory),
 }));
 
 export const warehouseTransferDetailsRelations = relations(warehouseTransferDetails, ({ one }) => ({
@@ -496,6 +579,8 @@ export const productStockRelations = relations(productStock, ({ one, many }) => 
 	warehouseTransferDetails: many(warehouseTransferDetails),
 	// Kit details (items that are part of kits)
 	kitDetails: many(kitsDetails),
+	// Usage history for this product
+	usageHistory: many(productStockUsageHistory),
 }));
 
 // Employee relations including transfer activities (external and internal)
@@ -526,6 +611,8 @@ export const employeeRelations = relations(employee, ({ many, one }) => ({
 	}),
 	// Kits assigned to this employee
 	assignedKits: many(kits),
+	// Product usage history performed by this employee
+	productUsageHistory: many(productStockUsageHistory),
 }));
 
 // User relations for warehouse assignment and account management
@@ -565,6 +652,8 @@ export const kitsRelations = relations(kits, ({ one, many }) => ({
 	}),
 	// Kit details (one-to-many)
 	details: many(kitsDetails),
+	// Usage history related to this kit
+	usageHistory: many(productStockUsageHistory),
 }));
 
 export const kitsDetailsRelations = relations(kitsDetails, ({ one }) => ({
@@ -577,5 +666,47 @@ export const kitsDetailsRelations = relations(kitsDetails, ({ one }) => ({
 	productStock: one(productStock, {
 		fields: [kitsDetails.productId],
 		references: [productStock.id],
+	}),
+}));
+
+// Product stock usage history relations
+export const productStockUsageHistoryRelations = relations(productStockUsageHistory, ({ one }) => ({
+	// Product stock that was used/moved
+	productStock: one(productStock, {
+		fields: [productStockUsageHistory.productStockId],
+		references: [productStock.id],
+	}),
+	// Employee who performed the usage/movement
+	employee: one(employee, {
+		fields: [productStockUsageHistory.employeeId],
+		references: [employee.id],
+	}),
+	// Warehouse where the movement occurred
+	warehouse: one(warehouse, {
+		fields: [productStockUsageHistory.warehouseId],
+		references: [warehouse.id],
+		relationName: 'usageWarehouse',
+	}),
+	// Previous warehouse (for location tracking)
+	previousWarehouse: one(warehouse, {
+		fields: [productStockUsageHistory.previousWarehouseId],
+		references: [warehouse.id],
+		relationName: 'previousWarehouse',
+	}),
+	// New warehouse (for location tracking)
+	newWarehouse: one(warehouse, {
+		fields: [productStockUsageHistory.newWarehouseId],
+		references: [warehouse.id],
+		relationName: 'newWarehouse',
+	}),
+	// Optional warehouse transfer relation
+	warehouseTransfer: one(warehouseTransfer, {
+		fields: [productStockUsageHistory.warehouseTransferId],
+		references: [warehouseTransfer.id],
+	}),
+	// Optional kit relation
+	kit: one(kits, {
+		fields: [productStockUsageHistory.kitId],
+		references: [kits.id],
 	}),
 }));
