@@ -3289,15 +3289,9 @@ const route = app
 					observations: schemas.kits.observations,
 					createdAt: schemas.kits.createdAt,
 					updatedAt: schemas.kits.updatedAt,
-					// Employee information
-					employee: {
-						id: schemas.employee.id,
-						name: schemas.employee.name,
-						surname: schemas.employee.surname,
-					},
+					assignedEmployee: schemas.kits.assignedEmployee,
 				})
 				.from(schemas.kits)
-				.leftJoin(schemas.employee, eq(schemas.kits.assignedEmployee, schemas.employee.id))
 				.orderBy(schemas.kits.createdAt);
 
 			return c.json(
