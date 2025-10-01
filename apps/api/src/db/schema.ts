@@ -199,7 +199,12 @@ export const employee = pgTable('employee', {
 	id: uuid('id').default(sql`gen_random_uuid()`).notNull().primaryKey(),
 	name: text('name').default('Jon Doe').notNull(),
 	surname: text('surname').default('').notNull(),
-	warehouse: integer('warehouse').default(1).notNull(),
+	warehouseId: uuid('warehouse_id')
+		.notNull()
+		.references(() => warehouse.id, {
+			onUpdate: 'cascade',
+			onDelete: 'restrict',
+		}),
 	passcode: integer('passcode').default(1111).notNull(),
 	userId: text('user_id').references(() => user.id),
 	permissions: uuid('permissions').references(() => permissions.id),
