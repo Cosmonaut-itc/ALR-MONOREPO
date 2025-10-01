@@ -337,6 +337,8 @@ export const kits = pgTable('kits', {
 	observations: text('observations'),
 
 	// Audit fields
+	isPartial: boolean('is_partial').default(false).notNull(),
+	isComplete: boolean('is_complete').default(false).notNull(),
 	createdAt: timestamp('created_at')
 		.$defaultFn(() => /* @__PURE__ */ new Date())
 		.notNull(),

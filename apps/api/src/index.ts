@@ -3776,6 +3776,7 @@ const route = app
 						productIsBeingUsed: schemas.productStock.isBeingUsed,
 						productFirstUsed: schemas.productStock.firstUsed,
 						productCurrentWarehouse: schemas.productStock.currentWarehouse,
+						productDescription: schemas.productStock.description,
 					})
 					.from(schemas.kitsDetails)
 					.leftJoin(
@@ -4023,11 +4024,13 @@ const route = app
 			z.object({
 				kitId: z.string().uuid('Invalid kit ID'),
 				observations: z.string().max(1000, 'Observations too long').optional(),
+				isPartial: z.boolean().optional(),
+				isComplete: z.boolean().optional(),
 			}),
 		),
 		async (c) => {
 			try {
-				const { kitId, observations } = c.req.valid('json');
+				const { kitId, observations, isPartial, isComplete } = c.req.valid('json');
 
 				// Build update values
 				const updateValues: Record<string, unknown> = {
@@ -4036,6 +4039,14 @@ const route = app
 
 				if (observations !== undefined) {
 					updateValues.observations = observations;
+				}
+
+				if (isPartial !== undefined) {
+					updateValues.isPartial = isPartial;
+				}
+
+				if (isComplete !== undefined) {
+					updateValues.isComplete = isComplete;
 				}
 
 				// Update the kit

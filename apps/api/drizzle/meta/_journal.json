@@ -176,6 +176,13 @@
       "when": 1759353596438,
       "tag": "0024_orange_ares",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1759357440799,
+      "tag": "0025_special_caretaker",
+      "breakpoints": true
     }
   ]
 }
