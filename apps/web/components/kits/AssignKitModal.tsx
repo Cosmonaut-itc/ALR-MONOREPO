@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/popover";
 import type { getInventoryByWarehouse } from "@/lib/fetch-functions/inventory";
 import type { getEmployeesByUserId } from "@/lib/fetch-functions/kits";
-import { useCreateKit } from "@/lib/mutations/kits";
+import { useCreateKit, useUpdateProductStockUsage } from "@/lib/mutations/kits";
 import { cn } from "@/lib/utils";
 import { useKitsStore } from "@/stores/kits-store";
 
@@ -204,6 +204,7 @@ export function AssignKitModal({
 	};
 
 	const { mutateAsync: createKit, isPending } = useCreateKit();
+	const { mutateAsync: updateProductStockUsage } = useUpdateProductStockUsage();
 
 	const handleAssign = async () => {
 		if (!draft.employeeId || selectedProducts.length === 0) {
@@ -211,6 +212,7 @@ export function AssignKitModal({
 			return;
 		}
 		try {
+			// Create the kit
 			await createKit({
 				assignedEmployee: draft.employeeId as string,
 				observations: "Kit diario",
@@ -219,12 +221,38 @@ export function AssignKitModal({
 					observations: "",
 				})),
 			});
+
+			// Update usage information for each product in the kit
+			const currentDate = new Date().toISOString();
+			await Promise.all(
+				selectedProducts.map(async (product) => {
+					try {
+						await updateProductStockUsage({
+							productStockId: product.productId,
+							isBeingUsed: true,
+							lastUsedBy: draft.employeeId as string,
+							lastUsed: currentDate,
+							incrementUses: true,
+						});
+					} catch (error) {
+						// Log error but don't fail the entire kit creation
+						// biome-ignore lint/suspicious/noConsole: Needed for debugging
+						console.error(
+							`Error updating usage for product ${product.productId}:`,
+							error,
+						);
+					}
+				}),
+			);
+
+			// Update local store
 			addKit({
 				id: kitId,
 				employeeId: draft.employeeId as string,
 				date: ((draft.date as unknown as Date) || new Date()) as Date,
 				items: selectedProducts,
 			});
+
 			toast.success("Kit asignado exitosamente");
 			onOpenChange(false);
 			handleCancel();

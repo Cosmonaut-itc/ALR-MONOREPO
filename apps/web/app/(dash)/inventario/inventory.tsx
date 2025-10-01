@@ -127,6 +127,7 @@ export function InventarioPage({
 	const {
 		mutateAsync: createInventoryItem,
 		isPending: isCreatingInventoryItem,
+		isSuccess: isCreatingInventoryItemSuccess,
 	} = useCreateInventoryItem();
 
 	const { addToTransfer, transferList, removeFromTransfer, approveTransfer } =
@@ -147,7 +148,7 @@ export function InventarioPage({
 		setSelectedWarehouseId("");
 		setQrQuantity(1);
 		setIsKit(false);
-	}, []);
+	}, [isCreatingInventoryItemSuccess]);
 
 	const productOptions = useMemo<CatalogProductOption[]>(() => {
 		if (
@@ -440,6 +441,7 @@ export function InventarioPage({
 		resetAddProductForm,
 		selectedProduct,
 		selectedWarehouseId,
+		isKit,
 	]);
 
 	const handleReprintItemQr = useCallback(

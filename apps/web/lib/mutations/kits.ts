@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { getQueryClient } from "@/app/get-query-client";
 import { client } from "@/lib/client";
 import { queryKeys } from "@/lib/query-keys";
+import { createQueryKey } from "../helpers";
 
 // Update kit observations mutation
 type UpdateKitPostOptions = Parameters<
@@ -136,6 +137,78 @@ export const useCreateKit = () =>
 			toast.error("Error al crear kit", { id: "create-kit" });
 			// biome-ignore lint/suspicious/noConsole: Needed for debugging
 			console.error(error);
+		},
+	});
+
+// Update product stock usage mutation
+/**
+ * Payload for updating product stock usage information
+ * Tracks when products are being used, by whom, and usage counts
+ */
+export type UpdateProductStockUsagePayload = {
+	/** UUID of the product stock to update */
+	productStockId: string;
+	/** Whether the product is currently being used */
+	isBeingUsed?: boolean;
+	/** UUID of the employee who last used the product */
+	lastUsedBy?: string;
+	/** ISO date string for when the product was last used */
+	lastUsed?: string;
+	/** ISO date string for when the product was first used */
+	firstUsed?: string;
+	/** Whether to increment the numberOfUses counter */
+	incrementUses?: boolean;
+};
+
+/**
+ * Hook for updating product stock usage information
+ * This mutation updates usage tracking fields like isBeingUsed, lastUsedBy, and usage counts
+ */
+export const useUpdateProductStockUsage = () =>
+	useMutation<unknown, Error, UpdateProductStockUsagePayload>({
+		mutationKey: ["update-product-stock-usage"],
+		mutationFn: async (data: UpdateProductStockUsagePayload) => {
+			const response = await client.api.auth["product-stock"][
+				"update-usage"
+			].$post({ json: data });
+			if (!response.ok) {
+				throw new Error(
+					`Failed to update product stock usage: ${response.statusText}`,
+				);
+			}
+
+			const result: unknown = await response.json();
+			if (
+				result &&
+				typeof result === "object" &&
+				"success" in (result as Record<string, unknown>) &&
+				(result as { success?: unknown }).success === false
+			) {
+				const message =
+					((result as { message?: unknown }).message as string | undefined) ||
+					"La API devolvió éxito=false al actualizar el uso del producto";
+				throw new Error(message);
+			}
+			return result;
+		},
+		onSuccess: (data: unknown) => {
+			toast.success("Uso del producto actualizado", {
+				id: "update-product-stock-usage",
+			});
+			const queryClient = getQueryClient();
+			queryClient.invalidateQueries({
+				queryKey: createQueryKey(queryKeys.inventory, [
+					(data as { data: { currentWarehouse: string } }).data
+						.currentWarehouse,
+				]),
+			});
+			queryClient.invalidateQueries({
+				queryKey: createQueryKey(queryKeys.inventory, ["all"]),
+			});
+		},
+		onError: (error) => {
+			// biome-ignore lint/suspicious/noConsole: Needed for debugging
+			console.error("Error updating product stock usage:", error);
 		},
 	});
 

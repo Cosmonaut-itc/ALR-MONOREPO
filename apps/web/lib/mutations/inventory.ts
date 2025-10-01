@@ -19,6 +19,7 @@ export const useCreateInventoryItem = () =>
 	useMutation({
 		mutationKey: ["create-inventory-item"],
 		mutationFn: async (data: CreateProductStockPayload) => {
+			console.log(data);
 			const response = await client.api.auth["product-stock"].create.$post({
 				json: data,
 			});
