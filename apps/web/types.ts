@@ -172,6 +172,128 @@ export type KitsResponse = Awaited<
 	ReturnType<typeof import("./lib/fetch-functions/kits").getAllKits>
 > | null;
 
+/**
+ * Type for kit details including employee information
+ * Used in kit inspection and management views
+ */
+export type KitDetails = {
+	/** Unique identifier for the kit */
+	id: string;
+	/** Total number of products in the kit */
+	numProducts: number;
+	/** ISO date string when the kit was assigned to an employee */
+	assignedDate: string;
+	/** Optional observations or notes about the kit */
+	observations: string | null;
+	/** ISO date string when the kit record was created */
+	createdAt: string;
+	/** ISO date string when the kit record was last updated */
+	updatedAt: string;
+	/** Employee assigned to this kit, null if unassigned */
+	employee: {
+		id: string;
+		name: string;
+		surname: string;
+	} | null;
+};
+
+/**
+ * Type for individual items within a kit
+ * Represents product stock items assigned to a kit with tracking information
+ */
+export type KitItem = {
+	/** Unique identifier for the kit item record */
+	id: string;
+	/** UUID of the kit this item belongs to */
+	kitId: string;
+	/** UUID of the product */
+	productId: string;
+	/** Optional observations or notes about this specific item */
+	observations: string | null;
+	/** Whether the item has been returned by the employee */
+	isReturned: boolean;
+	/** ISO date string when the item was returned, null if not returned */
+	returnedDate: string | null;
+	/** ISO date string when the kit item record was created */
+	createdAt: string;
+	/** ISO date string when the kit item record was last updated */
+	updatedAt: string;
+	/** Product barcode number, null if not assigned */
+	productBarcode: number | null;
+	/** ISO date string when the product was last used */
+	productLastUsed: string | null;
+	/** Number of times the product has been used */
+	productNumberOfUses: number | null;
+	/** Whether the product is currently being used */
+	productIsBeingUsed: boolean | null;
+	/** ISO date string when the product was first used */
+	productFirstUsed: string | null;
+	/** Current warehouse location of the product */
+	productCurrentWarehouse: string | null;
+	/** Product name */
+	productDescription: string | null;
+};
+
+/**
+ * Type for kit summary statistics
+ * Provides aggregated counts of items in different states
+ */
+export type KitSummary = {
+	/** Total number of items in the kit */
+	totalItems: number;
+	/** Number of items that have been returned */
+	returnedItems: number;
+	/** Number of items still active (not returned) */
+	activeItems: number;
+};
+
+/**
+ * API response type for kit details endpoint
+ * Structure: { kit, items, summary }
+ */
+export type KitDetailsResponse = {
+	/** Kit information including employee details */
+	kit: KitDetails;
+	/** Array of kit items with product information */
+	items: KitItem[];
+	/** Summary statistics for the kit */
+	summary: KitSummary;
+};
+
+/**
+ * Simplified kit item for inspection UI
+ * Used in the kit inspection flow to track return status
+ */
+export type InspectionKitItem = {
+	/** Unique identifier for the kit item */
+	id: string;
+	/** UUID for the specific instance */
+	uuid: string;
+	/** Product barcode as string */
+	barcode: string;
+	/** Product name for display */
+	productName: string;
+	/** Whether the item has been marked as returned */
+	returned: boolean;
+};
+
+/**
+ * Type for kit inspection progress tracking
+ * Provides real-time statistics during kit inspection
+ */
+export type InspectionProgress = {
+	/** Total number of items being inspected */
+	total: number;
+	/** Number of items marked as returned */
+	returned: number;
+	/** Percentage of items returned (0-100) */
+	percentage: number;
+};
+
+/**
+ * Legacy type for basic kit data
+ * @deprecated Use KitDetails instead for more comprehensive kit information
+ */
 export type KitData = {
 	id: string;
 	numProducts: number;

@@ -3,31 +3,52 @@ import { toast } from "sonner";
 import { getQueryClient } from "@/app/get-query-client";
 import { client } from "@/lib/client";
 import { queryKeys } from "@/lib/query-keys";
+import type { KitDetails } from "@/types";
 import { createQueryKey } from "../helpers";
 
-// Update kit observations mutation
+/**
+ * Standard API response structure
+ */
+type ApiResponse<T> = {
+	success: boolean;
+	data?: T;
+	message?: string;
+};
+
+/**
+ * Type for the update kit mutation POST options
+ */
 type UpdateKitPostOptions = Parameters<
 	(typeof client.api.auth.kits)["update"]["$post"]
 >[0];
+
+/**
+ * Payload for updating kit observations and status
+ */
 export type UpdateKitPayload = UpdateKitPostOptions extends { json: infer J }
 	? J
 	: never;
 
+/**
+ * Hook for updating kit information (observations, status, etc.)
+ * Returns the updated kit details on success
+ */
 export const useUpdateKit = () =>
-	useMutation<unknown, Error, UpdateKitPayload>({
+	useMutation<ApiResponse<KitDetails>, Error, UpdateKitPayload>({
 		mutationKey: ["update-kit"],
-		mutationFn: async (data: UpdateKitPayload) => {
+		mutationFn: async (
+			data: UpdateKitPayload,
+		): Promise<ApiResponse<KitDetails>> => {
 			const response = await client.api.auth.kits.update.$post({ json: data });
-			const result: unknown = await response.json();
+			const result = (await response.json()) as ApiResponse<KitDetails>;
 			if (
 				result &&
 				typeof result === "object" &&
-				"success" in (result as Record<string, unknown>) &&
-				(result as { success?: unknown }).success === false
+				"success" in result &&
+				result.success === false
 			) {
 				const message =
-					((result as { message?: unknown }).message as string | undefined) ||
-					"La API devolvió éxito=false al actualizar el kit";
+					result.message || "La API devolvió éxito=false al actualizar el kit";
 				throw new Error(message);
 			}
 			return result;
@@ -47,10 +68,16 @@ export const useUpdateKit = () =>
 		},
 	});
 
-// Update kit item status (returned)
+/**
+ * Type for the update kit item status mutation POST options
+ */
 type UpdateKitItemStatusPostOptions = Parameters<
 	(typeof client.api.auth.kits)["items"]["update-status"]["$post"]
 >[0];
+
+/**
+ * Payload for updating kit item status (returned/not returned)
+ */
 export type UpdateKitItemStatusPayload =
 	UpdateKitItemStatusPostOptions extends {
 		json: infer J;
@@ -58,22 +85,35 @@ export type UpdateKitItemStatusPayload =
 		? J
 		: never;
 
+/**
+ * Hook for updating individual kit item return status
+ * Returns the updated kit item on success
+ */
 export const useUpdateKitItemStatus = () =>
-	useMutation<unknown, Error, UpdateKitItemStatusPayload>({
+	useMutation<
+		ApiResponse<{ kitItemId: string; isReturned: boolean }>,
+		Error,
+		UpdateKitItemStatusPayload
+	>({
 		mutationKey: ["update-kit-item-status"],
-		mutationFn: async (data: UpdateKitItemStatusPayload) => {
+		mutationFn: async (
+			data: UpdateKitItemStatusPayload,
+		): Promise<ApiResponse<{ kitItemId: string; isReturned: boolean }>> => {
 			const response = await client.api.auth.kits.items["update-status"].$post({
 				json: data,
 			});
-			const result: unknown = await response.json();
+			const result = (await response.json()) as ApiResponse<{
+				kitItemId: string;
+				isReturned: boolean;
+			}>;
 			if (
 				result &&
 				typeof result === "object" &&
-				"success" in (result as Record<string, unknown>) &&
-				(result as { success?: unknown }).success === false
+				"success" in result &&
+				result.success === false
 			) {
 				const message =
-					((result as { message?: unknown }).message as string | undefined) ||
+					result.message ||
 					"La API devolvió éxito=false al actualizar estado del artículo";
 				throw new Error(message);
 			}
@@ -98,29 +138,40 @@ export const useUpdateKitItemStatus = () =>
 		},
 	});
 
-// Create kit mutation
+/**
+ * Type for the create kit mutation POST options
+ */
 type CreateKitPostOptions = Parameters<
 	(typeof client.api.auth.kits)["create"]["$post"]
 >[0];
+
+/**
+ * Payload for creating a new kit
+ */
 export type CreateKitPayload = CreateKitPostOptions extends { json: infer J }
 	? J
 	: never;
 
+/**
+ * Hook for creating a new kit
+ * Returns the newly created kit details on success
+ */
 export const useCreateKit = () =>
-	useMutation<unknown, Error, CreateKitPayload>({
+	useMutation<ApiResponse<KitDetails>, Error, CreateKitPayload>({
 		mutationKey: ["create-kit"],
-		mutationFn: async (data: CreateKitPayload) => {
+		mutationFn: async (
+			data: CreateKitPayload,
+		): Promise<ApiResponse<KitDetails>> => {
 			const response = await client.api.auth.kits.create.$post({ json: data });
-			const result: unknown = await response.json();
+			const result = (await response.json()) as ApiResponse<KitDetails>;
 			if (
 				result &&
 				typeof result === "object" &&
-				"success" in (result as Record<string, unknown>) &&
-				(result as { success?: unknown }).success === false
+				"success" in result &&
+				result.success === false
 			) {
 				const message =
-					((result as { message?: unknown }).message as string | undefined) ||
-					"La API devolvió éxito=false al crear el kit";
+					result.message || "La API devolvió éxito=false al crear el kit";
 				throw new Error(message);
 			}
 			return result;
