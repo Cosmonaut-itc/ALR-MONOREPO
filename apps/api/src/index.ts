@@ -1265,6 +1265,174 @@ const route = app
 	)
 
 	/**
+	 * POST /api/auth/product-stock/update-usage - Update product stock usage information
+	 *
+	 * Updates the usage-related fields of a product stock record in the database.
+	 * This endpoint allows tracking when products are being used, by whom, and how many times.
+	 * It can update the current usage status, user assignment, dates, and usage count.
+	 * Optionally increments the number of uses if specified.
+	 *
+	 * @param {string} productStockId - UUID of the product stock to update (required)
+	 * @param {boolean} isBeingUsed - Whether the product is currently being used (optional)
+	 * @param {string} lastUsedBy - UUID of the employee who last used the product (optional)
+	 * @param {string} lastUsed - ISO date string for when the product was last used (optional)
+	 * @param {string} firstUsed - ISO date string for when the product was first used (optional)
+	 * @param {boolean} incrementUses - Whether to increment the numberOfUses counter (optional, defaults to false)
+	 * @returns {ApiResponse} Success response with updated product stock data
+	 * @throws {400} Validation error if input data is invalid or business rules violated
+	 * @throws {404} If product stock not found
+	 * @throws {500} Database error if update fails
+	 */
+	.post(
+		'/api/auth/product-stock/update-usage',
+		zValidator(
+			'json',
+			z.object({
+				productStockId: z
+					.string()
+					.uuid('Invalid product stock ID')
+					.describe('Product stock UUID'),
+				isBeingUsed: z
+					.boolean()
+					.optional()
+					.describe('Whether the product is currently being used'),
+				lastUsedBy: z
+					.string()
+					.uuid('Invalid employee ID')
+					.optional()
+					.describe('Employee UUID who last used the product'),
+				lastUsed: z.string().optional().describe('ISO date string for last use'),
+				firstUsed: z.string().optional().describe('ISO date string for first use'),
+				incrementUses: z
+					.boolean()
+					.optional()
+					.default(false)
+					.describe('Whether to increment the number of uses'),
+			}),
+		),
+		async (c) => {
+			try {
+				const {
+					productStockId,
+					isBeingUsed,
+					lastUsedBy,
+					lastUsed,
+					firstUsed,
+					incrementUses,
+				} = c.req.valid('json');
+
+				// Validate business logic: if marking as being used, lastUsedBy should be provided
+				if (isBeingUsed === true && !lastUsedBy) {
+					return c.json(
+						{
+							success: false,
+							message: 'lastUsedBy is required when marking product as being used',
+						} satisfies ApiResponse,
+						400,
+					);
+				}
+
+				// Validate that if lastUsed is provided, lastUsedBy should also be provided
+				if (lastUsed && !lastUsedBy) {
+					return c.json(
+						{
+							success: false,
+							message: 'lastUsedBy is required when lastUsed is provided',
+						} satisfies ApiResponse,
+						400,
+					);
+				}
+
+				// Build update values object dynamically
+				const updateValues: Record<string, unknown> = {};
+
+				if (isBeingUsed !== undefined) {
+					updateValues.isBeingUsed = isBeingUsed;
+				}
+
+				if (lastUsedBy !== undefined) {
+					updateValues.lastUsedBy = lastUsedBy;
+				}
+
+				if (lastUsed !== undefined) {
+					updateValues.lastUsed = lastUsed;
+				}
+
+				if (firstUsed !== undefined) {
+					updateValues.firstUsed = firstUsed;
+				}
+
+				// Increment number of uses if requested
+				if (incrementUses === true) {
+					updateValues.numberOfUses = sql`${schemas.productStock.numberOfUses} + 1`;
+				}
+
+				// Check if at least one field is being updated
+				if (Object.keys(updateValues).length === 0) {
+					return c.json(
+						{
+							success: false,
+							message: 'At least one usage field must be provided to update',
+						} satisfies ApiResponse,
+						400,
+					);
+				}
+
+				// Update the product stock usage information
+				const updatedProductStock = await db
+					.update(schemas.productStock)
+					.set(updateValues)
+					.where(eq(schemas.productStock.id, productStockId))
+					.returning();
+
+				// Check if the product stock was found and updated
+				if (updatedProductStock.length === 0) {
+					return c.json(
+						{
+							success: false,
+							message: 'Product stock not found',
+						} satisfies ApiResponse,
+						404,
+					);
+				}
+
+				// Return successful response with the updated product stock record
+				return c.json(
+					{
+						success: true,
+						message: 'Product stock usage updated successfully',
+						data: updatedProductStock[0],
+					} satisfies ApiResponse,
+					200,
+				);
+			} catch (error) {
+				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
+				console.error('Error updating product stock usage:', error);
+
+				// Handle foreign key constraint errors (invalid employee ID)
+				if (error instanceof Error && error.message.includes('foreign key')) {
+					return c.json(
+						{
+							success: false,
+							message: 'Invalid employee ID - employee does not exist',
+						} satisfies ApiResponse,
+						400,
+					);
+				}
+
+				// Handle generic database errors
+				return c.json(
+					{
+						success: false,
+						message: 'Failed to update product stock usage',
+					} satisfies ApiResponse,
+					500,
+				);
+			}
+		},
+	)
+
+	/**
 	 * GET /api/product-stock/with-employee - Retrieve product stock joined with employee
 	 *
 	 * This endpoint fetches all product stock records and joins each record with
