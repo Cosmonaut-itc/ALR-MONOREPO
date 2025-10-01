@@ -189,6 +189,10 @@ export type KitDetails = {
 	createdAt: string;
 	/** ISO date string when the kit record was last updated */
 	updatedAt: string;
+	/** Whether the kit has been partially returned */
+	isPartial?: boolean;
+	/** Whether the kit has been completely returned */
+	isComplete?: boolean;
 	/** Employee assigned to this kit, null if unassigned */
 	employee: {
 		id: string;
@@ -275,6 +279,8 @@ export type InspectionKitItem = {
 	productName: string;
 	/** Whether the item has been marked as returned */
 	returned: boolean;
+	/** Optional observations or notes about this item */
+	observations: string;
 };
 
 /**
@@ -292,7 +298,7 @@ export type InspectionProgress = {
 
 /**
  * Legacy type for basic kit data
- * @deprecated Use KitDetails instead for more comprehensive kit information
+ * Use KitDetails instead for more comprehensive kit information
  */
 export type KitData = {
 	id: string;
@@ -302,4 +308,8 @@ export type KitData = {
 	createdAt: string;
 	updatedAt: string;
 	assignedEmployee: string;
+	/** Whether the kit has been partially returned */
+	isPartial?: boolean;
+	/** Whether the kit has been completely returned */
+	isComplete?: boolean;
 };

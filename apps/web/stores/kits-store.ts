@@ -25,6 +25,8 @@ interface KitsState {
 	toggleInspectionGroup: (barcode: string) => void;
 	/** Mark all items in a kit as returned */
 	markAllReturned: (kitId: string) => void;
+	/** Update observations for a specific item */
+	updateItemObservations: (itemId: string, observations: string) => void;
 	/** Get current inspection progress statistics */
 	getInspectionProgress: () => InspectionProgress;
 }
@@ -81,6 +83,14 @@ export const useKitsStore = create<KitsState>()(
 						...item,
 						returned: true,
 					})),
+				}));
+			},
+
+			updateItemObservations: (itemId, observations) => {
+				set((state) => ({
+					inspectionItems: state.inspectionItems.map((item) =>
+						item.id === itemId ? { ...item, observations } : item,
+					),
 				}));
 			},
 

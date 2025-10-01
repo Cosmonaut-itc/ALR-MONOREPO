@@ -125,6 +125,41 @@ export function EmployeeKitCard({
 		return kit.numProducts;
 	};
 
+	/**
+	 * Gets the return status badge for the current kit
+	 */
+	const getReturnStatusBadge = (kit: KitData | undefined) => {
+		if (!kit) return null;
+
+		if (kit.isComplete) {
+			return (
+				<Badge
+					className="ml-2 bg-green-600 hover:bg-green-700"
+					variant="default"
+				>
+					Devuelto
+				</Badge>
+			);
+		}
+
+		if (kit.isPartial) {
+			return (
+				<Badge
+					className="ml-2 bg-amber-500 hover:bg-amber-600"
+					variant="default"
+				>
+					Parcial
+				</Badge>
+			);
+		}
+
+		return (
+			<Badge className="ml-2 bg-blue-600 hover:bg-blue-700" variant="default">
+				Activo
+			</Badge>
+		);
+	};
+
 	return (
 		<Card className="card-transition hover:shadow-md">
 			<CardHeader className="pb-3">
@@ -151,11 +186,7 @@ export function EmployeeKitCard({
 							</div>
 						</div>
 					</div>
-					{currentKit && (
-						<Badge className="ml-2" variant="default">
-							Kit Activo
-						</Badge>
-					)}
+					{getReturnStatusBadge(currentKit)}
 				</div>
 			</CardHeader>
 

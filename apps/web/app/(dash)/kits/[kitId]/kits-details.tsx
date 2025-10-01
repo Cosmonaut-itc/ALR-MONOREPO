@@ -26,6 +26,7 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
 import { getKitDetails } from "@/lib/fetch-functions/kits";
 import { createQueryKey } from "@/lib/helpers";
 import { useUpdateKit, useUpdateKitItemStatus } from "@/lib/mutations/kits";
@@ -68,6 +69,7 @@ export function KitInspectionPage({ params }: PageProps) {
 		toggleInspectionItem,
 		toggleInspectionGroup,
 		markAllReturned,
+		updateItemObservations,
 		getInspectionProgress,
 	} = useKitsStore();
 
@@ -113,6 +115,7 @@ export function KitInspectionPage({ params }: PageProps) {
 			barcode: String(kitItem.productBarcode ?? ""),
 			productName: kitItem.productDescription ?? "Sin nombre",
 			returned: kitItem.isReturned ?? false,
+			observations: kitItem.observations ?? "",
 		}));
 
 		loadInspection(kitId, inspectionItems);
@@ -136,7 +139,12 @@ export function KitInspectionPage({ params }: PageProps) {
 	const handleMarkAllReturned = async () => {
 		markAllReturned(kitId);
 		try {
-			await updateKit({ kitId, observations: "Todos los artículos devueltos" });
+			await updateKit({
+				kitId,
+				observations: "Todos los artículos devueltos",
+				isPartial: false,
+				isComplete: true,
+			});
 			toast(
 				"Kit devuelto: Todos los artículos han sido marcados como devueltos",
 			);
@@ -150,15 +158,72 @@ export function KitInspectionPage({ params }: PageProps) {
 
 	const handleToggleItem = async (itemId: string, nextReturned: boolean) => {
 		toggleInspectionItem(itemId);
+
+		// Calculate kit return status
+		const updatedItems = inspectionItems.map((item) =>
+			item.id === itemId ? { ...item, returned: nextReturned } : item,
+		);
+		const returnedCount = updatedItems.filter((item) => item.returned).length;
+		const totalCount = updatedItems.length;
+
+		const isPartial = returnedCount > 0 && returnedCount < totalCount;
+		const isComplete = returnedCount === totalCount;
+
 		try {
 			await updateItemStatus({ kitItemId: itemId, isReturned: nextReturned });
+
+			// Always update kit status to reflect current state
+			await updateKit({
+				kitId,
+				isPartial,
+				isComplete,
+			});
 		} catch {
 			toast.error("No se pudo actualizar el artículo");
 		}
 	};
 
-	const handleGroupToggle = (barcode: string) => {
+	const handleObservationsChange = async (
+		itemId: string,
+		observations: string,
+	) => {
+		// Update local state immediately for responsive UI
+		updateItemObservations(itemId, observations);
+
+		// Optionally update API - can be debounced or done on blur
+		// For now, just updating local state
+		// TODO: Add API call to persist observations when needed
+	};
+
+	const handleGroupToggle = async (barcode: string) => {
 		toggleInspectionGroup(barcode);
+
+		// Calculate kit return status after group toggle
+		const groupItems = inspectionItems.filter(
+			(item) => item.barcode === barcode,
+		);
+		const allReturned = groupItems.every((item) => item.returned);
+		const nextReturned = !allReturned;
+
+		const updatedItems = inspectionItems.map((item) =>
+			item.barcode === barcode ? { ...item, returned: nextReturned } : item,
+		);
+		const returnedCount = updatedItems.filter((item) => item.returned).length;
+		const totalCount = updatedItems.length;
+
+		const isPartial = returnedCount > 0 && returnedCount < totalCount;
+		const isComplete = returnedCount === totalCount;
+
+		try {
+			// Always update kit status to reflect current state
+			await updateKit({
+				kitId,
+				isPartial,
+				isComplete,
+			});
+		} catch {
+			toast.error("No se pudo actualizar el kit");
+		}
 	};
 
 	const getGroupSelectionState = (barcode: string) => {
@@ -282,6 +347,9 @@ export function KitInspectionPage({ params }: PageProps) {
 										Nombre de producto
 									</TableHead>
 									<TableHead className="font-medium text-[#11181C] text-transition dark:text-[#ECEDEE]">
+										Observaciones
+									</TableHead>
+									<TableHead className="font-medium text-[#11181C] text-transition dark:text-[#ECEDEE]">
 										Devuelto
 									</TableHead>
 								</TableRow>
@@ -295,7 +363,7 @@ export function KitInspectionPage({ params }: PageProps) {
 								{!inspectionLoading &&
 									Object.entries(groupedItems).length === 0 && (
 										<TableRow>
-											<TableCell className="py-12 text-center" colSpan={4}>
+											<TableCell className="py-12 text-center" colSpan={5}>
 												<Package className="mx-auto mb-4 h-12 w-12 text-[#687076] dark:text-[#9BA1A6]" />
 												<p className="text-[#687076] text-transition dark:text-[#9BA1A6]">
 													No hay artículos en este kit
@@ -315,7 +383,7 @@ export function KitInspectionPage({ params }: PageProps) {
 												<TableRow className="theme-transition bg-[#F9FAFB]/60 dark:bg-[#1E1F20]/60">
 													<TableCell
 														className="py-3 font-medium text-[#687076] text-transition dark:text-[#9BA1A6]"
-														colSpan={4}
+														colSpan={5}
 													>
 														<div className="flex items-center space-x-3">
 															<Checkbox
@@ -364,6 +432,19 @@ export function KitInspectionPage({ params }: PageProps) {
 															)}
 														>
 															{item.productName}
+														</TableCell>
+														<TableCell className="max-w-xs">
+															<Textarea
+																className="min-h-[60px] resize-none text-sm transition-colors focus-visible:ring-[#0a7ea4]"
+																placeholder="Agregar observaciones..."
+																value={item.observations}
+																onChange={(e) =>
+																	handleObservationsChange(
+																		item.id,
+																		e.target.value,
+																	)
+																}
+															/>
 														</TableCell>
 														<TableCell>
 															<Checkbox
