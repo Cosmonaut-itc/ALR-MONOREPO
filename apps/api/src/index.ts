@@ -1191,6 +1191,7 @@ const route = app
 					.optional()
 					.default(false)
 					.describe('Whether currently being used'),
+				isKit: z.boolean().optional().default(false).describe('Whether it is a kit'),
 			}),
 		),
 		async (c) => {
@@ -1218,6 +1219,7 @@ const route = app
 						firstUsed: requestData.firstUsed || null,
 						numberOfUses: requestData.numberOfUses ?? 0,
 						isBeingUsed: requestData.isBeingUsed ?? false,
+						isKit: requestData.isKit ?? false,
 					})
 					.returning();
 
