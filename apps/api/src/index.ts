@@ -3607,6 +3607,8 @@ const route = app
 					createdAt: schemas.kits.createdAt,
 					updatedAt: schemas.kits.updatedAt,
 					assignedEmployee: schemas.kits.assignedEmployee,
+					isPartial: schemas.kits.isPartial,
+					isComplete: schemas.kits.isComplete,
 				})
 				.from(schemas.kits)
 				.orderBy(schemas.kits.createdAt);
