@@ -163,3 +163,32 @@ export const fetchEmployeesByWarehouseIdServer = async (
 
 	return res.json();
 };
+
+/**
+ * Fetches all available permissions from the database
+ *
+ * This endpoint retrieves all permission records that can be assigned to employees.
+ * Used for populating permission selection dropdowns in employee management forms.
+ *
+ * @returns Promise resolving to all permissions data
+ * @throws {Error} If the fetch fails or returns a non-ok response
+ */
+export const fetchAllPermissionsServer = async () => {
+	const origin = resolveTrustedOrigin();
+	const url = new URL("/api/auth/permissions/all", origin).toString();
+	const headers = await buildCookieHeader(origin);
+
+	const res = await fetch(url, {
+		headers,
+		cache: "no-store",
+	});
+
+	if (!res.ok) {
+		const text = await res.text().catch(() => "");
+		throw new Error(
+			`Permissions fetch failed: ${res.status} ${res.statusText} ${text}`,
+		);
+	}
+
+	return res.json();
+};

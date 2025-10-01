@@ -1,42 +1,46 @@
-import { useMutation } from '@tanstack/react-query';
-import { toast } from 'sonner';
-import { getQueryClient } from '@/app/get-query-client';
-import { client } from '@/lib/client';
-import { queryKeys } from '@/lib/query-keys';
+import { useMutation } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { getQueryClient } from "@/app/get-query-client";
+import { client } from "@/lib/client";
+import { queryKeys } from "@/lib/query-keys";
 
 // Update kit observations mutation
-type UpdateKitPostOptions = Parameters<(typeof client.api.auth.kits)['update']['$post']>[0];
-export type UpdateKitPayload = UpdateKitPostOptions extends { json: infer J } ? J : never;
+type UpdateKitPostOptions = Parameters<
+	(typeof client.api.auth.kits)["update"]["$post"]
+>[0];
+export type UpdateKitPayload = UpdateKitPostOptions extends { json: infer J }
+	? J
+	: never;
 
 export const useUpdateKit = () =>
 	useMutation<unknown, Error, UpdateKitPayload>({
-		mutationKey: ['update-kit'],
+		mutationKey: ["update-kit"],
 		mutationFn: async (data: UpdateKitPayload) => {
 			const response = await client.api.auth.kits.update.$post({ json: data });
 			const result: unknown = await response.json();
 			if (
 				result &&
-				typeof result === 'object' &&
-				'success' in (result as Record<string, unknown>) &&
+				typeof result === "object" &&
+				"success" in (result as Record<string, unknown>) &&
 				(result as { success?: unknown }).success === false
 			) {
 				const message =
 					((result as { message?: unknown }).message as string | undefined) ||
-					'La API devolvió éxito=false al actualizar el kit';
+					"La API devolvió éxito=false al actualizar el kit";
 				throw new Error(message);
 			}
 			return result;
 		},
 		onMutate: () => {
-			toast.loading('Actualizando kit...', { id: 'update-kit' });
+			toast.loading("Actualizando kit...", { id: "update-kit" });
 		},
 		onSuccess: () => {
-			toast.success('Kit actualizado', { id: 'update-kit' });
+			toast.success("Kit actualizado", { id: "update-kit" });
 			const qc = getQueryClient();
 			qc.invalidateQueries({ queryKey: queryKeys.kits });
 		},
 		onError: (error) => {
-			toast.error('Error al actualizar kit', { id: 'update-kit' });
+			toast.error("Error al actualizar kit", { id: "update-kit" });
 			// biome-ignore lint/suspicious/noConsole: Needed for debugging
 			console.error(error);
 		},
@@ -44,46 +48,49 @@ export const useUpdateKit = () =>
 
 // Update kit item status (returned)
 type UpdateKitItemStatusPostOptions = Parameters<
-	(typeof client.api.auth.kits)['items']['update-status']['$post']
+	(typeof client.api.auth.kits)["items"]["update-status"]["$post"]
 >[0];
-export type UpdateKitItemStatusPayload = UpdateKitItemStatusPostOptions extends {
-	json: infer J;
-}
-	? J
-	: never;
+export type UpdateKitItemStatusPayload =
+	UpdateKitItemStatusPostOptions extends {
+		json: infer J;
+	}
+		? J
+		: never;
 
 export const useUpdateKitItemStatus = () =>
 	useMutation<unknown, Error, UpdateKitItemStatusPayload>({
-		mutationKey: ['update-kit-item-status'],
+		mutationKey: ["update-kit-item-status"],
 		mutationFn: async (data: UpdateKitItemStatusPayload) => {
-			const response = await client.api.auth.kits.items['update-status'].$post({
+			const response = await client.api.auth.kits.items["update-status"].$post({
 				json: data,
 			});
 			const result: unknown = await response.json();
 			if (
 				result &&
-				typeof result === 'object' &&
-				'success' in (result as Record<string, unknown>) &&
+				typeof result === "object" &&
+				"success" in (result as Record<string, unknown>) &&
 				(result as { success?: unknown }).success === false
 			) {
 				const message =
 					((result as { message?: unknown }).message as string | undefined) ||
-					'La API devolvió éxito=false al actualizar estado del artículo';
+					"La API devolvió éxito=false al actualizar estado del artículo";
 				throw new Error(message);
 			}
 			return result;
 		},
 		onMutate: () => {
-			toast.loading('Actualizando estado de artículo...', { id: 'update-kit-item-status' });
+			toast.loading("Actualizando estado de artículo...", {
+				id: "update-kit-item-status",
+			});
 		},
 		onSuccess: () => {
-			toast.success('Estado actualizado', { id: 'update-kit-item-status' });
+			toast.success("Estado actualizado", { id: "update-kit-item-status" });
 			const qc = getQueryClient();
 			qc.invalidateQueries({ queryKey: queryKeys.kits });
 		},
 		onError: (error) => {
-			toast.error('Error al actualizar estado del artículo', {
-				id: 'update-kit-item-status',
+			toast.error("Error al actualizar estado del artículo", {
+				id: "update-kit-item-status",
 			});
 			// biome-ignore lint/suspicious/noConsole: Needed for debugging
 			console.error(error);
@@ -91,38 +98,88 @@ export const useUpdateKitItemStatus = () =>
 	});
 
 // Create kit mutation
-type CreateKitPostOptions = Parameters<(typeof client.api.auth.kits)['create']['$post']>[0];
-export type CreateKitPayload = CreateKitPostOptions extends { json: infer J } ? J : never;
+type CreateKitPostOptions = Parameters<
+	(typeof client.api.auth.kits)["create"]["$post"]
+>[0];
+export type CreateKitPayload = CreateKitPostOptions extends { json: infer J }
+	? J
+	: never;
 
 export const useCreateKit = () =>
 	useMutation<unknown, Error, CreateKitPayload>({
-		mutationKey: ['create-kit'],
+		mutationKey: ["create-kit"],
 		mutationFn: async (data: CreateKitPayload) => {
 			const response = await client.api.auth.kits.create.$post({ json: data });
 			const result: unknown = await response.json();
 			if (
 				result &&
-				typeof result === 'object' &&
-				'success' in (result as Record<string, unknown>) &&
+				typeof result === "object" &&
+				"success" in (result as Record<string, unknown>) &&
 				(result as { success?: unknown }).success === false
 			) {
 				const message =
 					((result as { message?: unknown }).message as string | undefined) ||
-					'La API devolvió éxito=false al crear el kit';
+					"La API devolvió éxito=false al crear el kit";
 				throw new Error(message);
 			}
 			return result;
 		},
 		onMutate: () => {
-			toast.loading('Creando kit...', { id: 'create-kit' });
+			toast.loading("Creando kit...", { id: "create-kit" });
 		},
 		onSuccess: () => {
-			toast.success('Kit creado', { id: 'create-kit' });
+			toast.success("Kit creado", { id: "create-kit" });
 			const qc = getQueryClient();
 			qc.invalidateQueries({ queryKey: queryKeys.kits });
 		},
 		onError: (error) => {
-			toast.error('Error al crear kit', { id: 'create-kit' });
+			toast.error("Error al crear kit", { id: "create-kit" });
+			// biome-ignore lint/suspicious/noConsole: Needed for debugging
+			console.error(error);
+		},
+	});
+
+// Create employee mutation
+type CreateEmployeePostOptions = Parameters<
+	(typeof client.api.auth.employee)["create"]["$post"]
+>[0];
+export type CreateEmployeePayload = CreateEmployeePostOptions extends {
+	json: infer J;
+}
+	? J
+	: never;
+
+export const useCreateEmployee = () =>
+	useMutation<unknown, Error, CreateEmployeePayload>({
+		mutationKey: ["create-employee"],
+		mutationFn: async (data: CreateEmployeePayload) => {
+			const response = await client.api.auth.employee.create.$post({
+				json: data,
+			});
+			const result: unknown = await response.json();
+			if (
+				result &&
+				typeof result === "object" &&
+				"success" in (result as Record<string, unknown>) &&
+				(result as { success?: unknown }).success === false
+			) {
+				const message =
+					((result as { message?: unknown }).message as string | undefined) ||
+					"La API devolvió éxito=false al crear el empleado";
+				throw new Error(message);
+			}
+			return result;
+		},
+		onMutate: () => {
+			toast.loading("Creando empleado...", { id: "create-employee" });
+		},
+		onSuccess: () => {
+			toast.success("Empleado creado exitosamente", { id: "create-employee" });
+			const qc = getQueryClient();
+			qc.invalidateQueries({ queryKey: ["employees"] });
+		},
+		onError: (error) => {
+			toast.error("Error al crear empleado", { id: "create-employee" });
 			// biome-ignore lint/suspicious/noConsole: Needed for debugging
 			console.error(error);
 		},

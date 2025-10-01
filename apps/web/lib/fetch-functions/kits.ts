@@ -118,3 +118,22 @@ export const getEmployeesByWarehouseId = async (warehouseId: string) => {
 		return null;
 	}
 };
+
+/**
+ * Fetches all available permissions from the database
+ *
+ * This endpoint retrieves all permission records that can be assigned to employees.
+ * Used for populating permission selection dropdowns in employee management forms.
+ *
+ * @returns Promise resolving to all permissions data or null if the request fails
+ */
+export const getAllPermissions = async () => {
+	try {
+		const response = await client.api.auth.permissions.all.$get();
+		return response.json();
+	} catch (error) {
+		// biome-ignore lint/suspicious/noConsole: Needed for debugging
+		console.error(error);
+		return null;
+	}
+};
