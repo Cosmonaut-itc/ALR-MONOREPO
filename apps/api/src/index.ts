@@ -1453,7 +1453,7 @@ const route = app
 	 * @throws {500} If an unexpected error occurs during data retrieval
 	 */
 	.get(
-		'/api/auth/employee/all',
+		'/api/auth/employee/by-user-id',
 		zValidator('query', z.object({ userId: z.string() })),
 		async (c) => {
 			try {
@@ -1501,6 +1501,129 @@ const route = app
 						data: [],
 					} satisfies ApiResponse,
 					200,
+				);
+			}
+		},
+	)
+
+	/**
+	 * GET /api/auth/employee/all - Retrieve all employee data
+	 *
+	 * This endpoint fetches all employee records from the database without any filtering.
+	 * Each employee record includes their associated permissions through a left join.
+	 * If the database table is empty, it returns an empty array with a success response.
+	 *
+	 * @returns {ApiResponse} Success response with all employee data and their permissions
+	 * @throws {500} If an unexpected error occurs during data retrieval
+	 */
+	.get('/api/auth/employee/all', async (c) => {
+		try {
+			// Query the employee table for all records and permissions
+			const employees = await db
+				.select()
+				.from(schemas.employee)
+				.leftJoin(
+					schemas.permissions,
+					eq(schemas.employee.permissions, schemas.permissions.id),
+				);
+
+			// If no records exist, return empty data
+			if (employees.length === 0) {
+				return c.json(
+					{
+						success: false,
+						message: 'No employees found',
+						data: [],
+					} satisfies ApiResponse,
+					200,
+				);
+			}
+
+			// Return all employee data from the database
+			return c.json(
+				{
+					success: true,
+					message: 'Successfully fetched all employees',
+					data: employees,
+				} satisfies ApiResponse,
+				200,
+			);
+		} catch (error) {
+			// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
+			console.error('Error fetching all employees:', error);
+
+			return c.json(
+				{
+					success: false,
+					message: 'Error fetching employees',
+					data: [],
+				} satisfies ApiResponse,
+				500,
+			);
+		}
+	})
+
+	/**
+	 * GET /api/auth/employee/by-warehouse-id - Retrieve employees by warehouse ID
+	 *
+	 * This endpoint fetches all employee records associated with a specific warehouse.
+	 * It requires a warehouseId query parameter and returns employees with their permissions.
+	 * If no employees are found for the given warehouse ID, it returns an empty array.
+	 *
+	 * @param {string} warehouseId - UUID of the warehouse to filter employees by
+	 * @returns {ApiResponse} Success response with filtered employee data and their permissions
+	 * @throws {400} If warehouseId query parameter is missing or invalid
+	 * @throws {500} If an unexpected error occurs during data retrieval
+	 */
+	.get(
+		'/api/auth/employee/by-warehouse-id',
+		zValidator('query', z.object({ warehouseId: z.string().uuid() })),
+		async (c) => {
+			try {
+				const { warehouseId } = c.req.valid('query');
+
+				// Query the employee table for records matching the warehouse ID
+				const employees = await db
+					.select()
+					.from(schemas.employee)
+					.leftJoin(
+						schemas.permissions,
+						eq(schemas.employee.permissions, schemas.permissions.id),
+					)
+					.where(eq(schemas.employee.warehouseId, warehouseId));
+
+				// If no records exist for this warehouse, return empty data
+				if (employees.length === 0) {
+					return c.json(
+						{
+							success: false,
+							message: `No employees found for warehouse ID: ${warehouseId}`,
+							data: [],
+						} satisfies ApiResponse,
+						200,
+					);
+				}
+
+				// Return employee data from the database for the specified warehouse
+				return c.json(
+					{
+						success: true,
+						message: `Successfully fetched employees for warehouse ID: ${warehouseId}`,
+						data: employees,
+					} satisfies ApiResponse,
+					200,
+				);
+			} catch (error) {
+				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
+				console.error('Error fetching employees by warehouse ID:', error);
+
+				return c.json(
+					{
+						success: false,
+						message: 'Error fetching employees by warehouse ID',
+						data: [],
+					} satisfies ApiResponse,
+					500,
 				);
 			}
 		},
