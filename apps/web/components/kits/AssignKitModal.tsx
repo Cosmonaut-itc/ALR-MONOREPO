@@ -69,6 +69,8 @@ interface AssignKitModalProps {
 	employeesData: EmployeesResponse;
 	/** Kit products filtered by isKit flag */
 	kitProducts: KitProduct[];
+	/** Today's kits to filter out employees who already have a kit */
+	todayKits?: Array<{ assignedEmployee: string }>;
 }
 
 export function AssignKitModal({
@@ -76,6 +78,7 @@ export function AssignKitModal({
 	onOpenChange,
 	employeesData,
 	kitProducts,
+	todayKits = [],
 }: AssignKitModalProps) {
 	const { draft, setDraft, clearDraft, addKit } = useKitsStore();
 	const [employeeOpen, setEmployeeOpen] = useState(false);
@@ -129,8 +132,15 @@ export function AssignKitModal({
 			json?: unknown;
 		};
 		const candidate = root.data ?? root.json ?? [];
-		return toArray(candidate).map(normalizeEmployee);
-	}, [employeesData, toArray, normalizeEmployee]);
+		const allEmployees = toArray(candidate).map(normalizeEmployee);
+
+		// Filter out employees who already have a kit assigned today
+		const employeesWithKitsToday = new Set(
+			todayKits.map((kit) => kit.assignedEmployee),
+		);
+
+		return allEmployees.filter((emp) => !employeesWithKitsToday.has(emp.id));
+	}, [employeesData, toArray, normalizeEmployee, todayKits]);
 
 	// Filter kit products by selected employee's warehouse ID
 	const products = useMemo(() => {
@@ -328,7 +338,11 @@ export function AssignKitModal({
 								<Command>
 									<CommandInput placeholder="Buscar empleada..." />
 									<CommandList>
-										<CommandEmpty>No se encontraron empleadas.</CommandEmpty>
+										<CommandEmpty>
+											{employees.length === 0 && todayKits.length > 0
+												? "Todas las empleadas ya tienen un kit asignado para hoy."
+												: "No se encontraron empleadas."}
+										</CommandEmpty>
 										<CommandGroup>
 											{employees
 												.filter((emp) => Boolean(emp.active))

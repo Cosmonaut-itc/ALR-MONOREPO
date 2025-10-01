@@ -3,7 +3,14 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { addDays, format } from "date-fns";
 import { es } from "date-fns/locale";
-import { Check, ChevronsUpDown, Plus, Users, Warehouse } from "lucide-react";
+import {
+	Check,
+	ChevronsUpDown,
+	Plus,
+	Search,
+	Users,
+	Warehouse,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import { AssignKitModal } from "@/components/kits/AssignKitModal";
 import { EmployeeKitCard } from "@/components/kits/EmployeeKitCard";
@@ -17,6 +24,7 @@ import {
 	CommandItem,
 	CommandList,
 } from "@/components/ui/command";
+import { Input } from "@/components/ui/input";
 import {
 	Popover,
 	PopoverContent,
@@ -68,6 +76,7 @@ export default function KitsPageClient({
 		string | "all"
 	>("all");
 	const [warehouseComboboxOpen, setWarehouseComboboxOpen] = useState(false);
+	const [searchQuery, setSearchQuery] = useState("");
 
 	const kitsQueryParams = [isEncargado ? "all" : warehouseId];
 	const kitsQueryFn = getAllKits;
@@ -141,6 +150,15 @@ export default function KitsPageClient({
 			: [];
 	}, [inventoryResponse]);
 
+	const productsBeingUsed = useMemo(() => {
+		return inventoryResponse && "data" in inventoryResponse
+			? inventoryResponse.data.warehouse.filter(
+					(product) =>
+						product.productStock?.isBeingUsed && !product.productStock?.isKit,
+				)
+			: [];
+	}, [inventoryResponse]);
+
 	// Normalize employees response to match ajustes type
 	const normalizeEmployee = useMemo(
 		() => (raw: unknown) => {
@@ -200,19 +218,35 @@ export default function KitsPageClient({
 		});
 	}, [kits, currentDate]);
 
-	// Filter employees by selected warehouse
+	// Filter employees by selected warehouse and search query
 	const filteredEmployees = useMemo(() => {
-		if (selectedWarehouseFilter === "all") {
-			return employees;
+		let filtered = employees;
+
+		// Filter by warehouse
+		if (selectedWarehouseFilter !== "all") {
+			filtered = filtered.filter(
+				(emp) => emp.warehouseId === selectedWarehouseFilter,
+			);
 		}
-		return employees.filter(
-			(emp) => emp.warehouseId === selectedWarehouseFilter,
-		);
-	}, [employees, selectedWarehouseFilter]);
+
+		// Filter by search query
+		if (searchQuery.trim()) {
+			const query = searchQuery.toLowerCase().trim();
+			filtered = filtered.filter((emp) =>
+				emp.name.toLowerCase().includes(query),
+			);
+		}
+
+		return filtered;
+	}, [employees, selectedWarehouseFilter, searchQuery]);
 
 	// Create a map of employees with their kits
 	const employeesWithKits = useMemo(() => {
 		return filteredEmployees.map((employee) => {
+			// Get all products being used by this employee
+			const employeeProducts = productsBeingUsed.filter(
+				(product) => product.employee?.id === employee.id,
+			);
 			// Get all kits for this employee
 			const employeeKits = kits.filter(
 				(kit) => kit.assignedEmployee === employee.id,
@@ -225,6 +259,7 @@ export default function KitsPageClient({
 			const warehouse = warehouses.find((w) => w.id === employee.warehouseId);
 			return {
 				employee,
+				employeeProducts,
 				currentKit,
 				allKits: employeeKits,
 				warehouseName: warehouse?.name || "Sin bodega",
@@ -253,10 +288,10 @@ export default function KitsPageClient({
 			<div className="flex items-center justify-between">
 				<div>
 					<h1 className="font-bold text-2xl text-[#11181C] dark:text-[#ECEDEE]">
-						Gestión de Empleadas
+						Gestión de Emplead@s
 					</h1>
 					<p className="text-[#687076] dark:text-[#9BA1A6]">
-						Visualiza y gestiona los kits asignados a cada empleada
+						Visualiza y gestiona los kits asignados a cada emplead@
 					</p>
 				</div>
 				<Button className="gap-2" onClick={() => setModalOpen(true)}>
@@ -265,16 +300,29 @@ export default function KitsPageClient({
 				</Button>
 			</div>
 
-			{/* Filters - Only visible for encargado */}
-			{isEncargado && (
-				<div className="flex items-center gap-4">
+			{/* Filters */}
+			<div className="flex flex-col gap-4 md:flex-row md:items-center">
+				{/* Search Bar */}
+				<div className="relative flex-1 md:max-w-sm">
+					<Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-[#687076] dark:text-[#9BA1A6]" />
+					<Input
+						className="pl-9"
+						onChange={(e) => setSearchQuery(e.target.value)}
+						placeholder="Buscar emplead@ por nombre..."
+						type="text"
+						value={searchQuery}
+					/>
+				</div>
+
+				{/* Warehouse Filter - Only visible for encargado */}
+				{isEncargado && (
 					<Popover
 						onOpenChange={setWarehouseComboboxOpen}
 						open={warehouseComboboxOpen}
 					>
 						<PopoverTrigger asChild>
 							<Button
-								className="w-[280px] justify-between"
+								className="w-full md:w-[280px] justify-between"
 								role="combobox"
 								variant="outline"
 							>
@@ -341,8 +389,8 @@ export default function KitsPageClient({
 							</Command>
 						</PopoverContent>
 					</Popover>
-				</div>
-			)}
+				)}
+			</div>
 
 			{/* Statistics Cards */}
 			<div className="grid gap-4 md:grid-cols-4">
@@ -415,10 +463,17 @@ export default function KitsPageClient({
 			{filteredEmployees.length > 0 ? (
 				<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
 					{employeesWithKits.map(
-						({ employee, currentKit, allKits, warehouseName }) => (
+						({
+							employee,
+							employeeProducts,
+							currentKit,
+							allKits,
+							warehouseName,
+						}) => (
 							<EmployeeKitCard
 								allKitsForEmployee={allKits}
 								currentKit={currentKit}
+								employeeProducts={employeeProducts}
 								employee={employee}
 								key={employee.id}
 								warehouseName={warehouseName}
@@ -429,17 +484,29 @@ export default function KitsPageClient({
 			) : (
 				<div className="flex flex-col items-center justify-center py-12 text-center">
 					<div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-						<Users className="h-6 w-6 text-muted-foreground" />
+						{searchQuery ? (
+							<Search className="h-6 w-6 text-muted-foreground" />
+						) : (
+							<Users className="h-6 w-6 text-muted-foreground" />
+						)}
 					</div>
 					<h3 className="mb-2 font-semibold text-[#11181C] text-lg dark:text-[#ECEDEE]">
-						No hay empleadas
-						{selectedWarehouseFilter !== "all" && " en esta bodega"}
+						{searchQuery
+							? "No se encontraron resultados"
+							: `No hay empleadas${selectedWarehouseFilter !== "all" ? " en esta bodega" : ""}`}
 					</h3>
 					<p className="mb-4 max-w-sm text-[#687076] text-sm dark:text-[#9BA1A6]">
-						{selectedWarehouseFilter !== "all"
-							? "No se encontraron empleadas en la bodega seleccionada. Intenta con otra bodega."
-							: "No se encontraron empleadas en el sistema. Contacta al administrador para agregar empleadas."}
+						{searchQuery
+							? `No se encontraron empleadas que coincidan con "${searchQuery}". Intenta con otro término de búsqueda.`
+							: selectedWarehouseFilter !== "all"
+								? "No se encontraron empleadas en la bodega seleccionada. Intenta con otra bodega."
+								: "No se encontraron empleadas en el sistema. Contacta al administrador para agregar empleadas."}
 					</p>
+					{searchQuery && (
+						<Button onClick={() => setSearchQuery("")} variant="outline">
+							Limpiar búsqueda
+						</Button>
+					)}
 				</div>
 			)}
 
@@ -449,6 +516,7 @@ export default function KitsPageClient({
 				kitProducts={kitProducts}
 				onOpenChange={setModalOpen}
 				open={modalOpen}
+				todayKits={todayKits}
 			/>
 		</div>
 	);

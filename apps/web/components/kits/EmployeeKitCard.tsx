@@ -40,15 +40,27 @@ interface Employee {
 	passcode?: number;
 }
 
-/**
- * Kit type matching the normalized structure from kits page
- */
-interface Kit {
-	id: string;
-	assignedEmployee: string;
-	date: string;
-	items: Array<{ productId: string; qty: number }>;
-}
+type ProductStock = {
+	productStock: {
+		id: string;
+		barcode: number;
+		description: string | null;
+		lastUsed: string | null;
+		lastUsedBy: string | null;
+		numberOfUses: number;
+		isDeleted: boolean;
+		currentWarehouse: string;
+		currentCabinet: string | null;
+		isBeingUsed: boolean;
+		isKit: boolean;
+		firstUsed: string | null;
+	};
+	employee: {
+		id: string;
+		name: string;
+		surname: string;
+	} | null;
+};
 
 interface EmployeeKitCardProps {
 	/** Employee data */
@@ -59,6 +71,8 @@ interface EmployeeKitCardProps {
 	allKitsForEmployee: KitData[];
 	/** Warehouse name for display */
 	warehouseName?: string;
+	/** Products being used by the employee */
+	employeeProducts: ProductStock[];
 }
 
 /**
@@ -71,6 +85,7 @@ export function EmployeeKitCard({
 	employee,
 	currentKit,
 	allKitsForEmployee,
+	employeeProducts,
 	warehouseName,
 }: EmployeeKitCardProps) {
 	const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -197,6 +212,77 @@ export function EmployeeKitCard({
 						</p>
 					</div>
 				)}
+
+				{/* Products Currently Being Used Section */}
+				<div className="space-y-3 pb-3 border-b border-[#E5E7EB] dark:border-[#2D3033]">
+					<div className="flex items-center gap-2">
+						<Package className="h-4 w-4 text-[#0a7ea4]" />
+						<h4 className="font-semibold text-sm text-[#11181C] dark:text-[#ECEDEE]">
+							Productos en Uso ({employeeProducts.length})
+						</h4>
+					</div>
+					{employeeProducts.length > 0 ? (
+						<div className="space-y-2 max-h-48 overflow-y-auto">
+							{employeeProducts.map((item) => (
+								<Card
+									className="p-2 bg-[#F9FAFB] dark:bg-[#1E1F20] border-[#E5E7EB] dark:border-[#2D3033]"
+									key={item.productStock.id}
+								>
+									<div className="space-y-1">
+										<div className="flex items-start justify-between gap-2">
+											<div className="flex-1 min-w-0">
+												<p className="font-medium text-xs text-[#11181C] dark:text-[#ECEDEE] truncate">
+													{item.productStock.description ||
+														`Producto #${item.productStock.barcode}`}
+												</p>
+												<div className="flex items-center gap-2 mt-0.5">
+													<span className="font-mono text-[#687076] text-xs dark:text-[#9BA1A6]">
+														#{item.productStock.barcode}
+													</span>
+													{item.productStock.numberOfUses > 0 && (
+														<>
+															<span className="text-[#687076] dark:text-[#9BA1A6]">
+																•
+															</span>
+															<span className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+																{item.productStock.numberOfUses}{" "}
+																{item.productStock.numberOfUses === 1
+																	? "uso"
+																	: "usos"}
+															</span>
+														</>
+													)}
+												</div>
+											</div>
+											{item.productStock.isBeingUsed && (
+												<Badge
+													className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 text-xs"
+													variant="outline"
+												>
+													En uso
+												</Badge>
+											)}
+										</div>
+										{item.productStock.lastUsed && (
+											<p className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+												Último uso:{" "}
+												{format(new Date(item.productStock.lastUsed), "PPp", {
+													locale: es,
+												})}
+											</p>
+										)}
+									</div>
+								</Card>
+							))}
+						</div>
+					) : (
+						<div className="flex items-center justify-center rounded-lg border border-dashed border-[#E5E7EB] bg-[#F9FAFB] p-6 dark:border-[#2D3033] dark:bg-[#1E1F20]">
+							<p className="text-center text-[#687076] text-sm dark:text-[#9BA1A6]">
+								No hay productos en uso actualmente
+							</p>
+						</div>
+					)}
+				</div>
 
 				{/* Kit History Section */}
 				<Collapsible onOpenChange={setIsHistoryOpen} open={isHistoryOpen}>
