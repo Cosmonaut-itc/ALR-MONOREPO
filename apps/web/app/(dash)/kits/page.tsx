@@ -63,12 +63,15 @@ export default async function Page() {
 			queryFn: () => fetchAllWarehousesServer(),
 		});
 
+		const currentDate = new Date().toISOString();
+
 		return (
 			<HydrationBoundary state={dehydrate(queryClient)}>
 				<GenericBoundaryWrapper fallbackComponent={<SkeletonKitsPage />}>
 					<KitsPageClient
-						warehouseId={warehouseId as string}
+						currentDate={currentDate}
 						isEncargado={isEncargado}
+						warehouseId={warehouseId as string}
 					/>
 				</GenericBoundaryWrapper>
 			</HydrationBoundary>
@@ -76,12 +79,15 @@ export default async function Page() {
 	} catch (error) {
 		console.error(error);
 		console.error("Error prefetching kits data");
+		const currentDate = new Date().toISOString();
+
 		return (
 			<HydrationBoundary state={dehydrate(queryClient)}>
 				<GenericBoundaryWrapper fallbackComponent={<SkeletonKitsPage />}>
 					<KitsPageClient
-						warehouseId={warehouseId as string}
+						currentDate={currentDate}
 						isEncargado={isEncargado}
+						warehouseId={warehouseId as string}
 					/>
 				</GenericBoundaryWrapper>
 			</HydrationBoundary>

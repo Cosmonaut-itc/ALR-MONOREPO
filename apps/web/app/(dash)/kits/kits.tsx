@@ -1,7 +1,7 @@
 "use client";
 
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { format } from "date-fns";
+import { addDays, format } from "date-fns";
 import { es } from "date-fns/locale";
 import { Check, ChevronsUpDown, Plus, Users, Warehouse } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -35,11 +35,9 @@ import {
 import { createQueryKey } from "@/lib/helpers";
 import { queryKeys } from "@/lib/query-keys";
 import { cn } from "@/lib/utils";
-import { useKitsStore } from "@/stores/kits-store";
-import type { EmployeesResponse } from "@/types";
+import type { EmployeesResponse, KitData, KitsResponse } from "@/types";
 
-// Infer API response type from fetcher
-type APIResponse = Awaited<ReturnType<typeof getAllKits>> | null;
+type APIResponse = KitsResponse;
 type InventoryResponse =
 	| Awaited<ReturnType<typeof getAllProductStock>>
 	| Awaited<ReturnType<typeof getInventoryByWarehouse>>
@@ -59,9 +57,11 @@ type WarehouseData = {
 export default function KitsPageClient({
 	warehouseId,
 	isEncargado,
+	currentDate,
 }: {
 	warehouseId: string;
 	isEncargado: boolean;
+	currentDate: string;
 }) {
 	const [modalOpen, setModalOpen] = useState(false);
 	const [selectedWarehouseFilter, setSelectedWarehouseFilter] = useState<
@@ -135,7 +135,8 @@ export default function KitsPageClient({
 	const kitProducts = useMemo(() => {
 		return inventoryResponse && "data" in inventoryResponse
 			? inventoryResponse.data.warehouse.filter(
-					(product) => product.productStock?.isKit,
+					(product) =>
+						product.productStock?.isKit && !product.productStock?.isBeingUsed,
 				)
 			: [];
 	}, [inventoryResponse]);
@@ -186,25 +187,18 @@ export default function KitsPageClient({
 	// Normalize the API response into the shape the UI expects
 	const kits = useMemo(() => {
 		const root = kitsResponse ?? { data: [] };
-		const list: unknown = (root as { data?: unknown }).data ?? [];
-		return Array.isArray(list)
-			? (list as Array<{
-					id: string;
-					employeeId: string;
-					date: string;
-					items: Array<{ productId: string; qty: number }>;
-				}>)
-			: [];
+		const list: KitData[] = (root as { data?: KitData[] }).data ?? [];
+		return list;
 	}, [kitsResponse]);
 
-	// Get today's kits (based on actual today's date, not a selector)
+	// Get today's kits (based on date passed from server)
 	const todayKits = useMemo(() => {
-		const today = new Date().toDateString();
-		return kits.filter((kit) => {
-			const kitDate = new Date(kit.date).toDateString();
+		const today = new Date(currentDate).toDateString();
+		return kits.filter((kit: KitData) => {
+			const kitDate = addDays(new Date(kit.assignedDate), 1).toDateString();
 			return kitDate === today;
 		});
-	}, [kits]);
+	}, [kits, currentDate]);
 
 	// Filter employees by selected warehouse
 	const filteredEmployees = useMemo(() => {
@@ -220,10 +214,12 @@ export default function KitsPageClient({
 	const employeesWithKits = useMemo(() => {
 		return filteredEmployees.map((employee) => {
 			// Get all kits for this employee
-			const employeeKits = kits.filter((kit) => kit.employeeId === employee.id);
+			const employeeKits = kits.filter(
+				(kit) => kit.assignedEmployee === employee.id,
+			);
 			// Get current kit (for selected date)
 			const currentKit = todayKits.find(
-				(kit) => kit.employeeId === employee.id,
+				(kit) => kit.assignedEmployee === employee.id,
 			);
 			// Get warehouse name
 			const warehouse = warehouses.find((w) => w.id === employee.warehouseId);
@@ -238,22 +234,16 @@ export default function KitsPageClient({
 
 	// Calculate statistics based on filtered employees
 	const filteredTodayKits = todayKits.filter((kit) =>
-		filteredEmployees.some((emp) => emp.id === kit.employeeId),
+		filteredEmployees.some((emp) => emp.id === kit.assignedEmployee),
 	);
 
 	const totalKits = filteredTodayKits.length;
 	const totalProducts = filteredTodayKits.reduce(
-		(sum, kit) =>
-			sum +
-			kit.items.reduce(
-				(kitSum, item) =>
-					kitSum + (typeof item.qty === "number" ? item.qty : 0),
-				0,
-			),
+		(sum, kit) => sum + kit.numProducts,
 		0,
 	);
 	const activeEmployees = new Set(
-		filteredTodayKits.map((kit) => kit.employeeId),
+		filteredTodayKits.map((kit) => kit.assignedEmployee),
 	).size;
 	const totalEmployees = filteredEmployees.length;
 

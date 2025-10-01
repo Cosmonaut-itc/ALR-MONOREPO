@@ -28,7 +28,7 @@ import {
 	PopoverContent,
 	PopoverTrigger,
 } from "@/components/ui/popover";
-import { useKitsStore } from "@/stores/kits-store";
+import type { KitData } from "@/types";
 
 /**
  * Employee type matching the structure from ajustes page
@@ -45,7 +45,7 @@ interface Employee {
  */
 interface Kit {
 	id: string;
-	employeeId: string;
+	assignedEmployee: string;
 	date: string;
 	items: Array<{ productId: string; qty: number }>;
 }
@@ -54,9 +54,9 @@ interface EmployeeKitCardProps {
 	/** Employee data */
 	employee: Employee;
 	/** Current kit for today */
-	currentKit: Kit | undefined;
+	currentKit: KitData | undefined;
 	/** All kits for this employee (for history) */
-	allKitsForEmployee: Kit[];
+	allKitsForEmployee: KitData[];
 	/** Warehouse name for display */
 	warehouseName?: string;
 }
@@ -73,7 +73,6 @@ export function EmployeeKitCard({
 	allKitsForEmployee,
 	warehouseName,
 }: EmployeeKitCardProps) {
-	const { products } = useKitsStore();
 	const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 	const [historyDateFilter, setHistoryDateFilter] = useState<Date | undefined>(
 		undefined,
@@ -81,21 +80,21 @@ export function EmployeeKitCard({
 
 	// Filter history to exclude the current kit and apply date filter
 	const historyKits = useMemo(() => {
-		const today = new Date().toDateString();
+		// Exclude current kit from history
 		let filtered = allKitsForEmployee.filter(
-			(kit) => new Date(kit.date).toDateString() !== today,
+			(kit) => kit.id !== currentKit?.id,
 		);
 
 		// Apply date filter if selected
 		if (historyDateFilter) {
 			const filterDate = historyDateFilter.toDateString();
 			filtered = filtered.filter(
-				(kit) => new Date(kit.date).toDateString() === filterDate,
+				(kit) => new Date(kit.assignedDate).toDateString() === filterDate,
 			);
 		}
 
 		return filtered;
-	}, [allKitsForEmployee, historyDateFilter]);
+	}, [allKitsForEmployee, currentKit?.id, historyDateFilter]);
 
 	/**
 	 * Formats a date string to a localized format
@@ -105,26 +104,10 @@ export function EmployeeKitCard({
 	};
 
 	/**
-	 * Gets product names for a kit, showing up to 2 names and count of remaining
-	 */
-	const getProductNames = (kit: Kit) => {
-		const names = kit.items.map((item) => {
-			const product = products.find((p) => p.id === item.productId);
-			return product?.name || "Producto desconocido";
-		});
-
-		if (names.length <= 2) {
-			return names.join(", ");
-		}
-
-		return `${names.slice(0, 2).join(", ")} y ${names.length - 2} más`;
-	};
-
-	/**
 	 * Calculates total products in a kit
 	 */
-	const getTotalProducts = (kit: Kit) => {
-		return kit.items.reduce((sum, item) => sum + item.qty, 0);
+	const getTotalProducts = (kit: KitData) => {
+		return kit.numProducts;
 	};
 
 	return (
@@ -186,17 +169,17 @@ export function EmployeeKitCard({
 
 						<div className="flex items-center justify-between text-sm">
 							<div className="flex items-center gap-1 text-[#687076] dark:text-[#9BA1A6]">
-								<Calendar className="h-3 w-3" />
+								<CalendarIcon className="h-3 w-3" />
 								<span>Fecha:</span>
 							</div>
 							<span className="text-[#11181C] dark:text-[#ECEDEE]">
-								{formatDate(currentKit.date)}
+								{formatDate(currentKit.assignedDate)}
 							</span>
 						</div>
 
 						<div className="pt-2">
 							<p className="text-xs text-[#687076] dark:text-[#9BA1A6] truncate">
-								{getProductNames(currentKit)}
+								{currentKit.observations}
 							</p>
 						</div>
 
@@ -229,9 +212,7 @@ export function EmployeeKitCard({
 									Historial de Kits (
 									{
 										allKitsForEmployee.filter(
-											(kit) =>
-												new Date(kit.date).toDateString() !==
-												new Date().toDateString(),
+											(kit) => kit.id !== currentKit?.id,
 										).length
 									}
 									)
@@ -290,7 +271,8 @@ export function EmployeeKitCard({
 								{historyKits
 									.sort(
 										(a, b) =>
-											new Date(b.date).getTime() - new Date(a.date).getTime(),
+											new Date(b.assignedDate).getTime() -
+											new Date(a.assignedDate).getTime(),
 									)
 									.map((kit) => (
 										<Card className="p-3 bg-muted/50" key={kit.id}>
@@ -300,7 +282,7 @@ export function EmployeeKitCard({
 														{kit.id.slice(-8)}
 													</span>
 													<Badge className="text-xs" variant="outline">
-														{format(new Date(kit.date), "dd/MM/yyyy")}
+														{format(new Date(kit.assignedDate), "dd/MM/yyyy")}
 													</Badge>
 												</div>
 												<div className="flex items-center justify-between text-sm">

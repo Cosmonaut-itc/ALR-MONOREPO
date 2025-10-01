@@ -167,3 +167,17 @@ export type ReceptionItem = {
 export type EmployeesResponse = Awaited<
 	ReturnType<typeof import("./lib/fetch-functions/kits").getEmployeesByUserId>
 > | null;
+
+export type KitsResponse = Awaited<
+	ReturnType<typeof import("./lib/fetch-functions/kits").getAllKits>
+> | null;
+
+export type KitData = {
+	id: string;
+	numProducts: number;
+	assignedDate: string;
+	observations: string | null;
+	createdAt: string;
+	updatedAt: string;
+	assignedEmployee: string;
+};

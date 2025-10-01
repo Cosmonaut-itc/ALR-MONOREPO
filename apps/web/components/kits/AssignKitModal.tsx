@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronsUpDown, Minus, Plus } from "lucide-react";
+import { Check, ChevronsUpDown, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { v4 as uuidv4 } from "uuid";
@@ -50,9 +50,16 @@ interface KitProduct {
 		currentWarehouse?: string;
 		isKit?: boolean;
 		description?: string | null;
+		barcode?: number;
+		lastUsedBy?: string | null;
 	};
 	productName?: string;
 	productBrand?: string;
+	employee?: {
+		id?: string;
+		name?: string;
+		surname?: string;
+	} | null;
 }
 
 interface AssignKitModalProps {
@@ -143,16 +150,26 @@ export function AssignKitModal({
 				(product) =>
 					product.productStock?.currentWarehouse === employeeWarehouseId,
 			)
-			.map((row) => ({
-				id: String(row.productStock?.id ?? ""),
-				name: String(
-					row.productStock?.description ||
-						row.productName ||
-						"Producto sin nombre",
-				),
-				brand: String(row.productBrand ?? ""),
-				stock: 1,
-			}));
+			.map((row) => {
+				const lastUsedByName = row.employee
+					? [row.employee.name, row.employee.surname]
+							.filter(Boolean)
+							.join(" ") || "Desconocido"
+					: null;
+
+				return {
+					id: String(row.productStock?.id ?? ""),
+					name: String(
+						row.productStock?.description ||
+							row.productName ||
+							"Producto sin nombre",
+					),
+					brand: String(row.productBrand ?? ""),
+					barcode: row.productStock?.barcode ?? 0,
+					lastUsedBy: lastUsedByName,
+					stock: 1,
+				};
+			});
 	}, [kitProducts, employees, draft.employeeId]);
 
 	// Generate new kit ID when modal opens
@@ -173,28 +190,17 @@ export function AssignKitModal({
 	};
 
 	const handleAddProduct = (productId: string) => {
+		// Always add with qty: 1, no duplicates allowed
 		const existing = selectedProducts.find((p) => p.productId === productId);
-		if (existing) {
-			setSelectedProducts((prev) =>
-				prev.map((p) =>
-					p.productId === productId ? { ...p, qty: p.qty + 1 } : p,
-				),
-			);
-		} else {
+		if (!existing) {
 			setSelectedProducts((prev) => [...prev, { productId, qty: 1 }]);
 		}
 	};
 
-	const handleUpdateQuantity = (productId: string, qty: number) => {
-		if (qty <= 0) {
-			setSelectedProducts((prev) =>
-				prev.filter((p) => p.productId !== productId),
-			);
-		} else {
-			setSelectedProducts((prev) =>
-				prev.map((p) => (p.productId === productId ? { ...p, qty } : p)),
-			);
-		}
+	const handleRemoveProduct = (productId: string) => {
+		setSelectedProducts((prev) =>
+			prev.filter((p) => p.productId !== productId),
+		);
 	};
 
 	const { mutateAsync: createKit, isPending } = useCreateKit();
@@ -233,11 +239,6 @@ export function AssignKitModal({
 		setKitId("");
 		onOpenChange(false);
 	};
-
-	const totalProducts = selectedProducts.reduce(
-		(sum, item) => sum + item.qty,
-		0,
-	);
 
 	return (
 		<Dialog onOpenChange={onOpenChange} open={open}>
@@ -362,58 +363,54 @@ export function AssignKitModal({
 								</p>
 							</div>
 						) : (
-							<div className="grid max-h-48 gap-2 overflow-y-auto">
+							<div className="grid max-h-64 gap-2 overflow-y-auto">
 								{products.map((product) => {
-									const selectedProduct = selectedProducts.find(
+									const isSelected = selectedProducts.some(
 										(p) => p.productId === product.id,
 									);
 									return (
-										<Card className="p-3" key={product.id}>
-											<div className="flex items-center justify-between">
-												<div className="flex-1">
-													<div className="font-medium">{product.name}</div>
-													<div className="text-muted-foreground text-sm">
-														{product.brand} • Stock: {product.stock}
-													</div>
-												</div>
-												<div className="flex items-center gap-2">
-													{selectedProduct ? (
-														<div className="flex items-center gap-2">
-															<Button
-																onClick={() =>
-																	handleUpdateQuantity(
-																		product.id,
-																		selectedProduct.qty - 1,
-																	)
-																}
-																size="sm"
-																variant="outline"
-															>
-																<Minus className="h-3 w-3" />
-															</Button>
-															<span className="w-8 text-center font-medium">
-																{selectedProduct.qty}
-															</span>
-															<Button
-																onClick={() =>
-																	handleUpdateQuantity(
-																		product.id,
-																		selectedProduct.qty + 1,
-																	)
-																}
-																size="sm"
-																variant="outline"
-															>
-																<Plus className="h-3 w-3" />
-															</Button>
+										<Card
+											className={cn(
+												"p-3 transition-colors",
+												isSelected && "border-[#0a7ea4] bg-[#0a7ea4]/5",
+											)}
+											key={product.id}
+										>
+											<div className="space-y-2">
+												<div className="flex items-start justify-between gap-2">
+													<div className="flex-1 min-w-0">
+														<div className="font-medium text-sm">
+															{product.name}
 														</div>
+														<div className="flex items-center gap-2 mt-1">
+															<span className="font-mono text-muted-foreground text-xs">
+																ID: {product.id.slice(-8)}
+															</span>
+															<span className="text-muted-foreground">•</span>
+															<span className="font-mono text-muted-foreground text-xs">
+																#{product.barcode}
+															</span>
+														</div>
+														{product.lastUsedBy && (
+															<div className="mt-1 text-muted-foreground text-xs">
+																Último uso: {product.lastUsedBy}
+															</div>
+														)}
+													</div>
+													{isSelected ? (
+														<Button
+															onClick={() => handleRemoveProduct(product.id)}
+															size="sm"
+															variant="ghost"
+														>
+															<X className="h-4 w-4" />
+														</Button>
 													) : (
 														<Button
 															onClick={() => handleAddProduct(product.id)}
 															size="sm"
 															variant="outline"
 														>
-															<Plus className="mr-1 h-3 w-3" />
 															Agregar
 														</Button>
 													)}
@@ -429,7 +426,7 @@ export function AssignKitModal({
 					{/* Selected Products Summary */}
 					{selectedProducts.length > 0 && (
 						<div className="space-y-2">
-							<Label>Resumen del Kit ({totalProducts} productos)</Label>
+							<Label>Productos Seleccionados ({selectedProducts.length})</Label>
 							<Card className="p-3">
 								<div className="space-y-2">
 									{selectedProducts.map((item) => {
@@ -438,11 +435,24 @@ export function AssignKitModal({
 										);
 										return (
 											<div
-												className="flex justify-between text-sm"
+												className="flex items-center justify-between gap-2 text-sm"
 												key={item.productId}
 											>
-												<span>{product?.name}</span>
-												<span className="font-medium">x{item.qty}</span>
+												<div className="flex-1 min-w-0">
+													<div className="font-medium truncate">
+														{product?.name}
+													</div>
+													<div className="font-mono text-muted-foreground text-xs">
+														#{product?.barcode}
+													</div>
+												</div>
+												<Button
+													onClick={() => handleRemoveProduct(item.productId)}
+													size="sm"
+													variant="ghost"
+												>
+													<X className="h-3 w-3" />
+												</Button>
 											</div>
 										);
 									})}
