@@ -1630,6 +1630,202 @@ const route = app
 	)
 
 	/**
+	 * POST /api/auth/employee/create - Create a new employee record
+	 *
+	 * This endpoint creates a new employee record in the database.
+	 * It requires employee details including name, surname, warehouse assignment, and optional passcode.
+	 * The passcode defaults to 1111 if not provided. After successful creation,
+	 * it returns the newly created employee with their associated permissions.
+	 *
+	 * @param {string} name - Employee's first name (required)
+	 * @param {string} surname - Employee's last name (required)
+	 * @param {string} warehouseId - UUID of the warehouse to assign the employee (required)
+	 * @param {number} passcode - 4-digit employee passcode (optional, defaults to 1111)
+	 * @param {string} userId - User account ID to link to employee (optional)
+	 * @param {string} permissions - UUID of permissions to assign (optional)
+	 * @returns {ApiResponse} Success response with the newly created employee data
+	 * @throws {400} If validation fails or required fields are missing
+	 * @throws {500} If database insertion fails or foreign key constraints are violated
+	 */
+	.post(
+		'/api/auth/employee/create',
+		zValidator(
+			'json',
+			z.object({
+				name: z.string().min(1, 'Name is required').describe('Employee first name'),
+				surname: z.string().min(1, 'Surname is required').describe('Employee last name'),
+				warehouseId: z
+					.string()
+					.uuid('Invalid warehouse ID format')
+					.describe('Warehouse UUID where employee is assigned'),
+				passcode: z
+					.number()
+					.int()
+					.min(1000, 'Passcode must be at least 4 digits')
+					.max(9999, 'Passcode must be at most 4 digits')
+					.optional()
+					.describe('Employee 4-digit passcode'),
+				userId: z.string().optional().describe('Optional user account ID to link'),
+				permissions: z
+					.string()
+					.uuid('Invalid permissions ID format')
+					.optional()
+					.describe('Optional permissions UUID to assign'),
+			}),
+		),
+		async (c) => {
+			try {
+				const { name, surname, warehouseId, passcode, userId, permissions } =
+					c.req.valid('json');
+
+				// Insert the new employee into the database
+				// Using .returning() to get the inserted record back
+				const insertedEmployee = await db
+					.insert(schemas.employee)
+					.values({
+						name,
+						surname,
+						warehouseId,
+						passcode: passcode ?? 1111, // Default to 1111 if not provided
+						userId: userId ?? null,
+						permissions: permissions ?? null,
+					})
+					.returning();
+
+				// Check if the insertion was successful
+				// Drizzle's .returning() always returns an array
+				if (insertedEmployee.length === 0) {
+					return c.json(
+						{
+							success: false,
+							message: 'Failed to create employee - no record inserted',
+							data: null,
+						} satisfies ApiResponse,
+						500,
+					);
+				}
+
+				// Fetch the complete employee record with permissions joined
+				const employeeWithPermissions = await db
+					.select()
+					.from(schemas.employee)
+					.leftJoin(
+						schemas.permissions,
+						eq(schemas.employee.permissions, schemas.permissions.id),
+					)
+					.where(eq(schemas.employee.id, insertedEmployee[0].id));
+
+				// Return successful response with the newly created employee
+				return c.json(
+					{
+						success: true,
+						message: 'Employee created successfully',
+						data: employeeWithPermissions[0], // Return the single created record with permissions
+					} satisfies ApiResponse,
+					201, // 201 Created status for successful resource creation
+				);
+			} catch (error) {
+				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
+				console.error('Error creating employee:', error);
+
+				// Check if it's a validation error or database constraint error
+				if (error instanceof Error) {
+					// Handle specific database errors (e.g., foreign key constraints)
+					if (error.message.includes('foreign key')) {
+						return c.json(
+							{
+								success: false,
+								message:
+									'Failed to create employee - invalid warehouse ID, user ID, or permissions ID',
+								data: null,
+							} satisfies ApiResponse,
+							400,
+						);
+					}
+
+					// Handle unique constraint violations
+					if (error.message.includes('unique')) {
+						return c.json(
+							{
+								success: false,
+								message: 'Failed to create employee - duplicate entry detected',
+								data: null,
+							} satisfies ApiResponse,
+							400,
+						);
+					}
+				}
+
+				// Generic error response for unexpected errors
+				return c.json(
+					{
+						success: false,
+						message: 'An unexpected error occurred while creating the employee',
+						data: null,
+					} satisfies ApiResponse,
+					500,
+				);
+			}
+		},
+	)
+
+	/**
+	 * GET /api/auth/permissions/all - Retrieve all permissions
+	 *
+	 * This endpoint fetches all permission records from the database.
+	 * Permissions are used to control access and define what actions employees can perform.
+	 * Each permission has a unique identifier and a permission name/description.
+	 * This endpoint is typically used for populating permission selection dropdowns
+	 * in admin interfaces or when assigning permissions to employees.
+	 *
+	 * @returns {ApiResponse} Success response with all permission data from the database
+	 * @throws {500} If an unexpected error occurs during data retrieval
+	 */
+	.get('/api/auth/permissions/all', async (c) => {
+		try {
+			// Query the permissions table for all records
+			const permissions = await db
+				.select()
+				.from(schemas.permissions)
+				.orderBy(schemas.permissions.permission);
+
+			// If no records exist, return empty data
+			if (permissions.length === 0) {
+				return c.json(
+					{
+						success: false,
+						message: 'No permissions found',
+						data: [],
+					} satisfies ApiResponse,
+					200,
+				);
+			}
+
+			// Return all permissions data from the database
+			return c.json(
+				{
+					success: true,
+					message: 'Successfully fetched all permissions',
+					data: permissions,
+				} satisfies ApiResponse,
+				200,
+			);
+		} catch (error) {
+			// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
+			console.error('Error fetching permissions:', error);
+
+			return c.json(
+				{
+					success: false,
+					message: 'Error fetching permissions',
+					data: [],
+				} satisfies ApiResponse,
+				500,
+			);
+		}
+	})
+
+	/**
 	 * GET /api/withdraw-orders - Retrieve withdraw orders data
 	 *
 	 * This endpoint fetches all withdraw orders records from the database.
