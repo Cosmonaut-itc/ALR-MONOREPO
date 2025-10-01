@@ -3,19 +3,29 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { CalendarIcon, Plus, Users } from "lucide-react";
+import { Check, ChevronsUpDown, Plus, Users, Warehouse } from "lucide-react";
 import { useMemo, useState } from "react";
 import { AssignKitModal } from "@/components/kits/AssignKitModal";
 import { EmployeeKitCard } from "@/components/kits/EmployeeKitCard";
 import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+	Command,
+	CommandEmpty,
+	CommandGroup,
+	CommandInput,
+	CommandItem,
+	CommandList,
+} from "@/components/ui/command";
 import {
 	Popover,
 	PopoverContent,
 	PopoverTrigger,
 } from "@/components/ui/popover";
-import { getInventoryByWarehouse } from "@/lib/fetch-functions/inventory";
+import {
+	getAllWarehouses,
+	getInventoryByWarehouse,
+} from "@/lib/fetch-functions/inventory";
 import {
 	getAllEmployees,
 	getAllKits,
@@ -32,6 +42,17 @@ type APIResponse = Awaited<ReturnType<typeof getAllKits>> | null;
 type InventoryResponse = Awaited<
 	ReturnType<typeof getInventoryByWarehouse>
 > | null;
+type WarehousesResponse = Awaited<ReturnType<typeof getAllWarehouses>>;
+
+/**
+ * Warehouse type from API response
+ */
+type WarehouseData = {
+	id: string;
+	name: string;
+	code: string;
+	description?: string | null;
+};
 
 export default function KitsPageClient({
 	warehouseId,
@@ -43,6 +64,11 @@ export default function KitsPageClient({
 	const { setDraft } = useKitsStore();
 	const [date, setDate] = useState<Date>(new Date());
 	const [modalOpen, setModalOpen] = useState(false);
+	const [selectedWarehouseFilter, setSelectedWarehouseFilter] = useState<
+		string | "all"
+	>("all");
+	const [warehouseComboboxOpen, setWarehouseComboboxOpen] = useState(false);
+
 	const kitsQueryParams = [isEncargado ? "all" : warehouseId];
 	const kitsQueryFn = getAllKits;
 	const employeesQueryParams = [isEncargado ? "all" : warehouseId];
@@ -77,6 +103,16 @@ export default function KitsPageClient({
 		queryFn: () => getInventoryByWarehouse(warehouseId),
 	});
 
+	// Fetch warehouses data for filtering
+	const { data: warehousesResponse } = useSuspenseQuery<
+		WarehousesResponse,
+		Error,
+		WarehousesResponse
+	>({
+		queryKey: queryKeys.warehouses,
+		queryFn: getAllWarehouses,
+	});
+
 	// Helper functions for data normalization
 	const toArray = useMemo(
 		() =>
@@ -92,7 +128,7 @@ export default function KitsPageClient({
 		[],
 	);
 
-	// Normalize employees response
+	// Normalize employees response to match ajustes type
 	const normalizeEmployee = useMemo(
 		() => (raw: unknown) => {
 			const rec = (raw as { employee?: unknown }).employee ?? raw;
@@ -100,19 +136,19 @@ export default function KitsPageClient({
 				id?: unknown;
 				name?: unknown;
 				surname?: unknown;
-				avatar?: unknown;
+				warehouseId?: unknown;
+				passcode?: unknown;
 			};
 			const id = toStringOrEmpty(e.id);
 			const name = toStringOrEmpty(e.name);
 			const surname = toStringOrEmpty(e.surname);
-			const avatar = toStringOrEmpty(e.avatar);
+			const warehouseId = toStringOrEmpty(e.warehouseId);
 			const fullName = [name, surname].filter(Boolean).join(" ");
 			return {
 				id,
 				name: fullName || name || "Empleado",
-				specialty: "",
-				avatar,
-				active: true as const,
+				warehouseId,
+				passcode: typeof e.passcode === "number" ? e.passcode : undefined,
 			};
 		},
 		[toStringOrEmpty],
@@ -126,6 +162,14 @@ export default function KitsPageClient({
 		const candidate = root.data ?? root.json ?? [];
 		return toArray(candidate).map(normalizeEmployee);
 	}, [employeesResponse, toArray, normalizeEmployee]);
+
+	// Normalize warehouses response
+	const warehouses = useMemo(() => {
+		if (warehousesResponse && "data" in warehousesResponse) {
+			return (warehousesResponse.data || []) as WarehouseData[];
+		}
+		return [];
+	}, [warehousesResponse]);
 
 	// Normalize the API response into the shape the UI expects
 	const kits = useMemo(() => {
@@ -156,26 +200,43 @@ export default function KitsPageClient({
 		return kitDate === selectedDate;
 	});
 
+	// Filter employees by selected warehouse
+	const filteredEmployees = useMemo(() => {
+		if (selectedWarehouseFilter === "all") {
+			return employees;
+		}
+		return employees.filter(
+			(emp) => emp.warehouseId === selectedWarehouseFilter,
+		);
+	}, [employees, selectedWarehouseFilter]);
+
 	// Create a map of employees with their kits
 	const employeesWithKits = useMemo(() => {
-		return employees.map((employee) => {
+		return filteredEmployees.map((employee) => {
 			// Get all kits for this employee
 			const employeeKits = kits.filter((kit) => kit.employeeId === employee.id);
 			// Get current kit (for selected date)
 			const currentKit = todayKits.find(
 				(kit) => kit.employeeId === employee.id,
 			);
+			// Get warehouse name
+			const warehouse = warehouses.find((w) => w.id === employee.warehouseId);
 			return {
 				employee,
 				currentKit,
 				allKits: employeeKits,
+				warehouseName: warehouse?.name || "Sin bodega",
 			};
 		});
-	}, [employees, kits, todayKits]);
+	}, [filteredEmployees, kits, todayKits, warehouses]);
 
-	// Calculate statistics
-	const totalKits = todayKits.length;
-	const totalProducts = todayKits.reduce(
+	// Calculate statistics based on filtered employees
+	const filteredTodayKits = todayKits.filter((kit) =>
+		filteredEmployees.some((emp) => emp.id === kit.employeeId),
+	);
+
+	const totalKits = filteredTodayKits.length;
+	const totalProducts = filteredTodayKits.reduce(
 		(sum, kit) =>
 			sum +
 			kit.items.reduce(
@@ -185,8 +246,10 @@ export default function KitsPageClient({
 			),
 		0,
 	);
-	const activeEmployees = new Set(todayKits.map((kit) => kit.employeeId)).size;
-	const totalEmployees = employees.length;
+	const activeEmployees = new Set(
+		filteredTodayKits.map((kit) => kit.employeeId),
+	).size;
+	const totalEmployees = filteredEmployees.length;
 
 	return (
 		<div className="flex flex-1 flex-col gap-4 p-4 pt-0">
@@ -206,29 +269,79 @@ export default function KitsPageClient({
 				</Button>
 			</div>
 
-			{/* Top Bar */}
+			{/* Filters */}
 			<div className="flex items-center gap-4">
-				<Popover>
+				<Popover
+					onOpenChange={setWarehouseComboboxOpen}
+					open={warehouseComboboxOpen}
+				>
 					<PopoverTrigger asChild>
 						<Button
-							className={cn(
-								"w-[240px] justify-start text-left font-normal",
-								!date && "text-muted-foreground",
-							)}
+							className="w-[280px] justify-between"
+							role="combobox"
 							variant="outline"
 						>
-							<CalendarIcon className="mr-2 h-4 w-4" />
-							{date ? format(date, "PPP", { locale: es }) : "Seleccionar fecha"}
+							<div className="flex items-center gap-2">
+								<Warehouse className="h-4 w-4" />
+								{selectedWarehouseFilter === "all"
+									? "Todas las bodegas"
+									: warehouses.find((w) => w.id === selectedWarehouseFilter)
+											?.name || "Seleccionar bodega"}
+							</div>
+							<ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
 						</Button>
 					</PopoverTrigger>
-					<PopoverContent align="start" className="w-auto p-0">
-						<Calendar
-							initialFocus
-							locale={es}
-							mode="single"
-							onSelect={handleDateSelect}
-							selected={date}
-						/>
+					<PopoverContent className="w-[280px] p-0">
+						<Command>
+							<CommandInput placeholder="Buscar bodega..." />
+							<CommandList>
+								<CommandEmpty>No se encontraron bodegas.</CommandEmpty>
+								<CommandGroup>
+									<CommandItem
+										onSelect={() => {
+											setSelectedWarehouseFilter("all");
+											setWarehouseComboboxOpen(false);
+										}}
+										value="all"
+									>
+										<Check
+											className={cn(
+												"mr-2 h-4 w-4",
+												selectedWarehouseFilter === "all"
+													? "opacity-100"
+													: "opacity-0",
+											)}
+										/>
+										Todas las bodegas
+									</CommandItem>
+									{warehouses.map((warehouse) => (
+										<CommandItem
+											key={warehouse.id}
+											onSelect={() => {
+												setSelectedWarehouseFilter(warehouse.id);
+												setWarehouseComboboxOpen(false);
+											}}
+											value={warehouse.name}
+										>
+											<Check
+												className={cn(
+													"mr-2 h-4 w-4",
+													selectedWarehouseFilter === warehouse.id
+														? "opacity-100"
+														: "opacity-0",
+												)}
+											/>
+											<div className="flex flex-col">
+												<span className="font-medium">{warehouse.name}</span>
+												<span className="text-muted-foreground text-xs">
+													{warehouse.code}
+												</span>
+											</div>
+										</CommandItem>
+									))}
+								</CommandGroup>
+							</CommandList>
+						</Command>
 					</PopoverContent>
 				</Popover>
 			</div>
@@ -301,17 +414,20 @@ export default function KitsPageClient({
 			</div>
 
 			{/* Employees Grid */}
-			{employees.length > 0 ? (
+			{filteredEmployees.length > 0 ? (
 				<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-					{employeesWithKits.map(({ employee, currentKit, allKits }) => (
-						<EmployeeKitCard
-							allKitsForEmployee={allKits}
-							currentKit={currentKit}
-							employee={employee}
-							key={employee.id}
-							selectedDate={date}
-						/>
-					))}
+					{employeesWithKits.map(
+						({ employee, currentKit, allKits, warehouseName }) => (
+							<EmployeeKitCard
+								allKitsForEmployee={allKits}
+								currentKit={currentKit}
+								employee={employee}
+								key={employee.id}
+								selectedDate={date}
+								warehouseName={warehouseName}
+							/>
+						),
+					)}
 				</div>
 			) : (
 				<div className="flex flex-col items-center justify-center py-12 text-center">
@@ -319,11 +435,13 @@ export default function KitsPageClient({
 						<Users className="h-6 w-6 text-muted-foreground" />
 					</div>
 					<h3 className="mb-2 font-semibold text-[#11181C] text-lg dark:text-[#ECEDEE]">
-						No hay empleadas registradas
+						No hay empleadas
+						{selectedWarehouseFilter !== "all" && " en esta bodega"}
 					</h3>
 					<p className="mb-4 max-w-sm text-[#687076] text-sm dark:text-[#9BA1A6]">
-						No se encontraron empleadas en el sistema. Contacta al administrador
-						para agregar empleadas.
+						{selectedWarehouseFilter !== "all"
+							? "No se encontraron empleadas en la bodega seleccionada. Intenta con otra bodega."
+							: "No se encontraron empleadas en el sistema. Contacta al administrador para agregar empleadas."}
 					</p>
 				</div>
 			)}

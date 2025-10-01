@@ -6,7 +6,10 @@ import { getQueryClient } from "@/app/get-query-client";
 import { GenericBoundaryWrapper } from "@/components/suspense-generics/general-wrapper";
 import { createQueryKey } from "@/lib/helpers";
 import { queryKeys } from "@/lib/query-keys";
-import { fetchStockByWarehouseServer } from "@/lib/server-functions/inventory";
+import {
+	fetchAllWarehousesServer,
+	fetchStockByWarehouseServer,
+} from "@/lib/server-functions/inventory";
 import {
 	fetchAllEmployeesServer,
 	fetchAllKitsServer,
@@ -47,6 +50,12 @@ export default async function Page() {
 		queryClient.prefetchQuery({
 			queryKey: createQueryKey(queryKeys.inventory, [warehouseId as string]),
 			queryFn: () => fetchStockByWarehouseServer(warehouseId as string),
+		});
+
+		// Prefetch warehouses data so the client query hydrates
+		queryClient.prefetchQuery({
+			queryKey: queryKeys.warehouses,
+			queryFn: () => fetchAllWarehousesServer(),
 		});
 
 		return (

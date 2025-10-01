@@ -9,10 +9,10 @@ import {
 	Eye,
 	History,
 	Package,
+	User,
 } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -24,14 +24,13 @@ import {
 import { useKitsStore } from "@/stores/kits-store";
 
 /**
- * Employee type based on the normalized shape used in kits page
+ * Employee type matching the structure from ajustes page
  */
 interface Employee {
 	id: string;
 	name: string;
-	specialty: string;
-	avatar: string;
-	active: boolean;
+	warehouseId: string;
+	passcode?: number;
 }
 
 /**
@@ -53,6 +52,8 @@ interface EmployeeKitCardProps {
 	allKitsForEmployee: Kit[];
 	/** Selected date for filtering current kit */
 	selectedDate: Date;
+	/** Warehouse name for display */
+	warehouseName?: string;
 }
 
 /**
@@ -66,6 +67,7 @@ export function EmployeeKitCard({
 	currentKit,
 	allKitsForEmployee,
 	selectedDate,
+	warehouseName,
 }: EmployeeKitCardProps) {
 	const { products } = useKitsStore();
 	const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -109,26 +111,26 @@ export function EmployeeKitCard({
 		<Card className="card-transition hover:shadow-md">
 			<CardHeader className="pb-3">
 				<div className="flex items-center justify-between">
-					<div className="flex items-center gap-3">
-						<Avatar className="h-12 w-12">
-							<AvatarImage
-								alt={employee.name}
-								src={employee.avatar || "/placeholder.svg"}
-							/>
-							<AvatarFallback className="bg-[#0a7ea4] text-white">
-								{employee.name
-									.split(" ")
-									.map((n) => n[0])
-									.join("")}
-							</AvatarFallback>
-						</Avatar>
+					<div className="flex items-center gap-3 flex-1 min-w-0">
+						<div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#0a7ea4]/10 dark:bg-[#0a7ea4]/20">
+							<User className="h-6 w-6 text-[#0a7ea4]" />
+						</div>
 						<div className="flex-1 min-w-0">
 							<h3 className="font-semibold text-base truncate text-[#11181C] dark:text-[#ECEDEE]">
 								{employee.name}
 							</h3>
-							<Badge className="text-xs mt-1" variant="secondary">
-								{employee.specialty}
-							</Badge>
+							<div className="flex items-center gap-2 mt-1">
+								{warehouseName && (
+									<Badge className="text-xs" variant="secondary">
+										{warehouseName}
+									</Badge>
+								)}
+								{employee.passcode && (
+									<span className="font-mono text-xs text-[#687076] dark:text-[#9BA1A6]">
+										#{employee.passcode}
+									</span>
+								)}
+							</div>
 						</div>
 					</div>
 					{currentKit && (
