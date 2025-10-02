@@ -1,0 +1,3 @@
+ALTER TABLE "product_stock_usage_history" ALTER COLUMN "employee_id" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "product_stock_usage_history" ADD COLUMN "user_id" text;--> statement-breakpoint
+ALTER TABLE "product_stock_usage_history" ADD CONSTRAINT "product_stock_usage_history_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE restrict ON UPDATE cascade;
