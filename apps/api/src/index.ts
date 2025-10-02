@@ -2188,7 +2188,7 @@ const route = app
 	 * inventory withdrawal requests.
 	 *
 	 * @param {string} dateWithdraw - ISO date string for when the withdrawal is scheduled
-	 * @param {number} userId - Integer ID of the user creating the withdraw order (schema uses integer)
+	 * @param {string} employeeId - UUID of the employee creating the withdraw order
 	 * @param {number} numItems - Number of items to be withdrawn in this order
 	 * @param {boolean} isComplete - Whether the withdraw order is complete (defaults to false)
 	 * @returns {ApiResponse} Success response with created withdraw order data
@@ -2201,14 +2201,14 @@ const route = app
 			'json',
 			z.object({
 				dateWithdraw: z.string().describe('ISO date string for withdrawal date'),
-				userId: z.string().describe('User ID from the user table'),
+				employeeId: z.string().uuid('Invalid employee ID').describe('Employee UUID'),
 				numItems: z.number().int().positive().describe('Number of items to withdraw'),
 				isComplete: z.boolean().optional().describe('Whether the order is complete'),
 			}),
 		),
 		async (c) => {
 			try {
-				const { dateWithdraw, userId, numItems, isComplete } = c.req.valid('json');
+				const { dateWithdraw, employeeId, numItems, isComplete } = c.req.valid('json');
 
 				// Insert the new withdraw order into the database
 				// Using .returning() to get the inserted record back from the database
@@ -2216,7 +2216,7 @@ const route = app
 					.insert(schemas.withdrawOrder)
 					.values({
 						dateWithdraw, // Maps to date_withdraw column in database
-						userId, // Maps to user_id column (integer type in schema)
+						userId: employeeId, // Maps to user_id column (UUID that references employee table)
 						numItems, // Maps to num_items column
 						isComplete: isComplete ?? false, // Maps to is_complete column with default
 					})
@@ -2256,7 +2256,7 @@ const route = app
 						return c.json(
 							{
 								success: false,
-								message: 'Invalid user ID - user does not exist',
+								message: 'Invalid employee ID - employee does not exist',
 							} satisfies ApiResponse,
 							400,
 						);
@@ -2365,6 +2365,7 @@ const route = app
 	 * @param {string} productId - ID of the product to withdraw
 	 * @param {string} withdrawOrderId - ID of the withdraw order to which the details belong
 	 * @param {string} dateWithdraw - ISO date string for the withdrawal date
+	 * @param {string} employeeId - UUID of the employee withdrawing the product
 	 * @returns {ApiResponse} Success response with created withdraw order details data
 	 * @throws {400} Validation error if input data is invalid
 	 * @throws {500} Database error if insertion fails
@@ -2377,12 +2378,13 @@ const route = app
 				productId: z.string(),
 				withdrawOrderId: z.string(),
 				dateWithdraw: z.string(),
-				userId: z.string(),
+				employeeId: z.string().uuid('Invalid employee ID'),
 			}),
 		),
 		async (c) => {
 			try {
-				const { productId, withdrawOrderId, dateWithdraw, userId } = c.req.valid('json');
+				const { productId, withdrawOrderId, dateWithdraw, employeeId } =
+					c.req.valid('json');
 
 				// Insert the new withdraw order details into the database
 				const insertedWithdrawOrderDetails = await db
@@ -2413,7 +2415,7 @@ const route = app
 
 				// Update the product in the database by changing the is_being_used to true, adding one to the
 				// number_of_uses, if first_used is null updated to the dateWithdraw, as well update the last_used
-				// to the dateWithdraw and the last_used_by to the employeeId that is going in the userId
+				// to the dateWithdraw and the last_used_by to the employeeId
 				await db
 					.update(schemas.productStock)
 					.set({
@@ -2421,14 +2423,14 @@ const route = app
 						numberOfUses: sql`${schemas.productStock.numberOfUses} + 1`,
 						firstUsed: productStockCheck[0].firstUsed ?? dateWithdraw,
 						lastUsed: dateWithdraw,
-						lastUsedBy: userId,
+						lastUsedBy: employeeId,
 					})
 					.where(eq(schemas.productStock.id, productId));
 
 				// Create usage history record for withdraw order
 				await db.insert(schemas.productStockUsageHistory).values({
 					productStockId: productId,
-					employeeId: userId,
+					employeeId,
 					warehouseId: productStockCheck[0].currentWarehouse,
 					movementType: 'withdraw',
 					action: 'checkout',
@@ -3203,7 +3205,7 @@ const route = app
 						// Create usage history records for internal transfer
 						const internalHistoryRecords = transferDetails.map((detail) => ({
 							productStockId: detail.productStockId,
-							employeeId: initiatedBy,
+							userId: initiatedBy,
 							warehouseId: sourceWarehouseId,
 							warehouseTransferId: insertedTransfer[0].id,
 							movementType: 'transfer' as const,
@@ -3221,7 +3223,7 @@ const route = app
 						// Create usage history records for external transfer
 						const externalHistoryRecords = transferDetails.map((detail) => ({
 							productStockId: detail.productStockId,
-							employeeId: initiatedBy,
+							userId: initiatedBy,
 							warehouseId: sourceWarehouseId,
 							warehouseTransferId: insertedTransfer[0].id,
 							movementType: 'transfer' as const,
@@ -3514,7 +3516,7 @@ const route = app
 						if (productStock.length > 0) {
 							await tx.insert(schemas.productStockUsageHistory).values({
 								productStockId: updatedDetail.productStockId,
-								employeeId: receivedBy,
+								userId: receivedBy,
 								warehouseId: transfer.destinationWarehouseId,
 								warehouseTransferId: updatedDetail.transferId,
 								movementType: 'transfer',

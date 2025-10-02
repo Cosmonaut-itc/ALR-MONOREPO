@@ -399,12 +399,15 @@ export const productStockUsageHistory = pgTable('product_stock_usage_history', {
 			onUpdate: 'cascade',
 			onDelete: 'restrict',
 		}),
-	employeeId: uuid('employee_id')
-		.notNull()
-		.references(() => employee.id, {
-			onUpdate: 'cascade',
-			onDelete: 'restrict',
-		}),
+	employeeId: uuid('employee_id').references(() => employee.id, {
+		onUpdate: 'cascade',
+		onDelete: 'restrict',
+	}),
+
+	userId: text('user_id').references(() => user.id, {
+		onUpdate: 'cascade',
+		onDelete: 'restrict',
+	}),
 
 	// Warehouse where the movement/usage occurred (required)
 	warehouseId: uuid('warehouse_id')
