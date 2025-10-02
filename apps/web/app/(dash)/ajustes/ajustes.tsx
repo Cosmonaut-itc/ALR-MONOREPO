@@ -2,9 +2,9 @@
 
 import { useForm } from "@tanstack/react-form";
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { Check, ChevronsUpDown, ShieldAlert } from "lucide-react";
+import { Check, ChevronsUpDown, ShieldAlert, Users } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,10 +39,18 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { getAllUsers, getAllWarehouses } from "@/lib/fetch-functions/inventory";
+import {
+	getAllEmployees,
+	getAllPermissions,
+	getEmployeesByWarehouseId,
+} from "@/lib/fetch-functions/kits";
+import { createQueryKey } from "@/lib/helpers";
 import { useSignUpMutation, useUpdateUserMutation } from "@/lib/mutations/auth";
+import { useCreateEmployee } from "@/lib/mutations/kits";
 import { useCreateWarehouseMutation } from "@/lib/mutations/warehouses";
 import { queryKeys } from "@/lib/query-keys";
 import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/stores/auth-store";
 
 /**
  * Type definition for user data from the API
@@ -97,6 +105,18 @@ type WarehousesResponse =
 	| null;
 
 /**
+ * Type definition for the API response containing employees
+ */
+type EmployeesResponse = Awaited<
+	ReturnType<typeof getAllEmployees | typeof getEmployeesByWarehouseId>
+>;
+
+/**
+ * Type definition for the API response containing permissions
+ */
+type PermissionsResponse = Awaited<ReturnType<typeof getAllPermissions>>;
+
+/**
  * Render the settings page with tabs for managing users (create and, for encargados, update) and warehouses.
  *
  * The update user form is restricted to users with the "encargado" role and includes comboboxes for selecting
@@ -108,6 +128,8 @@ type WarehousesResponse =
 export function AjustesPage({ role }: { role: string }) {
 	const router = useRouter();
 	const isEncargado = role === "encargado";
+	const user = useAuthStore((s) => s.user);
+	const warehouseId = user?.warehouseId ?? "";
 
 	// Fetch users and warehouses data
 	const { data: usersResponse } = useSuspenseQuery<
@@ -128,16 +150,68 @@ export function AjustesPage({ role }: { role: string }) {
 		queryFn: getAllWarehouses,
 	});
 
+	// Fetch employees data based on role
+	const employeesQueryParams = [isEncargado ? "all" : warehouseId];
+	const employeesQueryFn = isEncargado
+		? getAllEmployees
+		: () => getEmployeesByWarehouseId(warehouseId);
+
+	const { data: employeesResponse } = useSuspenseQuery<
+		EmployeesResponse,
+		Error,
+		EmployeesResponse
+	>({
+		queryKey: createQueryKey(["employees"], employeesQueryParams),
+		queryFn: employeesQueryFn,
+	});
+
+	// Fetch permissions data
+	const { data: permissionsResponse } = useSuspenseQuery<
+		PermissionsResponse,
+		Error,
+		PermissionsResponse
+	>({
+		queryKey: createQueryKey(["permissions"], []),
+		queryFn: getAllPermissions,
+	});
+
 	const users =
 		usersResponse && "data" in usersResponse ? usersResponse.data : [];
 	const warehouses =
 		warehousesResponse && "data" in warehousesResponse
 			? warehousesResponse.data
 			: [];
+	const employees = useMemo(() => {
+		if (employeesResponse && "data" in employeesResponse) {
+			return (employeesResponse.data || []).map((item) => ({
+				id: item.employee.id,
+				name: item.employee.name,
+				surname: item.employee.surname,
+				warehouseId: item.employee.warehouseId,
+				passcode: item.employee.passcode,
+				userId: item.employee.userId,
+				permissions: item.employee.permissions,
+			}));
+		}
+		return [];
+	}, [employeesResponse]);
+
+	const permissions =
+		permissionsResponse && "data" in permissionsResponse
+			? permissionsResponse.data.map((p) => ({
+					id: p.id,
+					name: p.permission,
+				}))
+			: [];
 
 	// State for comboboxes
 	const [userComboboxOpen, setUserComboboxOpen] = useState(false);
 	const [warehouseComboboxOpen, setWarehouseComboboxOpen] = useState(false);
+	const [employeeWarehouseComboboxOpen, setEmployeeWarehouseComboboxOpen] =
+		useState(false);
+	const [employeeUserComboboxOpen, setEmployeeUserComboboxOpen] =
+		useState(false);
+	const [permissionComboboxOpen, setPermissionComboboxOpen] = useState(false);
 
 	// Form instances for user management
 	const userForm = useForm({
@@ -165,6 +239,18 @@ export function AjustesPage({ role }: { role: string }) {
 		},
 	});
 
+	// Form instance for employee management
+	const employeeForm = useForm({
+		defaultValues: {
+			name: "",
+			surname: "",
+			warehouseId: "",
+			passcode: "",
+			userId: "",
+			permissions: "",
+		},
+	});
+
 	// Mutations
 	const { mutateAsync: createUser, isPending: isCreatingUser } =
 		useSignUpMutation();
@@ -172,6 +258,8 @@ export function AjustesPage({ role }: { role: string }) {
 		useUpdateUserMutation();
 	const { mutateAsync: createWarehouse, isPending: isCreatingWarehouse } =
 		useCreateWarehouseMutation();
+	const { mutateAsync: createEmployee, isPending: isCreatingEmployee } =
+		useCreateEmployee();
 
 	/**
 	 * Handles the submission of the create user form.
@@ -290,6 +378,91 @@ export function AjustesPage({ role }: { role: string }) {
 		}
 	};
 
+	/**
+	 * Handles the submission of the create employee form.
+	 * Validates required fields, checks for duplicate employees,
+	 * calls the create employee mutation, and shows appropriate toast notifications.
+	 *
+	 * @param e - The form submission event
+	 */
+	const handleEmployeeSubmit = async (e: React.FormEvent) => {
+		e.preventDefault();
+		const {
+			name,
+			surname,
+			warehouseId: empWarehouseId,
+			passcode,
+			userId: empUserId,
+			permissions: empPermissions,
+		} = employeeForm.state.values;
+
+		// Validate required fields
+		if (!name.trim() || !surname.trim() || !empWarehouseId.trim()) {
+			toast.error("Nombre, apellido y bodega son obligatorios");
+			return;
+		}
+
+		// Check if employee already exists (by name and surname combination)
+		const existingEmployee = employees.find(
+			(emp) =>
+				emp.name.toLowerCase() === name.trim().toLowerCase() &&
+				emp.surname.toLowerCase() === surname.trim().toLowerCase(),
+		);
+
+		if (existingEmployee) {
+			toast.error(
+				`El empleado ${name.trim()} ${surname.trim()} ya existe en el sistema`,
+			);
+			return;
+		}
+
+		// Build payload
+		const payload: {
+			name: string;
+			surname: string;
+			warehouseId: string;
+			passcode?: number;
+			userId?: string;
+			permissions?: string;
+		} = {
+			name: name.trim(),
+			surname: surname.trim(),
+			warehouseId: empWarehouseId.trim(),
+		};
+
+		// Add optional fields if provided
+		if (passcode.trim()) {
+			const passcodeNum = Number.parseInt(passcode.trim(), 10);
+			if (
+				Number.isNaN(passcodeNum) ||
+				passcodeNum < 1000 ||
+				passcodeNum > 9999
+			) {
+				toast.error("El código debe ser un número de 4 dígitos (1000-9999)");
+				return;
+			}
+			payload.passcode = passcodeNum;
+		}
+
+		if (empUserId.trim()) {
+			payload.userId = empUserId.trim();
+		}
+
+		if (empPermissions.trim()) {
+			payload.permissions = empPermissions.trim();
+		}
+
+		try {
+			await createEmployee(payload);
+			employeeForm.reset();
+			router.refresh();
+		} catch (error) {
+			// Error handling is done in the mutation hook
+			// biome-ignore lint/suspicious/noConsole: Needed for debugging
+			console.error(error);
+		}
+	};
+
 	return (
 		<div className="theme-transition p-4 md:p-8">
 			<div className="mx-auto w-full max-w-4xl">
@@ -303,9 +476,10 @@ export function AjustesPage({ role }: { role: string }) {
 				</div>
 
 				<Tabs className="w-full" defaultValue="users">
-					<TabsList className="grid w-full grid-cols-2">
+					<TabsList className="grid w-full grid-cols-3">
 						<TabsTrigger value="users">Usuarios</TabsTrigger>
 						<TabsTrigger value="warehouses">Bodegas</TabsTrigger>
+						<TabsTrigger value="employees">Empleadas</TabsTrigger>
 					</TabsList>
 
 					{/* Users Tab */}
@@ -822,6 +996,416 @@ export function AjustesPage({ role }: { role: string }) {
 										</Button>
 									</div>
 								</form>
+							</CardContent>
+						</Card>
+					</TabsContent>
+
+					{/* Employees Tab */}
+					<TabsContent className="space-y-6" value="employees">
+						{/* Create Employee Card */}
+						<Card className="card-transition border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
+							<CardHeader>
+								<CardTitle className="flex items-center gap-2 text-[#11181C] dark:text-[#ECEDEE]">
+									<Users className="h-5 w-5" />
+									Crear empleada
+								</CardTitle>
+								<CardDescription className="text-[#687076] dark:text-[#9BA1A6]">
+									Registra una nueva empleada en el sistema
+								</CardDescription>
+							</CardHeader>
+							<CardContent>
+								<form className="space-y-4" onSubmit={handleEmployeeSubmit}>
+									{/* Name Field */}
+									<div className="space-y-2">
+										<Label
+											className="text-[#11181C] dark:text-[#ECEDEE]"
+											htmlFor="employee-name"
+										>
+											Nombre <span className="text-red-500">*</span>
+										</Label>
+										<employeeForm.Field
+											name="name"
+											validators={{
+												onChange: ({ value }) =>
+													value.trim().length > 0 ? undefined : "Requerido",
+											}}
+										>
+											{(field) => (
+												<>
+													<Input
+														className="input-transition border-[#E5E7EB] bg-white text-[#11181C] placeholder:text-[#687076] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:placeholder:text-[#9BA1A6]"
+														disabled={isCreatingEmployee}
+														id="employee-name"
+														name={field.name}
+														onBlur={field.handleBlur}
+														onChange={(e) => field.handleChange(e.target.value)}
+														placeholder="María"
+														value={field.state.value}
+													/>
+													{!field.state.meta.isValid && (
+														<em className="mt-1 text-red-500 text-xs">
+															{field.state.meta.errors.join(",")}
+														</em>
+													)}
+												</>
+											)}
+										</employeeForm.Field>
+									</div>
+
+									{/* Surname Field */}
+									<div className="space-y-2">
+										<Label
+											className="text-[#11181C] dark:text-[#ECEDEE]"
+											htmlFor="employee-surname"
+										>
+											Apellido <span className="text-red-500">*</span>
+										</Label>
+										<employeeForm.Field
+											name="surname"
+											validators={{
+												onChange: ({ value }) =>
+													value.trim().length > 0 ? undefined : "Requerido",
+											}}
+										>
+											{(field) => (
+												<>
+													<Input
+														className="input-transition border-[#E5E7EB] bg-white text-[#11181C] placeholder:text-[#687076] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:placeholder:text-[#9BA1A6]"
+														disabled={isCreatingEmployee}
+														id="employee-surname"
+														name={field.name}
+														onBlur={field.handleBlur}
+														onChange={(e) => field.handleChange(e.target.value)}
+														placeholder="González"
+														value={field.state.value}
+													/>
+													{!field.state.meta.isValid && (
+														<em className="mt-1 text-red-500 text-xs">
+															{field.state.meta.errors.join(",")}
+														</em>
+													)}
+												</>
+											)}
+										</employeeForm.Field>
+									</div>
+
+									{/* Warehouse Field */}
+									<div className="space-y-2">
+										<Label className="text-[#11181C] dark:text-[#ECEDEE]">
+											Bodega <span className="text-red-500">*</span>
+										</Label>
+										<employeeForm.Field
+											name="warehouseId"
+											validators={{
+												onChange: ({ value }) =>
+													value.trim().length > 0 ? undefined : "Requerido",
+											}}
+										>
+											{(field) => (
+												<>
+													<Popover
+														onOpenChange={setEmployeeWarehouseComboboxOpen}
+														open={employeeWarehouseComboboxOpen}
+													>
+														<PopoverTrigger asChild>
+															<Button
+																aria-expanded={employeeWarehouseComboboxOpen}
+																className="input-transition h-10 w-full justify-between border-[#E5E7EB] bg-white text-[#11181C] hover:bg-white hover:text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:hover:bg-[#151718] dark:hover:text-[#ECEDEE]"
+																disabled={isCreatingEmployee}
+																role="combobox"
+																type="button"
+																variant="outline"
+															>
+																{field.state.value
+																	? (warehouses.find(
+																			(w) => w.id === field.state.value,
+																		)?.name ?? "Seleccionar bodega")
+																	: "Seleccionar bodega"}
+																<ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+															</Button>
+														</PopoverTrigger>
+														<PopoverContent className="w-full p-0">
+															<Command>
+																<CommandInput placeholder="Buscar bodega..." />
+																<CommandList>
+																	<CommandEmpty>
+																		No se encontraron bodegas.
+																	</CommandEmpty>
+																	<CommandGroup>
+																		{warehouses.map((warehouse) => (
+																			<CommandItem
+																				key={warehouse.id}
+																				onSelect={() => {
+																					field.handleChange(warehouse.id);
+																					setEmployeeWarehouseComboboxOpen(
+																						false,
+																					);
+																				}}
+																				value={warehouse.name}
+																			>
+																				<Check
+																					className={cn(
+																						"mr-2 h-4 w-4",
+																						field.state.value === warehouse.id
+																							? "opacity-100"
+																							: "opacity-0",
+																					)}
+																				/>
+																				<div className="flex flex-col">
+																					<span className="font-medium">
+																						{warehouse.name}
+																					</span>
+																					<span className="text-muted-foreground text-xs">
+																						{warehouse.code}
+																					</span>
+																				</div>
+																			</CommandItem>
+																		))}
+																	</CommandGroup>
+																</CommandList>
+															</Command>
+														</PopoverContent>
+													</Popover>
+													{!field.state.meta.isValid && (
+														<em className="mt-1 text-red-500 text-xs">
+															{field.state.meta.errors.join(",")}
+														</em>
+													)}
+												</>
+											)}
+										</employeeForm.Field>
+									</div>
+
+									{/* Passcode Field (Optional) */}
+									<div className="space-y-2">
+										<Label
+											className="text-[#11181C] dark:text-[#ECEDEE]"
+											htmlFor="employee-passcode"
+										>
+											Código de acceso (4 dígitos)
+										</Label>
+										<employeeForm.Field name="passcode">
+											{(field) => (
+												<Input
+													className="input-transition border-[#E5E7EB] bg-white text-[#11181C] placeholder:text-[#687076] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:placeholder:text-[#9BA1A6]"
+													disabled={isCreatingEmployee}
+													id="employee-passcode"
+													maxLength={4}
+													name={field.name}
+													onBlur={field.handleBlur}
+													onChange={(e) => field.handleChange(e.target.value)}
+													placeholder="1234"
+													type="number"
+													value={field.state.value}
+												/>
+											)}
+										</employeeForm.Field>
+										<p className="text-xs text-[#687076] dark:text-[#9BA1A6]">
+											Opcional: número de 4 dígitos (1000-9999)
+										</p>
+									</div>
+
+									{/* User ID Field (Optional) */}
+									<div className="space-y-2">
+										<Label className="text-[#11181C] dark:text-[#ECEDEE]">
+											Usuario vinculado
+										</Label>
+										<employeeForm.Field name="userId">
+											{(field) => (
+												<Popover
+													onOpenChange={setEmployeeUserComboboxOpen}
+													open={employeeUserComboboxOpen}
+												>
+													<PopoverTrigger asChild>
+														<Button
+															aria-expanded={employeeUserComboboxOpen}
+															className="input-transition h-10 w-full justify-between border-[#E5E7EB] bg-white text-[#11181C] hover:bg-white hover:text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:hover:bg-[#151718] dark:hover:text-[#ECEDEE]"
+															disabled={isCreatingEmployee}
+															role="combobox"
+															type="button"
+															variant="outline"
+														>
+															{field.state.value
+																? (users.find((u) => u.id === field.state.value)
+																		?.name ?? "Seleccionar usuario")
+																: "Seleccionar usuario (opcional)"}
+															<ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+														</Button>
+													</PopoverTrigger>
+													<PopoverContent className="w-full p-0">
+														<Command>
+															<CommandInput placeholder="Buscar usuario..." />
+															<CommandList>
+																<CommandEmpty>
+																	No se encontraron usuarios.
+																</CommandEmpty>
+																<CommandGroup>
+																	{users.map((user) => (
+																		<CommandItem
+																			key={user.id}
+																			onSelect={() => {
+																				field.handleChange(user.id);
+																				setEmployeeUserComboboxOpen(false);
+																			}}
+																			value={user.name}
+																		>
+																			<Check
+																				className={cn(
+																					"mr-2 h-4 w-4",
+																					field.state.value === user.id
+																						? "opacity-100"
+																						: "opacity-0",
+																				)}
+																			/>
+																			<div className="flex flex-col">
+																				<span className="font-medium">
+																					{user.name}
+																				</span>
+																				<span className="text-muted-foreground text-xs">
+																					{user.email}
+																				</span>
+																			</div>
+																		</CommandItem>
+																	))}
+																</CommandGroup>
+															</CommandList>
+														</Command>
+													</PopoverContent>
+												</Popover>
+											)}
+										</employeeForm.Field>
+										<p className="text-xs text-[#687076] dark:text-[#9BA1A6]">
+											Opcional: asocia esta empleada con una cuenta de usuario
+										</p>
+									</div>
+
+									{/* Permissions Field (Optional) */}
+									<div className="space-y-2">
+										<Label className="text-[#11181C] dark:text-[#ECEDEE]">
+											Permisos
+										</Label>
+										<employeeForm.Field name="permissions">
+											{(field) => (
+												<Popover
+													onOpenChange={setPermissionComboboxOpen}
+													open={permissionComboboxOpen}
+												>
+													<PopoverTrigger asChild>
+														<Button
+															aria-expanded={permissionComboboxOpen}
+															className="input-transition h-10 w-full justify-between border-[#E5E7EB] bg-white text-[#11181C] hover:bg-white hover:text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:hover:bg-[#151718] dark:hover:text-[#ECEDEE]"
+															disabled={isCreatingEmployee}
+															role="combobox"
+															type="button"
+															variant="outline"
+														>
+															{field.state.value
+																? (permissions.find(
+																		(p) => p.id === field.state.value,
+																	)?.name ?? "Seleccionar permisos")
+																: "Seleccionar permisos (opcional)"}
+															<ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+														</Button>
+													</PopoverTrigger>
+													<PopoverContent className="w-full p-0">
+														<Command>
+															<CommandInput placeholder="Buscar permisos..." />
+															<CommandList>
+																<CommandEmpty>
+																	No se encontraron permisos.
+																</CommandEmpty>
+																<CommandGroup>
+																	{permissions.map((permission) => (
+																		<CommandItem
+																			key={permission.id}
+																			onSelect={() => {
+																				field.handleChange(permission.id);
+																				setPermissionComboboxOpen(false);
+																			}}
+																			value={permission.name}
+																		>
+																			<Check
+																				className={cn(
+																					"mr-2 h-4 w-4",
+																					field.state.value === permission.id
+																						? "opacity-100"
+																						: "opacity-0",
+																				)}
+																			/>
+																			<div className="flex flex-col">
+																				<span className="font-medium">
+																					{permission.name}
+																				</span>
+																			</div>
+																		</CommandItem>
+																	))}
+																</CommandGroup>
+															</CommandList>
+														</Command>
+													</PopoverContent>
+												</Popover>
+											)}
+										</employeeForm.Field>
+										<p className="text-xs text-[#687076] dark:text-[#9BA1A6]">
+											Opcional: asigna permisos específicos a esta empleada
+										</p>
+									</div>
+
+									{/* Submit Button */}
+									<div className="pt-2">
+										<Button
+											className="theme-transition h-11 w-full bg-[#0a7ea4] text-white hover:bg-[#0a7ea4]/90"
+											disabled={isCreatingEmployee}
+											type="submit"
+										>
+											{isCreatingEmployee ? "Creando..." : "Crear empleada"}
+										</Button>
+									</div>
+								</form>
+							</CardContent>
+						</Card>
+
+						{/* Existing Employees Info */}
+						<Card className="card-transition border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
+							<CardHeader>
+								<CardTitle className="text-[#11181C] dark:text-[#ECEDEE]">
+									Empleadas registradas
+								</CardTitle>
+								<CardDescription className="text-[#687076] dark:text-[#9BA1A6]">
+									Total: {employees.length} empleada(s) en el sistema
+									{!isEncargado && ` (bodega actual: ${employees.length})`}
+								</CardDescription>
+							</CardHeader>
+							<CardContent>
+								{employees.length > 0 ? (
+									<div className="space-y-2">
+										{employees.map((emp) => (
+											<div
+												className="flex items-center justify-between rounded-lg border border-[#E5E7EB] p-3 dark:border-[#2D3033]"
+												key={emp.id}
+											>
+												<div className="flex flex-col">
+													<span className="font-medium text-[#11181C] dark:text-[#ECEDEE]">
+														{emp.name} {emp.surname}
+													</span>
+													<span className="text-xs text-[#687076] dark:text-[#9BA1A6]">
+														{warehouses.find((w) => w.id === emp.warehouseId)
+															?.name || "Bodega no asignada"}
+													</span>
+												</div>
+												{emp.passcode && (
+													<span className="font-mono text-xs text-[#687076] dark:text-[#9BA1A6]">
+														Código: {emp.passcode}
+													</span>
+												)}
+											</div>
+										))}
+									</div>
+								) : (
+									<p className="text-center text-sm text-[#687076] dark:text-[#9BA1A6]">
+										No hay empleadas registradas
+									</p>
+								)}
 							</CardContent>
 						</Card>
 					</TabsContent>

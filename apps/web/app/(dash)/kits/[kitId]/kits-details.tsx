@@ -1,12 +1,12 @@
-'use client';
+"use client";
 
-import { useSuspenseQuery } from '@tanstack/react-query';
-import { ArrowLeft, Package, PackageCheck } from 'lucide-react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { Fragment, useEffect, useMemo } from 'react';
-import { toast } from 'sonner';
-import { v4 as uuidv4, v5 as uuidv5 } from 'uuid';
+import { useSuspenseQuery } from "@tanstack/react-query";
+import { ArrowLeft, Package, PackageCheck } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { Fragment, useEffect, useMemo } from "react";
+import { toast } from "sonner";
+import { v4 as uuidv4, v5 as uuidv5 } from "uuid";
 import {
 	Breadcrumb,
 	BreadcrumbItem,
@@ -14,10 +14,10 @@ import {
 	BreadcrumbList,
 	BreadcrumbPage,
 	BreadcrumbSeparator,
-} from '@/components/ui/breadcrumb';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
+} from "@/components/ui/breadcrumb";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
 	Table,
 	TableBody,
@@ -25,27 +25,37 @@ import {
 	TableHead,
 	TableHeader,
 	TableRow,
-} from '@/components/ui/table';
-import { getKitDetails } from '@/lib/fetch-functions/kits';
-import { createQueryKey } from '@/lib/helpers';
-import { useUpdateKit, useUpdateKitItemStatus } from '@/lib/mutations/kits';
-import { queryKeys } from '@/lib/query-keys';
-import { cn } from '@/lib/utils';
-import { useKitsStore } from '@/stores/kits-store';
-import { SkeletonKitInspectionGroup } from '@/ui/skeletons/Skeleton.KitInspectionGroup';
+} from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
+import { getKitDetails } from "@/lib/fetch-functions/kits";
+import { createQueryKey } from "@/lib/helpers";
+import { useUpdateKit, useUpdateKitItemStatus } from "@/lib/mutations/kits";
+import { queryKeys } from "@/lib/query-keys";
+import { cn } from "@/lib/utils";
+import { useKitsStore } from "@/stores/kits-store";
+import type {
+	KitDetails,
+	KitDetailsResponse,
+	KitItem,
+	KitSummary,
+} from "@/types";
+import { SkeletonKitInspectionGroup } from "@/ui/skeletons/Skeleton.KitInspectionGroup";
 
 interface PageProps {
 	params: { kitId: string };
 }
 
-// Deterministic UUIDv5 generator using a stable, app-specific namespace.
-// Combines multiple identifying parts to maximize uniqueness while remaining stable across renders.
-const UUID_NAMESPACE = uuidv5('alr-dashboard.kit-items', uuidv5.URL);
+/**
+ * Deterministic UUIDv5 generator using a stable, app-specific namespace
+ * Combines multiple identifying parts to maximize uniqueness while remaining stable across renders
+ */
+const UUID_NAMESPACE = uuidv5("alr-dashboard.kit-items", uuidv5.URL);
 function generateUUID(...parts: Array<string | number>): string {
-	const name = parts.filter((p) => p !== undefined && p !== null).join('|');
+	const name = parts.filter((p) => p !== undefined && p !== null).join("|");
 	return uuidv5(name, UUID_NAMESPACE);
 }
 
+/** API response type from getKitDetails function */
 type APIResponse = Awaited<ReturnType<typeof getKitDetails>> | null;
 
 export function KitInspectionPage({ params }: PageProps) {
@@ -59,6 +69,7 @@ export function KitInspectionPage({ params }: PageProps) {
 		toggleInspectionItem,
 		toggleInspectionGroup,
 		markAllReturned,
+		updateItemObservations,
 		getInspectionProgress,
 	} = useKitsStore();
 
@@ -70,27 +81,44 @@ export function KitInspectionPage({ params }: PageProps) {
 	const { mutateAsync: updateKit } = useUpdateKit();
 	const { mutateAsync: updateItemStatus } = useUpdateKitItemStatus();
 
-	// Seed inspection from API details
+	/**
+	 * Seed inspection store from API details
+	 * Transforms API response into InspectionKitItem format for the store
+	 */
 	useEffect(() => {
-		const root = (details ?? {}) as { data?: unknown };
-		const data = (root.data ?? {}) as {
-			kitItems?: Array<{
-				id?: string;
-				uuid?: string;
-				barcode?: string | number;
-				productName?: string;
-				isReturned?: boolean;
-			}>;
-		};
-		const items = Array.isArray(data.kitItems) ? data.kitItems : [];
-		const normalized = items.map((it, idx) => ({
-			id: it.id || `kit-item-${idx + 1}`,
-			uuid: it.uuid || generateUUID(kitId, it.id || idx),
-			barcode: String(it.barcode ?? ''),
-			productName: it.productName || 'Sin nombre',
-			returned: Boolean(it.isReturned),
+		// Type guard: ensure details exists
+		if (!details) {
+			loadInspection(kitId, []);
+			return;
+		}
+
+		// Type-safe access to API response
+		// API returns { kit, items, summary }
+		const response =
+			"data" in details
+				? (details.data as unknown as KitDetailsResponse)
+				: (details as unknown as KitDetailsResponse);
+
+		// Extract items array from response
+		const items = response.items;
+
+		// Validate items array
+		if (!Array.isArray(items) || items.length === 0) {
+			loadInspection(kitId, []);
+			return;
+		}
+
+		// Transform API kit items to InspectionKitItem format
+		const inspectionItems = items.map((kitItem, index) => ({
+			id: kitItem.id ?? `kit-item-${index + 1}`,
+			uuid: generateUUID(kitId, kitItem.id ?? index),
+			barcode: String(kitItem.productBarcode ?? ""),
+			productName: kitItem.productDescription ?? "Sin nombre",
+			returned: kitItem.isReturned ?? false,
+			observations: kitItem.observations ?? "",
 		}));
-		loadInspection(kitId, normalized);
+
+		loadInspection(kitId, inspectionItems);
 	}, [details, kitId, loadInspection]);
 
 	// Group items by barcode
@@ -111,46 +139,114 @@ export function KitInspectionPage({ params }: PageProps) {
 	const handleMarkAllReturned = async () => {
 		markAllReturned(kitId);
 		try {
-			await updateKit({ kitId, observations: 'Todos los artículos devueltos' });
-			toast('Kit devuelto: Todos los artículos han sido marcados como devueltos');
+			await updateKit({
+				kitId,
+				observations: "Todos los artículos devueltos",
+				isPartial: false,
+				isComplete: true,
+			});
+			toast(
+				"Kit devuelto: Todos los artículos han sido marcados como devueltos",
+			);
 		} catch {
-			toast.error('No se pudo actualizar el kit');
+			toast.error("No se pudo actualizar el kit");
 		}
 		setTimeout(() => {
-			router.push('/kits');
+			router.push("/kits");
 		}, 1500);
 	};
 
 	const handleToggleItem = async (itemId: string, nextReturned: boolean) => {
 		toggleInspectionItem(itemId);
+
+		// Calculate kit return status
+		const updatedItems = inspectionItems.map((item) =>
+			item.id === itemId ? { ...item, returned: nextReturned } : item,
+		);
+		const returnedCount = updatedItems.filter((item) => item.returned).length;
+		const totalCount = updatedItems.length;
+
+		const isPartial = returnedCount > 0 && returnedCount < totalCount;
+		const isComplete = returnedCount === totalCount;
+
 		try {
 			await updateItemStatus({ kitItemId: itemId, isReturned: nextReturned });
+
+			// Always update kit status to reflect current state
+			await updateKit({
+				kitId,
+				isPartial,
+				isComplete,
+			});
 		} catch {
-			toast.error('No se pudo actualizar el artículo');
+			toast.error("No se pudo actualizar el artículo");
 		}
 	};
 
-	const handleGroupToggle = (barcode: string) => {
+	const handleObservationsChange = async (
+		itemId: string,
+		observations: string,
+	) => {
+		// Update local state immediately for responsive UI
+		updateItemObservations(itemId, observations);
+
+		// Optionally update API - can be debounced or done on blur
+		// For now, just updating local state
+		// TODO: Add API call to persist observations when needed
+	};
+
+	const handleGroupToggle = async (barcode: string) => {
 		toggleInspectionGroup(barcode);
+
+		// Calculate kit return status after group toggle
+		const groupItems = inspectionItems.filter(
+			(item) => item.barcode === barcode,
+		);
+		const allReturned = groupItems.every((item) => item.returned);
+		const nextReturned = !allReturned;
+
+		const updatedItems = inspectionItems.map((item) =>
+			item.barcode === barcode ? { ...item, returned: nextReturned } : item,
+		);
+		const returnedCount = updatedItems.filter((item) => item.returned).length;
+		const totalCount = updatedItems.length;
+
+		const isPartial = returnedCount > 0 && returnedCount < totalCount;
+		const isComplete = returnedCount === totalCount;
+
+		try {
+			// Always update kit status to reflect current state
+			await updateKit({
+				kitId,
+				isPartial,
+				isComplete,
+			});
+		} catch {
+			toast.error("No se pudo actualizar el kit");
+		}
 	};
 
 	const getGroupSelectionState = (barcode: string) => {
 		const groupItems = groupedItems[barcode] || [];
 		const returnedCount = groupItems.filter((item) => item.returned).length;
 		if (returnedCount === 0) {
-			return 'unchecked';
+			return "unchecked";
 		}
 		if (returnedCount === groupItems.length) {
-			return 'checked';
+			return "checked";
 		}
-		return 'indeterminate';
+		return "indeterminate";
 	};
 
 	// Stable keys for skeleton rows to avoid using array index
-	const skeletonKeys = useMemo(() => Array.from({ length: 3 }, () => uuidv4()), []);
+	const skeletonKeys = useMemo(
+		() => Array.from({ length: 3 }, () => uuidv4()),
+		[],
+	);
 
 	const progress = getInspectionProgress();
-	const isAllReturned = progress.total > 0 && progress.returned === progress.total;
+	const isAllReturned =
+		progress.total > 0 && progress.returned === progress.total;
 
 	return (
 		<div className="theme-transition flex-1 space-y-6 bg-white p-4 md:p-6 dark:bg-[#151718]">
@@ -212,7 +308,7 @@ export function KitInspectionPage({ params }: PageProps) {
 								</p>
 								<p className="font-bold text-2xl text-[#11181C] text-transition dark:text-[#ECEDEE]">
 									{inspectionLoading
-										? '...'
+										? "..."
 										: `${progress.returned} / ${progress.total}`}
 								</p>
 							</div>
@@ -222,7 +318,7 @@ export function KitInspectionPage({ params }: PageProps) {
 								Completado
 							</p>
 							<p className="font-semibold text-[#0a7ea4] text-lg">
-								{inspectionLoading ? '0%' : `${progress.percentage}%`}
+								{inspectionLoading ? "0%" : `${progress.percentage}%`}
 							</p>
 						</div>
 					</div>
@@ -251,6 +347,9 @@ export function KitInspectionPage({ params }: PageProps) {
 										Nombre de producto
 									</TableHead>
 									<TableHead className="font-medium text-[#11181C] text-transition dark:text-[#ECEDEE]">
+										Observaciones
+									</TableHead>
+									<TableHead className="font-medium text-[#11181C] text-transition dark:text-[#ECEDEE]">
 										Devuelto
 									</TableHead>
 								</TableRow>
@@ -264,7 +363,7 @@ export function KitInspectionPage({ params }: PageProps) {
 								{!inspectionLoading &&
 									Object.entries(groupedItems).length === 0 && (
 										<TableRow>
-											<TableCell className="py-12 text-center" colSpan={4}>
+											<TableCell className="py-12 text-center" colSpan={5}>
 												<Package className="mx-auto mb-4 h-12 w-12 text-[#687076] dark:text-[#9BA1A6]" />
 												<p className="text-[#687076] text-transition dark:text-[#9BA1A6]">
 													No hay artículos en este kit
@@ -284,16 +383,14 @@ export function KitInspectionPage({ params }: PageProps) {
 												<TableRow className="theme-transition bg-[#F9FAFB]/60 dark:bg-[#1E1F20]/60">
 													<TableCell
 														className="py-3 font-medium text-[#687076] text-transition dark:text-[#9BA1A6]"
-														colSpan={4}
+														colSpan={5}
 													>
 														<div className="flex items-center space-x-3">
 															<Checkbox
 																checked={
-																	selectionState ===
-																	'indeterminate'
-																		? 'indeterminate'
-																		: selectionState ===
-																			'checked'
+																	selectionState === "indeterminate"
+																		? "indeterminate"
+																		: selectionState === "checked"
 																}
 																className="h-4 w-4"
 																onCheckedChange={() =>
@@ -317,34 +414,44 @@ export function KitInspectionPage({ params }: PageProps) {
 												{groupItems.map((item) => (
 													<TableRow
 														className={cn(
-															'theme-transition border-[#E5E7EB] border-b hover:bg-[#F9FAFB] dark:border-[#2D3033] dark:hover:bg-[#2D3033]',
-															item.returned && 'opacity-75',
+															"theme-transition border-[#E5E7EB] border-b hover:bg-[#F9FAFB] dark:border-[#2D3033] dark:hover:bg-[#2D3033]",
+															item.returned && "opacity-75",
 														)}
 														key={item.id}
 													>
 														<TableCell className="pl-8 font-mono text-[#11181C] text-sm text-transition dark:text-[#ECEDEE]">
-															{item.uuid.split('-')[0]}...
+															{item.uuid.split("-")[0]}...
 														</TableCell>
 														<TableCell className="font-mono text-[#687076] text-sm text-transition dark:text-[#9BA1A6]">
 															{item.barcode}
 														</TableCell>
 														<TableCell
 															className={cn(
-																'text-[#11181C] text-transition dark:text-[#ECEDEE]',
-																item.returned && 'line-through',
+																"text-[#11181C] text-transition dark:text-[#ECEDEE]",
+																item.returned && "line-through",
 															)}
 														>
 															{item.productName}
+														</TableCell>
+														<TableCell className="max-w-xs">
+															<Textarea
+																className="min-h-[60px] resize-none text-sm transition-colors focus-visible:ring-[#0a7ea4]"
+																placeholder="Agregar observaciones..."
+																value={item.observations}
+																onChange={(e) =>
+																	handleObservationsChange(
+																		item.id,
+																		e.target.value,
+																	)
+																}
+															/>
 														</TableCell>
 														<TableCell>
 															<Checkbox
 																checked={item.returned}
 																className="h-5 w-5 data-[state=checked]:border-[#0a7ea4] data-[state=checked]:bg-[#0a7ea4]"
 																onCheckedChange={(checked) =>
-																	handleToggleItem(
-																		item.id,
-																		Boolean(checked),
-																	)
+																	handleToggleItem(item.id, Boolean(checked))
 																}
 															/>
 														</TableCell>

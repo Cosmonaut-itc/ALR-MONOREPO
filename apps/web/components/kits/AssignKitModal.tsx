@@ -1,14 +1,13 @@
-'use client';
+"use client";
 
-import { useSuspenseQuery } from '@tanstack/react-query';
-import { Check, ChevronsUpDown, Minus, Plus } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
-import { toast } from 'sonner';
-import { v4 as uuidv4 } from 'uuid';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import { Check, ChevronsUpDown, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+import { v4 as uuidv4 } from "uuid";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import {
 	Command,
 	CommandEmpty,
@@ -16,7 +15,7 @@ import {
 	CommandInput,
 	CommandItem,
 	CommandList,
-} from '@/components/ui/command';
+} from "@/components/ui/command";
 import {
 	Dialog,
 	DialogContent,
@@ -24,51 +23,69 @@ import {
 	DialogFooter,
 	DialogHeader,
 	DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { getInventoryByWarehouse } from '@/lib/fetch-functions/inventory';
-import { getAllEmployees } from '@/lib/fetch-functions/kits';
-import { createQueryKey } from '@/lib/helpers';
-import { useCreateKit } from '@/lib/mutations/kits';
-import { queryKeys } from '@/lib/query-keys';
-import { cn } from '@/lib/utils';
-import { useAuthStore } from '@/stores/auth-store';
-import { useKitsStore } from '@/stores/kits-store';
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+	Popover,
+	PopoverContent,
+	PopoverTrigger,
+} from "@/components/ui/popover";
+import type { getInventoryByWarehouse } from "@/lib/fetch-functions/inventory";
+import type { getEmployeesByUserId } from "@/lib/fetch-functions/kits";
+import { useCreateKit, useUpdateProductStockUsage } from "@/lib/mutations/kits";
+import { cn } from "@/lib/utils";
+import { useKitsStore } from "@/stores/kits-store";
+
+type EmployeesResponse = Awaited<
+	ReturnType<typeof getEmployeesByUserId>
+> | null;
+type InventoryResponse = Awaited<
+	ReturnType<typeof getInventoryByWarehouse>
+> | null;
+
+interface KitProduct {
+	productStock?: {
+		id?: string;
+		currentWarehouse?: string;
+		isKit?: boolean;
+		description?: string | null;
+		barcode?: number;
+		lastUsedBy?: string | null;
+	};
+	productName?: string;
+	productBrand?: string;
+	employee?: {
+		id?: string;
+		name?: string;
+		surname?: string;
+	} | null;
+}
 
 interface AssignKitModalProps {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
-	warehouseId: string;
+	/** Employees data passed from parent */
+	employeesData: EmployeesResponse;
+	/** Kit products filtered by isKit flag */
+	kitProducts: KitProduct[];
+	/** Today's kits to filter out employees who already have a kit */
+	todayKits?: Array<{ assignedEmployee: string }>;
 }
 
-type EmployeesResponse = Awaited<ReturnType<typeof getAllEmployees>> | null;
-type InventoryResponse = Awaited<ReturnType<typeof getInventoryByWarehouse>> | null;
-
-export function AssignKitModal({ open, onOpenChange, warehouseId }: AssignKitModalProps) {
+export function AssignKitModal({
+	open,
+	onOpenChange,
+	employeesData,
+	kitProducts,
+	todayKits = [],
+}: AssignKitModalProps) {
 	const { draft, setDraft, clearDraft, addKit } = useKitsStore();
 	const [employeeOpen, setEmployeeOpen] = useState(false);
-	const [kitId, setKitId] = useState('');
+	const [kitId, setKitId] = useState("");
 	const [selectedProducts, setSelectedProducts] = useState<
 		Array<{ productId: string; qty: number }>
 	>([]);
-
-	const user = useAuthStore((s) => s.user);
-	const userId = user?.id ?? '';
-
-	const { data: employeesRes } = useSuspenseQuery<EmployeesResponse, Error, EmployeesResponse>({
-		queryKey: createQueryKey(['employees'], [userId]),
-		queryFn: () =>
-			userId
-				? getAllEmployees(userId)
-				: Promise.resolve({ data: [] } as unknown as EmployeesResponse),
-	});
-
-	const { data: inventoryRes } = useSuspenseQuery<InventoryResponse, Error, InventoryResponse>({
-		queryKey: createQueryKey(queryKeys.inventory, [warehouseId as string]),
-		queryFn: () => getInventoryByWarehouse(warehouseId as string),
-	});
 
 	const toArray = useMemo(
 		() =>
@@ -79,7 +96,7 @@ export function AssignKitModal({ open, onOpenChange, warehouseId }: AssignKitMod
 	const toStringOrEmpty = useMemo(
 		() =>
 			(v: unknown): string =>
-				typeof v === 'string' ? v : '',
+				typeof v === "string" ? v : "",
 		[],
 	);
 	const normalizeEmployee = useMemo(
@@ -90,42 +107,80 @@ export function AssignKitModal({ open, onOpenChange, warehouseId }: AssignKitMod
 				name?: unknown;
 				surname?: unknown;
 				avatar?: unknown;
+				warehouseId?: unknown;
 			};
 			const id = toStringOrEmpty(e.id);
 			const name = toStringOrEmpty(e.name);
 			const surname = toStringOrEmpty(e.surname);
 			const avatar = toStringOrEmpty(e.avatar);
-			const fullName = [name, surname].filter(Boolean).join(' ');
+			const warehouseId = toStringOrEmpty(e.warehouseId);
+			const fullName = [name, surname].filter(Boolean).join(" ");
 			return {
 				id,
-				name: fullName || name || 'Empleado',
-				specialty: '',
+				name: fullName || name || "Empleado",
+				specialty: "",
 				avatar,
 				active: true as const,
+				warehouseId,
 			};
 		},
 		[toStringOrEmpty],
 	);
 	const employees = useMemo(() => {
-		const root = (employeesRes ?? { data: [], json: [] }) as { data?: unknown; json?: unknown };
+		const root = (employeesData ?? { data: [], json: [] }) as {
+			data?: unknown;
+			json?: unknown;
+		};
 		const candidate = root.data ?? root.json ?? [];
-		return toArray(candidate).map(normalizeEmployee);
-	}, [employeesRes, toArray, normalizeEmployee]);
+		const allEmployees = toArray(candidate).map(normalizeEmployee);
 
+		// Filter out employees who already have a kit assigned today
+		const employeesWithKitsToday = new Set(
+			todayKits.map((kit) => kit.assignedEmployee),
+		);
+
+		return allEmployees.filter((emp) => !employeesWithKitsToday.has(emp.id));
+	}, [employeesData, toArray, normalizeEmployee, todayKits]);
+
+	// Filter kit products by selected employee's warehouse ID
 	const products = useMemo(() => {
-		const root = inventoryRes ?? { data: { warehouse: [] as unknown[] } };
-		const wh = (root as { data?: { warehouse?: unknown } }).data?.warehouse as
-			| Array<{ productStock?: { id?: string }; productName?: string; productBrand?: string }>
-			| undefined;
-		return Array.isArray(wh)
-			? wh.map((row) => ({
-					id: String((row.productStock as { id?: string })?.id ?? ''),
-					name: String((row as { productName?: string }).productName ?? 'Producto'),
-					brand: String((row as { productBrand?: string }).productBrand ?? ''),
+		const selectedEmployee = employees.find(
+			(emp) => emp.id === draft.employeeId,
+		);
+		const employeeWarehouseId = selectedEmployee?.warehouseId;
+
+		// If no employee selected, return empty array
+		if (!employeeWarehouseId) {
+			return [];
+		}
+
+		// Filter kitProducts by employee's warehouse
+		return kitProducts
+			.filter(
+				(product) =>
+					product.productStock?.currentWarehouse === employeeWarehouseId,
+			)
+			.map((row) => {
+				const lastUsedByName = row.employee
+					? [row.employee.name, row.employee.surname]
+							.filter(Boolean)
+							.join(" ") || "Desconocido"
+					: null;
+
+				return {
+					id: String(row.productStock?.id ?? ""),
+					name: String(
+						row.productStock?.description ||
+							row.productName ||
+							"Producto sin nombre",
+					),
+					brand: String(row.productBrand ?? ""),
+					barcode: row.productStock?.barcode ?? 0,
+					lastUsedBy: lastUsedByName,
 					stock: 1,
-				}))
-			: [];
-	}, [inventoryRes]);
+				};
+			});
+	}, [kitProducts, employees, draft.employeeId]);
 
 	// Generate new kit ID when modal opens
 	useEffect(() => {
@@ -140,67 +195,88 @@ export function AssignKitModal({ open, onOpenChange, warehouseId }: AssignKitMod
 	const handleEmployeeSelect = (employeeId: string) => {
 		setDraft({ employeeId });
 		setEmployeeOpen(false);
+		// Clear selected products when employee changes
+		setSelectedProducts([]);
 	};
 
 	const handleAddProduct = (productId: string) => {
+		// Always add with qty: 1, no duplicates allowed
 		const existing = selectedProducts.find((p) => p.productId === productId);
-		if (existing) {
-			setSelectedProducts((prev) =>
-				prev.map((p) => (p.productId === productId ? { ...p, qty: p.qty + 1 } : p)),
-			);
-		} else {
+		if (!existing) {
 			setSelectedProducts((prev) => [...prev, { productId, qty: 1 }]);
 		}
 	};
 
-	const handleUpdateQuantity = (productId: string, qty: number) => {
-		if (qty <= 0) {
-			setSelectedProducts((prev) => prev.filter((p) => p.productId !== productId));
-		} else {
-			setSelectedProducts((prev) =>
-				prev.map((p) => (p.productId === productId ? { ...p, qty } : p)),
-			);
-		}
+	const handleRemoveProduct = (productId: string) => {
+		setSelectedProducts((prev) =>
+			prev.filter((p) => p.productId !== productId),
+		);
 	};
 
 	const { mutateAsync: createKit, isPending } = useCreateKit();
+	const { mutateAsync: updateProductStockUsage } = useUpdateProductStockUsage();
 
 	const handleAssign = async () => {
 		if (!draft.employeeId || selectedProducts.length === 0) {
-			toast.error('Por favor completa todos los campos requeridos');
+			toast.error("Por favor completa todos los campos requeridos");
 			return;
 		}
 		try {
+			// Create the kit
 			await createKit({
 				assignedEmployee: draft.employeeId as string,
-				observations: 'Kit diario',
+				observations: "Kit diario",
 				kitItems: selectedProducts.map((p) => ({
 					productId: p.productId,
-					observations: '',
+					observations: "",
 				})),
 			});
+
+			// Update usage information for each product in the kit
+			const currentDate = new Date().toISOString();
+			await Promise.all(
+				selectedProducts.map(async (product) => {
+					try {
+						await updateProductStockUsage({
+							productStockId: product.productId,
+							isBeingUsed: true,
+							lastUsedBy: draft.employeeId as string,
+							lastUsed: currentDate,
+							incrementUses: true,
+						});
+					} catch (error) {
+						// Log error but don't fail the entire kit creation
+						// biome-ignore lint/suspicious/noConsole: Needed for debugging
+						console.error(
+							`Error updating usage for product ${product.productId}:`,
+							error,
+						);
+					}
+				}),
+			);
+
+			// Update local store
 			addKit({
 				id: kitId,
 				employeeId: draft.employeeId as string,
 				date: ((draft.date as unknown as Date) || new Date()) as Date,
 				items: selectedProducts,
 			});
-			toast.success('Kit asignado exitosamente');
+
+			toast.success("Kit asignado exitosamente");
 			onOpenChange(false);
 			handleCancel();
 		} catch {
-			toast.error('Error al crear el kit');
+			toast.error("Error al crear el kit");
 		}
 	};
 
 	const handleCancel = () => {
 		clearDraft();
 		setSelectedProducts([]);
-		setKitId('');
+		setKitId("");
 		onOpenChange(false);
 	};
-
-	const totalProducts = selectedProducts.reduce((sum, item) => sum + item.qty, 0);
 
 	return (
 		<Dialog onOpenChange={onOpenChange} open={open}>
@@ -238,16 +314,13 @@ export function AssignKitModal({ open, onOpenChange, warehouseId }: AssignKitMod
 										<div className="flex items-center gap-2">
 											<Avatar className="h-6 w-6">
 												<AvatarImage
-													src={
-														selectedEmployee.avatar ||
-														'/placeholder.svg'
-													}
+													src={selectedEmployee.avatar || "/placeholder.svg"}
 												/>
 												<AvatarFallback>
-													{(selectedEmployee.name || 'U')
-														.split(' ')
+													{(selectedEmployee.name || "U")
+														.split(" ")
 														.map((n) => n[0])
-														.join('')}
+														.join("")}
 												</AvatarFallback>
 											</Avatar>
 											<span>{selectedEmployee.name}</span>
@@ -256,7 +329,7 @@ export function AssignKitModal({ open, onOpenChange, warehouseId }: AssignKitMod
 											</Badge>
 										</div>
 									) : (
-										'Seleccionar empleada...'
+										"Seleccionar empleada..."
 									)}
 									<ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
 								</Button>
@@ -265,7 +338,11 @@ export function AssignKitModal({ open, onOpenChange, warehouseId }: AssignKitMod
 								<Command>
 									<CommandInput placeholder="Buscar empleada..." />
 									<CommandList>
-										<CommandEmpty>No se encontraron empleadas.</CommandEmpty>
+										<CommandEmpty>
+											{employees.length === 0 && todayKits.length > 0
+												? "Todas las empleadas ya tienen un kit asignado para hoy."
+												: "No se encontraron empleadas."}
+										</CommandEmpty>
 										<CommandGroup>
 											{employees
 												.filter((emp) => Boolean(emp.active))
@@ -273,20 +350,17 @@ export function AssignKitModal({ open, onOpenChange, warehouseId }: AssignKitMod
 													<CommandItem
 														key={employee.id || `emp-${idx}`}
 														onSelect={() =>
-															handleEmployeeSelect(employee.id || '')
+															handleEmployeeSelect(employee.id || "")
 														}
-														value={employee.name || ''}
+														value={employee.name || ""}
 													>
 														<div className="flex flex-1 items-center gap-2">
 															<Avatar className="h-6 w-6">
 																<AvatarImage
-																	src={
-																		employee.avatar ||
-																		'/placeholder.svg'
-																	}
+																	src={employee.avatar || "/placeholder.svg"}
 																/>
 																<AvatarFallback>
-																	{(employee.name || 'U')[0]}
+																	{(employee.name || "U")[0]}
 																</AvatarFallback>
 															</Avatar>
 															<div className="flex flex-col">
@@ -300,10 +374,10 @@ export function AssignKitModal({ open, onOpenChange, warehouseId }: AssignKitMod
 														</div>
 														<Check
 															className={cn(
-																'ml-auto h-4 w-4',
+																"ml-auto h-4 w-4",
 																draft.employeeId === employee.id
-																	? 'opacity-100'
-																	: 'opacity-0',
+																	? "opacity-100"
+																	: "opacity-0",
 															)}
 														/>
 													</CommandItem>
@@ -318,73 +392,83 @@ export function AssignKitModal({ open, onOpenChange, warehouseId }: AssignKitMod
 					{/* Products Selection */}
 					<div className="space-y-3">
 						<Label>Productos Disponibles</Label>
-						<div className="grid max-h-48 gap-2 overflow-y-auto">
-							{products.map((product) => {
-								const selectedProduct = selectedProducts.find(
-									(p) => p.productId === product.id,
-								);
-								return (
-									<Card className="p-3" key={product.id}>
-										<div className="flex items-center justify-between">
-											<div className="flex-1">
-												<div className="font-medium">{product.name}</div>
-												<div className="text-muted-foreground text-sm">
-													{product.brand} • Stock: {product.stock}
+						{!draft.employeeId ? (
+							<div className="flex items-center justify-center rounded-lg border border-dashed border-[#E5E7EB] p-8 dark:border-[#2D3033]">
+								<p className="text-center text-[#687076] text-sm dark:text-[#9BA1A6]">
+									Selecciona una empleada para ver los productos disponibles
+								</p>
+							</div>
+						) : products.length === 0 ? (
+							<div className="flex items-center justify-center rounded-lg border border-dashed border-[#E5E7EB] p-8 dark:border-[#2D3033]">
+								<p className="text-center text-[#687076] text-sm dark:text-[#9BA1A6]">
+									No hay productos de kit disponibles en esta bodega
+								</p>
+							</div>
+						) : (
+							<div className="grid max-h-64 gap-2 overflow-y-auto">
+								{products.map((product) => {
+									const isSelected = selectedProducts.some(
+										(p) => p.productId === product.id,
+									);
+									return (
+										<Card
+											className={cn(
+												"p-3 transition-colors",
+												isSelected && "border-[#0a7ea4] bg-[#0a7ea4]/5",
+											)}
+											key={product.id}
+										>
+											<div className="space-y-2">
+												<div className="flex items-start justify-between gap-2">
+													<div className="flex-1 min-w-0">
+														<div className="font-medium text-sm">
+															{product.name}
+														</div>
+														<div className="flex items-center gap-2 mt-1">
+															<span className="font-mono text-muted-foreground text-xs">
+																ID: {product.id.slice(-8)}
+															</span>
+															<span className="text-muted-foreground">•</span>
+															<span className="font-mono text-muted-foreground text-xs">
+																#{product.barcode}
+															</span>
+														</div>
+														{product.lastUsedBy && (
+															<div className="mt-1 text-muted-foreground text-xs">
+																Último uso: {product.lastUsedBy}
+															</div>
+														)}
+													</div>
+													{isSelected ? (
+														<Button
+															onClick={() => handleRemoveProduct(product.id)}
+															size="sm"
+															variant="ghost"
+														>
+															<X className="h-4 w-4" />
+														</Button>
+													) : (
+														<Button
+															onClick={() => handleAddProduct(product.id)}
+															size="sm"
+															variant="outline"
+														>
+															Agregar
+														</Button>
+													)}
 												</div>
 											</div>
-											<div className="flex items-center gap-2">
-												{selectedProduct ? (
-													<div className="flex items-center gap-2">
-														<Button
-															onClick={() =>
-																handleUpdateQuantity(
-																	product.id,
-																	selectedProduct.qty - 1,
-																)
-															}
-															size="sm"
-															variant="outline"
-														>
-															<Minus className="h-3 w-3" />
-														</Button>
-														<span className="w-8 text-center font-medium">
-															{selectedProduct.qty}
-														</span>
-														<Button
-															onClick={() =>
-																handleUpdateQuantity(
-																	product.id,
-																	selectedProduct.qty + 1,
-																)
-															}
-															size="sm"
-															variant="outline"
-														>
-															<Plus className="h-3 w-3" />
-														</Button>
-													</div>
-												) : (
-													<Button
-														onClick={() => handleAddProduct(product.id)}
-														size="sm"
-														variant="outline"
-													>
-														<Plus className="mr-1 h-3 w-3" />
-														Agregar
-													</Button>
-												)}
-											</div>
-										</div>
-									</Card>
-								);
-							})}
-						</div>
+										</Card>
+									);
+								})}
+							</div>
+						)}
 					</div>
 
 					{/* Selected Products Summary */}
 					{selectedProducts.length > 0 && (
 						<div className="space-y-2">
-							<Label>Resumen del Kit ({totalProducts} productos)</Label>
+							<Label>Productos Seleccionados ({selectedProducts.length})</Label>
 							<Card className="p-3">
 								<div className="space-y-2">
 									{selectedProducts.map((item) => {
@@ -393,11 +477,24 @@ export function AssignKitModal({ open, onOpenChange, warehouseId }: AssignKitMod
 										);
 										return (
 											<div
-												className="flex justify-between text-sm"
+												className="flex items-center justify-between gap-2 text-sm"
 												key={item.productId}
 											>
-												<span>{product?.name}</span>
-												<span className="font-medium">x{item.qty}</span>
+												<div className="flex-1 min-w-0">
+													<div className="font-medium truncate">
+														{product?.name}
+													</div>
+													<div className="font-mono text-muted-foreground text-xs">
+														#{product?.barcode}
+													</div>
+												</div>
+												<Button
+													onClick={() => handleRemoveProduct(item.productId)}
+													size="sm"
+													variant="ghost"
+												>
+													<X className="h-3 w-3" />
+												</Button>
 											</div>
 										);
 									})}
@@ -412,7 +509,9 @@ export function AssignKitModal({ open, onOpenChange, warehouseId }: AssignKitMod
 						Cancelar
 					</Button>
 					<Button
-						disabled={!draft.employeeId || selectedProducts.length === 0 || isPending}
+						disabled={
+							!draft.employeeId || selectedProducts.length === 0 || isPending
+						}
 						onClick={handleAssign}
 					>
 						Asignar Kit

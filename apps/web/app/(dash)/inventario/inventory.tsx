@@ -8,6 +8,7 @@ import { ProductCatalogTable } from "@/components/inventory/ProductCatalogTable"
 import { ProductCombobox } from "@/components/inventory/ProductCombobox";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
 	Dialog,
 	DialogContent,
@@ -126,6 +127,7 @@ export function InventarioPage({
 	const {
 		mutateAsync: createInventoryItem,
 		isPending: isCreatingInventoryItem,
+		isSuccess: isCreatingInventoryItemSuccess,
 	} = useCreateInventoryItem();
 
 	const { addToTransfer, transferList, removeFromTransfer, approveTransfer } =
@@ -135,6 +137,7 @@ export function InventarioPage({
 	const [selectedProductValue, setSelectedProductValue] = useState("");
 	const [selectedWarehouseId, setSelectedWarehouseId] = useState("");
 	const [qrQuantity, setQrQuantity] = useState(1);
+	const [isKit, setIsKit] = useState(false);
 	const [isPrintingLabels, setIsPrintingLabels] = useState(false);
 	const [currentTab, setCurrentTab] = useState<"general" | "gabinete">(
 		"general",
@@ -144,7 +147,8 @@ export function InventarioPage({
 		setSelectedProductValue("");
 		setSelectedWarehouseId("");
 		setQrQuantity(1);
-	}, []);
+		setIsKit(false);
+	}, [isCreatingInventoryItemSuccess]);
 
 	const productOptions = useMemo<CatalogProductOption[]>(() => {
 		if (
@@ -385,6 +389,8 @@ export function InventarioPage({
 				const result = await createInventoryItem({
 					barcode: selectedProduct.barcode,
 					currentWarehouse: selectedWarehouseId,
+					isKit,
+					description: selectedProduct.name,
 				});
 				const createdId =
 					result && typeof result === "object" && "data" in result
@@ -435,6 +441,7 @@ export function InventarioPage({
 		resetAddProductForm,
 		selectedProduct,
 		selectedWarehouseId,
+		isKit,
 	]);
 
 	const handleReprintItemQr = useCallback(
@@ -977,6 +984,21 @@ export function InventarioPage({
 											<p className="text-[#687076] text-xs dark:text-[#9BA1A6]">
 												Se creará e imprimirá una etiqueta por cada unidad.
 											</p>
+										</div>
+										<div className="flex items-center space-x-2">
+											<Checkbox
+												checked={isKit}
+												id="is-kit"
+												onCheckedChange={(checked) =>
+													setIsKit(checked === true)
+												}
+											/>
+											<Label
+												className="cursor-pointer text-[#11181C] text-sm font-normal dark:text-[#ECEDEE]"
+												htmlFor="is-kit"
+											>
+												Marcar como producto de kit
+											</Label>
 										</div>
 									</div>
 									<DialogFooter className="gap-2">

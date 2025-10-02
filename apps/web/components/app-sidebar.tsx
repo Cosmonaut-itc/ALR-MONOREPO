@@ -1,8 +1,7 @@
-'use client';
+"use client";
 
 import {
 	BarChart3,
-	Box,
 	Home,
 	LogOut,
 	Package,
@@ -10,18 +9,19 @@ import {
 	TrendingUp,
 	Truck,
 	User,
-} from 'lucide-react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import type * as React from 'react';
-import { toast } from 'sonner';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+	Users,
+} from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import type * as React from "react";
+import { toast } from "sonner";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
 	DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+} from "@/components/ui/dropdown-menu";
 import {
 	Sidebar,
 	SidebarContent,
@@ -34,41 +34,41 @@ import {
 	SidebarMenuButton,
 	SidebarMenuItem,
 	SidebarRail,
-} from '@/components/ui/sidebar';
-import { useLogoutMutation } from '@/lib/mutations/auth';
-import { useAuthStore } from '@/stores/auth-store';
+} from "@/components/ui/sidebar";
+import { useLogoutMutation } from "@/lib/mutations/auth";
+import { useAuthStore } from "@/stores/auth-store";
 
 // Datos de navegación del sistema ALR
 const navigationItems = [
 	{
-		title: 'Dashboard',
-		url: '/dashboard',
+		title: "Dashboard",
+		url: "/dashboard",
 		icon: Home,
 	},
 	{
-		title: 'Inventario',
-		url: '/inventario',
+		title: "Inventario",
+		url: "/inventario",
 		icon: Package,
 	},
 
 	{
-		title: 'Traspasos',
-		url: '/recepciones',
+		title: "Traspasos",
+		url: "/recepciones",
 		icon: Truck,
 	},
 	{
-		title: 'Kits',
-		url: '/kits',
-		icon: Box,
+		title: "Emplead@s",
+		url: "/kits",
+		icon: Users,
 	},
 	{
-		title: 'Estadísticas',
-		url: '/estadisticas',
+		title: "Estadísticas",
+		url: "/estadisticas",
 		icon: BarChart3,
 	},
 	{
-		title: 'Ajustes',
-		url: '/ajustes',
+		title: "Ajustes",
+		url: "/ajustes",
 		icon: Settings,
 	},
 ];
@@ -84,11 +84,11 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 			const response = await mutateAsync();
 			logout();
 			if (response.data?.success) {
-				toast.success('Sesión cerrada correctamente');
-				router.push('/login');
+				toast.success("Sesión cerrada correctamente");
+				router.push("/login");
 			}
 		} catch (error) {
-			toast.error('Error al cerrar sesión');
+			toast.error("Error al cerrar sesión");
 			// biome-ignore lint/suspicious/noConsole: Needed for error logging
 			console.error(error);
 		}
@@ -149,17 +149,17 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 										<AvatarImage alt={user?.name} src="/placeholder-user.jpg" />
 										<AvatarFallback className="rounded-lg bg-[#0a7ea4] text-white">
 											{user?.name
-												?.split(' ')
+												?.split(" ")
 												.map((n) => n[0])
-												.join('') || 'U'}
+												.join("") || "U"}
 										</AvatarFallback>
 									</Avatar>
 									<div className="grid flex-1 text-left text-sm leading-tight">
 										<span className="truncate font-semibold">
-											{user?.name || 'Usuario'}
+											{user?.name || "Usuario"}
 										</span>
 										<span className="truncate text-xs">
-											{user?.email || 'usuario@ejemplo.com'}
+											{user?.email || "usuario@ejemplo.com"}
 										</span>
 									</div>
 								</SidebarMenuButton>
