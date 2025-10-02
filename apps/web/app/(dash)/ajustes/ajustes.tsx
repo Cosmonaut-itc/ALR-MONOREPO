@@ -1007,10 +1007,10 @@ export function AjustesPage({ role }: { role: string }) {
 							<CardHeader>
 								<CardTitle className="flex items-center gap-2 text-[#11181C] dark:text-[#ECEDEE]">
 									<Users className="h-5 w-5" />
-									Crear empleada
+									Crear emplead@
 								</CardTitle>
 								<CardDescription className="text-[#687076] dark:text-[#9BA1A6]">
-									Registra una nueva empleada en el sistema
+									Registra una nueva emplead@ en el sistema
 								</CardDescription>
 							</CardHeader>
 							<CardContent>
@@ -1275,7 +1275,7 @@ export function AjustesPage({ role }: { role: string }) {
 											)}
 										</employeeForm.Field>
 										<p className="text-xs text-[#687076] dark:text-[#9BA1A6]">
-											Opcional: asocia esta empleada con una cuenta de usuario
+											Opcional: asocia esta emplead@ con una cuenta de usuario
 										</p>
 									</div>
 
@@ -1347,7 +1347,7 @@ export function AjustesPage({ role }: { role: string }) {
 											)}
 										</employeeForm.Field>
 										<p className="text-xs text-[#687076] dark:text-[#9BA1A6]">
-											Opcional: asigna permisos específicos a esta empleada
+											Opcional: asigna permisos específicos a esta emplead@
 										</p>
 									</div>
 
@@ -1358,7 +1358,7 @@ export function AjustesPage({ role }: { role: string }) {
 											disabled={isCreatingEmployee}
 											type="submit"
 										>
-											{isCreatingEmployee ? "Creando..." : "Crear empleada"}
+											{isCreatingEmployee ? "Creando..." : "Crear emplead@"}
 										</Button>
 									</div>
 								</form>
@@ -1372,7 +1372,7 @@ export function AjustesPage({ role }: { role: string }) {
 									Empleadas registradas
 								</CardTitle>
 								<CardDescription className="text-[#687076] dark:text-[#9BA1A6]">
-									Total: {employees.length} empleada(s) en el sistema
+									Total: {employees.length} emplead@(s) en el sistema
 									{!isEncargado && ` (bodega actual: ${employees.length})`}
 								</CardDescription>
 							</CardHeader>
@@ -1403,7 +1403,7 @@ export function AjustesPage({ role }: { role: string }) {
 									</div>
 								) : (
 									<p className="text-center text-sm text-[#687076] dark:text-[#9BA1A6]">
-										No hay empleadas registradas
+										No hay emplead@s registradas
 									</p>
 								)}
 							</CardContent>
