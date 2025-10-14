@@ -946,6 +946,11 @@ export function RecepcionesPage({
 					productStockId: item.productStockId,
 					quantityTransferred: item.quantity,
 					itemNotes: item.itemNotes || undefined,
+					goodId: item.barcode,
+					costPerUnit:
+						productCatalog?.data?.find(
+							(product) => product.good_id === item.barcode,
+						)?.cost ?? 0,
 				})),
 				transferNotes: transferDraft.transferNotes || undefined,
 				priority: transferDraft.priority,

@@ -124,6 +124,8 @@ export type TransferOrderType = {
 		quantityTransferred: number;
 		itemCondition?: "good" | "damaged" | "needs_inspection";
 		itemNotes?: string;
+		goodId: number;
+		costPerUnit: number;
 	}>;
 	transferNotes?: string;
 	priority?: "high" | "normal" | "urgent";
