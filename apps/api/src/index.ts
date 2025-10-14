@@ -26,7 +26,7 @@ import { productStockData, withdrawOrderData, withdrawOrderDetailsData } from '.
 import { db } from './db/index';
 import * as schemas from './db/schema';
 import { auth } from './lib/auth';
-import type { DataItemArticulosType, ProductArrivalDocumentTypeId } from './types';
+import type { AltegioDocumentTypeId, AltegioOperationTypeId, DataItemArticulosType } from './types';
 import {
 	apiResponseSchema,
 	apiResponseSchemaDocument,
@@ -417,7 +417,10 @@ const ALTEGIO_STORAGE_DOCUMENT_PATH = '/api/v1/storage_operations/documents';
 const ALTEGIO_STORAGE_OPERATION_PATH = '/api/v1/storage_operations/operation';
 const ALTEGIO_DATETIME_FORMAT = "yyyy-MM-dd'T'HH:mm:ss.SSSxxx";
 const DEFAULT_TIME_ZONE = 'UTC';
-const PRODUCT_ARRIVAL_DOCUMENT_TYPE_ID: ProductArrivalDocumentTypeId = 3;
+const ALTEGIO_DOCUMENT_TYPE_ARRIVAL: AltegioDocumentTypeId = 3;
+const ALTEGIO_DOCUMENT_TYPE_DEPARTURE: AltegioDocumentTypeId = 7;
+const ALTEGIO_OPERATION_TYPE_ARRIVAL: AltegioOperationTypeId = 3;
+const ALTEGIO_OPERATION_TYPE_DEPARTURE: AltegioOperationTypeId = 4;
 
 const altegioCompanyIdSchema = z.number().int().positive();
 const altegioAuthHeadersSchema = z.object({
@@ -426,7 +429,10 @@ const altegioAuthHeadersSchema = z.object({
 });
 
 const altegioStorageDocumentRequestSchema = z.object({
-	typeId: z.literal([3, 7]),
+	typeId: z.union([
+		z.literal(ALTEGIO_DOCUMENT_TYPE_ARRIVAL),
+		z.literal(ALTEGIO_DOCUMENT_TYPE_DEPARTURE),
+	]),
 	comment: z.string().min(1),
 	storageId: z.number().int().positive(),
 	createDate: z.date(),
@@ -448,7 +454,10 @@ const altegioStorageOperationTransactionSchema = z.object({
 });
 
 const altegioStorageOperationRequestSchema = z.object({
-	typeId: z.literal([3, 4]),
+	typeId: z.union([
+		z.literal(ALTEGIO_OPERATION_TYPE_ARRIVAL),
+		z.literal(ALTEGIO_OPERATION_TYPE_DEPARTURE),
+	]),
 	comment: z.string().min(1),
 	createDate: z.date(),
 	storageId: z.number().int().positive(),
@@ -465,7 +474,7 @@ export type AltegioStorageOperationTransaction = z.infer<
 export type AltegioStorageOperationRequest = z.infer<typeof altegioStorageOperationRequestSchema>;
 
 export type AltegioStorageDocumentPayload = {
-	type_id: ProductArrivalDocumentTypeId;
+	type_id: AltegioDocumentTypeId;
 	comment: string;
 	storage_id: number;
 	create_date: string;
@@ -486,7 +495,7 @@ export type AltegioStorageOperationTransactionPayload = {
 };
 
 export type AltegioStorageOperationPayload = {
-	type_id: ProductArrivalDocumentTypeId;
+	type_id: AltegioOperationTypeId;
 	comment: string;
 	create_date: string;
 	storage_id: number;
@@ -547,7 +556,7 @@ export const createAltegioStorageDocumentRequestBody = (
 ): AltegioStorageDocumentPayload => {
 	const parsed = altegioStorageDocumentRequestSchema.parse(request);
 	return {
-		type_id: PRODUCT_ARRIVAL_DOCUMENT_TYPE_ID,
+		type_id: parsed.typeId,
 		comment: parsed.comment,
 		storage_id: parsed.storageId,
 		create_date: formatCreateDate(parsed.createDate, parsed.timeZone),
@@ -565,7 +574,7 @@ export const createAltegioStorageOperationRequestBody = (
 ): AltegioStorageOperationPayload => {
 	const parsed = altegioStorageOperationRequestSchema.parse(request);
 	return {
-		type_id: PRODUCT_ARRIVAL_DOCUMENT_TYPE_ID,
+		type_id: parsed.typeId,
 		comment: parsed.comment,
 		create_date: formatCreateDate(parsed.createDate, parsed.timeZone),
 		storage_id: parsed.storageId,
@@ -3390,74 +3399,20 @@ const route = app
 					);
 				}
 
-				// Variables to track the success of the arrival document and storage operation
+				// Track remote synchronization state so the response can highlight partial failures
 				let arrivalDocumentSuccess = false;
 				let storageOperationSuccess = false;
-				let departureStorageOperationSuccess = false;
 				let departureDocumentSuccess = false;
+				let departureStorageOperationSuccess = false;
 
-				// Create a new arrival document in the Altegio ecosystem if the source is the distribution center
-				if (
-					(destinationWarehouseId !== DistributionCenterId &&
-						transferType === 'external') ||
-					(sourceWarehouseId !== DistributionCenterId && transferType === 'external')
-				) {
-					// Get the destination warehouse identifiers
-					const destinationWarehouseIdentifiers: Array<{
-						id: string;
-						altegioId: number;
-						consumablesId: number;
-						salesId: number;
-					}> = await db
-						.select({
-							id: schemas.warehouse.id,
-							altegioId: schemas.warehouse.altegioId,
-							consumablesId: schemas.warehouse.consumablesId,
-							salesId: schemas.warehouse.salesId,
-						})
-						.from(schemas.warehouse)
-						.where(eq(schemas.warehouse.id, destinationWarehouseId));
-
-					if (destinationWarehouseIdentifiers.length === 0) {
-						// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
-						console.error(`Destination warehouse ${destinationWarehouseId} not found`);
-
-						return c.json(
-							{
-								success: false,
-								message: `Destination warehouse ${destinationWarehouseId} not found`,
-							} satisfies ApiResponse,
-							404,
-						);
-					}
-
-					// Validate required environment variables
+				// External transfers replicate to Altegio: destination receives stock, source optionally ships it
+				if (transferType === 'external') {
 					const authHeader = process.env.AUTH_HEADER;
 					const acceptHeader = process.env.ACCEPT_HEADER;
 
-					// Get the destination warehouse identifiers
-					const destinationAltegioId = destinationWarehouseIdentifiers[0].altegioId;
-					const destinationConsumablesId =
-						destinationWarehouseIdentifiers[0].consumablesId;
-
-					if (!(destinationAltegioId && destinationConsumablesId)) {
+					if (!(authHeader && acceptHeader)) {
 						// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
-						console.error('Missing required warehouse identifiers');
-
-						return c.json(
-							{
-								success: false,
-								message: 'Missing required warehouse identifiers',
-							} satisfies ApiResponse,
-							400,
-						);
-					}
-
-					if (!authHeader) {
-						// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
-						console.error('Missing required environment variable: AUTH_HEADER');
-
-						// Return error response when environment variables are missing
+						console.error('Missing required authentication configuration');
 						return c.json(
 							{
 								success: false,
@@ -3468,66 +3423,20 @@ const route = app
 						);
 					}
 
-					if (!acceptHeader) {
-						// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
-						console.error('Missing required environment variable: ACCEPT_HEADER');
+					const altegioHeaders = {
+						authHeader,
+						acceptHeader,
+					};
 
-						return c.json(
-							{
-								success: false,
-								message: 'Missing required authentication configuration',
-								data: [],
-							} satisfies ApiResponse<DataItemArticulosType[]>,
-							400,
-						);
-					}
-
-					// Creates a new arrival document in the Altegio ecosystem if the destination is not the distribution center
-					const arrivalDocument = await postAltegioStorageDocument(
-						destinationAltegioId,
-						{
-							authHeader,
-							acceptHeader,
-						},
-						{
-							typeId: 3,
-							comment: `Arrival document for transfer ${transferNumber}`,
-							storageId: destinationConsumablesId,
-							createDate: new Date(),
-						},
-						apiResponseSchemaDocument,
-					);
-
-					if (!arrivalDocument.success) {
-						// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
-						console.error('Failed to create arrival document');
-
-						return c.json(
-							{
-								success: false,
-								message: 'Failed to create arrival document',
-							} satisfies ApiResponse,
-							500,
-						);
-					}
-
-					arrivalDocumentSuccess = true;
-
-					//Tranform the transfer details into the storage operation transactions aggregating by goodId
+					// Pre-compute aggregated quantity/cost per good so both arrival and departure use identical figures
 					const aggregatedTransactions = transferDetails.reduce<
-						Map<
-							number,
-							{
-								totalQuantity: number;
-								totalCost: number;
-							}
-						>
+						Map<number, AggregatedTotals>
 					>((accumulator, detail) => {
-						const existing = accumulator.get(detail.goodId);
+						const previous = accumulator.get(detail.goodId);
 						const detailCost = detail.quantityTransferred * detail.costPerUnit;
-						if (existing) {
-							existing.totalQuantity += detail.quantityTransferred;
-							existing.totalCost += detailCost;
+						if (previous) {
+							previous.totalQuantity += detail.quantityTransferred;
+							previous.totalCost += detailCost;
 							return accumulator;
 						}
 
@@ -3538,76 +3447,49 @@ const route = app
 						return accumulator;
 					}, new Map());
 
-					const goodsTransactions = Array.from(aggregatedTransactions.entries()).map(
-						([goodId, { totalQuantity, totalCost }]) => {
-							const computedCostPerUnit =
-								totalQuantity === 0 ? 0 : totalCost / totalQuantity;
-							return {
-								documentId: arrivalDocument.data.id,
-								goodId,
-								amount: totalQuantity,
-								costPerUnit: computedCostPerUnit,
-								discount: 0,
-								cost: totalCost,
-								operationUnitType: 2,
-							};
-						},
-					);
+					if (destinationWarehouseId !== DistributionCenterId) {
+						const destinationWarehouses = await db
+							.select({
+								id: schemas.warehouse.id,
+								altegioId: schemas.warehouse.altegioId,
+								consumablesId: schemas.warehouse.consumablesId,
+								salesId: schemas.warehouse.salesId,
+							})
+							.from(schemas.warehouse)
+							.where(eq(schemas.warehouse.id, destinationWarehouseId));
 
-					const storageOperationTransactions: AltegioStorageOperationRequest = {
-						typeId: 3,
-						comment: `Storage operation for transfer ${transferNumber}`,
-						createDate: new Date(),
-						storageId: destinationConsumablesId,
-						goodsTransactions,
-					};
+						const destinationWarehouse = destinationWarehouses[0];
+						if (
+							!(destinationWarehouse?.altegioId && destinationWarehouse.consumablesId)
+						) {
+							// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
+							console.error(
+								`Destination warehouse ${destinationWarehouseId} not found`,
+							);
+							return c.json(
+								{
+									success: false,
+									message: `Destination warehouse ${destinationWarehouseId} not found`,
+								} satisfies ApiResponse,
+								404,
+							);
+						}
 
-					const storageOperation = await postAltegioStorageOperation(
-						destinationAltegioId,
-						{
-							authHeader,
-							acceptHeader,
-						},
-						storageOperationTransactions,
-						apiResponseSchemaStorageOperation,
-					);
-
-					if (!storageOperation.success) {
-						// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
-						console.error('Failed to create storage operation');
-
-						return c.json(
+						const arrivalDocument = await postAltegioStorageDocument(
+							destinationWarehouse.altegioId,
+							altegioHeaders,
 							{
-								success: false,
-								message: 'Failed to create storage operation',
-							} satisfies ApiResponse,
-							500,
-						);
-					}
-
-					storageOperationSuccess = true;
-
-					if (sourceWarehouseId !== DistributionCenterId) {
-						// Creates a new arrival document in the Altegio ecosystem if the destination is not the distribution center
-						const departureDocument = await postAltegioStorageDocument(
-							destinationAltegioId,
-							{
-								authHeader,
-								acceptHeader,
-							},
-							{
-								typeId: 7,
+								typeId: ALTEGIO_DOCUMENT_TYPE_ARRIVAL,
 								comment: `Arrival document for transfer ${transferNumber}`,
-								storageId: destinationConsumablesId,
+								storageId: destinationWarehouse.consumablesId,
 								createDate: new Date(),
 							},
 							apiResponseSchemaDocument,
 						);
 
-						if (!departureDocument.success) {
+						if (!arrivalDocument.success) {
 							// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
 							console.error('Failed to create arrival document');
-
 							return c.json(
 								{
 									success: false,
@@ -3617,47 +3499,106 @@ const route = app
 							);
 						}
 
-						departureDocumentSuccess = true;
+						arrivalDocumentSuccess = true;
 
-						const departureGoodsTransactions = Array.from(
-							aggregatedTransactions.entries(),
-						).map(([goodId, { totalQuantity, totalCost }]) => {
-							const computedCostPerUnit =
-								totalQuantity === 0 ? 0 : totalCost / totalQuantity;
-							return {
-								documentId: departureDocument.data.id,
-								goodId,
-								amount: totalQuantity,
-								costPerUnit: computedCostPerUnit,
-								discount: 0,
-								cost: totalCost,
-								operationUnitType: 2,
-							};
+						const arrivalOperationRequest = createAggregatedOperationRequest({
+							documentId: arrivalDocument.data.id,
+							storageId: destinationWarehouse.consumablesId,
+							typeId: ALTEGIO_OPERATION_TYPE_ARRIVAL,
+							transferNumber,
+							aggregatedTransactions,
 						});
 
-						const departureStorageOperationTransactions: AltegioStorageOperationRequest =
-							{
-								typeId: 4,
-								comment: `Storage operation for transfer ${transferNumber}`,
-								createDate: new Date(),
-								storageId: destinationConsumablesId,
-								goodsTransactions: departureGoodsTransactions,
-							};
-
-						const departureStorageOperation = await postAltegioStorageOperation(
-							destinationAltegioId,
-							{
-								authHeader,
-								acceptHeader,
-							},
-							departureStorageOperationTransactions,
+						const arrivalOperation = await postAltegioStorageOperation(
+							destinationWarehouse.altegioId,
+							altegioHeaders,
+							arrivalOperationRequest,
 							apiResponseSchemaStorageOperation,
 						);
 
-						if (!departureStorageOperation.success) {
+						if (!arrivalOperation.success) {
+							// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
+							console.error('Failed to create storage operation');
+							return c.json(
+								{
+									success: false,
+									message: 'Failed to create storage operation',
+								} satisfies ApiResponse,
+								500,
+							);
+						}
+
+						storageOperationSuccess = true;
+					}
+
+					if (sourceWarehouseId !== DistributionCenterId) {
+						const sourceWarehouses = await db
+							.select({
+								id: schemas.warehouse.id,
+								altegioId: schemas.warehouse.altegioId,
+								consumablesId: schemas.warehouse.consumablesId,
+								salesId: schemas.warehouse.salesId,
+							})
+							.from(schemas.warehouse)
+							.where(eq(schemas.warehouse.id, sourceWarehouseId));
+
+						const sourceWarehouse = sourceWarehouses[0];
+						if (!(sourceWarehouse?.altegioId && sourceWarehouse.consumablesId)) {
+							// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
+							console.error(`Source warehouse ${sourceWarehouseId} not found`);
+							return c.json(
+								{
+									success: false,
+									message: `Source warehouse ${sourceWarehouseId} not found`,
+								} satisfies ApiResponse,
+								404,
+							);
+						}
+
+						const departureDocument = await postAltegioStorageDocument(
+							sourceWarehouse.altegioId,
+							altegioHeaders,
+							{
+								typeId: ALTEGIO_DOCUMENT_TYPE_DEPARTURE,
+								comment: `Departure document for transfer ${transferNumber}`,
+								storageId: sourceWarehouse.consumablesId,
+								createDate: new Date(),
+							},
+							apiResponseSchemaDocument,
+						);
+
+						if (!departureDocument.success) {
+							// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
+							console.error('Failed to create departure document');
+							return c.json(
+								{
+									success: false,
+									message: 'Failed to create departure document',
+								} satisfies ApiResponse,
+								500,
+							);
+						}
+
+						departureDocumentSuccess = true;
+
+						const departureOperationRequest = createAggregatedOperationRequest({
+							documentId: departureDocument.data.id,
+							storageId: sourceWarehouse.consumablesId,
+							typeId: ALTEGIO_OPERATION_TYPE_DEPARTURE,
+							transferNumber,
+							aggregatedTransactions,
+						});
+
+						const departureOperation = await postAltegioStorageOperation(
+							sourceWarehouse.altegioId,
+							altegioHeaders,
+							departureOperationRequest,
+							apiResponseSchemaStorageOperation,
+						);
+
+						if (!departureOperation.success) {
 							// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
 							console.error('Failed to create departure storage operation');
-
 							return c.json(
 								{
 									success: false,
@@ -5013,4 +4954,47 @@ export default {
 } satisfies {
 	port: number;
 	fetch: typeof app.fetch;
+};
+
+/**
+ * Builds a typed Altegio operation request payload for aggregated product movements.
+ * Ensures quantity and cost totals align with Altegio's expectations without duplicating arithmetic.
+ */
+type AggregatedTotals = {
+	totalQuantity: number;
+	totalCost: number;
+};
+
+const createAggregatedOperationRequest = ({
+	documentId,
+	storageId,
+	typeId,
+	transferNumber,
+	aggregatedTransactions,
+}: {
+	documentId: number;
+	storageId: number;
+	typeId: AltegioOperationTypeId;
+	transferNumber: string;
+	aggregatedTransactions: Map<number, AggregatedTotals>;
+}): AltegioStorageOperationRequest => {
+	const goodsTransactions = Array.from(aggregatedTransactions.entries()).map(
+		([goodId, { totalQuantity, totalCost }]) => ({
+			documentId,
+			goodId,
+			amount: totalQuantity,
+			costPerUnit: totalQuantity === 0 ? 0 : totalCost / totalQuantity,
+			discount: 0,
+			cost: totalCost,
+			operationUnitType: 2,
+		}),
+	);
+
+	return {
+		typeId,
+		comment: `Storage operation for transfer ${transferNumber}`,
+		createDate: new Date(),
+		storageId,
+		goodsTransactions,
+	};
 };

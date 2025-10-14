@@ -225,5 +225,6 @@ export type SucursalProvidenciaStorage = {
 	consumables: 1412069;
 	sales: 1412070;
 };
-export type ProductArrivalDocumentTypeId = 3;
+export type AltegioDocumentTypeId = 3 | 7;
+export type AltegioOperationTypeId = 3 | 4;
 export const DistributionCenterId = '4818f28e-daf8-42f4-8d55-088d260b118d';
