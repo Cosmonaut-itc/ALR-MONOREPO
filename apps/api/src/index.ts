@@ -3354,10 +3354,7 @@ const route = app
 								.default('good'),
 							itemNotes: z.string().max(500, 'Item notes too long').optional(),
 							goodId: z.number().int().positive('Good ID must be positive'),
-							costPerUnit: z
-								.number()
-								.int()
-								.positive('Cost per unit must be positive'),
+							costPerUnit: z.number().positive('Cost per unit must be positive'),
 						}),
 					)
 					.min(1, 'At least one transfer detail is required')
@@ -3399,7 +3396,7 @@ const route = app
 
 				// Create a new arrival document in the Altegio ecosystem if the source is the distribution center
 				if (
-					destinationWarehouseId !== DistributionCenterId &&
+					(destinationWarehouseId !== DistributionCenterId) || (sourceWarehouseId !== DistributionCenterId) &&
 					transferType === 'external'
 				) {
 					// Get the destination warehouse identifiers
@@ -3513,21 +3510,53 @@ const route = app
 
 					arrivalDocumentSuccess = true;
 
-					//Tranform the transfer details into the storage operation transactions
+					//Tranform the transfer details into the storage operation transactions aggregating by goodId
+					const aggregatedTransactions = transferDetails.reduce<
+						Map<
+							number,
+							{
+								totalQuantity: number;
+								totalCost: number;
+							}
+						>
+					>((accumulator, detail) => {
+						const existing = accumulator.get(detail.goodId);
+						const detailCost = detail.quantityTransferred * detail.costPerUnit;
+						if (existing) {
+							existing.totalQuantity += detail.quantityTransferred;
+							existing.totalCost += detailCost;
+							return accumulator;
+						}
+
+						accumulator.set(detail.goodId, {
+							totalQuantity: detail.quantityTransferred,
+							totalCost: detailCost,
+						});
+						return accumulator;
+					}, new Map());
+
+					const goodsTransactions = Array.from(aggregatedTransactions.entries()).map(
+						([goodId, { totalQuantity, totalCost }]) => {
+							const computedCostPerUnit =
+								totalQuantity === 0 ? 0 : totalCost / totalQuantity;
+							return {
+								documentId: arrivalDocument.data.id,
+								goodId,
+								amount: totalQuantity,
+								costPerUnit: computedCostPerUnit,
+								discount: 0,
+								cost: totalCost,
+								operationUnitType: 2,
+							};
+						},
+					);
+
 					const storageOperationTransactions: AltegioStorageOperationRequest = {
 						typeId: 3,
 						comment: `Storage operation for transfer ${transferNumber}`,
 						createDate: new Date(),
 						storageId: destinationConsumablesId,
-						goodsTransactions: transferDetails.map((detail) => ({
-							documentId: arrivalDocument.data.id,
-							goodId: detail.goodId,
-							amount: 1,
-							costPerUnit: detail.costPerUnit,
-							discount: 0,
-							cost: detail.costPerUnit,
-							operationUnitType: 2,
-						})),
+						goodsTransactions,
 					};
 
 					const storageOperation = await postAltegioStorageOperation(
