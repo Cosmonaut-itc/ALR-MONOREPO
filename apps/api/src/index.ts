@@ -426,7 +426,7 @@ const altegioAuthHeadersSchema = z.object({
 });
 
 const altegioStorageDocumentRequestSchema = z.object({
-	typeId: z.literal(3),
+	typeId: z.literal([3, 7]),
 	comment: z.string().min(1),
 	storageId: z.number().int().positive(),
 	createDate: z.date(),
@@ -448,7 +448,7 @@ const altegioStorageOperationTransactionSchema = z.object({
 });
 
 const altegioStorageOperationRequestSchema = z.object({
-	typeId: z.literal(3),
+	typeId: z.literal([3, 4]),
 	comment: z.string().min(1),
 	createDate: z.date(),
 	storageId: z.number().int().positive(),
@@ -3393,11 +3393,14 @@ const route = app
 				// Variables to track the success of the arrival document and storage operation
 				let arrivalDocumentSuccess = false;
 				let storageOperationSuccess = false;
+				let departureStorageOperationSuccess = false;
+				let departureDocumentSuccess = false;
 
 				// Create a new arrival document in the Altegio ecosystem if the source is the distribution center
 				if (
-					(destinationWarehouseId !== DistributionCenterId) || (sourceWarehouseId !== DistributionCenterId) &&
-					transferType === 'external'
+					(destinationWarehouseId !== DistributionCenterId &&
+						transferType === 'external') ||
+					(sourceWarehouseId !== DistributionCenterId && transferType === 'external')
 				) {
 					// Get the destination warehouse identifiers
 					const destinationWarehouseIdentifiers: Array<{
@@ -3583,11 +3586,89 @@ const route = app
 					}
 
 					storageOperationSuccess = true;
-				}
 
-				//Create a new consumption document in the Altegio ecosystem if the source is not the distribution center
-				if (sourceWarehouseId !== DistributionCenterId && transferType === 'external') {
-					// TODO: Create a new consumption document in the Altegio ecosystem
+					if (sourceWarehouseId !== DistributionCenterId) {
+						// Creates a new arrival document in the Altegio ecosystem if the destination is not the distribution center
+						const departureDocument = await postAltegioStorageDocument(
+							destinationAltegioId,
+							{
+								authHeader,
+								acceptHeader,
+							},
+							{
+								typeId: 7,
+								comment: `Arrival document for transfer ${transferNumber}`,
+								storageId: destinationConsumablesId,
+								createDate: new Date(),
+							},
+							apiResponseSchemaDocument,
+						);
+
+						if (!departureDocument.success) {
+							// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
+							console.error('Failed to create arrival document');
+
+							return c.json(
+								{
+									success: false,
+									message: 'Failed to create arrival document',
+								} satisfies ApiResponse,
+								500,
+							);
+						}
+
+						departureDocumentSuccess = true;
+
+						const departureGoodsTransactions = Array.from(
+							aggregatedTransactions.entries(),
+						).map(([goodId, { totalQuantity, totalCost }]) => {
+							const computedCostPerUnit =
+								totalQuantity === 0 ? 0 : totalCost / totalQuantity;
+							return {
+								documentId: departureDocument.data.id,
+								goodId,
+								amount: totalQuantity,
+								costPerUnit: computedCostPerUnit,
+								discount: 0,
+								cost: totalCost,
+								operationUnitType: 2,
+							};
+						});
+
+						const departureStorageOperationTransactions: AltegioStorageOperationRequest =
+							{
+								typeId: 4,
+								comment: `Storage operation for transfer ${transferNumber}`,
+								createDate: new Date(),
+								storageId: destinationConsumablesId,
+								goodsTransactions: departureGoodsTransactions,
+							};
+
+						const departureStorageOperation = await postAltegioStorageOperation(
+							destinationAltegioId,
+							{
+								authHeader,
+								acceptHeader,
+							},
+							departureStorageOperationTransactions,
+							apiResponseSchemaStorageOperation,
+						);
+
+						if (!departureStorageOperation.success) {
+							// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
+							console.error('Failed to create departure storage operation');
+
+							return c.json(
+								{
+									success: false,
+									message: 'Failed to create departure storage operation',
+								} satisfies ApiResponse,
+								500,
+							);
+						}
+
+						departureStorageOperationSuccess = true;
+					}
 				}
 
 				//Get all of the product stock id from the transfer details
@@ -3717,6 +3798,8 @@ const route = app
 							totalDetailsCreated: result.details.length,
 							arrivalDocumentSuccess,
 							storageOperationSuccess,
+							departureDocumentSuccess,
+							departureStorageOperationSuccess,
 						},
 					} satisfies ApiResponse,
 					201,
