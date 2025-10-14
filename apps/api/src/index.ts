@@ -3402,6 +3402,7 @@ const route = app
 					destinationWarehouseId !== DistributionCenterId &&
 					transferType === 'external'
 				) {
+					// Get the destination warehouse identifiers
 					const destinationWarehouseIdentifiers: Array<{
 						id: string;
 						altegioId: number;
@@ -3418,6 +3419,9 @@ const route = app
 						.where(eq(schemas.warehouse.id, destinationWarehouseId));
 
 					if (destinationWarehouseIdentifiers.length === 0) {
+						// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
+						console.error(`Destination warehouse ${destinationWarehouseId} not found`);
+
 						return c.json(
 							{
 								success: false,
@@ -3431,9 +3435,23 @@ const route = app
 					const authHeader = process.env.AUTH_HEADER;
 					const acceptHeader = process.env.ACCEPT_HEADER;
 
+					// Get the destination warehouse identifiers
 					const destinationAltegioId = destinationWarehouseIdentifiers[0].altegioId;
 					const destinationConsumablesId =
 						destinationWarehouseIdentifiers[0].consumablesId;
+
+					if (!(destinationAltegioId && destinationConsumablesId)) {
+						// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
+						console.error('Missing required warehouse identifiers');
+
+						return c.json(
+							{
+								success: false,
+								message: 'Missing required warehouse identifiers',
+							} satisfies ApiResponse,
+							400,
+						);
+					}
 
 					if (!authHeader) {
 						// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
@@ -3481,6 +3499,9 @@ const route = app
 					);
 
 					if (!arrivalDocument.success) {
+						// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
+						console.error('Failed to create arrival document');
+
 						return c.json(
 							{
 								success: false,
@@ -3520,6 +3541,9 @@ const route = app
 					);
 
 					if (!storageOperation.success) {
+						// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
+						console.error('Failed to create storage operation');
+
 						return c.json(
 							{
 								success: false,
