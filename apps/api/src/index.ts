@@ -20,15 +20,13 @@ import { and, desc, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
-
 import { z } from 'zod';
 import { productStockData, withdrawOrderData, withdrawOrderDetailsData } from './constants';
 import { db } from './db/index';
 import * as schemas from './db/schema';
 import { auth } from './lib/auth';
-
 import type { DataItemArticulosType } from './types';
-import { apiResponseSchema } from './types';
+import { apiResponseSchema, DistributionCenterId } from './types';
 
 /**
  * Custom type definitions for Hono context variables
@@ -3126,6 +3124,11 @@ const route = app
 						} satisfies ApiResponse,
 						400,
 					);
+				}
+
+				// Create a new arrival document in the Altegio ecosystem if the source is the distribution center
+				if (sourceWarehouseId === DistributionCenterId) {
+					// TODO: Create a new arrival document in the Altegio ecosystem
 				}
 
 				//Get all of the product stock id from the transfer details

@@ -63,3 +63,21 @@ export const articulosAllParamsSchema = z.object({
 export type DataItemArticulosType = z.infer<typeof dataItemSchema>;
 
 // --- Generate the Mock Data using the correct library ---
+
+export type SucursalBosqueStorage = {
+	id: 1308654;
+	consumables: 2624863;
+	sales: 2624864;
+};
+export type SucursalValleRealStorage = {
+	id: 729299;
+	consumables: 1460023;
+	sales: 1460024;
+};
+export type SucursalProvidenciaStorage = {
+	id: 706097;
+	consumables: 1412069;
+	sales: 1412070;
+};
+export type ProductArrivalDocumentTypeId = 3;
+export const DistributionCenterId = '4818f28e-daf8-42f4-8d55-088d260b118d';

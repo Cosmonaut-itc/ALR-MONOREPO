@@ -192,6 +192,8 @@ export const warehouse = pgTable('warehouse', {
 
 	// Additional metadata
 	altegioId: integer('altegio_id').default(0).notNull(),
+	consumablesId: integer('consumables_id').default(0).notNull(),
+	salesId: integer('sales_id').default(0).notNull(),
 	notes: text('notes'),
 	customFields: text('custom_fields'), // JSON string for additional custom data
 });
