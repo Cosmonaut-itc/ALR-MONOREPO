@@ -56,6 +56,152 @@ export const apiResponseSchema = z.object({
 	meta: z.array(z.unknown()),
 });
 
+const documentTypeSchema = z.object({
+	id: z.number(),
+	title: z.string(),
+});
+
+const documentStorageSchema = z.object({
+	id: z.number(),
+	title: z.string(),
+});
+
+const documentCompanySchema = z.object({
+	id: z.number(),
+	title: z.string(),
+	country_id: z.number(),
+	city_id: z.number(),
+	timezone: z.number(),
+	address: z.string(),
+	ccoordinate_lat: z.string(),
+	coordinate_lon: z.string(),
+	logo: z.string(),
+	zip: z.string(),
+	phones: z.array(z.unknown()),
+	site: z.string(),
+});
+
+const documentUserSchema = z.object({
+	id: z.string(),
+	name: z.string(),
+	phone: z.string(),
+});
+
+const documentDataSchema = z.object({
+	id: z.number(),
+	type_id: z.number(),
+	type: documentTypeSchema,
+	storage_id: z.number(),
+	user_id: z.number(),
+	company_id: z.number(),
+	number: z.number(),
+	comment: z.string(),
+	create_date: z.string(),
+	storage: documentStorageSchema,
+	company: documentCompanySchema,
+	user: documentUserSchema,
+});
+
+export const apiResponseSchemaDocument = z.object({
+	success: z.boolean(),
+	data: documentDataSchema,
+	meta: z.array(z.unknown()),
+});
+
+const storageOperationTypeSchema = z.object({
+	id: z.number(),
+	title: z.string(),
+});
+
+const storageOperationStorageSchema = z.object({
+	id: z.number(),
+	title: z.string(),
+});
+
+const storageOperationCompanySchema = z.object({
+	id: z.number(),
+	title: z.string(),
+	country_id: z.number(),
+	city_id: z.number(),
+	timezone: z.number(),
+	address: z.string(),
+	coordinate_lat: z.string(),
+	coordinate_lon: z.string(),
+	logo: z.string(),
+	zip: z.string(),
+	phones: z.array(z.unknown()),
+	site: z.string(),
+});
+
+const storageOperationUserSchema = z.object({
+	id: z.string(),
+	name: z.string(),
+	phone: z.string(),
+});
+
+const storageOperationDocumentSchema = z.object({
+	id: z.number(),
+	type_id: z.number(),
+	type: storageOperationTypeSchema,
+	storage_id: z.number(),
+	user_id: z.number(),
+	company_id: z.number(),
+	number: z.number(),
+	comment: z.string(),
+	create_date: z.string(),
+	storage: storageOperationStorageSchema,
+	company: storageOperationCompanySchema,
+	user: storageOperationUserSchema,
+});
+
+const storageOperationGoodSchema = z.object({
+	id: z.number(),
+	title: z.string(),
+});
+
+const storageOperationUnitSchema = z.object({
+	id: z.number(),
+	title: z.string(),
+});
+
+const storageOperationTransactionSchema = z.object({
+	id: z.number(),
+	document_id: z.number(),
+	type_id: z.number(),
+	type: storageOperationTypeSchema,
+	company_id: z.number(),
+	good_id: z.number(),
+	amount: z.number(),
+	cost_per_unit: z.number(),
+	discount: z.number(),
+	cost: z.number(),
+	unit_id: z.number(),
+	storage_id: z.number(),
+	supplier_id: z.number(),
+	client_id: z.number(),
+	master_id: z.number(),
+	create_date: z.string(),
+	comment: z.string(),
+	deleted: z.boolean(),
+	good: storageOperationGoodSchema,
+	storage: storageOperationStorageSchema,
+	supplier: z.array(z.unknown()),
+	client: z.array(z.unknown()),
+	master: z.array(z.unknown()),
+	unit: storageOperationUnitSchema,
+});
+
+const storageOperationDataSchema = z.object({
+	document: storageOperationDocumentSchema,
+	transactions: z.array(storageOperationTransactionSchema),
+});
+
+export const apiResponseSchemaStorageOperation = z.object({
+	success: z.boolean(),
+	data: storageOperationDataSchema,
+	meta: z.array(z.unknown()),
+});
+
 export const articulosAllParamsSchema = z.object({
 	company_id: z.string(),
 });
