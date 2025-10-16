@@ -26,12 +26,25 @@ import { productStockData, withdrawOrderData, withdrawOrderDetailsData } from '.
 import { db } from './db/index';
 import * as schemas from './db/schema';
 import { auth } from './lib/auth';
+import type { SessionUser } from './lib/replenishment-orders';
+import {
+	createReplenishmentOrder,
+	getReplenishmentOrder,
+	linkReplenishmentOrderToTransfer,
+	listReplenishmentOrders,
+	listReplenishmentOrdersByWarehouse,
+	updateReplenishmentOrder,
+} from './lib/replenishment-orders';
 import type { AltegioDocumentTypeId, AltegioOperationTypeId, DataItemArticulosType } from './types';
 import {
 	apiResponseSchema,
 	apiResponseSchemaDocument,
 	apiResponseSchemaStorageOperation,
 	DistributionCenterId,
+	replenishmentOrderCreateSchema,
+	replenishmentOrderLinkTransferSchema,
+	replenishmentOrderStatusQuerySchema,
+	replenishmentOrderUpdateSchema,
 } from './types';
 
 /**
@@ -4920,7 +4933,145 @@ const route = app
 				500,
 			);
 		}
-	});
+	})
+	.post(
+		'/api/replenishment-orders',
+		zValidator('json', replenishmentOrderCreateSchema),
+		async (c) => {
+			const payload = c.req.valid('json');
+			const user = c.get('user') as SessionUser | null;
+
+			const order = await createReplenishmentOrder({
+				input: payload,
+				user,
+			});
+
+			return c.json(
+				{
+					success: true,
+					message: 'Replenishment order created successfully',
+					data: order,
+				} satisfies ApiResponse,
+				201,
+			);
+		},
+	)
+	.put(
+		'/api/replenishment-orders/:id',
+		zValidator('param', z.object({ id: z.string().uuid('Invalid order ID') })),
+		zValidator('json', replenishmentOrderUpdateSchema),
+		async (c) => {
+			const { id } = c.req.valid('param');
+			const payload = c.req.valid('json');
+			const user = c.get('user') as SessionUser | null;
+
+			const order = await updateReplenishmentOrder({
+				id,
+				input: payload,
+				user,
+			});
+
+			return c.json(
+				{
+					success: true,
+					message: 'Replenishment order updated successfully',
+					data: order,
+				} satisfies ApiResponse,
+				200,
+			);
+		},
+	)
+	.get(
+		'/api/replenishment-orders',
+		zValidator('query', replenishmentOrderStatusQuerySchema),
+		async (c) => {
+			const { status } = c.req.valid('query');
+			const user = c.get('user') as SessionUser | null;
+
+			const orders = await listReplenishmentOrders({
+				status,
+				user,
+			});
+
+			return c.json(
+				{
+					success: true,
+					message: 'Replenishment orders retrieved successfully',
+					data: orders,
+				} satisfies ApiResponse,
+				200,
+			);
+		},
+	)
+	.get(
+		'/api/replenishment-orders/warehouse/:warehouseId',
+		zValidator('param', z.object({ warehouseId: z.string().uuid('Invalid warehouse ID') })),
+		async (c) => {
+			const { warehouseId } = c.req.valid('param');
+			const user = c.get('user') as SessionUser | null;
+
+			const orders = await listReplenishmentOrdersByWarehouse({
+				warehouseId,
+				user,
+			});
+
+			return c.json(
+				{
+					success: true,
+					message: 'Warehouse replenishment orders retrieved successfully',
+					data: orders,
+				} satisfies ApiResponse,
+				200,
+			);
+		},
+	)
+	.get(
+		'/api/replenishment-orders/:id',
+		zValidator('param', z.object({ id: z.string().uuid('Invalid order ID') })),
+		async (c) => {
+			const { id } = c.req.valid('param');
+			const user = c.get('user') as SessionUser | null;
+
+			const order = await getReplenishmentOrder({
+				id,
+				user,
+			});
+
+			return c.json(
+				{
+					success: true,
+					message: 'Replenishment order retrieved successfully',
+					data: order,
+				} satisfies ApiResponse,
+				200,
+			);
+		},
+	)
+	.patch(
+		'/api/replenishment-orders/:id/link-transfer',
+		zValidator('param', z.object({ id: z.string().uuid('Invalid order ID') })),
+		zValidator('json', replenishmentOrderLinkTransferSchema),
+		async (c) => {
+			const { id } = c.req.valid('param');
+			const payload = c.req.valid('json');
+			const user = c.get('user') as SessionUser | null;
+
+			const order = await linkReplenishmentOrderToTransfer({
+				id,
+				input: payload,
+				user,
+			});
+
+			return c.json(
+				{
+					success: true,
+					message: 'Replenishment order linked to warehouse transfer successfully',
+					data: order,
+				} satisfies ApiResponse,
+				200,
+			);
+		},
+	);
 
 /**
  * Better Auth handler for authentication endpoints
@@ -4939,6 +5090,7 @@ app.on(['POST', 'GET'], '/api/auth/*', async (c) => {
  * This type enables full type safety and autocompletion on the client side
  * when using Hono's RPC client with hc<AppType>()
  */
+
 export type AppType = typeof route;
 
 /**

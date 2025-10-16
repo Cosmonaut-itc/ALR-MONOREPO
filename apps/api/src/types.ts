@@ -228,3 +228,75 @@ export type SucursalProvidenciaStorage = {
 export type AltegioDocumentTypeId = 3 | 7;
 export type AltegioOperationTypeId = 3 | 4;
 export const DistributionCenterId = '4818f28e-daf8-42f4-8d55-088d260b118d';
+
+// Replenishment orders
+export const replenishmentOrderItemSchema = z.object({
+	barcode: z.number().int().positive('Barcode must be a positive integer'),
+	quantity: z.number().int().positive('Quantity must be greater than zero'),
+});
+
+export const replenishmentOrderCreateSchema = z.object({
+	sourceWarehouseId: z
+		.string()
+		.uuid('Invalid source warehouse ID')
+		.describe('Warehouse that needs replenishment'),
+	cedisWarehouseId: z
+		.string()
+		.uuid('Invalid CEDIS warehouse ID')
+		.describe('Distribution center fulfilling the order'),
+	items: z
+		.array(replenishmentOrderItemSchema)
+		.min(1, 'At least one item is required for a replenishment order'),
+	notes: z
+		.string()
+		.trim()
+		.max(2000, 'Notes must be 2000 characters or fewer')
+		.optional(),
+});
+
+export const replenishmentOrderUpdateSchema = z
+	.object({
+		isSent: z.boolean().optional(),
+		isReceived: z.boolean().optional(),
+		notes: z
+			.string()
+			.trim()
+			.max(2000, 'Notes must be 2000 characters or fewer')
+			.optional(),
+		items: z
+			.array(replenishmentOrderItemSchema)
+			.min(1, 'At least one item is required when submitting items')
+			.optional(),
+	})
+	.refine(
+		(value) =>
+			value.isSent !== undefined ||
+			value.isReceived !== undefined ||
+			value.notes !== undefined ||
+			value.items !== undefined,
+		{
+			message: 'Provide at least one field to update',
+			path: ['isSent'],
+		},
+	);
+
+export const replenishmentOrderStatusQuerySchema = z.object({
+	status: z.enum(['open', 'sent', 'received']).optional(),
+});
+
+export const replenishmentOrderLinkTransferSchema = z.object({
+	warehouseTransferId: z
+		.string()
+		.uuid('Invalid warehouse transfer ID')
+		.describe('Warehouse transfer fulfilling the order'),
+});
+
+export type ReplenishmentOrderItem = z.infer<typeof replenishmentOrderItemSchema>;
+export type ReplenishmentOrderCreate = z.infer<typeof replenishmentOrderCreateSchema>;
+export type ReplenishmentOrderUpdate = z.infer<typeof replenishmentOrderUpdateSchema>;
+export type ReplenishmentOrderStatusFilter = z.infer<
+	typeof replenishmentOrderStatusQuerySchema
+>['status'];
+export type ReplenishmentOrderLinkTransfer = z.infer<
+	typeof replenishmentOrderLinkTransferSchema
+>;

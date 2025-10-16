@@ -3,10 +3,12 @@ import {
 	type AnyPgColumn,
 	boolean,
 	date,
+	index,
 	integer,
 	pgTable,
 	text,
 	timestamp,
+	uniqueIndex,
 	uuid,
 } from 'drizzle-orm/pg-core';
 
@@ -174,6 +176,7 @@ export const warehouse = pgTable('warehouse', {
 	allowsInbound: boolean('allows_inbound').default(true).notNull(),
 	allowsOutbound: boolean('allows_outbound').default(true).notNull(),
 	requiresApproval: boolean('requires_approval').default(false).notNull(),
+	isCedis: boolean('is_cedis').default(false).notNull(),
 
 	// Operational hours
 	operatingHoursStart: text('operating_hours_start').default('08:00'),
@@ -318,6 +321,75 @@ export const warehouseTransferDetails = pgTable('warehouse_transfer_details', {
 		.$defaultFn(() => /* @__PURE__ */ new Date())
 		.notNull(),
 });
+
+export const replenishmentOrder = pgTable('replenishment_order', {
+	id: uuid('id').defaultRandom().primaryKey().notNull(),
+	orderNumber: text('order_number').notNull().unique(),
+	sourceWarehouseId: uuid('source_warehouse_id')
+		.notNull()
+		.references(() => warehouse.id, {
+			onUpdate: 'cascade',
+			onDelete: 'restrict',
+		}),
+	cedisWarehouseId: uuid('cedis_warehouse_id')
+		.notNull()
+		.references(() => warehouse.id, {
+			onUpdate: 'cascade',
+			onDelete: 'restrict',
+		}),
+	isSent: boolean('is_sent').default(false).notNull(),
+	sentAt: timestamp('sent_at'),
+	sentByUserId: text('sent_by_user_id').references(() => user.id, {
+		onUpdate: 'cascade',
+		onDelete: 'set null',
+	}),
+	isReceived: boolean('is_received').default(false).notNull(),
+	receivedAt: timestamp('received_at'),
+	receivedByUserId: text('received_by_user_id').references(() => user.id, {
+		onUpdate: 'cascade',
+		onDelete: 'set null',
+	}),
+	warehouseTransferId: uuid('warehouse_transfer_id').references(
+		() => warehouseTransfer.id,
+		{
+			onUpdate: 'cascade',
+			onDelete: 'set null',
+		},
+	),
+	notes: text('notes'),
+	createdAt: timestamp('created_at')
+		.$defaultFn(() => /* @__PURE__ */ new Date())
+		.notNull(),
+	updatedAt: timestamp('updated_at')
+		.$defaultFn(() => /* @__PURE__ */ new Date())
+		.notNull(),
+});
+
+export const replenishmentOrderDetails = pgTable(
+	'replenishment_order_details',
+	{
+		id: uuid('id').defaultRandom().primaryKey().notNull(),
+		replenishmentOrderId: uuid('replenishment_order_id')
+			.notNull()
+			.references(() => replenishmentOrder.id, {
+				onUpdate: 'cascade',
+				onDelete: 'cascade',
+			}),
+		barcode: integer('barcode').notNull(),
+		quantity: integer('quantity').notNull(),
+		notes: text('notes'),
+	},
+	(table) => ({
+		orderBarcodeUnique: uniqueIndex('replenishment_order_details_order_barcode_key').on(
+			table.replenishmentOrderId,
+			table.barcode,
+		),
+		orderIdIdx: index('replenishment_order_details_order_idx').on(
+			table.replenishmentOrderId,
+		),
+		barcodeIdx: index('replenishment_order_details_barcode_idx').on(table.barcode),
+	}),
+);
 
 /**
  * Kits table for tracking equipment kits assigned to employees
@@ -498,6 +570,14 @@ export const warehouseRelations = relations(warehouse, ({ one, many }) => ({
 	incomingTransfers: many(warehouseTransfer, {
 		relationName: 'destinationWarehouse',
 	}),
+	// Replenishment orders originating from this warehouse
+	replenishmentOrdersAsSource: many(replenishmentOrder, {
+		relationName: 'replenishmentSourceWarehouse',
+	}),
+	// Replenishment orders where this warehouse is the CEDIS destination
+	replenishmentOrdersAsCedis: many(replenishmentOrder, {
+		relationName: 'replenishmentCedisWarehouse',
+	}),
 	// Product usage history at this warehouse
 	usageHistory: many(productStockUsageHistory, {
 		relationName: 'usageWarehouse',
@@ -545,6 +625,10 @@ export const warehouseTransferRelations = relations(warehouseTransfer, ({ one, m
 	}),
 	// Transfer details (one-to-many)
 	details: many(warehouseTransferDetails),
+	// Replenishment orders linked to this transfer
+	replenishmentOrders: many(replenishmentOrder, {
+		relationName: 'replenishmentOrderTransfer',
+	}),
 	// Usage history related to this transfer
 	usageHistory: many(productStockUsageHistory),
 }));
@@ -567,6 +651,45 @@ export const warehouseTransferDetailsRelations = relations(warehouseTransferDeta
 		relationName: 'itemReceiver',
 	}),
 }));
+
+export const replenishmentOrderRelations = relations(replenishmentOrder, ({ one, many }) => ({
+	sourceWarehouse: one(warehouse, {
+		fields: [replenishmentOrder.sourceWarehouseId],
+		references: [warehouse.id],
+		relationName: 'replenishmentSourceWarehouse',
+	}),
+	cedisWarehouse: one(warehouse, {
+		fields: [replenishmentOrder.cedisWarehouseId],
+		references: [warehouse.id],
+		relationName: 'replenishmentCedisWarehouse',
+	}),
+	sentByUser: one(user, {
+		fields: [replenishmentOrder.sentByUserId],
+		references: [user.id],
+		relationName: 'replenishmentSentByUser',
+	}),
+	receivedByUser: one(user, {
+		fields: [replenishmentOrder.receivedByUserId],
+		references: [user.id],
+		relationName: 'replenishmentReceivedByUser',
+	}),
+	warehouseTransfer: one(warehouseTransfer, {
+		fields: [replenishmentOrder.warehouseTransferId],
+		references: [warehouseTransfer.id],
+		relationName: 'replenishmentOrderTransfer',
+	}),
+	details: many(replenishmentOrderDetails),
+}));
+
+export const replenishmentOrderDetailsRelations = relations(
+	replenishmentOrderDetails,
+	({ one }) => ({
+		order: one(replenishmentOrder, {
+			fields: [replenishmentOrderDetails.replenishmentOrderId],
+			references: [replenishmentOrder.id],
+		}),
+	}),
+);
 
 // ProductStock relations including both withdraw orders and warehouse transfers
 export const productStockRelations = relations(productStock, ({ one, many }) => ({
@@ -639,6 +762,14 @@ export const userRelations = relations(user, ({ one, many }) => ({
 	employee: one(employee, {
 		fields: [user.id],
 		references: [employee.userId],
+	}),
+	// Replenishment orders sent by this user
+	replenishmentOrdersSent: many(replenishmentOrder, {
+		relationName: 'replenishmentSentByUser',
+	}),
+	// Replenishment orders received by this user
+	replenishmentOrdersReceived: many(replenishmentOrder, {
+		relationName: 'replenishmentReceivedByUser',
 	}),
 	// Warehouses created by this user
 	createdWarehouses: many(warehouse, {
