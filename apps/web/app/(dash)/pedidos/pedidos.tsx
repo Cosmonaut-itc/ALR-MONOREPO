@@ -51,6 +51,7 @@ import type {
 	ProductCatalogResponse,
 	ReplenishmentOrdersResponse,
 } from "@/types";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 type WarehousesResponse = Awaited<ReturnType<typeof getAllWarehouses>>;
 
@@ -225,7 +226,7 @@ export function PedidosPage({
 		}
 		const data = warehousesResponse.data ?? [];
 		return data
-			.map((item) => {
+			.map((item: unknown) => {
 				if (!item || typeof item !== "object") return null;
 				const record = item as Record<string, unknown>;
 				const id = String(record.id ?? "");
@@ -334,7 +335,7 @@ export function PedidosPage({
 			? ordersResponse.data
 			: [];
 		return rows
-			.map((item) => {
+			.map((item: unknown) => {
 				if (!item || typeof item !== "object") {
 					return null;
 				}
@@ -367,7 +368,9 @@ export function PedidosPage({
 						typeof record.notes === "string" ? record.notes : null,
 				} satisfies OrderSummary;
 			})
-			.filter((item): item is OrderSummary => Boolean(item?.id));
+			.filter(
+				(item: OrderSummary | null): item is OrderSummary => Boolean(item?.id),
+			);
 	}, [ordersResponse]);
 
 	const filteredOrders = useMemo(() => {
@@ -614,6 +617,7 @@ export function PedidosPage({
 											/>
 										</div>
 										<div className="max-h-[50vh] overflow-y-auto rounded-md border border-[#E5E7EB] dark:border-[#2D3033]">
+											<ScrollArea className="max-h-[50vh]">
 											<Table>
 												<TableHeader>
 													<TableRow className="border-[#E5E7EB] border-b dark:border-[#2D3033]">
@@ -634,6 +638,7 @@ export function PedidosPage({
 														</TableHead>
 													</TableRow>
 												</TableHeader>
+												
 												<TableBody>
 													{filteredSelectedItems.length === 0 ? (
 														<TableRow>
@@ -691,7 +696,9 @@ export function PedidosPage({
 														))
 													)}
 												</TableBody>
+												
 											</Table>
+											</ScrollArea>
 										</div>
 									</div>
 									<div className="space-y-2">
@@ -773,6 +780,7 @@ export function PedidosPage({
 									</TableHead>
 								</TableRow>
 							</TableHeader>
+							
 							<TableBody>
 								{filteredOrders.length === 0 ? (
 									<TableRow>
@@ -831,8 +839,8 @@ export function PedidosPage({
 											</TableRow>
 										);
 									})
-								)}
-							</TableBody>
+									)}
+								</TableBody>
 						</Table>
 					</div>
 				</CardContent>

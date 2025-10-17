@@ -150,8 +150,8 @@ importers:
         specifier: latest
         version: 0.4.6(react-dom@19.1.1(react@19.1.1))(react@19.1.1)
       ns-inventory-api-types:
-        specifier: ^1.0.54
-        version: 1.0.54(hono@4.9.8)
+        specifier: ^1.0.55
+        version: 1.0.55(hono@4.9.8)
       qrcode:
         specifier: ^1.5.4
         version: 1.5.4
@@ -202,6 +202,9 @@ importers:
         version: 5.0.8(@types/react@19.1.14)(immer@10.1.3)(react@19.1.1)(use-sync-external-store@1.5.0(react@19.1.1))
     devDependencies:
       '@biomejs/biome':
+        specifier: 2.1.2
+        version: 2.1.2
+      '@biomejs/cli-darwin-arm64':
         specifier: 2.1.2
         version: 2.1.2
       '@tailwindcss/postcss':
@@ -2224,8 +2227,8 @@ packages:
     resolution: {integrity: sha512-bdok/XvKII3nUpklnV6P2hxtMNrCboOjAcyBuQnWEhO665FwrSNRxU+AqpsyvO6LgGYPspN+lu5CLtw4jPRKNA==}
     engines: {node: '>=0.10.0'}
 
-  ns-inventory-api-types@1.0.54:
-    resolution: {integrity: sha512-fCpzt3krLWMhGGsPG0G9/dJs626Cun9aVlN1/J5mfJ+gJw0WGameLLOm6i/MwqdT1ZWWfWdsdavc3XJV2vG1jg==}
+  ns-inventory-api-types@1.0.55:
+    resolution: {integrity: sha512-wjpwqd42aeR6NuFtVbo+gkewzrQFyLlwOPRq7hUGp1sF3SBtM+PWIorAdXJioa5H7M9ixbdtnEZpDiGhpVbVaw==}
     peerDependencies:
       hono: '>=4.0.0'
 
@@ -2762,8 +2765,7 @@ snapshots:
       '@biomejs/cli-win32-arm64': 2.1.2
       '@biomejs/cli-win32-x64': 2.1.2
 
-  '@biomejs/cli-darwin-arm64@2.1.2':
-    optional: true
+  '@biomejs/cli-darwin-arm64@2.1.2': {}
 
   '@biomejs/cli-darwin-x64@2.1.2':
     optional: true
@@ -4547,7 +4549,7 @@ snapshots:
 
   normalize-range@0.1.2: {}
 
-  ns-inventory-api-types@1.0.54(hono@4.9.8):
+  ns-inventory-api-types@1.0.55(hono@4.9.8):
     dependencies:
       hono: 4.9.8
 

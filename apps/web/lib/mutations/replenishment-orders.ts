@@ -6,7 +6,7 @@ import { createQueryKey } from "@/lib/helpers";
 import { queryKeys } from "@/lib/query-keys";
 
 type CreateReplenishmentOrderPostOptions = Parameters<
-	(typeof client.api)["replenishment-orders"]["$post"]
+	(typeof client.api.auth)["replenishment-orders"]["$post"]
 >[0];
 
 export type CreateReplenishmentOrderPayload =
@@ -15,14 +15,14 @@ export type CreateReplenishmentOrderPayload =
 		: never;
 
 type UpdateReplenishmentOrderPutOptions = Parameters<
-	(typeof client.api)["replenishment-orders"][":id"]["$put"]
+	(typeof client.api.auth)["replenishment-orders"][":id"]["$put"]
 >[0];
 
 export type UpdateReplenishmentOrderPayload =
 	UpdateReplenishmentOrderPutOptions;
 
 type LinkTransferPatchOptions = Parameters<
-	(typeof client.api)["replenishment-orders"][":id"]["link-transfer"]["$patch"]
+	(typeof client.api.auth)["replenishment-orders"][":id"]["link-transfer"]["$patch"]
 >[0];
 
 export type LinkTransferToReplenishmentOrderPayload =
@@ -42,7 +42,7 @@ export const useCreateReplenishmentOrder = () =>
 	useMutation({
 		mutationKey: ["create-replenishment-order"],
 		mutationFn: async (data: CreateReplenishmentOrderPayload) => {
-			const response = await client.api["replenishment-orders"].$post({
+			const response = await client.api.auth["replenishment-orders"].$post({
 				json: data,
 			});
 			const result = await response.json();
@@ -82,7 +82,7 @@ export const useUpdateReplenishmentOrder = () =>
 	useMutation({
 		mutationKey: ["update-replenishment-order"],
 		mutationFn: async (options: UpdateReplenishmentOrderPayload) => {
-			const response = await client.api["replenishment-orders"][":id"].$put(
+			const response = await client.api.auth["replenishment-orders"][":id"].$put(
 				options,
 			);
 			const result = await response.json();
@@ -120,7 +120,7 @@ export const useLinkTransferToReplenishmentOrder = () =>
 		mutationKey: ["link-transfer-to-replenishment-order"],
 		mutationFn: async (options: LinkTransferToReplenishmentOrderPayload) => {
 			const response =
-				await client.api["replenishment-orders"][":id"]["link-transfer"].$patch(
+				await client.api.auth["replenishment-orders"][":id"]["link-transfer"].$patch(
 					options,
 				);
 			const result = await response.json();
