@@ -27,6 +27,11 @@ interface ProductComboboxProps {
 	value: string;
 	onValueChange: (value: string) => void;
 	placeholder?: string;
+	onSelectProduct?: (product: {
+		barcode: number;
+		name: string;
+		category: string;
+	}) => void;
 }
 
 export function ProductCombobox({
@@ -34,13 +39,18 @@ export function ProductCombobox({
 	value,
 	onValueChange,
 	placeholder = 'Buscar producto...',
+	onSelectProduct,
 }: ProductComboboxProps) {
 	const [open, setOpen] = useState(false);
 
-	// Create search options from products
 	const searchOptions = useMemo(() => {
-		const options: Array<{ value: string; label: string; barcode: number; category: string }> =
-			[];
+		const options: Array<{
+			value: string;
+			label: string;
+			barcode: number;
+			category: string;
+			productName: string;
+		}> = [];
 
 		for (const product of products) {
 			// Add option for product name
@@ -49,6 +59,7 @@ export function ProductCombobox({
 				label: product.name,
 				barcode: product.barcode,
 				category: product.category,
+				productName: product.name,
 			});
 
 			// Add option for barcode
@@ -57,6 +68,7 @@ export function ProductCombobox({
 				label: `${product.barcode} - ${product.name}`,
 				barcode: product.barcode,
 				category: product.category,
+				productName: product.name,
 			});
 		}
 
@@ -99,11 +111,22 @@ export function ProductCombobox({
 								<CommandItem
 									className="cursor-pointer text-[#11181C] hover:bg-[#F9FAFB] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
 									key={`${option.barcode}-${option.value}`}
-									onSelect={(currentValue) => {
+									onSelect={() => {
+										if (onSelectProduct) {
+											onSelectProduct({
+												barcode: option.barcode,
+												name: option.productName,
+												category: option.category,
+											});
+											onValueChange('');
+											setOpen(false);
+											return;
+										}
+										const normalizedValue = value.toLowerCase();
 										const newValue =
-											currentValue === value.toLowerCase()
+											option.value === normalizedValue || option.value === value
 												? ''
-												: currentValue;
+												: option.value;
 										onValueChange(newValue);
 										setOpen(false);
 									}}

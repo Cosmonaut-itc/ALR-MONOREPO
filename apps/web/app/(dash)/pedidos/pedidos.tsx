@@ -4,9 +4,8 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import Link from "next/link";
-import { type FormEvent, useCallback, useMemo, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { v4 as uuidv4 } from "uuid";
 import { ProductCombobox } from "@/components/inventory/ProductCombobox";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -72,10 +71,11 @@ type OrderSummary = {
 	notes: string | null;
 };
 
-type OrderFormItem = {
-	id: string;
-	productValue: string;
-	quantity: string;
+type SelectedItem = {
+	barcode: number;
+	name: string;
+	category: string;
+	quantity: number;
 };
 
 type ProductOption = {
@@ -89,6 +89,7 @@ type WarehouseOption = {
 	id: string;
 	name: string;
 	code?: string;
+	isCedis: boolean;
 };
 
 const STATUS_BADGE_VARIANTS: Record<
@@ -165,9 +166,9 @@ export function PedidosPage({
 	const [isDialogOpen, setIsDialogOpen] = useState(false);
 	const [cedisWarehouseId, setCedisWarehouseId] = useState("");
 	const [notes, setNotes] = useState("");
-	const [formItems, setFormItems] = useState<OrderFormItem[]>([
-		{ id: uuidv4(), productValue: "", quantity: "1" },
-	]);
+	const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([]);
+	const [productSearch, setProductSearch] = useState("");
+	const [itemsSearch, setItemsSearch] = useState("");
 
 	const scopeKey = isEncargado ? "all" : warehouseId || "unknown";
 	const ordersQueryKey = isEncargado
@@ -226,78 +227,104 @@ export function PedidosPage({
 		return data
 			.map((item) => {
 				if (!item || typeof item !== "object") return null;
-				const id = String((item as Record<string, unknown>).id ?? "");
-				const name = String(
-					(item as Record<string, unknown>).name ?? `Almacén ${id}`,
-				);
-				const rawCode = (item as Record<string, unknown>).code;
+				const record = item as Record<string, unknown>;
+				const id = String(record.id ?? "");
+				const name = String(record.name ?? `Almacén ${id}`);
+				const rawCode = record.code;
 				const code =
 					typeof rawCode === "string" && rawCode.length > 0 ? rawCode : undefined;
+				const rawIsCedis = record["isCedis"];
+				const rawLegacyIsCedis = record["is_cedis"];
+				const isCedis =
+					typeof rawIsCedis === "boolean"
+						? rawIsCedis
+						: typeof rawLegacyIsCedis === "boolean"
+							? rawLegacyIsCedis
+							: false;
 				return {
 					id,
 					name,
 					...(code ? { code } : {}),
+					isCedis,
 				} as WarehouseOption;
 			})
 			.filter((item): item is WarehouseOption => item !== null);
 	}, [warehousesResponse]);
 
-	const productOptions = useMemo<ProductOption[]>(() => {
-		if (!productCatalog || typeof productCatalog !== "object") {
-			return [];
-		}
-		if (!("data" in productCatalog) || !productCatalog.data) {
-			return [];
-		}
-		return (productCatalog.data as Array<Record<string, unknown>>).flatMap(
-			(item) => {
-				if (!item || typeof item !== "object") {
-					return [];
-				}
-				const barcodeCandidate = item.barcode ?? item.good_id;
-				const barcode =
-					typeof barcodeCandidate === "number"
-						? barcodeCandidate
-						: typeof barcodeCandidate === "string"
-							? Number.parseInt(barcodeCandidate, 10)
-							: undefined;
-				if (!barcode || Number.isNaN(barcode)) {
-					return [];
-				}
-				const name =
-					typeof item.title === "string" && item.title.trim().length > 0
-						? item.title
-						: typeof item.name === "string" && item.name.trim().length > 0
-							? item.name
-							: `Producto ${barcode}`;
-				const category =
-					typeof item.category === "string" && item.category.trim().length > 0
-						? item.category
-						: "Sin categoría";
-				const description =
-					typeof item.comment === "string" && item.comment.trim().length > 0
-						? item.comment
-						: "";
-				return [
-					{
-						barcode,
-						name,
-						category,
-						description,
-					} satisfies ProductOption,
-				];
-			},
-		);
-	}, [productCatalog]);
+	const cedisWarehouses = useMemo(
+		() => warehouses.filter((warehouse) => warehouse.isCedis),
+		[warehouses],
+	);
 
-	const productValueToBarcode = useMemo(() => {
-		const map = new Map<string, number>();
-		for (const product of productOptions) {
-			map.set(product.barcode.toString(), product.barcode);
-			map.set(product.name.toLowerCase(), product.barcode);
+	useEffect(() => {
+		if (cedisWarehouses.length >= 1) {
+			setCedisWarehouseId((prev) => {
+				if (
+					prev &&
+					cedisWarehouses.some((warehouse) => warehouse.id === prev)
+				) {
+					return prev;
+				}
+				return cedisWarehouses[0]?.id ?? prev ?? "";
+			});
 		}
-		return map;
-	}, [productOptions]);
+	}, [cedisWarehouses]);
+
+	const productOptions = useMemo<ProductOption[]>(() => {
+		if (
+			!productCatalog ||
+			typeof productCatalog !== "object" ||
+			!("success" in productCatalog) ||
+			!productCatalog.success
+		) {
+			return [];
+		}
+		const rawData = Array.isArray(productCatalog.data)
+			? (productCatalog.data as Array<Record<string, unknown>>)
+			: [];
+		const options: ProductOption[] = [];
+		for (const rawItem of rawData) {
+			if (!rawItem || typeof rawItem !== "object") {
+				continue;
+			}
+			const item = rawItem as Record<string, unknown>;
+			const barcodeRaw = item.barcode;
+			const fallbackBarcode = item.good_id;
+			let barcodeNumber: number | null = null;
+			if (typeof barcodeRaw === "string" && barcodeRaw.trim().length > 0) {
+				const parsed = Number.parseInt(barcodeRaw, 10);
+				if (!Number.isNaN(parsed)) {
+					barcodeNumber = parsed;
+				}
+			} else if (typeof fallbackBarcode === "number") {
+				barcodeNumber = fallbackBarcode;
+			}
+			if (barcodeNumber == null || Number.isNaN(barcodeNumber)) {
+				continue;
+			}
+			const nameCandidate = item.title ?? item.name;
+			const categoryCandidate = item.category;
+			const descriptionCandidate = item.comment;
+			options.push({
+				barcode: barcodeNumber,
+				name:
+					typeof nameCandidate === "string" && nameCandidate.trim().length > 0
+						? nameCandidate
+						: `Producto ${barcodeNumber}`,
+				category:
+					typeof categoryCandidate === "string" &&
+					categoryCandidate.trim().length > 0
+						? categoryCandidate
+						: "Sin categoría",
+				description:
+					typeof descriptionCandidate === "string" &&
+					descriptionCandidate.trim().length > 0
+						? descriptionCandidate
+						: "Sin descripción",
+			});
+		}
+		return options;
+	}, [productCatalog]);
 
 	const orders = useMemo<OrderSummary[]>(() => {
 		if (!isSuccessResponse(ordersResponse)) {
@@ -376,41 +403,81 @@ export function PedidosPage({
 		);
 	}, [cedisWarehouseId, warehouseNameMap]);
 
-	const handleAddItemRow = () => {
-		setFormItems((prev) => [
-			...prev,
-			{ id: uuidv4(), productValue: "", quantity: "1" },
-		]);
-	};
+	const cedisOptions =
+		cedisWarehouses.length > 0 ? cedisWarehouses : warehouses;
+	const isCedisSelectDisabled = cedisWarehouses.length >= 1;
 
-	const handleRemoveItemRow = (id: string) => {
-		setFormItems((prev) =>
-			prev.length > 1 ? prev.filter((item) => item.id !== id) : prev,
-		);
-	};
+	const handleSelectProduct = useCallback(
+		(product: { barcode: number; name: string; category: string }) => {
+			setSelectedItems((prev) => {
+				const existingIndex = prev.findIndex(
+					(item) => item.barcode === product.barcode,
+				);
+				if (existingIndex !== -1) {
+					return prev.map((item, index) =>
+						index === existingIndex
+							? { ...item, quantity: item.quantity + 1 }
+							: item,
+					);
+				}
+				return [
+					...prev,
+					{
+						barcode: product.barcode,
+						name: product.name,
+						category: product.category,
+						quantity: 1,
+					},
+				];
+			});
+		},
+		[],
+	);
 
-	const handleUpdateItem = (
-		id: string,
-		field: "productValue" | "quantity",
-		value: string,
-	) => {
-		setFormItems((prev) =>
+	const handleQuantityChange = useCallback((barcode: number, value: string) => {
+		const parsed = Number.parseInt(value, 10);
+		setSelectedItems((prev) =>
 			prev.map((item) =>
-				item.id === id
+				item.barcode === barcode
 					? {
 							...item,
-							[field]: value,
+							quantity: Number.isNaN(parsed) ? 1 : Math.max(1, parsed),
 					  }
 					: item,
 			),
 		);
-	};
+	}, []);
+
+	const handleRemoveItem = useCallback((barcode: number) => {
+		setSelectedItems((prev) =>
+			prev.filter((item) => item.barcode !== barcode),
+		);
+	}, []);
+
+	const filteredSelectedItems = useMemo(() => {
+		const query = itemsSearch.trim().toLowerCase();
+		if (!query) {
+			return selectedItems;
+		}
+		return selectedItems.filter((item) => {
+			const nameMatches = item.name.toLowerCase().includes(query);
+			const categoryMatches = item.category.toLowerCase().includes(query);
+			const barcodeMatches = item.barcode.toString().includes(query);
+			return nameMatches || categoryMatches || barcodeMatches;
+		});
+	}, [itemsSearch, selectedItems]);
 
 	const resetForm = useCallback(() => {
-		setFormItems([{ id: uuidv4(), productValue: "", quantity: "1" }]);
+		setSelectedItems([]);
 		setNotes("");
-		setCedisWarehouseId("");
-	}, []);
+		setItemsSearch("");
+		setProductSearch("");
+		if (cedisWarehouses.length < 1) {
+			setCedisWarehouseId("");
+		} else {
+			setCedisWarehouseId(cedisWarehouses[0]?.id ?? "");
+		}
+	}, [cedisWarehouses]);
 
 	const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
@@ -426,25 +493,16 @@ export function PedidosPage({
 			return;
 		}
 
-		const preparedItems = formItems
-			.map((item) => {
-				const rawQuantity = Number.parseInt(item.quantity, 10);
-				const quantity = Number.isNaN(rawQuantity) ? 0 : rawQuantity;
-				const barcode =
-					productValueToBarcode.get(item.productValue) ??
-					(Number.isFinite(Number.parseInt(item.productValue, 10))
-						? Number.parseInt(item.productValue, 10)
-						: undefined);
-				if (!barcode || quantity <= 0) {
-					return null;
-				}
-				return {
-					barcode,
-					quantity,
-				};
-			})
-			.filter((item): item is { barcode: number; quantity: number } =>
-				Boolean(item),
+		const preparedItems = selectedItems
+			.map((item) => ({
+				barcode: item.barcode,
+				quantity: item.quantity,
+			}))
+			.filter(
+				(item) =>
+					Number.isFinite(item.quantity) &&
+					typeof item.quantity === "number" &&
+					item.quantity > 0,
 			);
 
 		if (preparedItems.length === 0) {
@@ -483,14 +541,14 @@ export function PedidosPage({
 						Visualiza y administra las solicitudes de reabastecimiento.
 					</p>
 				</div>
-				{!isEncargado && (
+				{isEncargado && (
 					<Dialog onOpenChange={setIsDialogOpen} open={isDialogOpen}>
 						<DialogTrigger asChild>
 							<Button className="bg-[#0a7ea4] text-white hover:bg-[#086885] dark:bg-[#0a7ea4] dark:hover:bg-[#0a7ea4]/80">
 								Nuevo pedido
 							</Button>
 						</DialogTrigger>
-						<DialogContent className="sm:max-w-2xl">
+						<DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-3xl">
 							<form className="space-y-6" onSubmit={handleSubmit}>
 								<DialogHeader>
 									<DialogTitle>Crear pedido de reabastecimiento</DialogTitle>
@@ -504,6 +562,7 @@ export function PedidosPage({
 											CEDIS origen
 										</Label>
 										<Select
+											disabled={isCedisSelectDisabled}
 											onValueChange={setCedisWarehouseId}
 											value={cedisWarehouseId}
 										>
@@ -513,7 +572,7 @@ export function PedidosPage({
 												/>
 											</SelectTrigger>
 											<SelectContent>
-												{warehouses.map((warehouse) => (
+												{cedisOptions.map((warehouse) => (
 													<SelectItem key={warehouse.id} value={warehouse.id}>
 														{warehouse.name}
 														{warehouse.code ? ` • ${warehouse.code}` : ""}
@@ -532,65 +591,108 @@ export function PedidosPage({
 										<Label className="text-[#11181C] dark:text-[#ECEDEE]">
 											Artículos
 										</Label>
-										<div className="space-y-3">
-											{formItems.map((item, index) => (
-												<Card
-													className="card-transition border-[#E5E7EB] bg-[#F9FAFB] dark:border-[#2D3033] dark:bg-[#1E1F20]"
-													key={item.id}
-												>
-													<CardContent className="grid gap-4 p-4 md:grid-cols-[minmax(0,1fr)_120px_auto]">
-														<ProductCombobox
-															onValueChange={(value) =>
-																handleUpdateItem(item.id, "productValue", value)
-															}
-															placeholder="Buscar por nombre o código..."
-															products={productOptions}
-															value={item.productValue}
-														/>
-														<div className="space-y-2">
-															<Label
-																className="text-[#687076] text-sm dark:text-[#9BA1A6]"
-																htmlFor={`quantity-${item.id}`}
-															>
-																Cantidad
-															</Label>
-															<Input
-																className="input-transition border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]"
-																id={`quantity-${item.id}`}
-																min={1}
-																onChange={(event) =>
-																	handleUpdateItem(
-																		item.id,
-																		"quantity",
-																		event.target.value,
-																	)
-																}
-																type="number"
-																value={item.quantity}
-															/>
-														</div>
-														<div className="flex items-end justify-end">
-															<Button
-																className="text-[#687076] hover:text-[#11181C]"
-																onClick={() => handleRemoveItemRow(item.id)}
-																type="button"
-																variant="ghost"
-															>
-																{index === 0 ? "Limpiar" : "Eliminar"}
-															</Button>
-														</div>
-													</CardContent>
-												</Card>
-											))}
+										<ProductCombobox
+											onSelectProduct={handleSelectProduct}
+											onValueChange={setProductSearch}
+											placeholder="Buscar por nombre o código..."
+											products={productOptions}
+											value={productSearch}
+										/>
+										<div className="space-y-2">
+											<Label
+												className="text-[#11181C] dark:text-[#ECEDEE]"
+												htmlFor="selected-items-search"
+											>
+												Buscar en la lista
+											</Label>
+											<Input
+												className="input-transition border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]"
+												id="selected-items-search"
+												onChange={(event) => setItemsSearch(event.target.value)}
+												placeholder="Filtra por nombre, código o categoría..."
+												value={itemsSearch}
+											/>
 										</div>
-										<Button
-											className="w-full border-dashed border-[#0a7ea4] text-[#0a7ea4] hover:bg-[#0a7ea4]/5 dark:border-[#0a7ea4] dark:text-[#0a7ea4] dark:hover:bg-[#0a7ea4]/10"
-											onClick={handleAddItemRow}
-											type="button"
-											variant="outline"
-										>
-											Agregar artículo
-										</Button>
+										<div className="max-h-[50vh] overflow-y-auto rounded-md border border-[#E5E7EB] dark:border-[#2D3033]">
+											<Table>
+												<TableHeader>
+													<TableRow className="border-[#E5E7EB] border-b dark:border-[#2D3033]">
+														<TableHead className="text-[#11181C] text-transition dark:text-[#ECEDEE]">
+															Producto
+														</TableHead>
+														<TableHead className="text-[#11181C] text-transition dark:text-[#ECEDEE]">
+															Código
+														</TableHead>
+														<TableHead className="text-[#11181C] text-transition dark:text-[#ECEDEE]">
+															Categoría
+														</TableHead>
+														<TableHead className="text-[#11181C] text-transition dark:text-[#ECEDEE]">
+															Cantidad
+														</TableHead>
+														<TableHead className="text-right text-[#11181C] text-transition dark:text-[#ECEDEE]">
+															Acción
+														</TableHead>
+													</TableRow>
+												</TableHeader>
+												<TableBody>
+													{filteredSelectedItems.length === 0 ? (
+														<TableRow>
+															<TableCell
+																className="py-8 text-center text-[#687076] dark:text-[#9BA1A6]"
+																colSpan={5}
+															>
+																{selectedItems.length === 0
+																	? "Añade artículos usando el buscador superior."
+																	: "No se encontraron artículos que coincidan con la búsqueda."}
+															</TableCell>
+														</TableRow>
+													) : (
+														filteredSelectedItems.map((item) => (
+															<TableRow
+																className="theme-transition border-[#E5E7EB] border-b last:border-b-0 dark:border-[#2D3033]"
+																key={item.barcode}
+															>
+																<TableCell className="font-medium text-[#11181C] dark:text-[#ECEDEE]">
+																	{item.name}
+																</TableCell>
+																<TableCell className="font-mono text-[#11181C] dark:text-[#ECEDEE]">
+																	{item.barcode}
+																</TableCell>
+																<TableCell className="text-[#687076] dark:text-[#9BA1A6]">
+																	{item.category}
+																</TableCell>
+																<TableCell className="text-[#11181C] dark:text-[#ECEDEE]">
+																	<Input
+																		className="input-transition w-24 border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]"
+																		min={1}
+																		onChange={(event) =>
+																			handleQuantityChange(
+																				item.barcode,
+																				event.target.value,
+																			)
+																		}
+																		type="number"
+																		value={item.quantity}
+																	/>
+																</TableCell>
+																<TableCell className="text-right">
+																	<Button
+																		className="text-[#687076] hover:text-[#11181C] dark:text-[#9BA1A6] dark:hover:text-[#ECEDEE]"
+																		onClick={() =>
+																			handleRemoveItem(item.barcode)
+																		}
+																		type="button"
+																		variant="ghost"
+																	>
+																		Eliminar
+																	</Button>
+																</TableCell>
+															</TableRow>
+														))
+													)}
+												</TableBody>
+											</Table>
+										</div>
 									</div>
 									<div className="space-y-2">
 										<Label
