@@ -10,7 +10,7 @@ export const fetchReplenishmentOrdersServer = async (
 	status?: ReplenishmentOrderStatus,
 ) => {
 	const origin = resolveTrustedOrigin();
-	const url = new URL("/api/replenishment-orders", origin);
+	const url = new URL("/api/auth/replenishment-orders", origin);
 	if (status) {
 		url.searchParams.set("status", status);
 	}
@@ -40,7 +40,7 @@ export const fetchReplenishmentOrdersByWarehouseServer = async (
 
 	const origin = resolveTrustedOrigin();
 	const url = new URL(
-		`/api/replenishment-orders/warehouse/${encodeURIComponent(warehouseId)}`,
+		`/api/auth/replenishment-orders/warehouse/${encodeURIComponent(warehouseId)}`,
 		origin,
 	);
 	const headers = await buildCookieHeader(origin);
@@ -67,7 +67,7 @@ export const fetchReplenishmentOrderByIdServer = async (id: string) => {
 
 	const origin = resolveTrustedOrigin();
 	const url = new URL(
-		`/api/replenishment-orders/${encodeURIComponent(id)}`,
+		`/api/auth/replenishment-orders/${encodeURIComponent(id)}`,
 		origin,
 	);
 	const headers = await buildCookieHeader(origin);

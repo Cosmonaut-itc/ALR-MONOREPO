@@ -63,7 +63,6 @@ export default async function PedidosRoute() {
 			<GenericBoundaryWrapper fallbackComponent={<SkeletonPedidosPage />}>
 				<PedidosPage
 					isEncargado={isEncargado}
-					role={role}
 					warehouseId={warehouseId}
 				/>
 			</GenericBoundaryWrapper>

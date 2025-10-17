@@ -10,7 +10,7 @@ export const getReplenishmentOrders = async (
 	params?: { status?: ReplenishmentOrderStatus },
 ) => {
 	try {
-		const response = await client.api["replenishment-orders"].$get({
+		const response = await client.api.auth["replenishment-orders"].$get({
 			query: params?.status ? { status: params.status } : {},
 		});
 		return response.json();
@@ -22,7 +22,7 @@ export const getReplenishmentOrders = async (
 
 export const getReplenishmentOrdersByWarehouse = async (warehouseId: string) => {
 	try {
-		const response = await client.api["replenishment-orders"]["warehouse"][
+		const response = await client.api.auth["replenishment-orders"]["warehouse"][
 			":warehouseId"
 		].$get({
 			param: { warehouseId },
@@ -36,7 +36,7 @@ export const getReplenishmentOrdersByWarehouse = async (warehouseId: string) => 
 
 export const getReplenishmentOrderById = async (id: string) => {
 	try {
-		const response = await client.api["replenishment-orders"][":id"].$get({
+		const response = await client.api.auth["replenishment-orders"][":id"].$get({
 			param: { id },
 		});
 		return response.json();
