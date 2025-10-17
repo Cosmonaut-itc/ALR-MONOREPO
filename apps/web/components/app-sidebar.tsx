@@ -50,6 +50,11 @@ const navigationItems = [
 		url: "/inventario",
 		icon: Package,
 	},
+	{
+		title: "Pedidos",
+		url: "/pedidos",
+		icon: Package,
+	},
 
 	{
 		title: "Traspasos",

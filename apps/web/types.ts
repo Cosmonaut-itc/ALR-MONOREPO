@@ -53,6 +53,26 @@ export type WarehouseTransferDetails = Awaited<
 >;
 
 /**
+ * Type inference for replenishment orders list response
+ * Extracted from the API response of client.api['replenishment-orders'].$get()
+ */
+export type ReplenishmentOrdersResponse = Awaited<
+	ReturnType<
+		typeof import("./lib/fetch-functions/replenishment-orders").getReplenishmentOrders
+	>
+>;
+
+/**
+ * Type inference for replenishment order detail response
+ * Extracted from the API response of client.api['replenishment-orders'][id].$get()
+ */
+export type ReplenishmentOrderDetail = Awaited<
+	ReturnType<
+		typeof import("./lib/fetch-functions/replenishment-orders").getReplenishmentOrderById
+	>
+>;
+
+/**
  * Type inference for cabinet warehouse data
  * Extracted from the API response of client.api.auth['cabinet-warehouse'].map.$get()
  */
