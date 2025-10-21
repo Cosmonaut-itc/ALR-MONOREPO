@@ -1,10 +1,16 @@
- "use client";
+"use client";
 
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import Link from "next/link";
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import {
+	type FormEvent,
+	useCallback,
+	useEffect,
+	useMemo,
+	useState,
+} from "react";
 import { toast } from "sonner";
 import { ProductCombobox } from "@/components/inventory/ProductCombobox";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +27,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
 	Select,
 	SelectContent,
@@ -37,21 +44,21 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import { getAllProducts, getAllWarehouses } from "@/lib/fetch-functions/inventory";
+import {
+	getAllProducts,
+	getAllWarehouses,
+} from "@/lib/fetch-functions/inventory";
 import {
 	getReplenishmentOrders,
 	getReplenishmentOrdersByWarehouse,
 } from "@/lib/fetch-functions/replenishment-orders";
 import { createQueryKey } from "@/lib/helpers";
-import {
-	useCreateReplenishmentOrder,
-} from "@/lib/mutations/replenishment-orders";
+import { useCreateReplenishmentOrder } from "@/lib/mutations/replenishment-orders";
 import { queryKeys } from "@/lib/query-keys";
 import type {
 	ProductCatalogResponse,
 	ReplenishmentOrdersResponse,
 } from "@/types";
-import { ScrollArea } from "@/components/ui/scroll-area";
 
 type WarehousesResponse = Awaited<ReturnType<typeof getAllWarehouses>>;
 
@@ -159,10 +166,7 @@ type PedidosPageProps = {
 	isEncargado: boolean;
 };
 
-export function PedidosPage({
-	warehouseId,
-	isEncargado,
-}: PedidosPageProps) {
+export function PedidosPage({ warehouseId, isEncargado }: PedidosPageProps) {
 	const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 	const [isDialogOpen, setIsDialogOpen] = useState(false);
 	const [cedisWarehouseId, setCedisWarehouseId] = useState("");
@@ -191,7 +195,7 @@ export function PedidosPage({
 			isEncargado
 				? getReplenishmentOrders(
 						statusParam ? { status: statusParam } : undefined,
-				  )
+					)
 				: warehouseId
 					? getReplenishmentOrdersByWarehouse(warehouseId)
 					: Promise.resolve(null),
@@ -233,7 +237,9 @@ export function PedidosPage({
 				const name = String(record.name ?? `Almacén ${id}`);
 				const rawCode = record.code;
 				const code =
-					typeof rawCode === "string" && rawCode.length > 0 ? rawCode : undefined;
+					typeof rawCode === "string" && rawCode.length > 0
+						? rawCode
+						: undefined;
 				const rawIsCedis = record["isCedis"];
 				const rawLegacyIsCedis = record["is_cedis"];
 				const isCedis =
@@ -249,7 +255,10 @@ export function PedidosPage({
 					isCedis,
 				} as WarehouseOption;
 			})
-			.filter((item): item is WarehouseOption => item !== null);
+			.filter(
+				(item: WarehouseOption | null): item is WarehouseOption =>
+					item !== null,
+			);
 	}, [warehousesResponse]);
 
 	const cedisWarehouses = useMemo(
@@ -331,9 +340,7 @@ export function PedidosPage({
 		if (!isSuccessResponse(ordersResponse)) {
 			return [];
 		}
-		const rows = Array.isArray(ordersResponse.data)
-			? ordersResponse.data
-			: [];
+		const rows = Array.isArray(ordersResponse.data) ? ordersResponse.data : [];
 		return rows
 			.map((item: unknown) => {
 				if (!item || typeof item !== "object") {
@@ -364,12 +371,11 @@ export function PedidosPage({
 					isSent: Boolean(record.isSent),
 					isReceived: Boolean(record.isReceived),
 					hasRelatedTransfer: Boolean(record.hasRelatedTransfer),
-					notes:
-						typeof record.notes === "string" ? record.notes : null,
+					notes: typeof record.notes === "string" ? record.notes : null,
 				} satisfies OrderSummary;
 			})
-			.filter(
-				(item: OrderSummary | null): item is OrderSummary => Boolean(item?.id),
+			.filter((item: OrderSummary | null): item is OrderSummary =>
+				Boolean(item?.id),
 			);
 	}, [ordersResponse]);
 
@@ -445,16 +451,14 @@ export function PedidosPage({
 					? {
 							...item,
 							quantity: Number.isNaN(parsed) ? 1 : Math.max(1, parsed),
-					  }
+						}
 					: item,
 			),
 		);
 	}, []);
 
 	const handleRemoveItem = useCallback((barcode: number) => {
-		setSelectedItems((prev) =>
-			prev.filter((item) => item.barcode !== barcode),
-		);
+		setSelectedItems((prev) => prev.filter((item) => item.barcode !== barcode));
 	}, []);
 
 	const filteredSelectedItems = useMemo(() => {
@@ -570,9 +574,7 @@ export function PedidosPage({
 											value={cedisWarehouseId}
 										>
 											<SelectTrigger className="input-transition border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]">
-												<SelectValue
-													placeholder="Selecciona una bodega origen"
-												/>
+												<SelectValue placeholder="Selecciona una bodega origen" />
 											</SelectTrigger>
 											<SelectContent>
 												{cedisOptions.map((warehouse) => (
@@ -618,86 +620,85 @@ export function PedidosPage({
 										</div>
 										<div className="max-h-[50vh] overflow-y-auto rounded-md border border-[#E5E7EB] dark:border-[#2D3033]">
 											<ScrollArea className="max-h-[50vh]">
-											<Table>
-												<TableHeader>
-													<TableRow className="border-[#E5E7EB] border-b dark:border-[#2D3033]">
-														<TableHead className="text-[#11181C] text-transition dark:text-[#ECEDEE]">
-															Producto
-														</TableHead>
-														<TableHead className="text-[#11181C] text-transition dark:text-[#ECEDEE]">
-															Código
-														</TableHead>
-														<TableHead className="text-[#11181C] text-transition dark:text-[#ECEDEE]">
-															Categoría
-														</TableHead>
-														<TableHead className="text-[#11181C] text-transition dark:text-[#ECEDEE]">
-															Cantidad
-														</TableHead>
-														<TableHead className="text-right text-[#11181C] text-transition dark:text-[#ECEDEE]">
-															Acción
-														</TableHead>
-													</TableRow>
-												</TableHeader>
-												
-												<TableBody>
-													{filteredSelectedItems.length === 0 ? (
-														<TableRow>
-															<TableCell
-																className="py-8 text-center text-[#687076] dark:text-[#9BA1A6]"
-																colSpan={5}
-															>
-																{selectedItems.length === 0
-																	? "Añade artículos usando el buscador superior."
-																	: "No se encontraron artículos que coincidan con la búsqueda."}
-															</TableCell>
+												<Table>
+													<TableHeader>
+														<TableRow className="border-[#E5E7EB] border-b dark:border-[#2D3033]">
+															<TableHead className="text-[#11181C] text-transition dark:text-[#ECEDEE]">
+																Producto
+															</TableHead>
+															<TableHead className="text-[#11181C] text-transition dark:text-[#ECEDEE]">
+																Código
+															</TableHead>
+															<TableHead className="text-[#11181C] text-transition dark:text-[#ECEDEE]">
+																Categoría
+															</TableHead>
+															<TableHead className="text-[#11181C] text-transition dark:text-[#ECEDEE]">
+																Cantidad
+															</TableHead>
+															<TableHead className="text-right text-[#11181C] text-transition dark:text-[#ECEDEE]">
+																Acción
+															</TableHead>
 														</TableRow>
-													) : (
-														filteredSelectedItems.map((item) => (
-															<TableRow
-																className="theme-transition border-[#E5E7EB] border-b last:border-b-0 dark:border-[#2D3033]"
-																key={item.barcode}
-															>
-																<TableCell className="font-medium text-[#11181C] dark:text-[#ECEDEE]">
-																	{item.name}
-																</TableCell>
-																<TableCell className="font-mono text-[#11181C] dark:text-[#ECEDEE]">
-																	{item.barcode}
-																</TableCell>
-																<TableCell className="text-[#687076] dark:text-[#9BA1A6]">
-																	{item.category}
-																</TableCell>
-																<TableCell className="text-[#11181C] dark:text-[#ECEDEE]">
-																	<Input
-																		className="input-transition w-24 border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]"
-																		min={1}
-																		onChange={(event) =>
-																			handleQuantityChange(
-																				item.barcode,
-																				event.target.value,
-																			)
-																		}
-																		type="number"
-																		value={item.quantity}
-																	/>
-																</TableCell>
-																<TableCell className="text-right">
-																	<Button
-																		className="text-[#687076] hover:text-[#11181C] dark:text-[#9BA1A6] dark:hover:text-[#ECEDEE]"
-																		onClick={() =>
-																			handleRemoveItem(item.barcode)
-																		}
-																		type="button"
-																		variant="ghost"
-																	>
-																		Eliminar
-																	</Button>
+													</TableHeader>
+
+													<TableBody>
+														{filteredSelectedItems.length === 0 ? (
+															<TableRow>
+																<TableCell
+																	className="py-8 text-center text-[#687076] dark:text-[#9BA1A6]"
+																	colSpan={5}
+																>
+																	{selectedItems.length === 0
+																		? "Añade artículos usando el buscador superior."
+																		: "No se encontraron artículos que coincidan con la búsqueda."}
 																</TableCell>
 															</TableRow>
-														))
-													)}
-												</TableBody>
-												
-											</Table>
+														) : (
+															filteredSelectedItems.map((item) => (
+																<TableRow
+																	className="theme-transition border-[#E5E7EB] border-b last:border-b-0 dark:border-[#2D3033]"
+																	key={item.barcode}
+																>
+																	<TableCell className="font-medium text-[#11181C] dark:text-[#ECEDEE]">
+																		{item.name}
+																	</TableCell>
+																	<TableCell className="font-mono text-[#11181C] dark:text-[#ECEDEE]">
+																		{item.barcode}
+																	</TableCell>
+																	<TableCell className="text-[#687076] dark:text-[#9BA1A6]">
+																		{item.category}
+																	</TableCell>
+																	<TableCell className="text-[#11181C] dark:text-[#ECEDEE]">
+																		<Input
+																			className="input-transition w-24 border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]"
+																			min={1}
+																			onChange={(event) =>
+																				handleQuantityChange(
+																					item.barcode,
+																					event.target.value,
+																				)
+																			}
+																			type="number"
+																			value={item.quantity}
+																		/>
+																	</TableCell>
+																	<TableCell className="text-right">
+																		<Button
+																			className="text-[#687076] hover:text-[#11181C] dark:text-[#9BA1A6] dark:hover:text-[#ECEDEE]"
+																			onClick={() =>
+																				handleRemoveItem(item.barcode)
+																			}
+																			type="button"
+																			variant="ghost"
+																		>
+																			Eliminar
+																		</Button>
+																	</TableCell>
+																</TableRow>
+															))
+														)}
+													</TableBody>
+												</Table>
 											</ScrollArea>
 										</div>
 									</div>
@@ -780,7 +781,7 @@ export function PedidosPage({
 									</TableHead>
 								</TableRow>
 							</TableHeader>
-							
+
 							<TableBody>
 								{filteredOrders.length === 0 ? (
 									<TableRow>
@@ -833,14 +834,16 @@ export function PedidosPage({
 														size="sm"
 														variant="outline"
 													>
-														<Link href={`/pedidos/${order.id}`}>Ver detalles</Link>
+														<Link href={`/pedidos/${order.id}`}>
+															Ver detalles
+														</Link>
 													</Button>
 												</TableCell>
 											</TableRow>
 										);
 									})
-									)}
-								</TableBody>
+								)}
+							</TableBody>
 						</Table>
 					</div>
 				</CardContent>

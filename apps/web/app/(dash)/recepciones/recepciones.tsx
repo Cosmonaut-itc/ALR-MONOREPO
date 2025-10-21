@@ -105,6 +105,7 @@ import {
 import { useAuthStore } from "@/stores/auth-store";
 import { useReceptionStore } from "@/stores/reception-store";
 import type {
+	ProductCatalogItem,
 	ProductCatalogResponse,
 	ProductStockWithEmployee,
 	WarehouseMap,
@@ -949,7 +950,7 @@ export function RecepcionesPage({
 					goodId: item.barcode,
 					costPerUnit:
 						productCatalog?.data?.find(
-							(product) => product.good_id === item.barcode,
+							(product: ProductCatalogItem) => product.good_id === item.barcode,
 						)?.cost ?? 0,
 				})),
 				transferNotes: transferDraft.transferNotes || undefined,

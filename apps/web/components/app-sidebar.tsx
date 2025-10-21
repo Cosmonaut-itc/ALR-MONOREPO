@@ -2,6 +2,7 @@
 
 import {
 	BarChart3,
+	Box,
 	Home,
 	LogOut,
 	Package,
@@ -53,7 +54,7 @@ const navigationItems = [
 	{
 		title: "Pedidos",
 		url: "/pedidos",
-		icon: Package,
+		icon: Box,
 	},
 
 	{

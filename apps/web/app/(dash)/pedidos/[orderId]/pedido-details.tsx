@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import {
+	getAllProducts,
 	getAllWarehouses,
 	getCabinetWarehouse,
 	getInventoryByWarehouse,
@@ -37,15 +38,15 @@ import {
 import { getReplenishmentOrderById } from "@/lib/fetch-functions/replenishment-orders";
 import { createQueryKey } from "@/lib/helpers";
 import {
-	useCreateTransferOrder,
-} from "@/lib/mutations/transfers";
-import {
 	useLinkTransferToReplenishmentOrder,
 	useUpdateReplenishmentOrder,
 } from "@/lib/mutations/replenishment-orders";
+import { useCreateTransferOrder } from "@/lib/mutations/transfers";
 import { queryKeys } from "@/lib/query-keys";
 import { useAuthStore } from "@/stores/auth-store";
 import type {
+	ProductCatalogItem,
+	ProductCatalogResponse,
 	ReplenishmentOrderDetail,
 	WarehouseMap,
 } from "@/types";
@@ -166,13 +167,9 @@ const parseOrderDetail = (
 		createdAt: typeof data.createdAt === "string" ? data.createdAt : null,
 		updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : null,
 		sourceWarehouseId:
-			typeof data.sourceWarehouseId === "string"
-				? data.sourceWarehouseId
-				: "",
+			typeof data.sourceWarehouseId === "string" ? data.sourceWarehouseId : "",
 		cedisWarehouseId:
-			typeof data.cedisWarehouseId === "string"
-				? data.cedisWarehouseId
-				: "",
+			typeof data.cedisWarehouseId === "string" ? data.cedisWarehouseId : "",
 		isSent: Boolean(data.isSent),
 		isReceived: Boolean(data.isReceived),
 		warehouseTransferId:
@@ -187,8 +184,7 @@ const parseOrderDetail = (
 					return null;
 				}
 				const record = detail as Record<string, unknown>;
-				const detailId =
-					typeof record.id === "string" ? record.id : undefined;
+				const detailId = typeof record.id === "string" ? record.id : undefined;
 				const barcode =
 					typeof record.barcode === "number"
 						? record.barcode
@@ -213,13 +209,18 @@ const parseOrderDetail = (
 					id: detailId,
 					barcode,
 					quantity: quantityRaw,
-					notes:
-						typeof record.notes === "string" ? record.notes : null,
+					notes: typeof record.notes === "string" ? record.notes : null,
 				};
 			})
 			.filter(
-				(item): item is { id: string; barcode: number; quantity: number; notes: string | null } =>
-					Boolean(item),
+				(
+					item,
+				): item is {
+					id: string;
+					barcode: number;
+					quantity: number;
+					notes: string | null;
+				} => Boolean(item),
 			),
 	};
 };
@@ -261,7 +262,8 @@ const buildCabinetMap = (cabinetWarehouse: WarehouseMap): CabinetMapping => {
 		const entry = rawEntry as Record<string, unknown>;
 
 		const warehouseId =
-			typeof entry.warehouseId === "string" && entry.warehouseId.trim().length > 0
+			typeof entry.warehouseId === "string" &&
+			entry.warehouseId.trim().length > 0
 				? entry.warehouseId.trim()
 				: typeof entry.warehouse_id === "string" &&
 						entry.warehouse_id.trim().length > 0
@@ -287,8 +289,7 @@ const buildCabinetMap = (cabinetWarehouse: WarehouseMap): CabinetMapping => {
 			map.set(warehouseId, {
 				cabinetId,
 				warehouseId,
-				warehouseName:
-					warehouseName ?? `Almacén ${warehouseId.slice(0, 6)}`,
+				warehouseName: warehouseName ?? `Almacén ${warehouseId.slice(0, 6)}`,
 			});
 		}
 	}
@@ -335,9 +336,7 @@ const parseWarehouses = (response: WarehousesResponse): WarehouseOption[] => {
 		.filter((item): item is WarehouseOption => Boolean(item));
 };
 
-const parseInventory = (
-	response: InventoryResponse,
-): InventoryStockItem[] => {
+const parseInventory = (response: InventoryResponse): InventoryStockItem[] => {
 	if (
 		!response ||
 		typeof response !== "object" ||
@@ -356,14 +355,15 @@ const parseInventory = (
 			if (!entry || typeof entry !== "object") {
 				return null;
 			}
-			const productStock = (entry as {
-				productStock?: Record<string, unknown>;
-			}).productStock;
+			const productStock = (
+				entry as {
+					productStock?: Record<string, unknown>;
+				}
+			).productStock;
 			if (!productStock || typeof productStock !== "object") {
 				return null;
 			}
-			const id =
-				typeof productStock.id === "string" ? productStock.id : null;
+			const id = typeof productStock.id === "string" ? productStock.id : null;
 			const barcode =
 				typeof productStock.barcode === "number"
 					? productStock.barcode
@@ -403,6 +403,15 @@ export function PedidoDetailsPage({
 	>({
 		queryKey: createQueryKey(queryKeys.replenishmentOrderDetail, [orderId]),
 		queryFn: () => getReplenishmentOrderById(orderId),
+	});
+
+	const { data: productCatalog } = useSuspenseQuery<
+		ProductCatalogResponse | null,
+		Error,
+		ProductCatalogResponse | null
+	>({
+		queryKey: queryKeys.productCatalog,
+		queryFn: getAllProducts,
 	});
 
 	const parsedOrder = useMemo(
@@ -559,7 +568,9 @@ export function PedidoDetailsPage({
 		}
 
 		if (!currentUser?.id) {
-			toast.error("No se encontró el usuario actual. Inicia sesión nuevamente.");
+			toast.error(
+				"No se encontró el usuario actual. Inicia sesión nuevamente.",
+			);
 			return;
 		}
 
@@ -622,12 +633,16 @@ export function PedidoDetailsPage({
 			const transferIdCandidate =
 				(transferResult as Record<string, unknown>)?.data &&
 				typeof (transferResult as { data?: unknown }).data === "object"
-					? ((transferResult as {
-							data?: { transfer?: { id?: string }; id?: string };
-					  }).data?.transfer?.id ??
-						(transferResult as {
-							data?: { transfer?: { id?: string }; id?: string };
-						}).data?.id ??
+					? ((
+							transferResult as {
+								data?: { transfer?: { id?: string }; id?: string };
+							}
+						).data?.transfer?.id ??
+						(
+							transferResult as {
+								data?: { transfer?: { id?: string }; id?: string };
+							}
+						).data?.id ??
 						null)
 					: null;
 
@@ -678,10 +693,7 @@ export function PedidoDetailsPage({
 		return (
 			<div className="theme-transition flex-1 space-y-6 bg-white p-4 md:p-6 dark:bg-[#151718]">
 				<div className="flex items-center gap-3">
-					<Button
-						onClick={() => router.push("/pedidos")}
-						variant="ghost"
-					>
+					<Button onClick={() => router.push("/pedidos")} variant="ghost">
 						Volver
 					</Button>
 					<h1 className="font-bold text-2xl text-[#11181C] text-transition dark:text-[#ECEDEE]">
@@ -736,10 +748,7 @@ export function PedidoDetailsPage({
 					</div>
 				</div>
 				<div className="flex flex-wrap gap-3">
-					<Button
-						onClick={() => router.push("/pedidos")}
-						variant="outline"
-					>
+					<Button onClick={() => router.push("/pedidos")} variant="outline">
 						Volver a pedidos
 					</Button>
 					{warehouseTransferLink && (
@@ -820,6 +829,9 @@ export function PedidoDetailsPage({
 								<TableHeader>
 									<TableRow className="border-[#E5E7EB] border-b dark:border-[#2D3033]">
 										<TableHead className="text-[#11181C] text-transition dark:text-[#ECEDEE]">
+											Producto
+										</TableHead>
+										<TableHead className="text-[#11181C] text-transition dark:text-[#ECEDEE]">
 											Código
 										</TableHead>
 										<TableHead className="text-[#11181C] text-transition dark:text-[#ECEDEE]">
@@ -836,6 +848,12 @@ export function PedidoDetailsPage({
 											className="theme-transition border-[#E5E7EB] border-b last:border-b-0 dark:border-[#2D3033]"
 											key={item.id}
 										>
+											<TableCell className="font-mono text-[#11181C] dark:text-[#ECEDEE]">
+												{productCatalog?.data?.find(
+													(product: ProductCatalogItem) =>
+														product.good_id === item.barcode,
+												)?.title || `Producto ${item.barcode}`}
+											</TableCell>
 											<TableCell className="font-mono text-[#11181C] dark:text-[#ECEDEE]">
 												{item.barcode}
 											</TableCell>
@@ -892,12 +910,13 @@ export function PedidoDetailsPage({
 								</div>
 								<div className="space-y-3">
 									<p className="text-[#687076] text-sm dark:text-[#9BA1A6]">
-										Selecciona {parsedOrder.itemsCount} producto(s) del CEDIS para
-										cumplir el pedido.
+										Selecciona {parsedOrder.itemsCount} producto(s) del CEDIS
+										para cumplir el pedido.
 									</p>
 									<div className="space-y-4">
 										{parsedOrder.items.map((item) => {
-											const available = inventoryByBarcode.get(item.barcode) ?? [];
+											const available =
+												inventoryByBarcode.get(item.barcode) ?? [];
 											const selected = selectedItems[item.id] ?? [];
 											return (
 												<div
@@ -910,20 +929,22 @@ export function PedidoDetailsPage({
 																#{item.barcode}
 															</span>
 															<span className="text-[#687076] text-sm dark:text-[#9BA1A6]">
-																Seleccionados {selected.length} / {item.quantity}
+																Seleccionados {selected.length} /{" "}
+																{item.quantity}
 															</span>
 														</div>
 														{available.length === 0 ? (
 															<p className="rounded-md bg-amber-50 p-2 text-amber-700 text-sm dark:bg-amber-900/20 dark:text-amber-300">
-																No hay existencias disponibles para este código en el
-																CEDIS.
+																No hay existencias disponibles para este código
+																en el CEDIS.
 															</p>
 														) : (
 															<div className="space-y-2">
 																{available.map((stock) => {
 																	const isChecked = selected.includes(stock.id);
 																	const isDisabled =
-																		!isChecked && selected.length >= item.quantity;
+																		!isChecked &&
+																		selected.length >= item.quantity;
 																	return (
 																		<label
 																			className="flex items-center justify-between gap-3 rounded-md border border-transparent px-2 py-1 text-[#11181C] hover:bg-[#F3F4F6] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"

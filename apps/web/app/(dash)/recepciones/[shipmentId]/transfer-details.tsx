@@ -40,6 +40,7 @@ import { cn, createWarehouseOptions } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth-store";
 import { useReceptionStore } from "@/stores/reception-store";
 import type {
+	ProductCatalogItem,
 	ProductCatalogResponse,
 	WarehouseMap,
 	WarehouseTransferDetails,
@@ -145,8 +146,9 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 			// Create a new group if this barcode hasn't been seen yet
 			if (!groups.has(barcode)) {
 				const productName =
-					productCatalog?.data.find((product) => product.good_id === barcode)
-						?.title || `Producto ${barcode}`;
+					productCatalog?.data.find(
+						(product: ProductCatalogItem) => product.good_id === barcode,
+					)?.title || `Producto ${barcode}`;
 				groups.set(barcode, {
 					barcode,
 					productName,
@@ -343,6 +345,7 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 													colSpan={4}
 												>
 													<div className="flex items-center space-x-3">
+														
 														<span className="font-mono text-sm">
 															Código: {group.barcode}
 														</span>
