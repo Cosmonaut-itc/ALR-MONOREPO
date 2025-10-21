@@ -345,7 +345,6 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 													colSpan={4}
 												>
 													<div className="flex items-center space-x-3">
-														
 														<span className="font-mono text-sm">
 															Código: {group.barcode}
 														</span>

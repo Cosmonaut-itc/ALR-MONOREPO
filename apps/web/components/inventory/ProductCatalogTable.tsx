@@ -36,6 +36,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -53,18 +61,24 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
 import {
 	Tooltip,
 	TooltipContent,
 	TooltipProvider,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+	useCreateStockLimit,
+	useUpdateStockLimit,
+} from "@/lib/mutations/stock-limits";
 import { useDisposalStore } from "@/stores/disposal-store";
 import type { StockItemWithEmployee } from "@/stores/inventory-store";
 import { type StockItem, useInventoryStore } from "@/stores/inventory-store";
 import type {
 	ProductCatalogItem,
 	ProductCatalogResponse,
+	StockLimit,
 	WarehouseMap,
 } from "@/types";
 import { DisposeItemDialog } from "./DisposeItemDialog";
@@ -119,6 +133,12 @@ interface ProductCatalogTableProps {
 	disabledUUIDs?: Set<string>;
 	/** Optional warehouse map response for resolving warehouse names */
 	warehouseMap?: WarehouseMap | null;
+	/** Optional lookup for distribution center warehouse IDs */
+	distributionCenterIds?: Set<string>;
+	/** Optional limits map keyed by `${warehouseId}:${barcode}` */
+	stockLimitsMap?: Map<string, StockLimit>;
+	/** Whether the current user can edit stock limits (enables subtle UI affordances) */
+	canEditLimits?: boolean;
 }
 
 type WarehouseMappingEntry = {
@@ -127,6 +147,25 @@ type WarehouseMappingEntry = {
 	warehouseId: string;
 	warehouseName: string;
 };
+
+type LimitDialogContext = {
+	product: ProductWithInventory;
+	warehouseId: string;
+	groupLabel: string;
+	limit: StockLimit | null;
+};
+
+type LimitFormState = {
+	minQuantity: string;
+	maxQuantity: string;
+	notes: string;
+};
+
+const createEmptyLimitFormState = (): LimitFormState => ({
+	minQuantity: "",
+	maxQuantity: "",
+	notes: "",
+});
 
 /**
  * Type guard that checks whether a warehouse map response indicates success and contains mapping entries.
@@ -314,6 +353,9 @@ export function ProductCatalogTable({
 	disabledUUIDs = new Set(),
 	enableDispose = false,
 	warehouseMap = null,
+	distributionCenterIds = new Set(),
+	stockLimitsMap,
+	canEditLimits = false,
 }: ProductCatalogTableProps) {
 	// Disposal store for dispose dialog
 	const { show: showDisposeDialog } = useDisposalStore();
@@ -349,6 +391,44 @@ export function ProductCatalogTable({
 		return lookup;
 	}, [warehouseEntries]);
 
+	const warehouseIdSet = useMemo(() => {
+		const ids = new Set<string>();
+		for (const entry of warehouseEntries) {
+			if (entry?.warehouseId) {
+				ids.add(entry.warehouseId);
+			}
+		}
+		return ids;
+	}, [warehouseEntries]);
+
+	const cabinetToWarehouseMap = useMemo(() => {
+		const lookup = new Map<string, string>();
+		for (const entry of warehouseEntries) {
+			if (entry?.cabinetId && entry?.warehouseId) {
+				lookup.set(entry.cabinetId, entry.warehouseId);
+			}
+		}
+		return lookup;
+	}, [warehouseEntries]);
+
+	const resolveWarehouseIdForLimit = useCallback(
+		(locationId?: string | null) => {
+			const id = locationId?.toString().trim() ?? "";
+			if (!id || id === "unassigned") {
+				return null;
+			}
+			if (warehouseIdSet.has(id)) {
+				return id;
+			}
+			const mappedWarehouseId = cabinetToWarehouseMap.get(id);
+			if (mappedWarehouseId) {
+				return mappedWarehouseId;
+			}
+			return id;
+		},
+		[cabinetToWarehouseMap, warehouseIdSet],
+	);
+
 	const resolveWarehouseName = useCallback(
 		(warehouseId?: string | null) => {
 			const id = warehouseId?.toString().trim() ?? "";
@@ -357,12 +437,134 @@ export function ProductCatalogTable({
 			}
 			const mappedName = warehouseNameLookup.get(id);
 			if (mappedName) {
-				return mappedName;
+				return distributionCenterIds.has(id)
+					? `${mappedName} (Centro de distribución)`
+					: mappedName;
 			}
-			return id.length > 8 ? `Almacén ${id.slice(0, 8)}...` : `Almacén ${id}`;
+			const baseName =
+				id.length > 8 ? `Almacén ${id.slice(0, 8)}...` : `Almacén ${id}`;
+			return distributionCenterIds.has(id)
+				? `${baseName} (Centro de distribución)`
+				: baseName;
 		},
-		[warehouseNameLookup],
+		[distributionCenterIds, warehouseNameLookup],
 	);
+
+	const { mutateAsync: createStockLimit, isPending: isCreatingStockLimit } =
+		useCreateStockLimit();
+	const { mutateAsync: updateStockLimit, isPending: isUpdatingStockLimit } =
+		useUpdateStockLimit();
+	const isSavingStockLimit = isCreatingStockLimit || isUpdatingStockLimit;
+	const [isLimitDialogOpen, setIsLimitDialogOpen] = useState(false);
+	const [limitDialogContext, setLimitDialogContext] =
+		useState<LimitDialogContext | null>(null);
+	const [limitFormState, setLimitFormState] = useState<LimitFormState>(
+		createEmptyLimitFormState,
+	);
+	const [limitFormError, setLimitFormError] = useState<string | null>(null);
+
+	const handleOpenLimitDialog = useCallback((context: LimitDialogContext) => {
+		setLimitDialogContext(context);
+		setLimitFormState({
+			minQuantity:
+				context.limit && Number.isFinite(context.limit.minQuantity)
+					? context.limit.minQuantity.toString()
+					: "",
+			maxQuantity:
+				context.limit && Number.isFinite(context.limit.maxQuantity)
+					? context.limit.maxQuantity.toString()
+					: "",
+			notes: context.limit?.notes ?? "",
+		});
+		setLimitFormError(null);
+		setIsLimitDialogOpen(true);
+	}, []);
+
+	const handleLimitDialogOpenChange = useCallback((open: boolean) => {
+		setIsLimitDialogOpen(open);
+		if (!open) {
+			setLimitDialogContext(null);
+			setLimitFormState(createEmptyLimitFormState());
+			setLimitFormError(null);
+		}
+	}, []);
+
+	const handleLimitFormChange = useCallback(
+		(field: keyof LimitFormState, value: string) => {
+			setLimitFormState((prev) => ({
+				...prev,
+				[field]: value,
+			}));
+			setLimitFormError(null);
+		},
+		[],
+	);
+
+	const handleSubmitStockLimit = useCallback(async () => {
+		if (!limitDialogContext) {
+			return;
+		}
+		const { product, warehouseId, limit } = limitDialogContext;
+		if (!warehouseId) {
+			setLimitFormError("No se pudo determinar el almacén para este límite.");
+			return;
+		}
+		const rawMin = limitFormState.minQuantity.trim();
+		const rawMax = limitFormState.maxQuantity.trim();
+		if (!rawMin || !rawMax) {
+			setLimitFormError("Completa los campos de mínimo y máximo.");
+			return;
+		}
+		const min = Number.parseInt(rawMin, 10);
+		const max = Number.parseInt(rawMax, 10);
+		if (Number.isNaN(min) || Number.isNaN(max)) {
+			setLimitFormError("Ingresa cantidades numéricas válidas.");
+			return;
+		}
+		if (min < 0 || max < 0) {
+			setLimitFormError("Las cantidades no pueden ser negativas.");
+			return;
+		}
+		if (min > max) {
+			setLimitFormError("El mínimo no puede ser mayor al máximo.");
+			return;
+		}
+		const notesValue = limitFormState.notes.trim();
+		try {
+			if (limit) {
+				await updateStockLimit({
+					warehouseId,
+					barcode: product.barcode,
+					minQuantity: min,
+					maxQuantity: max,
+					notes: notesValue.length > 0 ? notesValue : undefined,
+				});
+			} else {
+				await createStockLimit({
+					warehouseId,
+					barcode: product.barcode,
+					minQuantity: min,
+					maxQuantity: max,
+					notes: notesValue.length > 0 ? notesValue : undefined,
+				});
+			}
+			handleLimitDialogOpenChange(false);
+		} catch (error) {
+			if (error instanceof Error && error.message) {
+				setLimitFormError(error.message);
+			} else {
+				setLimitFormError("No se pudo guardar el límite.");
+			}
+		}
+	}, [
+		createStockLimit,
+		handleLimitDialogOpenChange,
+		limitDialogContext,
+		limitFormState.maxQuantity,
+		limitFormState.minQuantity,
+		limitFormState.notes,
+		updateStockLimit,
+	]);
 
 	// Set inventory data in store
 	useEffect(() => {
@@ -642,24 +844,42 @@ export function ProductCatalogTable({
 					);
 				}
 
-				const groupedByWarehouse = displayItems.reduce((acc, item) => {
-					const locationKey = item.warehouseKey || "unassigned";
-					const bucket = acc.get(locationKey);
-					if (bucket) {
-						bucket.items.push(item);
-					} else {
-						const labelSource =
-							item.data.currentWarehouse ??
-							item.data.currentCabinet ??
-							item.data.homeWarehouseId ??
-							undefined;
-						acc.set(locationKey, {
-							label: resolveWarehouseName(labelSource),
-							items: [item],
-						});
-					}
-					return acc;
-				}, new Map<string, { label: string; items: DisplayItem[] }>());
+				const groupedByWarehouse = displayItems.reduce(
+					(acc, item) => {
+						const locationKey = item.warehouseKey || "unassigned";
+						const bucket = acc.get(locationKey);
+						if (bucket) {
+							bucket.items.push(item);
+						} else {
+							const labelSource =
+								item.data.currentWarehouse ??
+								item.data.currentCabinet ??
+								item.data.homeWarehouseId ??
+								undefined;
+							const isDistributionCenter = labelSource
+								? distributionCenterIds.has(labelSource)
+								: false;
+							const effectiveWarehouseId =
+								resolveWarehouseIdForLimit(labelSource);
+							acc.set(locationKey, {
+								label: resolveWarehouseName(labelSource),
+								items: [item],
+								isDistributionCenter,
+								effectiveWarehouseId,
+							});
+						}
+						return acc;
+					},
+					new Map<
+						string,
+						{
+							label: string;
+							items: DisplayItem[];
+							isDistributionCenter: boolean;
+							effectiveWarehouseId: string | null;
+						}
+					>(),
+				);
 
 				const warehouseGroups = Array.from(groupedByWarehouse.entries());
 
@@ -710,154 +930,240 @@ export function ProductCatalogTable({
 									</TableRow>
 								</TableHeader>
 								<TableBody>
-									{warehouseGroups.map(([groupKey, group]) => (
-										<React.Fragment key={groupKey}>
-											<TableRow className="bg-[#EAEDF0] text-left text-[#11181C] text-xs uppercase tracking-wide dark:bg-[#252729] dark:text-[#ECEDEE]">
-												<TableCell
-													className="font-semibold"
-													colSpan={detailColumnCount}
-												>
-													<div className="flex items-center justify-between">
-														<span>{group.label}</span>
-														<span className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-															{group.items.length} item(s)
-														</span>
-													</div>
-												</TableCell>
-											</TableRow>
-											{group.items.map((item) => {
-												const { data, key: selectionKey } = item;
-												const isSelected = selectionKey
-													? productSelection.has(selectionKey)
-													: false;
-												const isDisabled =
-													data.isBeingUsed ||
-													(selectionKey
-														? disabledUUIDs.has(selectionKey)
-														: false);
+									{warehouseGroups.map(([groupKey, group]) => {
+										const effectiveWarehouseId = group.effectiveWarehouseId;
+										const limitKey =
+											effectiveWarehouseId && stockLimitsMap
+												? `${effectiveWarehouseId}:${product.barcode}`
+												: null;
+										const limit =
+											limitKey && stockLimitsMap
+												? (stockLimitsMap.get(limitKey) ?? null)
+												: null;
+										const limitText = limit
+											? `Límite: ${limit.minQuantity}–${limit.maxQuantity}`
+											: "Sin límite";
+										const belowMinimum = limit
+											? group.items.length < limit.minQuantity
+											: false;
+										const limitTextClassName = belowMinimum
+											? "font-semibold text-[#B54708] dark:text-[#F7B84B]"
+											: "";
+										const canShowAction =
+											canEditLimits && Boolean(effectiveWarehouseId);
+										const editActionLabel = limit ? "Editar" : "Definir";
 
-												return (
-													<TableRow
-														className="border-[#E5E7EB] border-b last:border-b-0 dark:border-[#374151]"
-														key={selectionKey || data.id}
+										return (
+											<React.Fragment key={groupKey}>
+												<TableRow className="bg-[#EAEDF0] text-left text-[#11181C] text-xs uppercase tracking-wide dark:bg-[#252729] dark:text-[#ECEDEE]">
+													<TableCell
+														className="font-semibold"
+														colSpan={detailColumnCount}
 													>
-														<TableCell className="font-mono text-[#687076] text-xs dark:text-[#9BA1A6]">
-															<div className="flex items-center gap-2">
-																{selectionEnabledRef && (
-																	<Checkbox
-																		checked={isSelected}
-																		disabled={isDisabled}
-																		onCheckedChange={(checked) =>
-																			toggleUUID(selectionKey, Boolean(checked))
-																		}
-																	/>
+														<div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+															<div className="flex flex-wrap items-center gap-2">
+																<span>{group.label}</span>
+																{group.isDistributionCenter && (
+																	<Badge
+																		className="bg-[#6B7280] text-white"
+																		variant="secondary"
+																	>
+																		Centro de distribución
+																	</Badge>
 																)}
-																<span className="truncate">
-																	{(data.id || "").slice(0, 8)}...
+																{belowMinimum && (
+																	<Badge
+																		className="bg-amber-100 text-amber-800 hover:bg-amber-100 dark:bg-amber-900 dark:text-amber-100"
+																		variant="secondary"
+																	>
+																		Bajo mínimo
+																	</Badge>
+																)}
+															</div>
+															<div className="flex flex-wrap items-center gap-3 text-[#687076] text-xs dark:text-[#9BA1A6]">
+																<span>{group.items.length} item(s)</span>
+																<span className={limitTextClassName}>
+																	{limitText}
 																</span>
-																<Tooltip>
-																	<TooltipTrigger asChild>
-																		<Button
-																			className="h-4 w-4 p-0 hover:bg-[#E5E7EB] dark:hover:bg-[#2D3033]"
-																			onClick={() => {
-																				copyToClipboard(
-																					data.uuid || data.id || "",
-																				);
-																			}}
-																			size="sm"
-																			variant="ghost"
-																		>
-																			<Copy className="h-3 w-3" />
-																		</Button>
-																	</TooltipTrigger>
-																	<TooltipContent side="top">
-																		Copiar UUID
-																	</TooltipContent>
-																</Tooltip>
-																<Tooltip>
-																	<TooltipTrigger asChild>
-																		<Button
-																			aria-label="Reimprimir código QR"
-																			className="h-4 w-4 p-0 hover:bg-[#E5E7EB] dark:hover:bg-[#2D3033]"
-																			disabled={
-																				!onReprintQr || !(data.uuid || data.id)
+																{canShowAction && (
+																	<Button
+																		className="h-7 px-2 text-xs"
+																		disabled={isSavingStockLimit}
+																		onClick={() => {
+																			if (!effectiveWarehouseId) {
+																				return;
 																			}
-																			onClick={() => {
-																				if (
+																			handleOpenLimitDialog({
+																				product,
+																				warehouseId: effectiveWarehouseId,
+																				groupLabel: group.label,
+																				limit,
+																			});
+																		}}
+																		size="sm"
+																		variant="ghost"
+																	>
+																		{editActionLabel}
+																	</Button>
+																)}
+															</div>
+														</div>
+													</TableCell>
+												</TableRow>
+												{group.items.map((item) => {
+													const { data, key: selectionKey } = item;
+													const isSelected = selectionKey
+														? productSelection.has(selectionKey)
+														: false;
+													const isDisabled =
+														data.isBeingUsed ||
+														group.isDistributionCenter ||
+														(selectionKey
+															? disabledUUIDs.has(selectionKey)
+															: false);
+													const hasLimit = Boolean(limit);
+
+													return (
+														<TableRow
+															className="border-[#E5E7EB] border-b last:border-b-0 dark:border-[#374151]"
+															data-has-limit={hasLimit ? "true" : undefined}
+															key={selectionKey || data.id}
+														>
+															<TableCell className="font-mono text-[#687076] text-xs dark:text-[#9BA1A6]">
+																<div className="flex flex-col gap-1">
+																	{selectionEnabledRef && (
+																		<Checkbox
+																			checked={isSelected}
+																			disabled={isDisabled}
+																			onCheckedChange={(checked) =>
+																				toggleUUID(
+																					selectionKey,
+																					Boolean(checked),
+																				)
+																			}
+																		/>
+																	)}
+																	<span className="truncate">
+																		{(data.id || "").slice(0, 8)}...
+																	</span>
+																	{hasLimit && (
+																		<Badge
+																			className="bg-[#F3F4F6] text-[#374151] dark:bg-[#374151] dark:text-[#D1D5DB]"
+																			title={
+																				canEditLimits
+																					? "Límite configurado"
+																					: undefined
+																			}
+																			variant="secondary"
+																		>
+																			Límite
+																		</Badge>
+																	)}
+																	<Tooltip>
+																		<TooltipTrigger asChild>
+																			<Button
+																				className="h-4 w-4 p-0 hover:bg-[#E5E7EB] dark:hover:bg-[#2D3033]"
+																				onClick={() => {
+																					copyToClipboard(
+																						data.uuid || data.id || "",
+																					);
+																				}}
+																				size="sm"
+																				variant="ghost"
+																			>
+																				<Copy className="h-3 w-3" />
+																			</Button>
+																		</TooltipTrigger>
+																		<TooltipContent side="top">
+																			Copiar UUID
+																		</TooltipContent>
+																	</Tooltip>
+																	<Tooltip>
+																		<TooltipTrigger asChild>
+																			<Button
+																				aria-label="Reimprimir código QR"
+																				className="h-4 w-4 p-0 hover:bg-[#E5E7EB] dark:hover:bg-[#2D3033]"
+																				disabled={
 																					!onReprintQr ||
 																					!(data.uuid || data.id)
-																				) {
-																					return;
 																				}
-																				onReprintQr({ product, item: data });
-																			}}
-																			size="sm"
-																			variant="ghost"
-																		>
-																			<QrCode className="h-3 w-3" />
-																		</Button>
-																	</TooltipTrigger>
-																	<TooltipContent side="top">
-																		Generar nuevamente el código QR
-																	</TooltipContent>
-																</Tooltip>
-															</div>
-														</TableCell>
-														<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-															{formatDate(data.lastUsed)}
-														</TableCell>
-														<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-															{data.lastUsedBy || "N/A"}
-														</TableCell>
-														<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-															{data.numberOfUses}
-														</TableCell>
-														<TableCell>
-															<Badge
-																className={
-																	data.isBeingUsed
-																		? "bg-[#EF4444] text-white text-xs"
-																		: "bg-[#10B981] text-white text-xs"
-																}
-																variant={
-																	data.isBeingUsed ? "destructive" : "default"
-																}
-															>
-																{data.isBeingUsed ? "En Uso" : "Disponible"}
-															</Badge>
-														</TableCell>
-														<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-															{formatDate(data.firstUsed)}
-														</TableCell>
-														<TableCell>
-															{enableDispose && (
-																<Button
-																	className="h-6 w-6 p-0 text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950 dark:hover:text-red-300"
-																	onClick={() => {
-																		showDisposeDialog({
-																			id: data.id || "",
-																			uuid: data.id || "",
-																			barcode: product.barcode,
-																			productInfo: {
-																				name: product.name,
-																				category: product.category,
-																				description: product.description,
-																			},
-																		});
-																	}}
-																	size="sm"
-																	title="Dar de baja artículo"
-																	variant="ghost"
+																				onClick={() => {
+																					if (
+																						!onReprintQr ||
+																						!(data.uuid || data.id)
+																					) {
+																						return;
+																					}
+																					onReprintQr({ product, item: data });
+																				}}
+																				size="sm"
+																				variant="ghost"
+																			>
+																				<QrCode className="h-3 w-3" />
+																			</Button>
+																		</TooltipTrigger>
+																		<TooltipContent side="top">
+																			Generar nuevamente el código QR
+																		</TooltipContent>
+																	</Tooltip>
+																</div>
+															</TableCell>
+															<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+																{formatDate(data.lastUsed)}
+															</TableCell>
+															<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+																{data.lastUsedBy || "N/A"}
+															</TableCell>
+															<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+																{data.numberOfUses}
+															</TableCell>
+															<TableCell>
+																<Badge
+																	className={
+																		data.isBeingUsed
+																			? "bg-[#EF4444] text-white text-xs"
+																			: "bg-[#10B981] text-white text-xs"
+																	}
+																	variant={
+																		data.isBeingUsed ? "destructive" : "default"
+																	}
 																>
-																	<Trash2 className="h-4 w-4" />
-																</Button>
-															)}
-														</TableCell>
-													</TableRow>
-												);
-											})}
-										</React.Fragment>
-									))}
+																	{data.isBeingUsed ? "En Uso" : "Disponible"}
+																</Badge>
+															</TableCell>
+															<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+																{formatDate(data.firstUsed)}
+															</TableCell>
+															<TableCell>
+																{enableDispose && (
+																	<Button
+																		className="h-6 w-6 p-0 text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950 dark:hover:text-red-300"
+																		onClick={() => {
+																			showDisposeDialog({
+																				id: data.id || "",
+																				uuid: data.id || "",
+																				barcode: product.barcode,
+																				productInfo: {
+																					name: product.name,
+																					category: product.category,
+																					description: product.description,
+																				},
+																			});
+																		}}
+																		size="sm"
+																		title="Dar de baja artículo"
+																		variant="ghost"
+																	>
+																		<Trash2 className="h-4 w-4" />
+																	</Button>
+																)}
+															</TableCell>
+														</TableRow>
+													);
+												})}
+											</React.Fragment>
+										);
+									})}
 								</TableBody>
 							</Table>
 						</div>
@@ -874,6 +1180,12 @@ export function ProductCatalogTable({
 			showDisposeDialog,
 			enableDispose,
 			resolveWarehouseName,
+			resolveWarehouseIdForLimit,
+			distributionCenterIds,
+			stockLimitsMap,
+			canEditLimits,
+			handleOpenLimitDialog,
+			isSavingStockLimit,
 		],
 	);
 
@@ -1026,6 +1338,94 @@ export function ProductCatalogTable({
 			<div className="space-y-4">
 				{/* Dispose Item Dialog */}
 				<DisposeItemDialog />
+				{canEditLimits && (
+					<Dialog
+						open={isLimitDialogOpen}
+						onOpenChange={handleLimitDialogOpenChange}
+					>
+						<DialogContent className="sm:max-w-md">
+							<DialogHeader>
+								<DialogTitle>
+									{limitDialogContext?.limit
+										? "Editar límite de stock"
+										: "Definir límite de stock"}
+								</DialogTitle>
+								<DialogDescription>
+									{limitDialogContext
+										? `Producto: ${limitDialogContext.product.name} · Ubicación: ${limitDialogContext.groupLabel}`
+										: "Configura los límites mínimos y máximos para el producto seleccionado."}
+								</DialogDescription>
+							</DialogHeader>
+							<div className="grid gap-4 py-2">
+								<div className="grid gap-2">
+									<Label htmlFor="stock-limit-min">Cantidad mínima</Label>
+									<Input
+										id="stock-limit-min"
+										inputMode="numeric"
+										min={0}
+										onChange={(event) =>
+											handleLimitFormChange("minQuantity", event.target.value)
+										}
+										placeholder="Ej. 5"
+										type="number"
+										value={limitFormState.minQuantity}
+									/>
+								</div>
+								<div className="grid gap-2">
+									<Label htmlFor="stock-limit-max">Cantidad máxima</Label>
+									<Input
+										id="stock-limit-max"
+										inputMode="numeric"
+										min={0}
+										onChange={(event) =>
+											handleLimitFormChange("maxQuantity", event.target.value)
+										}
+										placeholder="Ej. 20"
+										type="number"
+										value={limitFormState.maxQuantity}
+									/>
+								</div>
+								<div className="grid gap-2">
+									<Label htmlFor="stock-limit-notes">Notas</Label>
+									<Textarea
+										id="stock-limit-notes"
+										maxLength={1000}
+										onChange={(event) =>
+											handleLimitFormChange("notes", event.target.value)
+										}
+										placeholder="Detalles adicionales (opcional)"
+										value={limitFormState.notes}
+									/>
+									<span className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+										Hasta 1000 caracteres.
+									</span>
+								</div>
+								{limitFormError && (
+									<p className="text-[#B54708] text-sm dark:text-[#F7B84B]">
+										{limitFormError}
+									</p>
+								)}
+							</div>
+							<DialogFooter>
+								<Button
+									onClick={() => handleLimitDialogOpenChange(false)}
+									type="button"
+									variant="ghost"
+									disabled={isSavingStockLimit}
+								>
+									Cancelar
+								</Button>
+								<Button
+									onClick={handleSubmitStockLimit}
+									type="button"
+									disabled={isSavingStockLimit}
+								>
+									{isSavingStockLimit ? "Guardando..." : "Guardar"}
+								</Button>
+							</DialogFooter>
+						</DialogContent>
+					</Dialog>
+				)}
 
 				{/* Filters */}
 				<div className="flex flex-wrap items-center gap-4">

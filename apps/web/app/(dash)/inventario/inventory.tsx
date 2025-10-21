@@ -43,6 +43,10 @@ import {
 	getCabinetWarehouse,
 	getInventoryByWarehouse,
 } from "@/lib/fetch-functions/inventory";
+import {
+	getAllStockLimits,
+	getStockLimitsByWarehouse,
+} from "@/lib/fetch-functions/stock-limits";
 import { createQueryKey } from "@/lib/helpers";
 import { useCreateInventoryItem } from "@/lib/mutations/inventory";
 import { useCreateTransferOrder } from "@/lib/mutations/transfers";
@@ -52,6 +56,8 @@ import { useTransferStore } from "@/stores/transfer-store";
 import type {
 	ProductCatalogResponse,
 	ProductStockWithEmployee,
+	StockLimit,
+	StockLimitListResponse,
 	WarehouseMap,
 } from "@/types";
 
@@ -67,6 +73,14 @@ type CatalogProductOption = {
 type WarehouseOption = {
 	id: string;
 	name: string;
+};
+
+type WarehouseCabinetMapping = {
+	cabinetId: string | null;
+	cabinetName: string | null;
+	warehouseId: string;
+	warehouseName: string;
+	isDistributionCenter: boolean;
 };
 
 type QrLabelPayload = {
@@ -113,6 +127,101 @@ export function InventarioPage({
 		queryFn: getCabinetWarehouse,
 	});
 
+	// Helper to extract warehouse and cabinet IDs from cabinetWarehouse data
+	// Creates a map for easy lookup: warehouseId -> { cabinetId, warehouseName, cabinetName }
+	const warehouseCabinetMap = useMemo(() => {
+		const map = new Map<string, WarehouseCabinetMapping>();
+
+		if (
+			!cabinetWarehouse ||
+			typeof cabinetWarehouse !== "object" ||
+			!("success" in cabinetWarehouse) ||
+			!cabinetWarehouse.success
+		) {
+			return map;
+		}
+
+		const entries = Array.isArray(cabinetWarehouse.data)
+			? (cabinetWarehouse.data as Array<Record<string, unknown>>)
+			: [];
+
+		for (const entryRaw of entries) {
+			if (!entryRaw || typeof entryRaw !== "object") {
+				continue;
+			}
+			const entry = entryRaw as Record<string, unknown>;
+
+			const entryWarehouseId =
+				typeof entry.warehouseId === "string" &&
+				entry.warehouseId.trim().length > 0
+					? entry.warehouseId.trim()
+					: typeof (entry as { warehouse_id?: string }).warehouse_id ===
+								"string" &&
+							(entry as { warehouse_id?: string }).warehouse_id?.trim().length
+						? (
+								(entry as { warehouse_id?: string }).warehouse_id as string
+							).trim()
+						: null;
+			if (!entryWarehouseId) {
+				continue;
+			}
+
+			const entryCabinetId =
+				typeof entry.cabinetId === "string" && entry.cabinetId.trim().length > 0
+					? entry.cabinetId.trim()
+					: typeof (entry as { cabinet_id?: string }).cabinet_id === "string" &&
+							(entry as { cabinet_id?: string }).cabinet_id?.trim().length
+						? ((entry as { cabinet_id?: string }).cabinet_id as string).trim()
+						: null;
+
+			const entryCabinetName =
+				typeof entry.cabinetName === "string" &&
+				entry.cabinetName.trim().length > 0
+					? entry.cabinetName.trim()
+					: typeof (entry as { cabinet_name?: string }).cabinet_name ===
+								"string" &&
+							(entry as { cabinet_name?: string }).cabinet_name?.trim().length
+						? (
+								(entry as { cabinet_name?: string }).cabinet_name as string
+							).trim()
+						: null;
+
+			const entryWarehouseName =
+				typeof entry.warehouseName === "string" &&
+				entry.warehouseName.trim().length > 0
+					? entry.warehouseName.trim()
+					: typeof (entry as { warehouse_name?: string }).warehouse_name ===
+								"string" &&
+							(entry as { warehouse_name?: string }).warehouse_name?.trim()
+								.length
+						? (
+								(entry as { warehouse_name?: string }).warehouse_name as string
+							).trim()
+						: null;
+
+			map.set(entryWarehouseId, {
+				cabinetId: entryCabinetId,
+				cabinetName: entryCabinetName,
+				warehouseId: entryWarehouseId,
+				warehouseName:
+					entryWarehouseName ?? `Almacén ${entryWarehouseId.slice(0, 6)}`,
+				isDistributionCenter: entryCabinetId == null,
+			});
+		}
+
+		return map;
+	}, [cabinetWarehouse]);
+
+	const distributionCenterIds = useMemo(() => {
+		const ids = new Set<string>();
+		for (const mapping of warehouseCabinetMap.values()) {
+			if (mapping.isDistributionCenter) {
+				ids.add(mapping.warehouseId);
+			}
+		}
+		return ids;
+	}, [warehouseCabinetMap]);
+
 	const { data: productCatalog } = useSuspenseQuery<
 		ProductCatalogResponse | null,
 		Error,
@@ -120,6 +229,19 @@ export function InventarioPage({
 	>({
 		queryKey: queryKeys.productCatalog,
 		queryFn: getAllProducts,
+	});
+
+	const stockLimitsScope = isEncargado ? "all" : warehouseId;
+	const stockLimitsQueryFn = isEncargado
+		? getAllStockLimits
+		: () => getStockLimitsByWarehouse(warehouseId);
+	const { data: stockLimitsResponse } = useSuspenseQuery<
+		StockLimitListResponse | null,
+		Error,
+		StockLimitListResponse | null
+	>({
+		queryKey: createQueryKey(queryKeys.stockLimits, [stockLimitsScope]),
+		queryFn: stockLimitsQueryFn,
 	});
 
 	//Transfer states and store
@@ -206,6 +328,37 @@ export function InventarioPage({
 		return options;
 	}, [productCatalog]);
 
+	const stockLimitsMap = useMemo(() => {
+		const map = new Map<string, StockLimit>();
+		if (
+			!stockLimitsResponse ||
+			typeof stockLimitsResponse !== "object" ||
+			!("success" in stockLimitsResponse) ||
+			!stockLimitsResponse.success ||
+			!Array.isArray(stockLimitsResponse.data)
+		) {
+			return map;
+		}
+
+		for (const limit of stockLimitsResponse.data) {
+			if (!limit || typeof limit !== "object") {
+				continue;
+			}
+			const { warehouseId: limitWarehouseId, barcode } = limit;
+			if (
+				typeof limitWarehouseId !== "string" ||
+				limitWarehouseId.trim().length === 0
+			) {
+				continue;
+			}
+			if (typeof barcode !== "number" || Number.isNaN(barcode)) {
+				continue;
+			}
+			map.set(`${limitWarehouseId}:${barcode}`, limit);
+		}
+		return map;
+	}, [stockLimitsResponse]);
+
 	const selectedProduct = useMemo(() => {
 		if (!selectedProductValue) {
 			return null;
@@ -228,62 +381,21 @@ export function InventarioPage({
 	}, [productOptions, selectedProductValue]);
 
 	const warehouseOptions = useMemo<WarehouseOption[]>(() => {
-		if (
-			!cabinetWarehouse ||
-			typeof cabinetWarehouse !== "object" ||
-			!("success" in cabinetWarehouse) ||
-			!cabinetWarehouse.success
-		) {
+		if (warehouseCabinetMap.size === 0) {
 			return [];
 		}
-		const entries = Array.isArray(cabinetWarehouse.data)
-			? (cabinetWarehouse.data as Array<Record<string, unknown>>)
-			: [];
-		const warehouseMap = new Map<string, WarehouseOption>();
-		for (const entryRaw of entries) {
-			if (!entryRaw || typeof entryRaw !== "object") {
-				continue;
-			}
-			const entry = entryRaw as Record<string, unknown>;
-			const idCandidate =
-				typeof entry.warehouseId === "string" &&
-				entry.warehouseId.trim().length > 0
-					? entry.warehouseId
-					: typeof (entry as { warehouse_id?: string }).warehouse_id ===
-								"string" &&
-							(entry as { warehouse_id?: string }).warehouse_id?.trim().length
-						? ((entry as { warehouse_id?: string }).warehouse_id ?? null)
-						: null;
-			if (!idCandidate) {
-				continue;
-			}
-			if (warehouseMap.has(idCandidate)) {
-				continue;
-			}
-			const nameCandidate =
-				typeof entry.warehouseName === "string" &&
-				entry.warehouseName.trim().length > 0
-					? entry.warehouseName
-					: typeof (entry as { warehouse_name?: string }).warehouse_name ===
-								"string" &&
-							(entry as { warehouse_name?: string }).warehouse_name?.trim()
-								.length
-						? ((entry as { warehouse_name?: string }).warehouse_name ??
-							undefined)
-						: undefined;
-			const warehouseName =
-				nameCandidate && nameCandidate.trim().length > 0
-					? nameCandidate
-					: `Almacén ${idCandidate.slice(0, 6)}`;
-			warehouseMap.set(idCandidate, {
-				id: idCandidate,
-				name: warehouseName,
-			});
-		}
-		return Array.from(warehouseMap.values()).sort((a, b) =>
-			a.name.localeCompare(b.name, "es", { sensitivity: "base" }),
-		);
-	}, [cabinetWarehouse]);
+
+		return Array.from(warehouseCabinetMap.values())
+			.map((mapping) => ({
+				id: mapping.warehouseId,
+				name: mapping.isDistributionCenter
+					? `${mapping.warehouseName} (Centro de distribución)`
+					: mapping.warehouseName,
+			}))
+			.sort((a, b) =>
+				a.name.localeCompare(b.name, "es", { sensitivity: "base" }),
+			);
+	}, [warehouseCabinetMap]);
 
 	const handleAddDialogChange = useCallback(
 		(open: boolean) => {
@@ -369,7 +481,10 @@ export function InventarioPage({
 
 	const isAddSubmitting = isCreatingInventoryItem || isPrintingLabels;
 	const isAddSubmitDisabled =
-		!selectedProduct || !selectedWarehouseId || isAddSubmitting;
+		!selectedProduct ||
+		!selectedWarehouseId ||
+		isAddSubmitting ||
+		distributionCenterIds.has(selectedWarehouseId);
 
 	const handleAddProductSubmit = useCallback(async () => {
 		if (!selectedProduct) {
@@ -378,6 +493,10 @@ export function InventarioPage({
 		}
 		if (!selectedWarehouseId) {
 			toast.error("Selecciona el almacén donde se creará el producto.");
+			return;
+		}
+		if (distributionCenterIds.has(selectedWarehouseId)) {
+			toast.error("Los centros de distribución no permiten alta de producto.");
 			return;
 		}
 		const quantity = Number.isFinite(qrQuantity)
@@ -436,6 +555,7 @@ export function InventarioPage({
 		}
 	}, [
 		createInventoryItem,
+		distributionCenterIds,
 		handlePrintQrLabels,
 		qrQuantity,
 		resetAddProductForm,
@@ -509,10 +629,16 @@ export function InventarioPage({
 		if (items.length === 0) {
 			return;
 		}
-		const source = currentTab === "general" ? "warehouse" : "cabinet";
+
+		const source: "warehouse" | "cabinet" =
+			currentTab === "general" ? "warehouse" : "cabinet";
+
 		const candidates = items.flatMap((it) => {
 			const uuid = it.uuid ?? it.id;
-			// Search in both warehouse and cabinet data
+			if (!uuid) {
+				return [];
+			}
+
 			const completeProductInfo =
 				inventory && "data" in inventory
 					? inventory.data?.warehouse.find(
@@ -522,25 +648,34 @@ export function InventarioPage({
 							(item) => item.productStock.id === uuid,
 						)
 					: null;
-			const warehouse = completeProductInfo?.productStock.currentWarehouse;
-			const cabinet = completeProductInfo?.productStock.currentCabinet;
-			return uuid
-				? [
-						{
-							uuid,
-							barcode: product.barcode,
-							productName: product.name,
-							category: product.category,
-							warehouse: warehouse ?? "",
-							cabinet_id: cabinet ?? "",
-							source: source as "warehouse" | "cabinet",
-						},
-					]
-				: [];
+			const warehouseId =
+				completeProductInfo?.productStock.currentWarehouse ?? "";
+			const cabinetId = completeProductInfo?.productStock.currentCabinet ?? "";
+
+			if (distributionCenterIds.has(warehouseId)) {
+				return [];
+			}
+
+			return [
+				{
+					uuid,
+					barcode: product.barcode,
+					productName: product.name,
+					category: product.category,
+					warehouse: warehouseId,
+					cabinet_id: cabinetId,
+					source,
+				},
+			];
 		});
+
 		if (candidates.length === 0) {
+			toast.error(
+				"No es posible transferir inventario del centro de distribución.",
+			);
 			return;
 		}
+
 		addToTransfer(candidates);
 		const direction = source === "warehouse" ? "al gabinete" : "al almacén";
 		toast.success(`Agregado a la lista de transferencia ${direction}`, {
@@ -562,82 +697,52 @@ export function InventarioPage({
 	}, [transferList, listSearch]);
 
 	/**
-	 * Helper to extract warehouse and cabinet IDs from cabinetWarehouse data
-	 * Creates a map for easy lookup: warehouseId -> { cabinetId, warehouseName, cabinetName }
+	 * UUIDs for inventory items that belong to distribution centers, used to disable transfers.
 	 */
-	const warehouseCabinetMap = useMemo(() => {
-		const map = new Map<
-			string,
-			{ cabinetId: string; warehouseId: string; warehouseName: string }
-		>();
-
-		if (
-			!cabinetWarehouse ||
-			typeof cabinetWarehouse !== "object" ||
-			!("success" in cabinetWarehouse) ||
-			!cabinetWarehouse.success
-		) {
-			return map;
+	const distributionCenterUUIDs = useMemo(() => {
+		const uuids = new Set<string>();
+		if (!distributionCenterIds.size) {
+			return uuids;
 		}
 
-		const entries = Array.isArray(cabinetWarehouse.data)
-			? (cabinetWarehouse.data as Array<Record<string, unknown>>)
-			: [];
-
-		for (const entryRaw of entries) {
-			if (!entryRaw || typeof entryRaw !== "object") {
-				continue;
+		const collectUUID = (entries: unknown[]) => {
+			for (const rawItem of entries) {
+				if (
+					!rawItem ||
+					typeof rawItem !== "object" ||
+					!("productStock" in rawItem)
+				) {
+					continue;
+				}
+				const stock = (
+					rawItem as {
+						productStock?: { id?: string; currentWarehouse?: string | null };
+					}
+				).productStock;
+				if (!stock || typeof stock !== "object") {
+					continue;
+				}
+				const stockUuid = stock.id;
+				const stockWarehouseId = stock.currentWarehouse ?? "";
+				if (stockUuid && distributionCenterIds.has(stockWarehouseId)) {
+					uuids.add(stockUuid);
+				}
 			}
-			const entry = entryRaw as Record<string, unknown>;
+		};
 
-			// Extract warehouse ID
-			const entryWarehouseId =
-				typeof entry.warehouseId === "string" &&
-				entry.warehouseId.trim().length > 0
-					? entry.warehouseId.trim()
-					: typeof (entry as { warehouse_id?: string }).warehouse_id ===
-								"string" &&
-							(entry as { warehouse_id?: string }).warehouse_id?.trim().length
-						? (
-								(entry as { warehouse_id?: string }).warehouse_id as string
-							).trim()
-						: null;
-
-			// Extract cabinet ID
-			const entryCabinetId =
-				typeof entry.cabinetId === "string" && entry.cabinetId.trim().length > 0
-					? entry.cabinetId.trim()
-					: typeof (entry as { cabinet_id?: string }).cabinet_id === "string" &&
-							(entry as { cabinet_id?: string }).cabinet_id?.trim().length
-						? ((entry as { cabinet_id?: string }).cabinet_id as string).trim()
-						: null;
-
-			// Extract warehouse name
-			const entryWarehouseName =
-				typeof entry.warehouseName === "string" &&
-				entry.warehouseName.trim().length > 0
-					? entry.warehouseName.trim()
-					: typeof (entry as { warehouse_name?: string }).warehouse_name ===
-								"string" &&
-							(entry as { warehouse_name?: string }).warehouse_name?.trim()
-								.length
-						? (
-								(entry as { warehouse_name?: string }).warehouse_name as string
-							).trim()
-						: null;
-
-			if (entryWarehouseId && entryCabinetId) {
-				map.set(entryWarehouseId, {
-					cabinetId: entryCabinetId,
-					warehouseId: entryWarehouseId,
-					warehouseName:
-						entryWarehouseName ?? `Almacén ${entryWarehouseId.slice(0, 6)}`,
-				});
-			}
+		if (inventory && typeof inventory === "object" && "data" in inventory) {
+			const warehouseInventory = Array.isArray(inventory.data?.warehouse)
+				? (inventory.data?.warehouse as unknown[])
+				: [];
+			const cabinetInventory = Array.isArray(inventory.data?.cabinet)
+				? (inventory.data?.cabinet as unknown[])
+				: [];
+			collectUUID(warehouseInventory);
+			collectUUID(cabinetInventory);
 		}
 
-		return map;
-	}, [cabinetWarehouse]);
+		return uuids;
+	}, [distributionCenterIds, inventory]);
 
 	/**
 	 * Get the source warehouse/cabinet info from the first item in transfer list
@@ -676,10 +781,11 @@ export function InventarioPage({
 	 * 2. Items from different warehouses/cabinets (for encargados)
 	 */
 	const disabledUUIDs = useMemo(() => {
-		const disabled = new Set(transferList.map((item) => item.uuid));
+		const disabled = new Set<string>(distributionCenterUUIDs);
+		for (const item of transferList) {
+			disabled.add(item.uuid);
+		}
 
-		// If there are items in the transfer list and user is encargado,
-		// disable items from different sources
 		if (transferList.length > 0 && transferSourceInfo) {
 			const allItems = [
 				...(inventory && "data" in inventory
@@ -708,7 +814,6 @@ export function InventarioPage({
 					continue;
 				}
 
-				// If item is already in transfer list, skip
 				if (disabled.has(itemUuid)) {
 					continue;
 				}
@@ -716,11 +821,7 @@ export function InventarioPage({
 				const itemWarehouse = stock?.currentWarehouse ?? "";
 				const itemCabinet = stock?.currentCabinet;
 
-				// Determine if this item should be disabled based on transfer source
 				if (transferSourceInfo.source === "warehouse") {
-					// We're transferring from warehouse, disable items from:
-					// 1. Different warehouses
-					// 2. Items that are already in a cabinet (currentCabinet is not null)
 					if (
 						itemWarehouse !== transferSourceInfo.warehouseId ||
 						itemCabinet != null
@@ -728,9 +829,6 @@ export function InventarioPage({
 						disabled.add(itemUuid);
 					}
 				} else {
-					// We're transferring from cabinet, disable items from:
-					// 1. Items not in a cabinet
-					// 2. Items in different cabinets
 					if (
 						!itemCabinet ||
 						itemCabinet !== transferSourceInfo.cabinetId ||
@@ -743,7 +841,7 @@ export function InventarioPage({
 		}
 
 		return disabled;
-	}, [transferList, transferSourceInfo, inventory]);
+	}, [distributionCenterUUIDs, inventory, transferList, transferSourceInfo]);
 
 	const warehouseFilter: string | undefined = isEncargado
 		? "all"
@@ -878,8 +976,14 @@ export function InventarioPage({
 					<div className="flex items-center gap-3">
 						<Dialog onOpenChange={handleAddDialogChange} open={isAddDialogOpen}>
 							<DialogTrigger asChild>
-								<Button className="whitespace-nowrap" variant="default">
-									Agregar producto
+								<Button
+									className="whitespace-nowrap"
+									disabled={distributionCenterIds.has(selectedWarehouseId)}
+									variant="default"
+								>
+									{distributionCenterIds.has(selectedWarehouseId)
+										? "Centro de distribución (solo consulta)"
+										: "Agregar producto"}
 								</Button>
 							</DialogTrigger>
 							<DialogContent className="w-full max-w-[600px]">
@@ -1199,6 +1303,7 @@ export function InventarioPage({
 				<TabsContent className="space-y-4" value="general">
 					<ProductCatalogTable
 						disabledUUIDs={disabledUUIDs}
+						distributionCenterIds={distributionCenterIds}
 						enableDispose
 						enableSelection
 						inventory={warehouseItems}
@@ -1219,7 +1324,9 @@ export function InventarioPage({
 								uuid,
 							});
 						}}
+						canEditLimits={isEncargado}
 						productCatalog={productCatalog}
+						stockLimitsMap={stockLimitsMap}
 						warehouse={warehouseFilter}
 						warehouseMap={cabinetWarehouse}
 					/>
@@ -1229,6 +1336,7 @@ export function InventarioPage({
 				<TabsContent className="space-y-4" value="gabinete">
 					<ProductCatalogTable
 						disabledUUIDs={disabledUUIDs}
+						distributionCenterIds={distributionCenterIds}
 						enableDispose
 						enableSelection
 						inventory={cabinetItems}
@@ -1249,7 +1357,9 @@ export function InventarioPage({
 								uuid,
 							});
 						}}
+						canEditLimits={isEncargado}
 						productCatalog={productCatalog}
+						stockLimitsMap={stockLimitsMap}
 						warehouse={cabinetFilter}
 						warehouseMap={cabinetWarehouse}
 					/>

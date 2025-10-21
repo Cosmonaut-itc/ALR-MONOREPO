@@ -9,4 +9,5 @@ export const queryKeys = {
 	users: ["users"],
 	replenishmentOrders: ["replenishmentOrders"],
 	replenishmentOrderDetail: ["replenishmentOrderDetail"],
+	stockLimits: ["stockLimits"],
 };

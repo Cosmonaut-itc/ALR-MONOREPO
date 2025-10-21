@@ -129,6 +129,26 @@ export type ProductCatalogItem = ProductCatalogData extends { data: infer T }
 		: never
 	: never;
 
+export type StockLimit = {
+	warehouseId: string;
+	barcode: number;
+	minQuantity: number;
+	maxQuantity: number;
+	notes?: string | null;
+};
+
+export type StockLimitResponse = {
+	success: boolean;
+	message?: string;
+	data?: StockLimit;
+};
+
+export type StockLimitListResponse = {
+	success: boolean;
+	message?: string;
+	data?: StockLimit[];
+};
+
 /**
  * Type for creating a transfer order (matches API endpoint expectations)
  */
