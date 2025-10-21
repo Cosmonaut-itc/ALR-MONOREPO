@@ -1046,19 +1046,6 @@ export function ProductCatalogTable({
 																	<span className="truncate">
 																		{(data.id || "").slice(0, 8)}...
 																	</span>
-																	{hasLimit && (
-																		<Badge
-																			className="bg-[#F3F4F6] text-[#374151] dark:bg-[#374151] dark:text-[#D1D5DB]"
-																			title={
-																				canEditLimits
-																					? "Límite configurado"
-																					: undefined
-																			}
-																			variant="secondary"
-																		>
-																			Límite
-																		</Badge>
-																	)}
 																	<Tooltip>
 																		<TooltipTrigger asChild>
 																			<Button
@@ -1218,9 +1205,23 @@ export function ProductCatalogTable({
 				header: "Producto",
 				cell: ({ row }) => {
 					const product = row.original;
+					const hasLimit = Boolean(
+						stockLimitsMap?.get(`${warehouse}:${product.barcode}`),
+					);
 					return (
 						<div className="font-medium text-[#11181C] dark:text-[#ECEDEE]">
-							<div>{product.name}</div>
+							<div className="flex items-center gap-2">
+								<div>{product.name}</div>
+								{hasLimit && (
+									<Badge
+										className="bg-[#F3F4F6] text-[#374151] dark:bg-[#374151] dark:text-[#D1D5DB]"
+										title={canEditLimits ? "Límite configurado" : undefined}
+										variant="secondary"
+									>
+										Límite configurado
+									</Badge>
+								)}
+							</div>
 						</div>
 					);
 				},
