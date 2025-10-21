@@ -1,17 +1,16 @@
-import {
-	afterAll,
-	afterEach,
-	beforeAll,
-	beforeEach,
-	describe,
-	expect,
-	it,
-} from 'bun:test';
-import { eq, inArray, or } from 'drizzle-orm';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { randomUUID } from 'node:crypto';
+import { eq, inArray, or } from 'drizzle-orm';
 import app from '.';
 import { db } from './db/index';
-import * as schemas from './db/schema';
+import {
+	employee,
+	replenishmentOrder,
+	replenishmentOrderDetails,
+	user,
+	warehouse,
+	warehouseTransfer,
+} from './db/schema';
 import { auth } from './lib/auth';
 import type { SessionUser } from './lib/replenishment-orders';
 
@@ -29,12 +28,12 @@ const TEST_EMAIL_DOMAIN = 'replenishment-suite.dev';
 
 async function cleanupOrders() {
 	const orders = await db
-		.select({ id: schemas.replenishmentOrder.id })
-		.from(schemas.replenishmentOrder)
+		.select({ id: replenishmentOrder.id })
+		.from(replenishmentOrder)
 		.where(
 			or(
-				eq(schemas.replenishmentOrder.sourceWarehouseId, sourceWarehouseId),
-				eq(schemas.replenishmentOrder.cedisWarehouseId, cedisWarehouseId),
+				eq(replenishmentOrder.sourceWarehouseId, sourceWarehouseId),
+				eq(replenishmentOrder.cedisWarehouseId, cedisWarehouseId),
 			),
 		);
 
@@ -45,10 +44,10 @@ async function cleanupOrders() {
 	const ids = orders.map((order) => order.id);
 
 	await db
-		.delete(schemas.replenishmentOrderDetails)
-		.where(inArray(schemas.replenishmentOrderDetails.replenishmentOrderId, ids));
+		.delete(replenishmentOrderDetails)
+		.where(inArray(replenishmentOrderDetails.replenishmentOrderId, ids));
 
-	await db.delete(schemas.replenishmentOrder).where(inArray(schemas.replenishmentOrder.id, ids));
+	await db.delete(replenishmentOrder).where(inArray(replenishmentOrder.id, ids));
 }
 
 async function cleanupTransfers() {
@@ -56,9 +55,7 @@ async function cleanupTransfers() {
 		return;
 	}
 
-	await db
-		.delete(schemas.warehouseTransfer)
-		.where(inArray(schemas.warehouseTransfer.id, createdTransferIds));
+	await db.delete(warehouseTransfer).where(inArray(warehouseTransfer.id, createdTransferIds));
 	createdTransferIds.length = 0;
 }
 
@@ -72,7 +69,7 @@ async function createTransfer({
 	const id = randomUUID();
 	const transferNumber = `TEST-RO-${id.slice(0, 12)}`;
 
-	await db.insert(schemas.warehouseTransfer).values({
+	await db.insert(warehouseTransfer).values({
 		id,
 		transferNumber,
 		transferType: 'external',
@@ -85,7 +82,7 @@ async function createTransfer({
 	return id;
 }
 
-async function createOrder(items = [{ barcode: 123456, quantity: 5 }]) {
+async function createOrder(items = [{ barcode: 123_456, quantity: 5 }]) {
 	const request = new Request('http://localhost/api/replenishment-orders', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
@@ -98,9 +95,13 @@ async function createOrder(items = [{ barcode: 123456, quantity: 5 }]) {
 	});
 
 	const response = await app.fetch(request);
-	expect(response.status).toBe(201);
+	if (response.status !== 201) {
+		throw new Error(`Failed to create order, received status ${response.status}`);
+	}
 	const json = await response.json();
-	expect(json.success).toBe(true);
+	if (!json.success) {
+		throw new Error('Order creation response did not indicate success');
+	}
 	return json.data as {
 		id: string;
 		orderNumber: string;
@@ -115,7 +116,7 @@ beforeAll(async () => {
 	const email = `replenishment.${Date.now()}@${TEST_EMAIL_DOMAIN}`;
 	const now = new Date();
 
-	await db.insert(schemas.user).values({
+	await db.insert(user).values({
 		id: testUserId,
 		name: 'Replenishment Test User',
 		email,
@@ -130,7 +131,7 @@ beforeAll(async () => {
 	cedisWarehouseId = randomUUID();
 	nonCedisWarehouseId = randomUUID();
 
-	await db.insert(schemas.warehouse).values([
+	await db.insert(warehouse).values([
 		{
 			id: sourceWarehouseId,
 			name: 'Source Warehouse Test',
@@ -158,7 +159,7 @@ beforeAll(async () => {
 	]);
 
 	employeeId = randomUUID();
-	await db.insert(schemas.employee).values({
+	await db.insert(employee).values({
 		id: employeeId,
 		name: 'Transfer Initiator',
 		surname: 'Test',
@@ -202,17 +203,11 @@ afterAll(async () => {
 	await cleanupOrders();
 	await cleanupTransfers();
 
-	await db.delete(schemas.employee).where(eq(schemas.employee.id, employeeId));
+	await db.delete(employee).where(eq(employee.id, employeeId));
 	await db
-		.delete(schemas.warehouse)
-		.where(
-			inArray(schemas.warehouse.id, [
-				sourceWarehouseId,
-				cedisWarehouseId,
-				nonCedisWarehouseId,
-			]),
-		);
-	await db.delete(schemas.user).where(eq(schemas.user.id, testUserId));
+		.delete(warehouse)
+		.where(inArray(warehouse.id, [sourceWarehouseId, cedisWarehouseId, nonCedisWarehouseId]));
+	await db.delete(user).where(eq(user.id, testUserId));
 
 	auth.api.getSession = originalGetSession;
 });
@@ -225,7 +220,7 @@ describe('Replenishment Orders API', () => {
 			body: JSON.stringify({
 				sourceWarehouseId,
 				cedisWarehouseId: nonCedisWarehouseId,
-				items: [{ barcode: 111222, quantity: 3 }],
+				items: [{ barcode: 111_222, quantity: 3 }],
 			}),
 		});
 
@@ -251,14 +246,11 @@ describe('Replenishment Orders API', () => {
 		expect(sentJson.data.sentByUserId).toBe(testUserId);
 		expect(sentJson.data.sentAt).toBeDefined();
 
-		const markReceived = new Request(
-			`http://localhost/api/replenishment-orders/${order.id}`,
-			{
-				method: 'PUT',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ isReceived: true }),
-			},
-		);
+		const markReceived = new Request(`http://localhost/api/replenishment-orders/${order.id}`, {
+			method: 'PUT',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ isReceived: true }),
+		});
 
 		const receivedResponse = await app.fetch(markReceived);
 		expect(receivedResponse.status).toBe(200);
@@ -270,8 +262,8 @@ describe('Replenishment Orders API', () => {
 
 	it('lists orders globally and by warehouse with item aggregates', async () => {
 		await createOrder([
-			{ barcode: 445566, quantity: 4 },
-			{ barcode: 778899, quantity: 2 },
+			{ barcode: 445_566, quantity: 4 },
+			{ barcode: 778_899, quantity: 2 },
 		]);
 
 		const listResponse = await app.fetch(
@@ -283,9 +275,7 @@ describe('Replenishment Orders API', () => {
 		expect(listJson.data[0].itemsCount).toBe(2);
 
 		const warehouseResponse = await app.fetch(
-			new Request(
-				`http://localhost/api/replenishment-orders/warehouse/${sourceWarehouseId}`,
-			),
+			new Request(`http://localhost/api/replenishment-orders/warehouse/${sourceWarehouseId}`),
 		);
 		expect(warehouseResponse.status).toBe(200);
 		const warehouseJson = await warehouseResponse.json();
@@ -294,7 +284,7 @@ describe('Replenishment Orders API', () => {
 	});
 
 	it('retrieves order details with related items', async () => {
-		const order = await createOrder([{ barcode: 995533, quantity: 7 }]);
+		const order = await createOrder([{ barcode: 995_533, quantity: 7 }]);
 
 		const response = await app.fetch(
 			new Request(`http://localhost/api/replenishment-orders/${order.id}`),
@@ -302,7 +292,7 @@ describe('Replenishment Orders API', () => {
 		expect(response.status).toBe(200);
 		const json = await response.json();
 		expect(json.data.details.length).toBe(1);
-		expect(json.data.details[0].barcode).toBe(995533);
+		expect(json.data.details[0].barcode).toBe(995_533);
 		expect(json.data.hasRelatedTransfer).toBe(false);
 	});
 
@@ -316,14 +306,11 @@ describe('Replenishment Orders API', () => {
 		mockSessionUser.warehouseId = cedisWarehouseId;
 
 		const badLink = await app.fetch(
-			new Request(
-				`http://localhost/api/replenishment-orders/${order.id}/link-transfer`,
-				{
-					method: 'PATCH',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ warehouseTransferId: mismatchedTransferId }),
-				},
-			),
+			new Request(`http://localhost/api/replenishment-orders/${order.id}/link-transfer`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ warehouseTransferId: mismatchedTransferId }),
+			}),
 		);
 		expect(badLink.status).toBe(400);
 
@@ -333,14 +320,11 @@ describe('Replenishment Orders API', () => {
 		});
 
 		const goodLink = await app.fetch(
-			new Request(
-				`http://localhost/api/replenishment-orders/${order.id}/link-transfer`,
-				{
-					method: 'PATCH',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ warehouseTransferId: matchingTransferId }),
-				},
-			),
+			new Request(`http://localhost/api/replenishment-orders/${order.id}/link-transfer`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ warehouseTransferId: matchingTransferId }),
+			}),
 		);
 
 		expect(goodLink.status).toBe(200);

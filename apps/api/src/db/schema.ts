@@ -127,6 +127,34 @@ export const productStock = pgTable('product_stock', {
 	firstUsed: date('first_used'),
 });
 
+export const stockLimit = pgTable(
+	'stock_limit',
+	{
+		id: uuid('id').default(sql`gen_random_uuid()`).notNull().primaryKey(),
+		warehouseId: uuid('warehouse_id')
+			.notNull()
+			.references(() => warehouse.id, {
+				onUpdate: 'cascade',
+				onDelete: 'restrict',
+			}),
+		barcode: integer('barcode').notNull(),
+		minQuantity: integer('min_quantity').default(0).notNull(),
+		maxQuantity: integer('max_quantity').default(0).notNull(),
+		notes: text('notes'),
+		createdAt: timestamp('created_at').defaultNow().notNull(),
+		updatedAt: timestamp('updated_at').defaultNow().notNull(),
+		createdBy: text('created_by').references((): AnyPgColumn => user.id),
+	},
+	(table) => ({
+		warehouseBarcodeUnique: uniqueIndex('stock_limit_warehouse_id_barcode_key').on(
+			table.warehouseId,
+			table.barcode,
+		),
+		warehouseIdIdx: index('stock_limit_warehouse_id_idx').on(table.warehouseId),
+		barcodeIdx: index('stock_limit_barcode_idx').on(table.barcode),
+	}),
+);
+
 export const withdrawOrder = pgTable('withdraw_order', {
 	id: uuid('id').defaultRandom().primaryKey().notNull(),
 	dateWithdraw: date('date_withdraw').defaultNow().notNull(),
@@ -349,13 +377,10 @@ export const replenishmentOrder = pgTable('replenishment_order', {
 		onUpdate: 'cascade',
 		onDelete: 'set null',
 	}),
-	warehouseTransferId: uuid('warehouse_transfer_id').references(
-		() => warehouseTransfer.id,
-		{
-			onUpdate: 'cascade',
-			onDelete: 'set null',
-		},
-	),
+	warehouseTransferId: uuid('warehouse_transfer_id').references(() => warehouseTransfer.id, {
+		onUpdate: 'cascade',
+		onDelete: 'set null',
+	}),
 	notes: text('notes'),
 	createdAt: timestamp('created_at')
 		.$defaultFn(() => /* @__PURE__ */ new Date())
@@ -384,9 +409,7 @@ export const replenishmentOrderDetails = pgTable(
 			table.replenishmentOrderId,
 			table.barcode,
 		),
-		orderIdIdx: index('replenishment_order_details_order_idx').on(
-			table.replenishmentOrderId,
-		),
+		orderIdIdx: index('replenishment_order_details_order_idx').on(table.replenishmentOrderId),
 		barcodeIdx: index('replenishment_order_details_barcode_idx').on(table.barcode),
 	}),
 );
@@ -562,6 +585,8 @@ export const warehouseRelations = relations(warehouse, ({ one, many }) => ({
 	assignedUsers: many(user),
 	// Product stock currently in this warehouse
 	productStock: many(productStock),
+	// Stock limits configured for this warehouse
+	stockLimits: many(stockLimit),
 	// Transfers originating from this warehouse
 	outgoingTransfers: many(warehouseTransfer, {
 		relationName: 'sourceWarehouse',
@@ -713,6 +738,18 @@ export const productStockRelations = relations(productStock, ({ one, many }) => 
 	usageHistory: many(productStockUsageHistory),
 }));
 
+export const stockLimitRelations = relations(stockLimit, ({ one }) => ({
+	warehouse: one(warehouse, {
+		fields: [stockLimit.warehouseId],
+		references: [warehouse.id],
+	}),
+	creator: one(user, {
+		fields: [stockLimit.createdBy],
+		references: [user.id],
+		relationName: 'stockLimitCreator',
+	}),
+}));
+
 // Employee relations including transfer activities (external and internal)
 export const employeeRelations = relations(employee, ({ many, one }) => ({
 	// User account relation
@@ -778,6 +815,10 @@ export const userRelations = relations(user, ({ one, many }) => ({
 	// Warehouses last modified by this user
 	lastModifiedWarehouses: many(warehouse, {
 		relationName: 'warehouseModifier',
+	}),
+	// Stock limits created by this user
+	stockLimitsCreated: many(stockLimit, {
+		relationName: 'stockLimitCreator',
 	}),
 }));
 

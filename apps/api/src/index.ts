@@ -60,6 +60,40 @@ type Variables = {
 };
 
 /**
+ * Represents a single mapping entry between a cabinet and its warehouse.
+ * The cabinet fields can be null when a warehouse does not have an associated cabinet.
+ */
+type CabinetWarehouseMapEntry = {
+	/** Cabinet identifier or null when not applicable */
+	cabinetId: string | null;
+	/** Cabinet name or null when not applicable */
+	cabinetName: string | null;
+	/** Warehouse identifier */
+	warehouseId: string;
+	/** Warehouse display name */
+	warehouseName: string;
+};
+
+const stockLimitCreateSchema = z
+	.object({
+		warehouseId: z.string().uuid('Invalid warehouse ID'),
+		barcode: z.number().int().nonnegative('Barcode must be a non-negative integer'),
+		minQuantity: z.number().int().nonnegative('Minimum quantity cannot be negative'),
+		maxQuantity: z.number().int().nonnegative('Maximum quantity cannot be negative'),
+		notes: z.string().max(1000, 'Notes must be 1000 characters or less').optional(),
+	})
+	.refine((data) => data.minQuantity <= data.maxQuantity, {
+		message: 'minQuantity must be ≤ maxQuantity',
+		path: ['maxQuantity'],
+	});
+
+const stockLimitUpdateSchema = z.object({
+	minQuantity: z.number().int().nonnegative('Minimum quantity cannot be negative').optional(),
+	maxQuantity: z.number().int().nonnegative('Maximum quantity cannot be negative').optional(),
+	notes: z.string().max(1000, 'Notes must be 1000 characters or less').optional(),
+});
+
+/**
  * Helper function to log detailed error information
  */
 function logErrorDetails(error: unknown, method: string, path: string): void {
@@ -1838,6 +1872,336 @@ const route = app
 			);
 		}
 	})
+	/**
+	 * POST /api/auth/stock-limits - Create a new stock limit configuration
+	 *
+	 * Stores minimum and maximum quantity thresholds for a barcode in a given warehouse.
+	 * Requires authenticated user with role 'encargado'.
+	 */
+	.post('/api/auth/stock-limits', zValidator('json', stockLimitCreateSchema), async (c) => {
+		const user = c.get('user');
+		if (!user) {
+			return c.json(
+				{
+					success: false,
+					message: 'Authentication required',
+				} satisfies ApiResponse,
+				401,
+			);
+		}
+
+		if (user.role !== 'encargado') {
+			return c.json(
+				{
+					success: false,
+					message: 'Forbidden - insufficient permissions',
+				} satisfies ApiResponse,
+				403,
+			);
+		}
+
+		const payload = c.req.valid('json');
+
+		try {
+			const [created] = await db
+				.insert(schemas.stockLimit)
+				.values({
+					warehouseId: payload.warehouseId,
+					barcode: payload.barcode,
+					minQuantity: payload.minQuantity,
+					maxQuantity: payload.maxQuantity,
+					notes: payload.notes,
+					createdBy: user.id,
+					createdAt: new Date(),
+					updatedAt: new Date(),
+				})
+				.returning();
+
+			if (!created) {
+				return c.json(
+					{
+						success: false,
+						message: 'Failed to create stock limit',
+					} satisfies ApiResponse,
+					500,
+				);
+			}
+
+			return c.json(
+				{
+					success: true,
+					message: 'Stock limit created successfully',
+					data: created,
+				} satisfies ApiResponse,
+				201,
+			);
+		} catch (error) {
+			const normalizedError = error instanceof Error ? error : new Error(String(error));
+			const dbError = handleDatabaseError(normalizedError);
+
+			if (dbError) {
+				if (dbError.status === 409) {
+					const isDuplicate =
+						typeof dbError.response.message === 'string' &&
+						dbError.response.message.toLowerCase().includes('duplicate');
+
+					if (isDuplicate) {
+						return c.json(
+							{
+								success: false,
+								message:
+									'Stock limit already exists for this warehouse and barcode',
+							} satisfies ApiResponse,
+							409,
+						);
+					}
+
+					return c.json(
+						{
+							success: false,
+							message: 'Invalid warehouse or user reference for stock limit',
+						} satisfies ApiResponse,
+						409,
+					);
+				}
+
+				return c.json(dbError.response, dbError.status as 400 | 500);
+			}
+
+			logErrorDetails(normalizedError, 'POST', '/api/auth/stock-limits');
+			return c.json(
+				{
+					success: false,
+					message: 'Failed to create stock limit',
+				} satisfies ApiResponse,
+				500,
+			);
+		}
+	})
+	/**
+	 * PUT /api/auth/stock-limits/:warehouseId/:barcode - Update an existing stock limit
+	 *
+	 * Allows updating min/max thresholds or notes while enforcing minQuantity ≤ maxQuantity.
+	 * Requires authenticated user with role 'encargado'.
+	 */
+	.put(
+		'/api/auth/stock-limits/:warehouseId/:barcode',
+		zValidator(
+			'param',
+			z.object({
+				warehouseId: z.string().uuid('Invalid warehouse ID'),
+				barcode: z.coerce
+					.number()
+					.int()
+					.nonnegative('Barcode must be a non-negative integer'),
+			}),
+		),
+		zValidator('json', stockLimitUpdateSchema),
+		async (c) => {
+			const user = c.get('user');
+			if (!user) {
+				return c.json(
+					{
+						success: false,
+						message: 'Authentication required',
+					} satisfies ApiResponse,
+					401,
+				);
+			}
+
+			if (user.role !== 'encargado') {
+				return c.json(
+					{
+						success: false,
+						message: 'Forbidden - insufficient permissions',
+					} satisfies ApiResponse,
+					403,
+				);
+			}
+
+			const { warehouseId, barcode } = c.req.valid('param');
+			const payload = c.req.valid('json');
+
+			if (
+				payload.minQuantity === undefined &&
+				payload.maxQuantity === undefined &&
+				payload.notes === undefined
+			) {
+				return c.json(
+					{
+						success: false,
+						message: 'At least one field must be provided to update',
+					} satisfies ApiResponse,
+					400,
+				);
+			}
+
+			try {
+				const existing = await db
+					.select()
+					.from(schemas.stockLimit)
+					.where(
+						and(
+							eq(schemas.stockLimit.warehouseId, warehouseId),
+							eq(schemas.stockLimit.barcode, barcode),
+						),
+					);
+
+				if (existing.length === 0) {
+					return c.json(
+						{
+							success: false,
+							message: 'Stock limit not found for provided warehouse and barcode',
+						} satisfies ApiResponse,
+						404,
+					);
+				}
+
+				const current = existing[0];
+				const nextMin = payload.minQuantity ?? current.minQuantity;
+				const nextMax = payload.maxQuantity ?? current.maxQuantity;
+
+				if (nextMin > nextMax) {
+					return c.json(
+						{
+							success: false,
+							message: 'minQuantity must be ≤ maxQuantity',
+						} satisfies ApiResponse,
+						400,
+					);
+				}
+
+				const updateValues: Record<string, unknown> = {
+					minQuantity: nextMin,
+					maxQuantity: nextMax,
+					updatedAt: new Date(),
+				};
+
+				if (payload.notes !== undefined) {
+					updateValues.notes = payload.notes;
+				}
+
+				const [updated] = await db
+					.update(schemas.stockLimit)
+					.set(updateValues)
+					.where(
+						and(
+							eq(schemas.stockLimit.warehouseId, warehouseId),
+							eq(schemas.stockLimit.barcode, barcode),
+						),
+					)
+					.returning();
+
+				if (!updated) {
+					return c.json(
+						{
+							success: false,
+							message: 'Failed to update stock limit',
+						} satisfies ApiResponse,
+						500,
+					);
+				}
+
+				return c.json(
+					{
+						success: true,
+						message: 'Stock limit updated successfully',
+						data: updated,
+					} satisfies ApiResponse,
+					200,
+				);
+			} catch (error) {
+				const normalizedError = error instanceof Error ? error : new Error(String(error));
+				logErrorDetails(
+					normalizedError,
+					'PUT',
+					'/api/auth/stock-limits/:warehouseId/:barcode',
+				);
+
+				return c.json(
+					{
+						success: false,
+						message: 'Failed to update stock limit',
+					} satisfies ApiResponse,
+					500,
+				);
+			}
+		},
+	)
+	/**
+	 * GET /api/auth/stock-limits/all - List all stock limits
+	 *
+	 * Returns all configured stock limits across warehouses. Requires an authenticated session.
+	 */
+	.get('/api/auth/stock-limits/all', async (c) => {
+		try {
+			const limits = await db.select().from(schemas.stockLimit);
+
+			return c.json(
+				{
+					success: true,
+					message: 'Stock limits fetched successfully',
+					data: limits,
+				} satisfies ApiResponse,
+				200,
+			);
+		} catch (error) {
+			const normalizedError = error instanceof Error ? error : new Error(String(error));
+			logErrorDetails(normalizedError, 'GET', '/api/auth/stock-limits/all');
+
+			return c.json(
+				{
+					success: false,
+					message: 'Failed to fetch stock limits',
+				} satisfies ApiResponse,
+				500,
+			);
+		}
+	})
+	/**
+	 * GET /api/auth/stock-limits/by-warehouse - List stock limits for a specific warehouse
+	 *
+	 * Accepts warehouseId as a query parameter and returns filtered stock limits.
+	 */
+	.get(
+		'/api/auth/stock-limits/by-warehouse',
+		zValidator(
+			'query',
+			z.object({
+				warehouseId: z.string().uuid('Invalid warehouse ID'),
+			}),
+		),
+		async (c) => {
+			const { warehouseId } = c.req.valid('query');
+
+			try {
+				const limits = await db
+					.select()
+					.from(schemas.stockLimit)
+					.where(eq(schemas.stockLimit.warehouseId, warehouseId));
+
+				return c.json(
+					{
+						success: true,
+						message: 'Stock limits fetched successfully',
+						data: limits,
+					} satisfies ApiResponse,
+					200,
+				);
+			} catch (error) {
+				const normalizedError = error instanceof Error ? error : new Error(String(error));
+				logErrorDetails(normalizedError, 'GET', '/api/auth/stock-limits/by-warehouse');
+
+				return c.json(
+					{
+						success: false,
+						message: 'Failed to fetch stock limits for warehouse',
+					} satisfies ApiResponse,
+					500,
+				);
+			}
+		},
+	)
 
 	/**
 	 * GET /api/cabinet-warehouse - Retrieve cabinet warehouse data
@@ -1919,7 +2283,7 @@ const route = app
 	.get('/api/auth/cabinet-warehouse/map', async (c) => {
 		try {
 			// Build a cabinet-to-warehouse mapping via inner join for quick lookups
-			const cabinetWarehouseMap = await db
+			const cabinetWarehouseMapRaw = await db
 				.select({
 					cabinetId: schemas.cabinetWarehouse.id,
 					cabinetName: schemas.cabinetWarehouse.name,
@@ -1932,6 +2296,46 @@ const route = app
 					eq(schemas.cabinetWarehouse.warehouseId, schemas.warehouse.id),
 				)
 				.orderBy(schemas.warehouse.name, schemas.cabinetWarehouse.name);
+
+			const cabinetWarehouseMap: CabinetWarehouseMapEntry[] = [];
+			for (const entry of cabinetWarehouseMapRaw) {
+				cabinetWarehouseMap.push({
+					cabinetId: entry.cabinetId,
+					cabinetName: entry.cabinetName,
+					warehouseId: entry.warehouseId,
+					warehouseName: entry.warehouseName,
+				});
+			}
+
+			const hasCedisWarehouse = cabinetWarehouseMap.some(
+				(entry) => entry.warehouseId === DistributionCenterId,
+			);
+
+			if (!hasCedisWarehouse) {
+				const cedisWarehouseRecord = await db
+					.select({
+						warehouseId: schemas.warehouse.id,
+						warehouseName: schemas.warehouse.name,
+					})
+					.from(schemas.warehouse)
+					.where(eq(schemas.warehouse.id, DistributionCenterId))
+					.limit(1);
+
+				if (cedisWarehouseRecord.length > 0) {
+					cabinetWarehouseMap.push({
+						cabinetId: null,
+						cabinetName: null,
+						warehouseId: cedisWarehouseRecord[0]?.warehouseId ?? DistributionCenterId,
+						warehouseName:
+							cedisWarehouseRecord[0]?.warehouseName ??
+							'CEDIS warehouse entry missing name',
+					});
+				}
+			}
+
+			cabinetWarehouseMap.sort((first, second) =>
+				first.warehouseName.localeCompare(second.warehouseName),
+			);
 
 			if (cabinetWarehouseMap.length === 0) {
 				return c.json(
@@ -4935,7 +5339,7 @@ const route = app
 		}
 	})
 	.post(
-		'/api/replenishment-orders',
+		'/api/auth/replenishment-orders',
 		zValidator('json', replenishmentOrderCreateSchema),
 		async (c) => {
 			const payload = c.req.valid('json');
@@ -4957,7 +5361,7 @@ const route = app
 		},
 	)
 	.put(
-		'/api/replenishment-orders/:id',
+		'/api/auth/replenishment-orders/:id',
 		zValidator('param', z.object({ id: z.string().uuid('Invalid order ID') })),
 		zValidator('json', replenishmentOrderUpdateSchema),
 		async (c) => {
@@ -4982,7 +5386,7 @@ const route = app
 		},
 	)
 	.get(
-		'/api/replenishment-orders',
+		'/api/auth/replenishment-orders',
 		zValidator('query', replenishmentOrderStatusQuerySchema),
 		async (c) => {
 			const { status } = c.req.valid('query');
@@ -5004,7 +5408,7 @@ const route = app
 		},
 	)
 	.get(
-		'/api/replenishment-orders/warehouse/:warehouseId',
+		'/api/auth/replenishment-orders/warehouse/:warehouseId',
 		zValidator('param', z.object({ warehouseId: z.string().uuid('Invalid warehouse ID') })),
 		async (c) => {
 			const { warehouseId } = c.req.valid('param');
@@ -5026,7 +5430,7 @@ const route = app
 		},
 	)
 	.get(
-		'/api/replenishment-orders/:id',
+		'/api/auth/replenishment-orders/:id',
 		zValidator('param', z.object({ id: z.string().uuid('Invalid order ID') })),
 		async (c) => {
 			const { id } = c.req.valid('param');
@@ -5048,7 +5452,7 @@ const route = app
 		},
 	)
 	.patch(
-		'/api/replenishment-orders/:id/link-transfer',
+		'/api/auth/replenishment-orders/:id/link-transfer',
 		zValidator('param', z.object({ id: z.string().uuid('Invalid order ID') })),
 		zValidator('json', replenishmentOrderLinkTransferSchema),
 		async (c) => {

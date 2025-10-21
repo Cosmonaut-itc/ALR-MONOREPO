@@ -247,22 +247,14 @@ export const replenishmentOrderCreateSchema = z.object({
 	items: z
 		.array(replenishmentOrderItemSchema)
 		.min(1, 'At least one item is required for a replenishment order'),
-	notes: z
-		.string()
-		.trim()
-		.max(2000, 'Notes must be 2000 characters or fewer')
-		.optional(),
+	notes: z.string().trim().max(2000, 'Notes must be 2000 characters or fewer').optional(),
 });
 
 export const replenishmentOrderUpdateSchema = z
 	.object({
 		isSent: z.boolean().optional(),
 		isReceived: z.boolean().optional(),
-		notes: z
-			.string()
-			.trim()
-			.max(2000, 'Notes must be 2000 characters or fewer')
-			.optional(),
+		notes: z.string().trim().max(2000, 'Notes must be 2000 characters or fewer').optional(),
 		items: z
 			.array(replenishmentOrderItemSchema)
 			.min(1, 'At least one item is required when submitting items')
@@ -297,6 +289,4 @@ export type ReplenishmentOrderUpdate = z.infer<typeof replenishmentOrderUpdateSc
 export type ReplenishmentOrderStatusFilter = z.infer<
 	typeof replenishmentOrderStatusQuerySchema
 >['status'];
-export type ReplenishmentOrderLinkTransfer = z.infer<
-	typeof replenishmentOrderLinkTransferSchema
->;
+export type ReplenishmentOrderLinkTransfer = z.infer<typeof replenishmentOrderLinkTransferSchema>;

@@ -204,6 +204,20 @@
       "when": 1760641492733,
       "tag": "0028_goofy_charles_xavier",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1761074217170,
+      "tag": "0029_spotty_vermin",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1761075242116,
+      "tag": "0030_amazing_wonder_man",
+      "breakpoints": true
     }
   ]
 }
