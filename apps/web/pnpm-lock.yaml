@@ -204,9 +204,6 @@ importers:
       '@biomejs/biome':
         specifier: 2.1.2
         version: 2.1.2
-      '@biomejs/cli-darwin-arm64':
-        specifier: 2.1.2
-        version: 2.1.2
       '@tailwindcss/postcss':
         specifier: ^4.1.9
         version: 4.1.13
@@ -2765,7 +2762,8 @@ snapshots:
       '@biomejs/cli-win32-arm64': 2.1.2
       '@biomejs/cli-win32-x64': 2.1.2
 
-  '@biomejs/cli-darwin-arm64@2.1.2': {}
+  '@biomejs/cli-darwin-arm64@2.1.2':
+    optional: true
 
   '@biomejs/cli-darwin-x64@2.1.2':
     optional: true
