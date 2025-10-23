@@ -881,7 +881,77 @@ export function ProductCatalogTable({
 					>(),
 				);
 
-				const warehouseGroups = Array.from(groupedByWarehouse.entries());
+			const warehouseGroups = Array.from(groupedByWarehouse.entries());
+
+			type EnrichedWarehouseGroup = {
+				key: string;
+				label: string;
+				items: DisplayItem[];
+				isDistributionCenter: boolean;
+				effectiveWarehouseId: string | null;
+				limit: StockLimit | null;
+				belowMinimum: boolean;
+				limitText: string;
+				limitBadgeLabel: string;
+				limitBadgeClassName: string;
+				limitRangeText: string;
+				currentCount: number;
+			};
+
+			const enrichedWarehouseGroups: EnrichedWarehouseGroup[] =
+				warehouseGroups.map(([groupKey, group]) => {
+					const effectiveWarehouseId = group.effectiveWarehouseId;
+					const limitKey =
+						effectiveWarehouseId && stockLimitsMap
+							? `${effectiveWarehouseId}:${product.barcode}`
+							: null;
+					const limit =
+						limitKey && stockLimitsMap
+							? stockLimitsMap.get(limitKey) ?? null
+							: null;
+					const currentCount = group.items.length;
+					const belowMinimum = limit ? currentCount < limit.minQuantity : false;
+					const aboveMaximum = limit ? currentCount > limit.maxQuantity : false;
+					const limitText = limit
+						? `Límite: ${limit.minQuantity}–${limit.maxQuantity}`
+						: "Sin límite";
+					const limitRangeText = limit
+						? `${limit.minQuantity}–${limit.maxQuantity}`
+						: "Sin límite";
+					let limitBadgeLabel = "Sin límite configurado";
+					let limitBadgeClassName =
+						"bg-[#F3F4F6] text-[#374151] dark:bg-[#374151] dark:text-[#D1D5DB]";
+					if (limit) {
+						if (belowMinimum) {
+							limitBadgeLabel = "Bajo limite";
+							limitBadgeClassName =
+								"bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-100";
+						} else if (aboveMaximum) {
+							limitBadgeLabel = "Sobre limite";
+							limitBadgeClassName =
+								"bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100";
+						}
+						else {
+							limitBadgeLabel = "Dentro del limite";
+							limitBadgeClassName =
+								"bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-100";
+						}
+					}
+					return {
+						key: groupKey,
+						label: group.label,
+						items: group.items,
+						isDistributionCenter: group.isDistributionCenter,
+						effectiveWarehouseId,
+						limit,
+						belowMinimum,
+						limitText,
+						limitBadgeLabel,
+						limitBadgeClassName,
+						limitRangeText,
+						currentCount,
+					};
+				});
 
 				return (
 					<div className="border-[#E5E7EB] border-b bg-[#F8FAFC] p-4 dark:border-[#374151] dark:bg-[#1A1B1C]">
@@ -900,6 +970,43 @@ export function ProductCatalogTable({
 								</Button>
 							)}
 						</div>
+					{enrichedWarehouseGroups.length > 0 && (
+						<div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+							{enrichedWarehouseGroups.map((group) => (
+								<div
+									className="theme-transition rounded-md border border-[#E5E7EB] bg-white p-3 dark:border-[#2D3033] dark:bg-[#151718]"
+									key={`${group.key}-summary`}
+								>
+									<div className="flex items-center justify-between">
+										<span className="font-medium text-[#11181C] text-sm dark:text-[#ECEDEE]">
+											{group.label}
+										</span>
+										<Badge
+											className={group.limitBadgeClassName}
+											variant="secondary"
+										>
+											{group.limitBadgeLabel}
+										</Badge>
+									</div>
+									<div className="mt-3 flex flex-wrap gap-4 text-[#687076] text-xs dark:text-[#9BA1A6]">
+										<div>
+											<p className="uppercase tracking-wide">Inventario</p>
+											<p className="mt-1 font-semibold text-[#11181C] text-sm dark:text-[#ECEDEE]">
+												{group.currentCount} unidad
+												{group.currentCount === 1 ? "" : "es"}
+											</p>
+										</div>
+										<div>
+											<p className="uppercase tracking-wide">Límite</p>
+											<p className="mt-1 font-semibold text-[#11181C] text-sm dark:text-[#ECEDEE]">
+												{group.limit ? group.limitRangeText : "Sin límite"}
+											</p>
+										</div>
+									</div>
+								</div>
+							))}
+						</div>
+					)}
 						<div className="overflow-x-auto">
 							<Table>
 								<TableHeader>
@@ -930,31 +1037,16 @@ export function ProductCatalogTable({
 									</TableRow>
 								</TableHeader>
 								<TableBody>
-									{warehouseGroups.map(([groupKey, group]) => {
-										const effectiveWarehouseId = group.effectiveWarehouseId;
-										const limitKey =
-											effectiveWarehouseId && stockLimitsMap
-												? `${effectiveWarehouseId}:${product.barcode}`
-												: null;
-										const limit =
-											limitKey && stockLimitsMap
-												? (stockLimitsMap.get(limitKey) ?? null)
-												: null;
-										const limitText = limit
-											? `Límite: ${limit.minQuantity}–${limit.maxQuantity}`
-											: "Sin límite";
-										const belowMinimum = limit
-											? group.items.length < limit.minQuantity
-											: false;
-										const limitTextClassName = belowMinimum
-											? "font-semibold text-[#B54708] dark:text-[#F7B84B]"
-											: "";
-										const canShowAction =
-											canEditLimits && Boolean(effectiveWarehouseId);
-										const editActionLabel = limit ? "Editar" : "Definir";
+							{enrichedWarehouseGroups.map((group) => {
+								const limitTextClassName = group.belowMinimum
+									? "font-semibold text-[#B54708] dark:text-[#F7B84B]"
+									: "";
+								const canShowAction =
+									canEditLimits && Boolean(group.effectiveWarehouseId);
+								const editActionLabel = group.limit ? "Editar" : "Definir";
 
 										return (
-											<React.Fragment key={groupKey}>
+									<React.Fragment key={group.key}>
 												<TableRow className="bg-[#EAEDF0] text-left text-[#11181C] text-xs uppercase tracking-wide dark:bg-[#252729] dark:text-[#ECEDEE]">
 													<TableCell
 														className="font-semibold"
@@ -962,8 +1054,8 @@ export function ProductCatalogTable({
 													>
 														<div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
 															<div className="flex flex-wrap items-center gap-2">
-																<span>{group.label}</span>
-																{group.isDistributionCenter && (
+														<span>{group.label}</span>
+														{group.isDistributionCenter && (
 																	<Badge
 																		className="bg-[#6B7280] text-white"
 																		variant="secondary"
@@ -971,7 +1063,7 @@ export function ProductCatalogTable({
 																		Centro de distribución
 																	</Badge>
 																)}
-																{belowMinimum && (
+														{group.belowMinimum && (
 																	<Badge
 																		className="bg-amber-100 text-amber-800 hover:bg-amber-100 dark:bg-amber-900 dark:text-amber-100"
 																		variant="secondary"
@@ -980,24 +1072,24 @@ export function ProductCatalogTable({
 																	</Badge>
 																)}
 															</div>
-															<div className="flex flex-wrap items-center gap-3 text-[#687076] text-xs dark:text-[#9BA1A6]">
-																<span>{group.items.length} item(s)</span>
-																<span className={limitTextClassName}>
-																	{limitText}
-																</span>
-																{canShowAction && (
+												<div className="flex flex-wrap items-center gap-3 text-[#687076] text-xs dark:text-[#9BA1A6]">
+													<span>{group.items.length} item(s)</span>
+													<span className={limitTextClassName}>
+														{group.limitText}
+													</span>
+													{canShowAction && (
 																	<Button
 																		className="h-7 px-2 text-xs"
 																		disabled={isSavingStockLimit}
 																		onClick={() => {
-																			if (!effectiveWarehouseId) {
+																if (!group.effectiveWarehouseId) {
 																				return;
 																			}
 																			handleOpenLimitDialog({
 																				product,
-																				warehouseId: effectiveWarehouseId,
+																	warehouseId: group.effectiveWarehouseId,
 																				groupLabel: group.label,
-																				limit,
+																	limit: group.limit,
 																			});
 																		}}
 																		size="sm"
@@ -1010,18 +1102,18 @@ export function ProductCatalogTable({
 														</div>
 													</TableCell>
 												</TableRow>
-												{group.items.map((item) => {
+										{group.items.map((item) => {
 													const { data, key: selectionKey } = item;
 													const isSelected = selectionKey
 														? productSelection.has(selectionKey)
 														: false;
 													const isDisabled =
 														data.isBeingUsed ||
-														group.isDistributionCenter ||
+												group.isDistributionCenter ||
 														(selectionKey
 															? disabledUUIDs.has(selectionKey)
 															: false);
-													const hasLimit = Boolean(limit);
+											const hasLimit = Boolean(group.limit);
 
 													return (
 														<TableRow
