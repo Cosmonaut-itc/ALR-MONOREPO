@@ -56,7 +56,7 @@
     "lucide-react": "^0.454.0",
     "next": "canary",
     "next-themes": "latest",
-    "ns-inventory-api-types": "^1.0.56",
+    "ns-inventory-api-types": "^1.0.57",
     "qrcode": "^1.5.4",
     "react": "^19",
     "react-day-picker": "latest",

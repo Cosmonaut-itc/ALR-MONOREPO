@@ -1,6 +1,6 @@
 "use client";
 
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { v4 as uuidv4 } from "uuid";
@@ -48,7 +48,7 @@ import {
 	getStockLimitsByWarehouse,
 } from "@/lib/fetch-functions/stock-limits";
 import { createQueryKey } from "@/lib/helpers";
-import { useCreateInventoryItem } from "@/lib/mutations/inventory";
+import { useCreateInventoryItem, useSyncInventory } from "@/lib/mutations/inventory";
 import { useCreateTransferOrder } from "@/lib/mutations/transfers";
 import { queryKeys } from "@/lib/query-keys";
 import type { StockItemWithEmployee } from "@/stores/inventory-store";
@@ -246,6 +246,7 @@ export function InventarioPage({
 
 	//Transfer states and store
 	const { mutateAsync: createTransferOrder } = useCreateTransferOrder();
+	const { mutateAsync: syncInventory, isPending: isSyncingInventory } = useSyncInventory();
 	const {
 		mutateAsync: createInventoryItem,
 		isPending: isCreatingInventoryItem,
@@ -407,6 +408,23 @@ export function InventarioPage({
 		[resetAddProductForm],
 	);
 
+	/**
+	 * Ejecuta la sincronización manual del inventario utilizando la mutación correspondiente.
+	 *
+	 * Envuelve la llamada para capturar y mostrar cualquier posible error no manejado por la mutación.
+	 */
+	const handleSyncInventory = useCallback(async (): Promise<void> => {
+		try {
+			await syncInventory();
+		} catch (error) {
+			const message =
+				error instanceof Error && error.message
+					? error.message
+					: "No se pudo sincronizar el inventario.";
+			toast.error(message);
+		}
+	}, [syncInventory]);
+
 	const handlePrintQrLabels = useCallback(async (labels: QrLabelPayload[]) => {
 		if (!labels.length) {
 			throw new Error("No hay etiquetas para imprimir.");
@@ -479,7 +497,7 @@ export function InventarioPage({
 		printWindow.document.close();
 	}, []);
 
-	const isAddSubmitting = isCreatingInventoryItem || isPrintingLabels;
+	const isAddSubmitting = isCreatingInventoryItem || isPrintingLabels || isSyncingInventory;
 	const isAddSubmitDisabled =
 		!selectedProduct ||
 		!selectedWarehouseId ||
@@ -974,328 +992,341 @@ export function InventarioPage({
 					</TabsList>
 					{/* Actions */}
 					<div className="flex items-center gap-3">
+						<Button
+							className="whitespace-nowrap"
+							disabled={isSyncingInventory}
+							onClick={() => {
+								void handleSyncInventory();
+							}}
+							type="button"
+							variant="outline"
+						>
+							{isSyncingInventory
+								? "Sincronizando..."
+								: "Sincronizar inventario"}
+						</Button>
 						<Dialog onOpenChange={handleAddDialogChange} open={isAddDialogOpen}>
-							<DialogTrigger asChild>
-								<Button
-									className="whitespace-nowrap"
-									disabled={distributionCenterIds.has(selectedWarehouseId)}
-									variant="default"
-								>
-									{distributionCenterIds.has(selectedWarehouseId)
-										? "Centro de distribución (solo consulta)"
-										: "Agregar producto"}
-								</Button>
-							</DialogTrigger>
-							<DialogContent className="w-full max-w-[600px]">
-								<DialogHeader>
-									<DialogTitle>Agregar producto</DialogTitle>
-									<DialogDescription>
-										Selecciona un producto, el almacén destino y cuántas
-										etiquetas con QR quieres imprimir.
-									</DialogDescription>
-								</DialogHeader>
-								<form
-									onSubmit={async (event) => {
-										event.preventDefault();
-										await handleAddProductSubmit();
-									}}
-									className="space-y-6"
-								>
-									<div className="space-y-4">
-										<div className="space-y-2">
-											<Label className="text-[#11181C] dark:text-[#ECEDEE]">
-												Producto del catálogo
-											</Label>
-											<ProductCombobox
-												placeholder="Buscar por nombre o código..."
-												products={productOptions}
-												value={selectedProductValue}
-												onValueChange={setSelectedProductValue}
-											/>
-											{selectedProduct ? (
-												<p className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-													Código seleccionado: {selectedProduct.barcode}
-												</p>
-											) : (
-												<p className="text-[#9BA1A6] text-xs">
-													Escoge un producto para continuar.
-												</p>
-											)}
-										</div>
-										<div className="space-y-2">
-											<Label
-												className="text-[#11181C] dark:text-[#ECEDEE]"
-												htmlFor="warehouse-select"
-											>
-												Almacén destino
-											</Label>
-											<Select
-												disabled={warehouseOptions.length === 0}
-												onValueChange={setSelectedWarehouseId}
-												value={selectedWarehouseId}
-											>
-												<SelectTrigger className="w-full" id="warehouse-select">
-													<SelectValue
-														placeholder={
-															warehouseOptions.length === 0
-																? "No hay almacenes disponibles"
-																: "Selecciona un almacén"
-														}
-													/>
-												</SelectTrigger>
-												<SelectContent>
-													{warehouseOptions.length === 0 ? (
-														<SelectItem disabled value="">
-															No hay almacenes disponibles
-														</SelectItem>
-													) : (
-														warehouseOptions.map((option) => (
-															<SelectItem key={option.id} value={option.id}>
-																{option.name}
-															</SelectItem>
-														))
-													)}
-												</SelectContent>
-											</Select>
-										</div>
-										<div className="space-y-2">
-											<Label
-												className="text-[#11181C] dark:text-[#ECEDEE]"
-												htmlFor="qr-quantity"
-											>
-												Cantidad de QR a imprimir
-											</Label>
-											<Input
-												className="border-[#E5E7EB] bg-white text-[#11181C] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]"
-												id="qr-quantity"
-												inputMode="numeric"
-												min={1}
-												max={50}
-												onChange={(event) => {
-													const nextValue = Number.parseInt(
-														event.target.value,
-														10,
-													);
-													if (Number.isNaN(nextValue)) {
-														setQrQuantity(1);
-														return;
-													}
-													setQrQuantity(Math.max(1, Math.min(nextValue, 50)));
-												}}
-												type="number"
-												value={qrQuantity}
-											/>
-											<p className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-												Se creará e imprimirá una etiqueta por cada unidad.
-											</p>
-										</div>
-										<div className="flex items-center space-x-2">
-											<Checkbox
-												checked={isKit}
-												id="is-kit"
-												onCheckedChange={(checked) =>
-													setIsKit(checked === true)
-												}
-											/>
-											<Label
-												className="cursor-pointer text-[#11181C] text-sm font-normal dark:text-[#ECEDEE]"
-												htmlFor="is-kit"
-											>
-												Marcar como producto de kit
-											</Label>
-										</div>
-									</div>
-									<DialogFooter className="gap-2">
-										<Button
-											onClick={() => setIsAddDialogOpen(false)}
-											type="button"
-											variant="outline"
-										>
-											Cancelar
-										</Button>
-										<Button disabled={isAddSubmitDisabled} type="submit">
-											{isAddSubmitting ? "Procesando..." : "Crear e imprimir"}
-										</Button>
-									</DialogFooter>
-								</form>
-							</DialogContent>
-						</Dialog>
-						<Dialog onOpenChange={setIsListOpen} open={isListOpen}>
-							<DialogTrigger asChild>
-								<Button variant="outline">
-									Ver Lista({transferList.length})
-								</Button>
-							</DialogTrigger>
-							<DialogContent className="flex w-full flex-col md:max-h-[90vh] md:w-[95vw] md:max-w-[900px]">
-								<DialogHeader className="flex-shrink-0">
-									<DialogTitle>Lista de transferencia</DialogTitle>
-									<DialogDescription>
-										Revisa y gestiona los items seleccionados para transferir.
-									</DialogDescription>
-								</DialogHeader>
-
-								{/* Transfer Direction Info */}
-								{transferDirection && transferList.length > 0 && (
-									<div className="flex-shrink-0 space-y-2 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-4 dark:border-[#2D3033] dark:bg-[#1E1F20]">
-										<div className="flex items-center justify-between">
-											<div className="space-y-1">
-												<p className="font-medium text-[#11181C] text-sm dark:text-[#ECEDEE]">
-													Origen
-												</p>
-												<p className="text-[#687076] text-sm dark:text-[#9BA1A6]">
-													{transferSourceInfo
-														? getWarehouseName(transferSourceInfo.warehouseId)
-														: "N/A"}
-													{transferSourceInfo?.source === "cabinet" &&
-														" (Gabinete)"}
-												</p>
+								<DialogTrigger asChild>
+									<Button
+										className="whitespace-nowrap"
+										disabled={distributionCenterIds.has(selectedWarehouseId)}
+										variant="default"
+									>
+										{distributionCenterIds.has(selectedWarehouseId)
+											? "Centro de distribución (solo consulta)"
+											: "Agregar producto"}
+									</Button>
+								</DialogTrigger>
+								<DialogContent className="w-full max-w-[600px]">
+									<DialogHeader>
+										<DialogTitle>Agregar producto</DialogTitle>
+										<DialogDescription>
+											Selecciona un producto, el almacén destino y cuántas
+											etiquetas con QR quieres imprimir.
+										</DialogDescription>
+									</DialogHeader>
+									<form
+										onSubmit={async (event) => {
+											event.preventDefault();
+											await handleAddProductSubmit();
+										}}
+										className="space-y-6"
+									>
+										<div className="space-y-4">
+											<div className="space-y-2">
+												<Label className="text-[#11181C] dark:text-[#ECEDEE]">
+													Producto del catálogo
+												</Label>
+												<ProductCombobox
+													placeholder="Buscar por nombre o código..."
+													products={productOptions}
+													value={selectedProductValue}
+													onValueChange={setSelectedProductValue}
+												/>
+												{selectedProduct ? (
+													<p className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+														Código seleccionado: {selectedProduct.barcode}
+													</p>
+												) : (
+													<p className="text-[#9BA1A6] text-xs">
+														Escoge un producto para continuar.
+													</p>
+												)}
 											</div>
-											<div className="px-4">
-												<svg
-													className="h-6 w-6 text-[#0a7ea4]"
-													fill="none"
-													stroke="currentColor"
-													strokeWidth={2}
-													viewBox="0 0 24 24"
+											<div className="space-y-2">
+												<Label
+													className="text-[#11181C] dark:text-[#ECEDEE]"
+													htmlFor="warehouse-select"
 												>
-													<path
-														d="M13 7l5 5m0 0l-5 5m5-5H6"
-														strokeLinecap="round"
-														strokeLinejoin="round"
-													/>
-												</svg>
+													Almacén destino
+												</Label>
+												<Select
+													disabled={warehouseOptions.length === 0}
+													onValueChange={setSelectedWarehouseId}
+													value={selectedWarehouseId}
+												>
+													<SelectTrigger className="w-full" id="warehouse-select">
+														<SelectValue
+															placeholder={
+																warehouseOptions.length === 0
+																	? "No hay almacenes disponibles"
+																	: "Selecciona un almacén"
+															}
+														/>
+													</SelectTrigger>
+													<SelectContent>
+														{warehouseOptions.length === 0 ? (
+															<SelectItem disabled value="">
+																No hay almacenes disponibles
+															</SelectItem>
+														) : (
+															warehouseOptions.map((option) => (
+																<SelectItem key={option.id} value={option.id}>
+																	{option.name}
+																</SelectItem>
+															))
+														)}
+													</SelectContent>
+												</Select>
 											</div>
-											<div className="space-y-1">
-												<p className="font-medium text-[#11181C] text-sm dark:text-[#ECEDEE]">
-													Destino
+											<div className="space-y-2">
+												<Label
+													className="text-[#11181C] dark:text-[#ECEDEE]"
+													htmlFor="qr-quantity"
+												>
+													Cantidad de QR a imprimir
+												</Label>
+												<Input
+													className="border-[#E5E7EB] bg-white text-[#11181C] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]"
+													id="qr-quantity"
+													inputMode="numeric"
+													min={1}
+													max={50}
+													onChange={(event) => {
+														const nextValue = Number.parseInt(
+															event.target.value,
+															10,
+														);
+														if (Number.isNaN(nextValue)) {
+															setQrQuantity(1);
+															return;
+														}
+														setQrQuantity(Math.max(1, Math.min(nextValue, 50)));
+													}}
+													type="number"
+													value={qrQuantity}
+												/>
+												<p className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+													Se creará e imprimirá una etiqueta por cada unidad.
 												</p>
-												<p className="text-[#687076] text-sm dark:text-[#9BA1A6]">
-													{transferDirection === "warehouse-to-cabinet"
-														? `${transferSourceInfo ? getWarehouseName(transferSourceInfo.warehouseId) : "N/A"} (Gabinete)`
-														: transferSourceInfo
+											</div>
+											<div className="flex items-center space-x-2">
+												<Checkbox
+													checked={isKit}
+													id="is-kit"
+													onCheckedChange={(checked) =>
+														setIsKit(checked === true)
+													}
+												/>
+												<Label
+													className="cursor-pointer text-[#11181C] text-sm font-normal dark:text-[#ECEDEE]"
+													htmlFor="is-kit"
+												>
+													Marcar como producto de kit
+												</Label>
+											</div>
+										</div>
+										<DialogFooter className="gap-2">
+											<Button
+												onClick={() => setIsAddDialogOpen(false)}
+												type="button"
+												variant="outline"
+											>
+												Cancelar
+											</Button>
+											<Button disabled={isAddSubmitDisabled} type="submit">
+												{isAddSubmitting ? "Procesando..." : "Crear e imprimir"}
+											</Button>
+										</DialogFooter>
+									</form>
+								</DialogContent>
+							</Dialog>
+							<Dialog onOpenChange={setIsListOpen} open={isListOpen}>
+								<DialogTrigger asChild>
+									<Button variant="outline">
+										Ver Lista({transferList.length})
+									</Button>
+								</DialogTrigger>
+								<DialogContent className="flex w-full flex-col md:max-h-[90vh] md:w-[95vw] md:max-w-[900px]">
+									<DialogHeader className="flex-shrink-0">
+										<DialogTitle>Lista de transferencia</DialogTitle>
+										<DialogDescription>
+											Revisa y gestiona los items seleccionados para transferir.
+										</DialogDescription>
+									</DialogHeader>
+
+									{/* Transfer Direction Info */}
+									{transferDirection && transferList.length > 0 && (
+										<div className="flex-shrink-0 space-y-2 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-4 dark:border-[#2D3033] dark:bg-[#1E1F20]">
+											<div className="flex items-center justify-between">
+												<div className="space-y-1">
+													<p className="font-medium text-[#11181C] text-sm dark:text-[#ECEDEE]">
+														Origen
+													</p>
+													<p className="text-[#687076] text-sm dark:text-[#9BA1A6]">
+														{transferSourceInfo
 															? getWarehouseName(transferSourceInfo.warehouseId)
 															: "N/A"}
+														{transferSourceInfo?.source === "cabinet" &&
+															" (Gabinete)"}
+													</p>
+												</div>
+												<div className="px-4">
+													<svg
+														className="h-6 w-6 text-[#0a7ea4]"
+														fill="none"
+														stroke="currentColor"
+														strokeWidth={2}
+														viewBox="0 0 24 24"
+													>
+														<path
+															d="M13 7l5 5m0 0l-5 5m5-5H6"
+															strokeLinecap="round"
+															strokeLinejoin="round"
+														/>
+													</svg>
+												</div>
+												<div className="space-y-1">
+													<p className="font-medium text-[#11181C] text-sm dark:text-[#ECEDEE]">
+														Destino
+													</p>
+													<p className="text-[#687076] text-sm dark:text-[#9BA1A6]">
+														{transferDirection === "warehouse-to-cabinet"
+															? `${transferSourceInfo ? getWarehouseName(transferSourceInfo.warehouseId) : "N/A"} (Gabinete)`
+															: transferSourceInfo
+																? getWarehouseName(transferSourceInfo.warehouseId)
+																: "N/A"}
+													</p>
+												</div>
+											</div>
+											<div className="border-t border-[#E5E7EB] pt-2 dark:border-[#2D3033]">
+												<p className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+													{transferList.length}{" "}
+													{transferList.length === 1 ? "item" : "items"} en lista
 												</p>
 											</div>
+											{transferSourceInfo && (
+												<div className="rounded-md border border-blue-200 bg-blue-50 p-2 dark:border-blue-800 dark:bg-blue-950/20">
+													<p className="text-blue-800 text-xs dark:text-blue-300">
+														<strong>Nota:</strong> Solo puedes agregar items del
+														mismo{" "}
+														{transferSourceInfo.source === "warehouse"
+															? "almacén"
+															: "gabinete"}{" "}
+														a esta transferencia.
+													</p>
+												</div>
+											)}
 										</div>
-										<div className="border-t border-[#E5E7EB] pt-2 dark:border-[#2D3033]">
-											<p className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-												{transferList.length}{" "}
-												{transferList.length === 1 ? "item" : "items"} en lista
-											</p>
-										</div>
-										{transferSourceInfo && (
-											<div className="rounded-md border border-blue-200 bg-blue-50 p-2 dark:border-blue-800 dark:bg-blue-950/20">
-												<p className="text-blue-800 text-xs dark:text-blue-300">
-													<strong>Nota:</strong> Solo puedes agregar items del
-													mismo{" "}
-													{transferSourceInfo.source === "warehouse"
-														? "almacén"
-														: "gabinete"}{" "}
-													a esta transferencia.
-												</p>
-											</div>
-										)}
-									</div>
-								)}
+									)}
 
-								<div className="flex flex-col space-y-4">
-									<div className="flex-shrink-0">
-										<Input
-											className="border-[#E5E7EB] bg-white text-[#11181C] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]"
-											onChange={(e) => setListSearch(e.target.value)}
-											placeholder="Buscar por UUID, código o producto..."
-											value={listSearch}
-										/>
-									</div>
-									<div className="min-h-0 overflow-auto rounded-md border border-[#E5E7EB] md:overflow-visible dark:border-[#2D3033]">
-										{filteredTransferList.length === 0 ? (
-											<div className="p-6 text-[#687076] text-sm dark:text-[#9BA1A6]">
-												No hay items en la lista.
-											</div>
-										) : (
-											<Table>
-												<TableHeader className="sticky top-0 z-10 bg-white dark:bg-[#1E1F20]">
-													<TableRow>
-														<TableHead className="text-[#687076] dark:text-[#9BA1A6]">
-															UUID
-														</TableHead>
-														<TableHead className="text-[#687076] dark:text-[#9BA1A6]">
-															Código
-														</TableHead>
-														<TableHead className="text-[#687076] dark:text-[#9BA1A6]">
-															Producto
-														</TableHead>
-														<TableHead className="text-[#687076] dark:text-[#9BA1A6]">
-															Categoría
-														</TableHead>
-														<TableHead className="text-[#687076] dark:text-[#9BA1A6]">
-															Origen
-														</TableHead>
-														<TableHead className="text-right text-[#687076] dark:text-[#9BA1A6]">
-															Acciones
-														</TableHead>
-													</TableRow>
-												</TableHeader>
-												<TableBody>
-													{filteredTransferList.map((it) => (
-														<TableRow key={it.uuid}>
-															<TableCell className="font-mono text-[#687076] text-xs dark:text-[#9BA1A6]">
-																{it.uuid.slice(0, 8)}...
-															</TableCell>
-															<TableCell>{it.barcode}</TableCell>
-															<TableCell>{it.productName}</TableCell>
-															<TableCell>
-																<Badge className="bg-[#F3F4F6] text-[#374151] dark:bg-[#374151] dark:text-[#D1D5DB]">
-																	{it.category}
-																</Badge>
-															</TableCell>
-															<TableCell>
-																<Badge
-																	className={
-																		it.source === "warehouse"
-																			? "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
-																			: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200"
-																	}
-																>
-																	{it.source === "warehouse"
-																		? "Almacén"
-																		: "Gabinete"}
-																</Badge>
-															</TableCell>
-															<TableCell className="text-right">
-																<Button
-																	onClick={() => removeFromTransfer(it.uuid)}
-																	size="sm"
-																	variant="ghost"
-																>
-																	Quitar
-																</Button>
-															</TableCell>
+									<div className="flex flex-col space-y-4">
+										<div className="flex-shrink-0">
+											<Input
+												className="border-[#E5E7EB] bg-white text-[#11181C] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]"
+												onChange={(e) => setListSearch(e.target.value)}
+												placeholder="Buscar por UUID, código o producto..."
+												value={listSearch}
+											/>
+										</div>
+										<div className="min-h-0 overflow-auto rounded-md border border-[#E5E7EB] md:overflow-visible dark:border-[#2D3033]">
+											{filteredTransferList.length === 0 ? (
+												<div className="p-6 text-[#687076] text-sm dark:text-[#9BA1A6]">
+													No hay items en la lista.
+												</div>
+											) : (
+												<Table>
+													<TableHeader className="sticky top-0 z-10 bg-white dark:bg-[#1E1F20]">
+														<TableRow>
+															<TableHead className="text-[#687076] dark:text-[#9BA1A6]">
+																UUID
+															</TableHead>
+															<TableHead className="text-[#687076] dark:text-[#9BA1A6]">
+																Código
+															</TableHead>
+															<TableHead className="text-[#687076] dark:text-[#9BA1A6]">
+																Producto
+															</TableHead>
+															<TableHead className="text-[#687076] dark:text-[#9BA1A6]">
+																Categoría
+															</TableHead>
+															<TableHead className="text-[#687076] dark:text-[#9BA1A6]">
+																Origen
+															</TableHead>
+															<TableHead className="text-right text-[#687076] dark:text-[#9BA1A6]">
+																Acciones
+															</TableHead>
 														</TableRow>
-													))}
-												</TableBody>
-											</Table>
-										)}
+													</TableHeader>
+													<TableBody>
+														{filteredTransferList.map((it) => (
+															<TableRow key={it.uuid}>
+																<TableCell className="font-mono text-[#687076] text-xs dark:text-[#9BA1A6]">
+																	{it.uuid.slice(0, 8)}...
+																</TableCell>
+																<TableCell>{it.barcode}</TableCell>
+																<TableCell>{it.productName}</TableCell>
+																<TableCell>
+																	<Badge className="bg-[#F3F4F6] text-[#374151] dark:bg-[#374151] dark:text-[#D1D5DB]">
+																		{it.category}
+																	</Badge>
+																</TableCell>
+																<TableCell>
+																	<Badge
+																		className={
+																			it.source === "warehouse"
+																				? "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+																				: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200"
+																		}
+																	>
+																		{it.source === "warehouse"
+																			? "Almacén"
+																			: "Gabinete"}
+																	</Badge>
+																</TableCell>
+																<TableCell className="text-right">
+																	<Button
+																		onClick={() => removeFromTransfer(it.uuid)}
+																		size="sm"
+																		variant="ghost"
+																	>
+																		Quitar
+																	</Button>
+																</TableCell>
+															</TableRow>
+														))}
+													</TableBody>
+												</Table>
+											)}
+										</div>
 									</div>
-								</div>
-								<DialogFooter className="flex-shrink-0">
-									<Button
-										disabled={transferList.length === 0}
-										onClick={async () => {
-											await handleSubmitTransfer();
-											setIsListOpen(false);
-											toast.success("Transferencia creada", {
-												duration: 2000,
-											});
-										}}
-										variant="outline"
-									>
-										Aprobar y transferir
-									</Button>
-								</DialogFooter>
-							</DialogContent>
-						</Dialog>
+									<DialogFooter className="flex-shrink-0">
+										<Button
+											disabled={transferList.length === 0}
+											onClick={async () => {
+												await handleSubmitTransfer();
+												setIsListOpen(false);
+												toast.success("Transferencia creada", {
+													duration: 2000,
+												});
+											}}
+											variant="outline"
+										>
+											Aprobar y transferir
+										</Button>
+									</DialogFooter>
+								</DialogContent>
+					</Dialog>
 					</div>
 				</div>
 

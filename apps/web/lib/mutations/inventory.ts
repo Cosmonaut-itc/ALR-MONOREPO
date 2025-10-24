@@ -108,3 +108,40 @@ export const useDeleteInventoryItem = () =>
 			console.error(error);
 		},
 	});
+
+export const useSyncInventory = () =>
+	useMutation({
+		mutationKey: ["sync-inventory"],
+		mutationFn: async () => {
+			const response = await client.api.auth.inventory.sync.$post({
+				json: {
+					dryRun: false, // Set to true to only simulate the sync
+				},
+			});
+			const result = await response.json();
+			if (!result?.success) {
+				throw new Error(
+					result?.message ||
+						"La API devolvió éxito=false al sincronizar el inventario",
+				);
+			}
+			return result;
+		},
+		onMutate: () => {
+			toast.loading("Sincronizando inventario...", {
+				id: "sync-inventory",
+			});
+		},
+		onSuccess: () => {
+			toast.success("Inventario sincronizado correctamente", {
+				id: "sync-inventory",
+			});
+		},
+		onError: (error) => {
+			toast.error("Error al sincronizar inventario", {
+				id: "sync-inventory",
+			});
+			// biome-ignore lint/suspicious/noConsole: Needed for debugging
+			console.error(error);
+		},
+	});
