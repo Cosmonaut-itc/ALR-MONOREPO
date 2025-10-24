@@ -202,11 +202,60 @@ export const apiResponseSchemaStorageOperation = z.object({
 	meta: z.array(z.unknown()),
 });
 
+export type DataItemArticulosType = z.infer<typeof dataItemSchema>;
+
+export type AltegioGood = DataItemArticulosType;
+
+export type SyncOptions = {
+	warehouseId?: string;
+	dryRun?: boolean;
+};
+
+export type SyncWarehouseSummary = {
+	warehouseId: string;
+	warehouseName: string;
+	altegioId: number;
+	consumablesId: number;
+	productsProcessed: number;
+	fetched: number;
+	existing: number;
+	toInsert: number;
+	inserted: number;
+	skippedInvalid: number;
+	overTargetExisting: number;
+	cappedProducts: Array<{
+		barcode: number;
+		requested: number;
+		applied: number;
+	}>;
+};
+
+export type SyncTotals = {
+	warehouses: number;
+	productsProcessed: number;
+	fetched: number;
+	existing: number;
+	toInsert: number;
+	inserted: number;
+	skippedInvalid: number;
+	overTargetExisting: number;
+};
+
+export type SyncResult = {
+	warehouses: SyncWarehouseSummary[];
+	totals: SyncTotals;
+	meta: {
+		dryRun: boolean;
+		fetchedAt: string;
+		pageSize: number;
+		insertChunkSize: number;
+		perProductCap: number;
+	};
+};
+
 export const articulosAllParamsSchema = z.object({
 	company_id: z.string(),
 });
-
-export type DataItemArticulosType = z.infer<typeof dataItemSchema>;
 
 // --- Generate the Mock Data using the correct library ---
 

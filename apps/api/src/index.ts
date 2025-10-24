@@ -26,6 +26,7 @@ import { productStockData, withdrawOrderData, withdrawOrderDetailsData } from '.
 import { db } from './db/index';
 import * as schemas from './db/schema';
 import { auth } from './lib/auth';
+import { InventorySyncError, syncInventory } from './lib/inventory-sync';
 import type { SessionUser } from './lib/replenishment-orders';
 import {
 	createReplenishmentOrder,
@@ -35,7 +36,13 @@ import {
 	listReplenishmentOrdersByWarehouse,
 	updateReplenishmentOrder,
 } from './lib/replenishment-orders';
-import type { AltegioDocumentTypeId, AltegioOperationTypeId, DataItemArticulosType } from './types';
+import type {
+	AltegioDocumentTypeId,
+	AltegioOperationTypeId,
+	DataItemArticulosType,
+	SyncOptions,
+	SyncResult,
+} from './types';
 import {
 	apiResponseSchema,
 	apiResponseSchemaDocument,
@@ -92,6 +99,13 @@ const stockLimitUpdateSchema = z.object({
 	maxQuantity: z.number().int().nonnegative('Maximum quantity cannot be negative').optional(),
 	notes: z.string().max(1000, 'Notes must be 1000 characters or less').optional(),
 });
+
+const inventorySyncRequestSchema = z
+	.object({
+		warehouseId: z.string().uuid('Invalid warehouse ID').optional(),
+		dryRun: z.boolean().optional(),
+	})
+	.strict();
 
 /**
  * Helper function to log detailed error information
@@ -1133,6 +1147,60 @@ const route = app
 			);
 		}
 	})
+	.post(
+		'/api/auth/inventory/sync',
+		zValidator('json', inventorySyncRequestSchema),
+		async (c) => {
+			const { warehouseId, dryRun = false } = c.req.valid('json');
+
+			const syncOptions: SyncOptions = {
+				dryRun,
+				...(warehouseId !== undefined ? { warehouseId } : {}),
+			};
+
+			try {
+				const result = await syncInventory(syncOptions);
+
+				return c.json(
+					{
+						success: true,
+						message: dryRun
+							? 'Dry-run inventory sync completed successfully'
+							: 'Inventory sync completed successfully',
+						data: {
+							warehouses: result.warehouses,
+							totals: result.totals,
+						},
+						meta: [result.meta],
+					} satisfies ApiResponse<{
+						warehouses: SyncResult['warehouses'];
+						totals: SyncResult['totals'];
+					}>,
+					200,
+				);
+			} catch (error) {
+				if (error instanceof InventorySyncError) {
+					const errorDetails = error.details as Record<string, unknown> | undefined;
+					return c.json(
+						{
+							success: false,
+							message: error.message,
+							...(errorDetails !== undefined ? { data: errorDetails } : {}),
+							meta: [
+								{
+									dryRun,
+									warehouseId,
+								},
+							],
+						} satisfies ApiResponse<Record<string, unknown>>,
+						error.status,
+					);
+				}
+
+				throw error;
+			}
+		},
+	)
 
 	/**
 	 * GET / - Root endpoint health check
