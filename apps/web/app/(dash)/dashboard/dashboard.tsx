@@ -4,9 +4,10 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { addDays, differenceInCalendarDays, format } from "date-fns";
 import { es } from "date-fns/locale";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import {
 	getAllProducts,
 	getAllProductStock,
@@ -97,6 +98,22 @@ type TransferSummary = {
 	isCancelled: boolean;
 	scheduledDate?: string;
 	createdAt?: string;
+};
+
+type LimitStatus = "below" | "within" | "above";
+
+type StockLimitEntry = {
+	warehouseId: string;
+	warehouseName: string;
+	limit: StockLimit;
+	currentQuantity: number;
+	status: LimitStatus;
+};
+
+type StockLimitGroup = {
+	barcode: number;
+	productName: string;
+	entries: StockLimitEntry[];
 };
 
 const toArray = <T,>(value: unknown): T[] =>
@@ -401,6 +418,24 @@ const extractTransfers = (response: TransfersResponse): TransferSummary[] => {
 		);
 };
 
+const getStockQuantityKey = (
+	warehouseId: string,
+	barcode: number,
+) => `${warehouseId}::${barcode}`;
+
+const limitStatusForQuantity = (
+	quantity: number,
+	limit: StockLimit,
+): LimitStatus => {
+	if (quantity < limit.minQuantity) {
+		return "below";
+	}
+	if (quantity > limit.maxQuantity) {
+		return "above";
+	}
+	return "within";
+};
+
 const formatDateSafe = (value: string) => {
 	if (!value) {
 		return "Sin fecha";
@@ -412,7 +447,7 @@ const formatDateSafe = (value: string) => {
 	return format(date, "dd MMM yyyy", { locale: es });
 };
 
-const withinLastDays = (value: string, days: number) => {
+	const withinLastDays = (value: string, days: number) => {
 	if (!value) {
 		return false;
 	}
@@ -433,6 +468,7 @@ export default function DashboardPageClient({
 	currentDate: string;
 }) {
 	const scopeKey = isEncargado ? "all" : warehouseId || "unknown";
+	const [stockLimitSearch, setStockLimitSearch] = useState<string>("");
 
 	const inventoryQueryFn = isEncargado
 		? getAllProductStock
@@ -575,6 +611,49 @@ export default function DashboardPageClient({
 		});
 	}, [inventoryGroups, isEncargado, warehouseId, cabinetMap]);
 
+	const stockQuantityByWarehouseBarcode = useMemo(() => {
+		const counts = new Map<string, number>();
+		const registerStock = (stock: Record<string, unknown> | undefined) => {
+			if (!stock || typeof stock !== "object") {
+				return;
+			}
+			const warehouse = toStringSafe(
+				(stock as { currentWarehouse?: unknown })?.currentWarehouse,
+			);
+			if (!warehouse) {
+				return;
+			}
+			const rawBarcode =
+				(stock as { barcode?: unknown })?.barcode ??
+				(stock as { good_id?: unknown })?.good_id ??
+				(stock as { productId?: unknown })?.productId ??
+				(stock as { product_id?: unknown })?.product_id;
+			const parsedBarcode =
+				typeof rawBarcode === "number"
+					? rawBarcode
+					: typeof rawBarcode === "string"
+						? Number.parseInt(rawBarcode, 10)
+						: Number.NaN;
+			if (!Number.isFinite(parsedBarcode) || parsedBarcode <= 0) {
+				return;
+			}
+			const key = getStockQuantityKey(warehouse, parsedBarcode);
+			const current = counts.get(key) ?? 0;
+			counts.set(key, current + 1);
+		};
+		for (const item of inventoryGroups.warehouse) {
+			registerStock(item.productStock as Record<string, unknown> | undefined);
+		}
+		for (const item of inventoryGroups.cabinet) {
+			registerStock(item.productStock as Record<string, unknown> | undefined);
+		}
+		return counts;
+	}, [inventoryGroups.warehouse, inventoryGroups.cabinet]);
+
+
+
+
+
 	const itemsInUse = useMemo(
 		() =>
 			scopedInventoryItems.filter((item) => {
@@ -619,6 +698,81 @@ export default function DashboardPageClient({
 		() => buildProductNameMap(productCatalogResponse),
 		[productCatalogResponse],
 	);
+
+	const totalStockLimits = useMemo(() => {
+		if (
+			!stockLimitsResponse ||
+			typeof stockLimitsResponse !== "object" ||
+			!("success" in stockLimitsResponse) ||
+			!stockLimitsResponse.success ||
+			!Array.isArray(stockLimitsResponse.data)
+		) {
+			return {
+				total: 0,
+				warehouses: 0,
+				groups: [] as StockLimitGroup[],
+			};
+		}
+		const limits = stockLimitsResponse.data.filter(
+			(limit): limit is StockLimit =>
+				Boolean(
+					limit &&
+						typeof limit === "object" &&
+						"barcode" in limit &&
+						typeof limit.barcode === "number" &&
+						Number.isFinite(limit.barcode),
+					),
+			);
+		const warehouseIds = new Set<string>();
+		const groupsByBarcode = new Map<number, StockLimitGroup>();
+		for (const limit of limits) {
+			if (limit.warehouseId) {
+				warehouseIds.add(limit.warehouseId);
+			}
+			const productName =
+				productNameByBarcode.get(limit.barcode) ??
+				`Producto ${limit.barcode}`;
+			const warehouseName =
+				warehouseNameById.get(limit.warehouseId) ??
+				(limit.warehouseId ? `Almacen ${limit.warehouseId.slice(0, 6)}` : "Bodega");
+			const currentQuantity =
+				stockQuantityByWarehouseBarcode.get(
+					getStockQuantityKey(limit.warehouseId, limit.barcode),
+				) ?? 0;
+			const entry: StockLimitEntry = {
+				warehouseId: limit.warehouseId,
+				warehouseName,
+				limit,
+				currentQuantity,
+				status: limitStatusForQuantity(currentQuantity, limit),
+			};
+			const group = groupsByBarcode.get(limit.barcode);
+			if (!group) {
+				groupsByBarcode.set(limit.barcode, {
+					barcode: limit.barcode,
+					productName,
+					entries: [entry],
+				});
+			} else {
+				group.entries.push(entry);
+			}
+		}
+		return {
+			total: limits.length,
+			warehouses: warehouseIds.size,
+			groups: Array.from(groupsByBarcode.values()).sort((a, b) =>
+				a.productName.localeCompare(b.productName, "es", {
+					sensitivity: "base",
+					ignorePunctuation: true,
+				}),
+			),
+		};
+	}, [
+		stockLimitsResponse,
+		productNameByBarcode,
+		warehouseNameById,
+		stockQuantityByWarehouseBarcode,
+	]);
 
 	const usageRows = useMemo<UsageRow[]>(() => {
 		const counts = new Map<string, { name: string; count: number }>();
@@ -756,39 +910,6 @@ export default function DashboardPageClient({
 			.slice(0, 5);
 	}, [transfers]);
 
-	const totalStockLimits = useMemo(() => {
-		if (
-			!stockLimitsResponse ||
-			typeof stockLimitsResponse !== "object" ||
-			!("success" in stockLimitsResponse) ||
-			!stockLimitsResponse.success ||
-			!Array.isArray(stockLimitsResponse.data)
-		) {
-			return { total: 0, warehouses: 0, samples: [] as StockLimit[] };
-		}
-		const limits = stockLimitsResponse.data.filter(
-			(limit): limit is StockLimit =>
-				Boolean(
-					limit &&
-						typeof limit === "object" &&
-						"barcode" in limit &&
-						typeof limit.barcode === "number" &&
-						Number.isFinite(limit.barcode),
-				),
-		);
-		const warehouseIds = new Set<string>();
-		for (const limit of limits) {
-			if (limit.warehouseId) {
-				warehouseIds.add(limit.warehouseId);
-			}
-		}
-		return {
-			total: limits.length,
-			warehouses: warehouseIds.size,
-			samples: limits.slice(0, 3),
-		};
-	}, [stockLimitsResponse]);
-
 	const totalUsage = itemsInUse.length;
 	const pendingOrdersCount = pendingOrders.length;
 	const pendingTransfersCount = pendingTransfers.length;
@@ -884,33 +1005,64 @@ export default function DashboardPageClient({
 						<CardTitle className="text-base font-semibold text-[#11181C] dark:text-[#ECEDEE]">
 							Detalle de limites
 						</CardTitle>
+						<div className="mt-2">
+							<Input
+								className="max-w-sm"
+								onChange={(event) => setStockLimitSearch(event.target.value)}
+								placeholder="Buscar producto o barcode"
+								value={stockLimitSearch}
+							/>
+						</div>
 					</CardHeader>
 					<CardContent className="space-y-3">
 						{totalStockLimits.total > 0 ? (
-							totalStockLimits.samples.map((limit) => {
-								const productName = productNameByBarcode.get(limit.barcode);
-								const warehouseName =
-									warehouseNameById.get(limit.warehouseId) ??
-									(limit.warehouseId ? `Almacen ${limit.warehouseId.slice(0, 6)}` : "Bodega");
-								return (
+							totalStockLimits.groups
+								.filter((group) => {
+									if (!stockLimitSearch.trim()) {
+										return true;
+									}
+									const normalizedSearch = stockLimitSearch.trim().toLowerCase();
+									return (
+										group.productName.toLowerCase().includes(normalizedSearch) ||
+										group.barcode.toString().includes(normalizedSearch)
+									);
+								})
+								.map((group) => (
 									<div
 										className="rounded-lg border border-[#E5E7EB] p-3 dark:border-[#2D3033]"
-										key={`${limit.warehouseId}-${limit.barcode}`}
+										key={group.barcode}
 									>
 										<p className="text-sm font-semibold text-[#11181C] dark:text-[#ECEDEE]">
-											{productName ?? `Producto ${limit.barcode}`}
+											{group.productName}
 										</p>
-										<p className="text-xs text-[#687076] dark:text-[#9BA1A6]">
-											{warehouseName} · Min {limit.minQuantity} / Max {limit.maxQuantity}
-										</p>
-										{limit.notes ? (
-											<p className="text-xs text-[#687076] dark:text-[#9BA1A6]">
-												{limit.notes}
-											</p>
-										) : null}
+										<div className="mt-2 space-y-2">
+											{group.entries.map((entry) => {
+												const badgeClass =
+													entry.status === "within"
+														? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100"
+														: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100";
+												return (
+													<div
+														className="flex items-start justify-between rounded-md border border-[#E5E7EB] p-3 dark:border-[#2D3033]"
+														key={`${entry.warehouseId}-${entry.limit.barcode}`}
+													>
+														<div>
+															<p className="text-sm font-medium text-[#11181C] dark:text-[#ECEDEE]">
+																{entry.warehouseName}
+															</p>
+															<p className="text-xs text-[#687076] dark:text-[#9BA1A6]">
+																Min {entry.limit.minQuantity} / Max {entry.limit.maxQuantity}
+															</p>
+														</div>
+														<Badge className={badgeClass}>
+															Actual {entry.currentQuantity}
+														</Badge>
+													</div>
+												);
+											})}
+										</div>
 									</div>
-								);
-							})
+								))
 						) : (
 							<p className="text-sm text-[#687076] dark:text-[#9BA1A6]">
 								No se encontraron limites configurados.
