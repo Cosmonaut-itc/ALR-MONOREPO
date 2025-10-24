@@ -67,37 +67,64 @@ async function fetchGoods(altegioId: number, headers: HeadersInit): Promise<Alte
 	const goods: AltegioGood[] = [];
 	let page = 1;
 
-	while (true) {
-		const apiUrl = `https://api.alteg.io/api/v1/goods/${altegioId}?count=${PAGE_SIZE}&page=${page}`;
-		const response = await fetch(apiUrl, {
-			method: 'GET',
-			headers,
-		});
+	try {
+		while (true) {
+			const apiUrl = `https://api.alteg.io/api/v1/goods/${altegioId}?count=${PAGE_SIZE}&page=${page}`;
+			const response = await fetch(apiUrl, {
+				method: 'GET',
+				headers,
+			});
 
-		if (!response.ok) {
-			throw new InventorySyncError(
-				`Altegio API request failed (${response.status} ${response.statusText})`,
-				response.status >= 500 ? 502 : 400,
-				{
+			if (!response.ok) {
+				throw new InventorySyncError(
+					`Altegio API request failed (${response.status} ${response.statusText})`,
+					response.status >= 500 ? 502 : 400,
+					{
+						apiUrl,
+						page,
+						altegioId,
+						upstreamStatus: response.status,
+					},
+				);
+			}
+
+			let json: unknown;
+			try {
+				json = await response.json();
+			} catch (parseError) {
+				throw new InventorySyncError('Failed to parse Altegio API response', 502, {
 					apiUrl,
 					page,
 					altegioId,
 					upstreamStatus: response.status,
-				},
-			);
+					parseError:
+						parseError instanceof Error
+							? parseError.message
+							: 'Unknown JSON parse error',
+				});
+			}
+
+			const validated = apiResponseSchema.parse(json);
+			const currentPage = validated.data as AltegioGood[];
+
+			goods.push(...currentPage);
+
+			if (currentPage.length < PAGE_SIZE) {
+				break;
+			}
+
+			page += 1;
+		}
+	} catch (error) {
+		if (error instanceof InventorySyncError) {
+			throw error;
 		}
 
-		const json = await response.json();
-		const validated = apiResponseSchema.parse(json);
-		const currentPage = validated.data as AltegioGood[];
-
-		goods.push(...currentPage);
-
-		if (currentPage.length < PAGE_SIZE) {
-			break;
-		}
-
-		page += 1;
+		throw new InventorySyncError('Failed to fetch Altegio goods', 502, {
+			altegioId,
+			page,
+			error: error instanceof Error ? error.message : 'Unknown fetch error',
+		});
 	}
 
 	return goods;
