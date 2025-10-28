@@ -8,9 +8,12 @@ import { getQueryClient } from "@/app/get-query-client";
 import { GenericBoundaryWrapper } from "@/components/suspense-generics/general-wrapper";
 import { createQueryKey } from "@/lib/helpers";
 import { queryKeys } from "@/lib/query-keys";
-import { fetchAllWarehousesServer } from "@/lib/server-functions/inventory";
-import { fetchCabinetWarehouseServer } from "@/lib/server-functions/inventory";
-import { fetchStockByWarehouseServer } from "@/lib/server-functions/inventory";
+import {
+	fetchAllProductsServer,
+	fetchAllWarehousesServer,
+	fetchCabinetWarehouseServer,
+	fetchStockByWarehouseServer,
+} from "@/lib/server-functions/inventory";
 import { fetchReplenishmentOrderByIdServer } from "@/lib/server-functions/replenishment-orders";
 import { getServerAuth } from "@/lib/server-functions/server-auth";
 import { SkeletonPedidoDetailsPage } from "@/ui/skeletons/Skeleton.PedidoDetailsPage";
@@ -19,13 +22,13 @@ import { PedidoDetailsPage } from "./pedido-details";
 export const dynamic = "force-dynamic";
 
 type RouteProps = {
-	params: {
+	params: Promise<{
 		orderId: string;
-	};
+	}>;
 };
 
 export default async function PedidoDetailRoute({ params }: RouteProps) {
-	const { orderId } = params;
+	const { orderId } = await params;
 	if (!orderId) {
 		notFound();
 	}
@@ -89,6 +92,16 @@ export default async function PedidoDetailRoute({ params }: RouteProps) {
 	} catch (error) {
 		console.error(error);
 		console.error("Error prefetching warehouse metadata for pedido");
+	}
+
+	try {
+		await queryClient.prefetchQuery({
+			queryKey: queryKeys.productCatalog,
+			queryFn: () => fetchAllProductsServer(),
+		});
+	} catch (error) {
+		console.error(error);
+		console.error("Error prefetching product catalog for pedido");
 	}
 
 	return (

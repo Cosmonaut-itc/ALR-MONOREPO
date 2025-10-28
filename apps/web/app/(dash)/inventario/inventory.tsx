@@ -39,6 +39,11 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+	Tooltip,
+	TooltipContent,
+	TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
 	getAllProductStock,
 	getAllProducts,
 	getCabinetWarehouse,
@@ -1003,19 +1008,27 @@ export function InventarioPage({
 							allowedRoles={["admin", "encargado"]}
 							userRole={role as unknown as UserRole["role"]}
 						>
-							<Button
-								className="whitespace-nowrap"
-								disabled={isSyncingInventory}
-								onClick={() => {
-									void handleSyncInventory();
-								}}
-								type="button"
-								variant="outline"
-							>
-								{isSyncingInventory
-									? "Sincronizando..."
-									: "Sincronizar inventario"}
-							</Button>
+							<Tooltip>
+								<TooltipTrigger asChild>
+									<Button
+										className="whitespace-nowrap"
+										disabled={isSyncingInventory}
+										onClick={() => {
+											void handleSyncInventory();
+										}}
+										type="button"
+										variant="outline"
+									>
+										{isSyncingInventory
+											? "Sincronizando..."
+											: "Sincronizar inventario"}
+									</Button>
+								</TooltipTrigger>
+								<TooltipContent side="bottom">
+									Sincroniza el inventario de Altegio con este dashboard y crea
+									los códigos únicos para cada producto
+								</TooltipContent>
+							</Tooltip>
 						</RoleGuard>
 						<Dialog onOpenChange={handleAddDialogChange} open={isAddDialogOpen}>
 							<DialogTrigger asChild>
