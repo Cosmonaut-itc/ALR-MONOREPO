@@ -54,6 +54,12 @@ type ExistingCountRow = {
 	count: number;
 };
 
+type PerProductCapResult = {
+	allowedInsert: number;
+	skipped: number;
+	capped: boolean;
+};
+
 /**
  * Splits an array into chunks to batch inserts without exhausting memory.
  */
@@ -201,6 +207,39 @@ function buildInsertPayload(
 	return inserts;
 }
 
+function applyPerProductCap(
+	warehouse: WarehouseRecord,
+	barcode: number,
+	description: string,
+	requested: number,
+): PerProductCapResult {
+	if (requested <= MAX_INSERT_PER_PRODUCT) {
+		return {
+			allowedInsert: requested,
+			skipped: 0,
+			capped: false,
+		};
+	}
+
+	const allowedInsert = MAX_INSERT_PER_PRODUCT;
+	const skipped = requested - allowedInsert;
+
+	// biome-ignore lint/suspicious/noConsole: Operational notice for capped inserts
+	console.warn(
+		[
+			`Inventory sync cap reached for barcode ${barcode} (${description})`,
+			`in warehouse ${warehouse.id} (${warehouse.name}).`,
+			`Requested ${requested}, capped at ${allowedInsert}.`,
+		].join(' '),
+	);
+
+	return {
+		allowedInsert,
+		skipped,
+		capped: true,
+	};
+}
+
 async function loadExistingCounts(
 	warehouseId: string,
 	barcodes: number[],
@@ -301,21 +340,21 @@ async function syncWarehouse(
 		const difference = value.targetCount - existing;
 
 		if (difference > 0) {
-			const allowedInsert = Math.min(difference, MAX_INSERT_PER_PRODUCT);
+			const { allowedInsert, skipped, capped } = applyPerProductCap(
+				warehouse,
+				barcode,
+				value.description,
+				difference,
+			);
 			plannedInserts += allowedInsert;
 
-			if (difference > MAX_INSERT_PER_PRODUCT) {
-				const skipped = difference - allowedInsert;
+			if (capped && skipped > 0) {
 				skippedInvalidUnits += skipped;
 				cappedProducts.push({
 					barcode,
 					requested: difference,
 					applied: allowedInsert,
 				});
-				// biome-ignore lint/suspicious/noConsole: Operational notice for capped inserts
-				console.warn(
-					`Inventory sync cap reached for barcode ${barcode} in warehouse ${warehouse.id}. Requested ${difference}, capped at ${allowedInsert}.`,
-				);
 			}
 
 			if (!dryRun && allowedInsert > 0) {

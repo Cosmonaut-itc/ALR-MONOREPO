@@ -1073,20 +1073,27 @@ const route = app
 				'Content-Type': 'application/json',
 			};
 
-			// Server-side pagination to aggregate all products (max 5,000)
+			// Server-side pagination to aggregate all products across ALL warehouses
 			const PAGE_SIZE = 100;
 			const MAX_ITEMS = 5000;
 			const MAX_PAGES = Math.ceil(MAX_ITEMS / PAGE_SIZE);
 
-			async function fetchAllProducts(
+			/**
+			 * Fetch all products for a specific Altegio warehouse with pagination.
+			 * Uses recursion to avoid await-in-loop lints, ensuring sequential page fetching.
+			 * @param altegioId Warehouse Altegio identifier
+			 * @param page Current page to fetch
+			 * @param accumulated Previously accumulated products
+			 * @param metaAccumulated Previously accumulated meta
+			 * @returns Aggregated products and meta for this warehouse
+			 */
+			async function fetchWarehouseProducts(
+				altegioId: number,
 				page: number,
 				accumulated: DataItemArticulosType[],
 				metaAccumulated: unknown[],
 			): Promise<{ data: DataItemArticulosType[]; meta: unknown[]; success: boolean }> {
-				const apiUrl = `https://api.alteg.io/api/v1/goods/706097?count=${PAGE_SIZE}&page=${page}`;
-
-				// biome-ignore lint/suspicious/noConsole: API call logging is useful for debugging
-				console.log('Fetching products from Altegio API:', { page, apiUrl });
+				const apiUrl = `https://api.alteg.io/api/v1/goods/${altegioId}?count=${PAGE_SIZE}&page=${page}`;
 
 				const response = await fetch(apiUrl, {
 					method: 'GET',
@@ -1106,27 +1113,67 @@ const route = app
 				const combinedData = accumulated.concat(currentPageData);
 				const combinedMeta = metaAccumulated.concat(validated.meta ?? []);
 
-				const fetchedEnough =
-					currentPageData.length < PAGE_SIZE ||
-					combinedData.length >= MAX_ITEMS ||
-					page >= MAX_PAGES;
+				const fetchedEnough = currentPageData.length < PAGE_SIZE || page >= MAX_PAGES;
 				if (fetchedEnough) {
 					return {
-						data: combinedData.slice(0, MAX_ITEMS),
+						data: combinedData,
 						meta: combinedMeta,
 						success: validated.success,
 					};
 				}
 
-				return fetchAllProducts(page + 1, combinedData, combinedMeta);
+				return fetchWarehouseProducts(altegioId, page + 1, combinedData, combinedMeta);
 			}
 
-			const { data: allProducts, meta, success } = await fetchAllProducts(1, [], []);
+			// Load all active warehouses with valid Altegio IDs
+			const activeWarehouses = await db
+				.select({ altegioId: schemas.warehouse.altegioId })
+				.from(schemas.warehouse)
+				.where(eq(schemas.warehouse.isActive, true));
+
+			const altegioIds = Array.from(
+				new Set(
+					activeWarehouses
+						.map((w) => w.altegioId)
+						.filter((id): id is number => Number.isInteger(id) && id > 0),
+				),
+			);
+
+			if (altegioIds.length === 0) {
+				return c.json(
+					{
+						success: false,
+						message:
+							'No active warehouses are configured with valid Altegio IDs to fetch products from',
+						data: [],
+					} satisfies ApiResponse<DataItemArticulosType[]>,
+					400,
+				);
+			}
+
+			// Fetch products for all warehouses in parallel
+			const warehouseResults = await Promise.all(
+				altegioIds.map((id) => fetchWarehouseProducts(id, 1, [], [])),
+			);
+
+			// Merge and de-duplicate by good_id across warehouses
+			const uniqueByGoodId = new Map<number, DataItemArticulosType>();
+			for (const result of warehouseResults) {
+				for (const item of result.data) {
+					if (!uniqueByGoodId.has(item.good_id)) {
+						uniqueByGoodId.set(item.good_id, item);
+					}
+				}
+			}
+
+			const allProducts = Array.from(uniqueByGoodId.values()).slice(0, MAX_ITEMS);
+			const meta = warehouseResults.flatMap((r) => r.meta ?? []);
+			const success = warehouseResults.every((r) => r.success === true);
 
 			return c.json(
 				{
 					success,
-					message: `Products retrieved successfully from Altegio API (${allProducts.length} items)`,
+					message: `Products retrieved successfully from Altegio API across ${altegioIds.length} warehouses (${allProducts.length} unique items)`,
 					data: allProducts,
 					meta,
 				} satisfies ApiResponse<DataItemArticulosType[]>,
@@ -1147,60 +1194,56 @@ const route = app
 			);
 		}
 	})
-	.post(
-		'/api/auth/inventory/sync',
-		zValidator('json', inventorySyncRequestSchema),
-		async (c) => {
-			const { warehouseId, dryRun = false } = c.req.valid('json');
+	.post('/api/auth/inventory/sync', zValidator('json', inventorySyncRequestSchema), async (c) => {
+		const { warehouseId, dryRun = false } = c.req.valid('json');
 
-			const syncOptions: SyncOptions = {
-				dryRun,
-				...(warehouseId !== undefined ? { warehouseId } : {}),
-			};
+		const syncOptions: SyncOptions = {
+			dryRun,
+			...(warehouseId !== undefined ? { warehouseId } : {}),
+		};
 
-			try {
-				const result = await syncInventory(syncOptions);
+		try {
+			const result = await syncInventory(syncOptions);
 
+			return c.json(
+				{
+					success: true,
+					message: dryRun
+						? 'Dry-run inventory sync completed successfully'
+						: 'Inventory sync completed successfully',
+					data: {
+						warehouses: result.warehouses,
+						totals: result.totals,
+					},
+					meta: [result.meta],
+				} satisfies ApiResponse<{
+					warehouses: SyncResult['warehouses'];
+					totals: SyncResult['totals'];
+				}>,
+				200,
+			);
+		} catch (error) {
+			if (error instanceof InventorySyncError) {
+				const errorDetails = error.details as Record<string, unknown> | undefined;
 				return c.json(
 					{
-						success: true,
-						message: dryRun
-							? 'Dry-run inventory sync completed successfully'
-							: 'Inventory sync completed successfully',
-						data: {
-							warehouses: result.warehouses,
-							totals: result.totals,
-						},
-						meta: [result.meta],
-					} satisfies ApiResponse<{
-						warehouses: SyncResult['warehouses'];
-						totals: SyncResult['totals'];
-					}>,
-					200,
+						success: false,
+						message: error.message,
+						...(errorDetails !== undefined ? { data: errorDetails } : {}),
+						meta: [
+							{
+								dryRun,
+								warehouseId,
+							},
+						],
+					} satisfies ApiResponse<Record<string, unknown>>,
+					error.status,
 				);
-			} catch (error) {
-				if (error instanceof InventorySyncError) {
-					const errorDetails = error.details as Record<string, unknown> | undefined;
-					return c.json(
-						{
-							success: false,
-							message: error.message,
-							...(errorDetails !== undefined ? { data: errorDetails } : {}),
-							meta: [
-								{
-									dryRun,
-									warehouseId,
-								},
-							],
-						} satisfies ApiResponse<Record<string, unknown>>,
-						error.status,
-					);
-				}
-
-				throw error;
 			}
-		},
-	)
+
+			throw error;
+		}
+	})
 
 	/**
 	 * GET / - Root endpoint health check
