@@ -290,6 +290,32 @@ function getItemWarehouse(item: StockItem): string {
 }
 
 /**
+ * Determines the location key used for grouping an inventory item in the UI.
+ *
+ * Prefers the current warehouse (which may already resolve cabinets), then the cabinet identifier,
+ * then the home warehouse identifier. Falls back to the sentinel `"unassigned"` when no identifier
+ * is available.
+ *
+ * @param item - Normalized inventory item display object.
+ * @returns A non-empty string identifier representing the item's location grouping key.
+ */
+function getInventoryLocationKey(item: InventoryItemDisplay): string {
+	const candidates = [
+		item.currentWarehouse,
+		item.currentCabinet,
+		item.homeWarehouseId,
+	];
+
+	for (const candidate of candidates) {
+		if (candidate && typeof candidate === "string" && candidate.trim() !== "") {
+			return candidate.trim();
+		}
+	}
+
+	return "unassigned";
+}
+
+/**
  * Returns the numeric barcode from a stock item or 0 if unavailable.
  *
  * @param item - Stock item object that may contain a numeric `barcode` field.
@@ -649,6 +675,7 @@ export function ProductCatalogTable({
 	const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
 	const [globalFilter, setGlobalFilter] = useState("");
 	const [categoryFilter, setCategoryFilter] = useState<string>("all");
+	const [warehouseFilter, setWarehouseFilter] = useState<string>("all");
 	const [expanded, setExpanded] = useState<ExpandedState>({});
 	const [pagination, setPagination] = useState<PaginationState>({
 		pageIndex: 0,
@@ -671,6 +698,131 @@ export function ProductCatalogTable({
 		const categories = products.map((product) => product.category);
 		return Array.from(new Set(categories)).sort();
 	}, [products]);
+
+	const warehouseFilterOptions = useMemo(() => {
+		const options = new Map<string, string>();
+		let hasUnassigned = false;
+
+		const addOption = (identifier?: string | null) => {
+			const id = typeof identifier === "string" ? identifier.trim() : "";
+			if (!id) {
+				return;
+			}
+			if (id === "unassigned") {
+				hasUnassigned = true;
+				return;
+			}
+			if (!options.has(id)) {
+				options.set(id, resolveWarehouseName(id));
+			}
+		};
+
+		for (const entry of warehouseEntries) {
+			if (entry?.warehouseId) {
+				addOption(entry.warehouseId);
+			}
+		}
+
+		for (const product of products) {
+			for (const item of product.inventoryItems) {
+				const data = extractInventoryItemData(item);
+				const locationKey = getInventoryLocationKey(data);
+				if (locationKey === "unassigned") {
+					hasUnassigned = true;
+				}
+				addOption(locationKey);
+				addOption(data.currentWarehouse ?? null);
+				addOption(data.currentCabinet ?? null);
+				addOption(data.homeWarehouseId ?? null);
+				const resolvedCandidates = [
+					resolveWarehouseIdForLimit(locationKey),
+					resolveWarehouseIdForLimit(data.currentWarehouse),
+					resolveWarehouseIdForLimit(data.currentCabinet),
+					resolveWarehouseIdForLimit(data.homeWarehouseId),
+				];
+				for (const candidate of resolvedCandidates) {
+					addOption(candidate ?? null);
+				}
+			}
+		}
+
+		const optionArray = Array.from(options.entries()).map(
+			([value, label]) => ({
+				value,
+				label,
+			}),
+		);
+		optionArray.sort((a, b) => a.label.localeCompare(b.label, "es"));
+
+		if (hasUnassigned) {
+			optionArray.push({
+				value: "unassigned",
+				label: resolveWarehouseName("unassigned"),
+			});
+		}
+
+		return optionArray;
+	}, [
+		warehouseEntries,
+		products,
+		resolveWarehouseIdForLimit,
+		resolveWarehouseName,
+	]);
+
+	const filteredProducts = useMemo(() => {
+		if (warehouseFilter === "all") {
+			return products;
+		}
+
+		return products.filter((product) =>
+			product.inventoryItems.some((item) => {
+				const data = extractInventoryItemData(item);
+				const candidates = new Set<string>();
+
+				const addCandidate = (identifier?: string | null) => {
+					const id = typeof identifier === "string" ? identifier.trim() : "";
+					if (id) {
+						candidates.add(id);
+					}
+				};
+
+				const locationKey = getInventoryLocationKey(data);
+				addCandidate(locationKey);
+				addCandidate(data.currentWarehouse ?? null);
+				addCandidate(data.currentCabinet ?? null);
+				addCandidate(data.homeWarehouseId ?? null);
+
+				const resolvedCandidates = [
+					resolveWarehouseIdForLimit(locationKey),
+					resolveWarehouseIdForLimit(data.currentWarehouse),
+					resolveWarehouseIdForLimit(data.currentCabinet),
+					resolveWarehouseIdForLimit(data.homeWarehouseId),
+				];
+
+				for (const candidate of resolvedCandidates) {
+					addCandidate(candidate ?? null);
+				}
+
+				if (warehouseFilter === "unassigned") {
+					return candidates.has("unassigned");
+				}
+
+				return candidates.has(warehouseFilter);
+			}),
+		);
+	}, [products, warehouseFilter, resolveWarehouseIdForLimit]);
+
+	useEffect(() => {
+		if (warehouseFilter === "all") {
+			return;
+		}
+		const hasSelection = warehouseFilterOptions.some(
+			(option) => option.value === warehouseFilter,
+		);
+		if (!hasSelection) {
+			setWarehouseFilter("all");
+		}
+	}, [warehouseFilter, warehouseFilterOptions]);
 
 	// Custom global filter function - split into smaller functions to reduce complexity
 	const searchInProduct = useMemo(
@@ -792,11 +944,7 @@ export function ProductCatalogTable({
 					(item) => {
 						const data = extractInventoryItemData(item);
 						const key = data.uuid || data.id || "";
-						const warehouseKey =
-							data.currentWarehouse ??
-							data.currentCabinet ??
-							data.homeWarehouseId ??
-							"unassigned";
+						const warehouseKey = getInventoryLocationKey(data);
 						return { data, key, warehouseKey };
 					},
 				);
@@ -1446,7 +1594,7 @@ export function ProductCatalogTable({
 
 	// Initialize the table
 	const table = useReactTable({
-		data: products,
+		data: filteredProducts,
 		columns,
 		getCoreRowModel: getCoreRowModel(),
 		getPaginationRowModel: getPaginationRowModel(),
@@ -1488,7 +1636,7 @@ export function ProductCatalogTable({
 		stockColumn.setFilterValue(showOnlyWithStock ? "with-stock" : undefined);
 	}, [showOnlyWithStock, table]);
 
-	if (products.length === 0) {
+	if (filteredProducts.length === 0) {
 		return (
 			<Card className="theme-transition border-[#E5E7EB] bg-white dark:border-[#374151] dark:bg-[#1E1F20]">
 				<CardContent className="flex flex-col items-center justify-center py-12">
@@ -1650,6 +1798,37 @@ export function ProductCatalogTable({
 						</Select>
 					</div>
 
+					{/* Warehouse Filter */}
+					{warehouseFilterOptions.length > 0 && (
+						<div className="min-w-[200px]">
+							<Select
+								onValueChange={setWarehouseFilter}
+								value={warehouseFilter}
+							>
+								<SelectTrigger className="border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]">
+									<SelectValue placeholder="Todos los almacenes" />
+								</SelectTrigger>
+								<SelectContent className="border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
+									<SelectItem
+										className="text-[#11181C] hover:bg-[#F9FAFB] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
+										value="all"
+									>
+										Todos los almacenes
+									</SelectItem>
+									{warehouseFilterOptions.map((option) => (
+										<SelectItem
+											className="text-[#11181C] hover:bg-[#F9FAFB] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
+											key={option.value}
+											value={option.value}
+										>
+											{option.label}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</div>
+					)}
+
 					{/* Stock Filter */}
 					<div className="flex items-center space-x-2">
 						<Checkbox
@@ -1668,13 +1847,17 @@ export function ProductCatalogTable({
 					</div>
 
 					{/* Clear All Filters */}
-					{(globalFilter || categoryFilter !== "all" || showOnlyWithStock) && (
+					{(globalFilter ||
+						categoryFilter !== "all" ||
+						showOnlyWithStock ||
+						warehouseFilter !== "all") && (
 						<Button
 							className="text-[#687076] hover:text-[#11181C] dark:text-[#9BA1A6] dark:hover:text-[#ECEDEE]"
 							onClick={() => {
 								setGlobalFilter("");
 								setCategoryFilter("all");
 								setShowOnlyWithStock(false);
+								setWarehouseFilter("all");
 							}}
 							size="sm"
 							variant="ghost"
@@ -1685,7 +1868,7 @@ export function ProductCatalogTable({
 
 					{/* Results Counter */}
 					<div className="whitespace-nowrap text-[#687076] text-sm dark:text-[#9BA1A6]">
-						{table.getFilteredRowModel().rows.length} de {products.length}{" "}
+						{table.getFilteredRowModel().rows.length} de {filteredProducts.length}{" "}
 						productos
 					</div>
 				</div>
