@@ -66,15 +66,20 @@ export const useCreateTransferOrder = () =>
 // Update transfer overall status
 // =============================
 
-type UpdateTransferStatusPostOptions = Parameters<
-	(typeof client.api.auth)["warehouse-transfers"]["update-status"]["$post"]
->[0];
-export type UpdateTransferStatusPayload =
-	UpdateTransferStatusPostOptions extends {
-		json: infer J;
-	}
-		? J
-		: never;
+export type UpdateTransferStatusPayload = {
+	transferId: string;
+	altegioTotals: {
+		goodId: number;
+		totalQuantity: number;
+		totalCost: number;
+	}[];
+	isCompleted?: boolean;
+	isPending?: boolean;
+	isCancelled?: boolean;
+	completedBy?: string;
+	notes?: string;
+	replicateToAltegio?: boolean;
+};
 
 export const useUpdateTransferStatus = () =>
 	useMutation<unknown, Error, UpdateTransferStatusPayload>({

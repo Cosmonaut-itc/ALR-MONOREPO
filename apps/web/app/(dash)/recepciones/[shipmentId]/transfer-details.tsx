@@ -163,6 +163,23 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 		return Array.from(groups.values());
 	}, [items, productCatalog]);
 
+	const altegioTotals = useMemo(() => {
+		const totals = new Map<number, { qty: number; unitCost: number }>();
+		for (const group of groupedItems) {
+			const qty = group.items.length;
+			const unitCost =
+				(productCatalog?.data?.find(
+					(product: ProductCatalogItem) => product.good_id === group.barcode,
+				)?.cost as number | undefined) ?? 0;
+			totals.set(group.barcode, { qty, unitCost });
+		}
+		return Array.from(totals.entries()).map(([goodId, { qty, unitCost }]) => ({
+			goodId,
+			totalQuantity: qty,
+			totalCost: qty * unitCost,
+		}));
+	}, [groupedItems, productCatalog]);
+
 	const { warehouseOptions } = useMemo(
 		() => createWarehouseOptions(cabinetWarehouse),
 		[cabinetWarehouse],
@@ -171,12 +188,13 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 	const handleMarkAllReceived = async () => {
 		markAllReceived();
 		try {
-			const payload = {
-				transferId: generalTransferDetails?.id,
+			const payload: UpdateTransferStatusPayload = {
+				transferId: String(generalTransferDetails?.id ?? ""),
+				altegioTotals,
 				isCompleted: true,
 				completedBy: user?.id,
 				isPending: false,
-			} as UpdateTransferStatusPayload;
+			};
 			await updateTransferStatus(payload);
 			toast(
 				"Recepción completada: Todos los artículos han sido marcados como recibidos",
@@ -194,12 +212,13 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 				isReceived: nextReceived,
 				receivedBy: user?.id,
 			} as UpdateTransferItemStatusPayload;
-			const generalPayload = {
-				transferId: generalTransferDetails?.id,
+			const generalPayload: UpdateTransferStatusPayload = {
+				transferId: String(generalTransferDetails?.id ?? ""),
+				altegioTotals,
 				isCompleted: false,
 				completedBy: user?.id,
 				isPending: true,
-			} as UpdateTransferStatusPayload;
+			};
 			await updateItemStatus(payload);
 
 			await updateTransferStatus(generalPayload);
