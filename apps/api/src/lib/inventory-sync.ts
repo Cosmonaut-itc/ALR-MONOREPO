@@ -1,9 +1,10 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../db/index';
+// biome-ignore lint/performance/noNamespaceImport: Required for schema imports
 import * as schema from '../db/schema';
 import {
-	apiResponseSchema,
 	type AltegioGood,
+	apiResponseSchema,
 	type SyncOptions,
 	type SyncResult,
 	type SyncWarehouseSummary,
@@ -11,7 +12,7 @@ import {
 
 const PAGE_SIZE = 100;
 const INSERT_CHUNK_SIZE = 500;
-const MAX_INSERT_PER_PRODUCT = 20_000;
+const MAX_INSERT_PER_PRODUCT = 2000;
 const INT32_MAX = 2_147_483_647;
 
 type ProductStockInsert = typeof schema.productStock.$inferInsert;
@@ -20,9 +21,13 @@ type InventorySyncStatus = 400 | 404 | 409 | 422 | 500 | 502 | 503;
 
 export class InventorySyncError extends Error {
 	readonly status: InventorySyncStatus;
-readonly details: Record<string, unknown> | undefined;
+	readonly details: Record<string, unknown> | undefined;
 
-	constructor(message: string, status: InventorySyncStatus = 500, details?: Record<string, unknown>) {
+	constructor(
+		message: string,
+		status: InventorySyncStatus = 500,
+		details?: Record<string, unknown>,
+	) {
 		super(message);
 		this.name = 'InventorySyncError';
 		this.status = status;
@@ -63,6 +68,7 @@ function chunkArray<T>(values: T[], chunkSize: number): T[][] {
 /**
  * Fetches all Altegio goods for a specific salon/storage with pagination.
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Preserve current behavior; refactor later if needed
 async function fetchGoods(altegioId: number, headers: HeadersInit): Promise<AltegioGood[]> {
 	const goods: AltegioGood[] = [];
 	let page = 1;
@@ -70,6 +76,7 @@ async function fetchGoods(altegioId: number, headers: HeadersInit): Promise<Alte
 	try {
 		while (true) {
 			const apiUrl = `https://api.alteg.io/api/v1/goods/${altegioId}?count=${PAGE_SIZE}&page=${page}`;
+			// biome-ignore lint: Pagination requires sequential requests
 			const response = await fetch(apiUrl, {
 				method: 'GET',
 				headers,
@@ -222,8 +229,7 @@ async function loadExistingCounts(
 
 function mapWarehouse(record: WarehousesQueryResult): WarehouseRecord | null {
 	if (
-		!record.altegioId ||
-		!record.consumablesId ||
+		!(record.altegioId && record.consumablesId) ||
 		record.altegioId <= 0 ||
 		record.consumablesId <= 0
 	) {
@@ -238,6 +244,7 @@ function mapWarehouse(record: WarehousesQueryResult): WarehouseRecord | null {
 	};
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Preserve current behavior; refactor later if needed
 async function syncWarehouse(
 	warehouse: WarehouseRecord,
 	headers: HeadersInit,
@@ -305,6 +312,7 @@ async function syncWarehouse(
 					requested: difference,
 					applied: allowedInsert,
 				});
+				// biome-ignore lint/suspicious/noConsole: Operational notice for capped inserts
 				console.warn(
 					`Inventory sync cap reached for barcode ${barcode} in warehouse ${warehouse.id}. Requested ${difference}, capped at ${allowedInsert}.`,
 				);
@@ -319,6 +327,7 @@ async function syncWarehouse(
 				);
 
 				for (const chunk of chunkArray(payload, INSERT_CHUNK_SIZE)) {
+					// biome-ignore lint: Batched DB inserts must be sequential to control load
 					const inserted = await db
 						.insert(schema.productStock)
 						.values(chunk)
@@ -383,7 +392,7 @@ export async function syncInventory(options: SyncOptions): Promise<SyncResult> {
 	const authHeader = process.env.AUTH_HEADER;
 	const acceptHeader = process.env.ACCEPT_HEADER;
 
-	if (!authHeader || !acceptHeader) {
+	if (!(authHeader && acceptHeader)) {
 		throw new InventorySyncError('Missing Altegio authentication headers', 400);
 	}
 
@@ -424,6 +433,7 @@ export async function syncInventory(options: SyncOptions): Promise<SyncResult> {
 	const summaries: SyncWarehouseSummary[] = [];
 
 	for (const warehouse of warehouses) {
+		// biome-ignore lint: Warehouses are processed sequentially to limit API/DB pressure
 		const summary = await syncWarehouse(warehouse, headers, dryRun);
 		summaries.push(summary);
 	}
