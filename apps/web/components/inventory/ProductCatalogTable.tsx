@@ -69,6 +69,7 @@ import {
 	TooltipProvider,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useToggleInventoryKit } from "@/lib/mutations/inventory";
 import {
 	useCreateStockLimit,
 	useUpdateStockLimit,
@@ -92,6 +93,7 @@ type ProductWithInventory = {
 	description: string;
 	stockCount: number;
 	inventoryItems: StockItemWithEmployee[];
+	hasKitItems: boolean;
 };
 
 // Type for individual inventory item display
@@ -108,6 +110,7 @@ type InventoryItemDisplay = {
 	currentCabinet?: string;
 	homeWarehouseId?: string;
 	locationType?: "warehouse" | "cabinet" | "unassigned";
+	isKit?: boolean;
 };
 
 interface ProductCatalogTableProps {
@@ -140,6 +143,8 @@ interface ProductCatalogTableProps {
 	stockLimitsMap?: Map<string, StockLimit>;
 	/** Whether the current user can edit stock limits (enables subtle UI affordances) */
 	canEditLimits?: boolean;
+	/** Whether the current user can toggle kit state for inventory items */
+	canManageKits?: boolean;
 }
 
 type WarehouseMappingEntry = {
@@ -205,9 +210,10 @@ function extractInventoryItemData(
 ): InventoryItemDisplay {
 	if (item && typeof item === "object" && "productStock" in item) {
 		const itemStock = (item as { productStock: StockItem }).productStock;
-		const employee = (
-			item as { employee?: { name?: string; surname?: string } }
-		).employee;
+	const employee = (
+		item as { employee?: { name?: string; surname?: string } }
+	).employee;
+	const isKitFlag = (itemStock as { isKit?: boolean | null }).isKit ?? false;
 		const locationId = getItemWarehouse(itemStock);
 		const rawCabinet = (itemStock as { currentCabinet?: unknown })
 			.currentCabinet;
@@ -241,8 +247,9 @@ function extractInventoryItemData(
 			currentWarehouse: locationId,
 			currentCabinet: cabinetId,
 			homeWarehouseId: warehouseId,
-			locationType,
-		};
+		locationType,
+		isKit: Boolean(isKitFlag),
+	};
 
 		return result;
 	}
@@ -258,6 +265,7 @@ function extractInventoryItemData(
 		currentCabinet: undefined,
 		homeWarehouseId: undefined,
 		locationType: "unassigned",
+		isKit: false,
 	};
 }
 
@@ -383,6 +391,7 @@ export function ProductCatalogTable({
 	distributionCenterIds = new Set(),
 	stockLimitsMap,
 	canEditLimits = false,
+	canManageKits = false,
 }: ProductCatalogTableProps) {
 	// Disposal store for dispose dialog
 	const { show: showDisposeDialog } = useDisposalStore();
@@ -395,6 +404,8 @@ export function ProductCatalogTable({
 		productCatalog: storedProductCatalog,
 		inventoryData: storedInventoryData,
 	} = useInventoryStore();
+	const { mutateAsync: toggleKitAsync, isPending: isTogglingKit } =
+		useToggleInventoryKit();
 
 	const warehouseEntries = useMemo<WarehouseMappingEntry[]>(() => {
 		if (isWarehouseMapSuccess(warehouseMap)) {
@@ -640,18 +651,19 @@ export function ProductCatalogTable({
 			normalizedWarehouse && normalizedWarehouse !== "all",
 		);
 
-		return storedProductCatalog.map((product) => {
-			// Get all inventory items for this product in the specified warehouse
-			if (!storedInventoryData) {
-				return {
-					...product,
-					inventoryItems: [],
-					stockCount: 0,
-				};
-			}
+	return storedProductCatalog.map((product) => {
+		// Get all inventory items for this product in the specified warehouse
+		if (!storedInventoryData) {
+			return {
+				...product,
+				inventoryItems: [],
+				stockCount: 0,
+				hasKitItems: false,
+			};
+		}
 
-			const inventoryItems: StockItemWithEmployee[] =
-				storedInventoryData?.filter((item) => {
+		const inventoryItems: StockItemWithEmployee[] =
+			storedInventoryData?.filter((item) => {
 					const itemStock = (item as { productStock: StockItem }).productStock;
 					if (getItemBarcode(itemStock) !== product.barcode) {
 						return false;
@@ -662,12 +674,16 @@ export function ProductCatalogTable({
 					return getItemWarehouse(itemStock) === normalizedWarehouse;
 				});
 
-			return {
-				...product,
-				inventoryItems,
-				stockCount: inventoryItems.length,
-			};
-		});
+		return {
+			...product,
+			inventoryItems,
+			stockCount: inventoryItems.length,
+			hasKitItems: inventoryItems.some((entry) => {
+				const stock = (entry as { productStock?: StockItem }).productStock;
+				return Boolean(stock?.isKit);
+			}),
+		};
+	});
 	}, [storedProductCatalog, storedInventoryData, warehouse]);
 
 	// State for table features
@@ -746,12 +762,10 @@ export function ProductCatalogTable({
 			}
 		}
 
-		const optionArray = Array.from(options.entries()).map(
-			([value, label]) => ({
-				value,
-				label,
-			}),
-		);
+		const optionArray = Array.from(options.entries()).map(([value, label]) => ({
+			value,
+			label,
+		}));
 		optionArray.sort((a, b) => a.label.localeCompare(b.label, "es"));
 
 		if (hasUnassigned) {
@@ -952,6 +966,11 @@ export function ProductCatalogTable({
 				const selectedCount = displayItems.reduce((acc, item) => {
 					return item.key && productSelection.has(item.key) ? acc + 1 : acc;
 				}, 0);
+				const toggleCandidates = displayItems.filter((item) => {
+					const id = item.data.id ?? "";
+					return Boolean(id) && !id.startsWith("uuid-");
+				});
+				const isToggleDisabled = toggleCandidates.length === 0 || isTogglingKit;
 
 				const isGroupExpanded = (barcode: number, key: string) =>
 					Boolean(expandedGroupsByBarcode[barcode]?.has(key));
@@ -1002,6 +1021,60 @@ export function ProductCatalogTable({
 							description: `${selectedItems.length} item(s) agregado(s) desde ${product.name}`,
 							duration: 2000,
 						});
+					}
+				};
+
+				const handleToggleKitSelection = async () => {
+					if (!canManageKits) {
+						return;
+					}
+					if (toggleCandidates.length === 0) {
+						toast.error("No hay artículos válidos para actualizar.");
+						return;
+					}
+					const updates = toggleCandidates.map((item) => {
+						const productStockId = item.data.id ?? "";
+						const contexts = new Set<string>();
+						if (warehouse && warehouse.trim().length > 0) {
+							contexts.add(warehouse.trim());
+						}
+						const locationCandidates = [
+							item.data.currentWarehouse,
+							item.data.currentCabinet,
+							item.data.homeWarehouseId,
+							getInventoryLocationKey(item.data),
+						];
+						for (const candidate of locationCandidates) {
+							if (candidate && candidate.trim() !== "") {
+								contexts.add(candidate.trim());
+							}
+						}
+						const resolvedCandidates = [
+							resolveWarehouseIdForLimit(item.data.currentWarehouse),
+							resolveWarehouseIdForLimit(item.data.currentCabinet),
+							resolveWarehouseIdForLimit(item.data.homeWarehouseId),
+							resolveWarehouseIdForLimit(item.warehouseKey),
+						];
+						for (const resolved of resolvedCandidates) {
+							if (resolved && resolved.trim() !== "") {
+								contexts.add(resolved.trim());
+							}
+						}
+						return {
+							productStockId,
+							contexts: Array.from(contexts),
+						};
+					});
+					try {
+						for (const update of updates) {
+							await toggleKitAsync({
+								productStockId: update.productStockId,
+								invalidateContexts: update.contexts,
+							});
+						}
+					} catch (error) {
+						// biome-ignore lint/suspicious/noConsole: diagnostics for failed updates
+						console.error(error);
 					}
 				};
 
@@ -1130,20 +1203,42 @@ export function ProductCatalogTable({
 					});
 				return (
 					<div className="border-[#E5E7EB] border-b bg-[#F8FAFC] p-4 dark:border-[#374151] dark:bg-[#1A1B1C]">
-						<div className="mb-3 flex items-center justify-between">
+						<div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 							<h4 className="font-medium text-[#11181C] text-sm dark:text-[#ECEDEE]">
 								Inventario detallado ({displayItems.length} items)
 							</h4>
-							{selectionEnabledRef && (
-								<Button
-									className="h-8 px-3"
-									disabled={selectedCount === 0}
-									onClick={handleAddToTransfer}
-									size="sm"
-								>
-									Agregar a transferencia ({selectedCount})
-								</Button>
-							)}
+							<div className="flex flex-wrap items-center gap-2">
+								{canManageKits && (
+									<Tooltip>
+										<TooltipTrigger asChild>
+											<Button
+												className="h-8 px-3"
+												disabled={isToggleDisabled}
+												onClick={handleToggleKitSelection}
+												size="sm"
+												type="button"
+												variant="outline"
+											>
+												Actualizar kit
+											</Button>
+										</TooltipTrigger>
+										<TooltipContent side="top">
+											Al hacer click agregaras o quitaras este producto del
+											grupo que se usa en kits
+										</TooltipContent>
+									</Tooltip>
+								)}
+								{selectionEnabledRef && (
+									<Button
+										className="h-8 px-3"
+										disabled={selectedCount === 0}
+										onClick={handleAddToTransfer}
+										size="sm"
+									>
+										Agregar a transferencia ({selectedCount})
+									</Button>
+								)}
+							</div>
 						</div>
 						{enrichedWarehouseGroups.length > 0 && (
 							<div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -1351,10 +1446,18 @@ export function ProductCatalogTable({
 																					}
 																				/>
 																			)}
-																			<span className="truncate">
-																				{(data.id || "").slice(0, 8)}...
-																			</span>
-																			<Tooltip>
+									<span className="truncate">
+										{(data.id || "").slice(0, 8)}...
+									</span>
+									{data.isKit && (
+										<Badge
+											className="bg-[#EDE9FE] text-[#4C1D95] dark:bg-[#312763] dark:text-[#EDE9FE]"
+											variant="secondary"
+										>
+											Kit
+										</Badge>
+									)}
+									<Tooltip>
 																				<TooltipTrigger asChild>
 																					<Button
 																						className="h-4 w-4 p-0 hover:bg-[#E5E7EB] dark:hover:bg-[#2D3033]"
@@ -1489,8 +1592,12 @@ export function ProductCatalogTable({
 			distributionCenterIds,
 			stockLimitsMap,
 			canEditLimits,
+			canManageKits,
 			handleOpenLimitDialog,
 			isSavingStockLimit,
+			toggleKitAsync,
+			isTogglingKit,
+			warehouse,
 		],
 	);
 
@@ -1530,6 +1637,14 @@ export function ProductCatalogTable({
 						<div className="font-medium text-[#11181C] dark:text-[#ECEDEE]">
 							<div className="flex items-center gap-2">
 								<div>{product.name}</div>
+								{product.hasKitItems && (
+									<Badge
+										className="bg-[#EDE9FE] text-[#4C1D95] dark:bg-[#312763] dark:text-[#EDE9FE]"
+										variant="secondary"
+									>
+										Kit
+									</Badge>
+								)}
 								{hasLimit && (
 									<Badge
 										className="bg-[#F3F4F6] text-[#374151] dark:bg-[#374151] dark:text-[#D1D5DB]"
@@ -1868,8 +1983,8 @@ export function ProductCatalogTable({
 
 					{/* Results Counter */}
 					<div className="whitespace-nowrap text-[#687076] text-sm dark:text-[#9BA1A6]">
-						{table.getFilteredRowModel().rows.length} de {filteredProducts.length}{" "}
-						productos
+						{table.getFilteredRowModel().rows.length} de{" "}
+						{filteredProducts.length} productos
 					</div>
 				</div>
 

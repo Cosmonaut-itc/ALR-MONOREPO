@@ -116,7 +116,10 @@ export function InventarioPage({
 	warehouseId: string;
 	role: string;
 }) {
-	const isEncargado = role === "encargado";
+	const normalizedRole =
+		typeof role === "string" ? role.toLowerCase() : String(role ?? "");
+	const isEncargado = normalizedRole === "encargado";
+	const canManageKits = isEncargado || normalizedRole === "admin";
 	const inventoryQueryParams = [isEncargado ? "all" : warehouseId];
 	const inventoryQueryFn = isEncargado
 		? getAllProductStock
@@ -1381,6 +1384,7 @@ export function InventarioPage({
 							});
 						}}
 						canEditLimits={isEncargado}
+						canManageKits={canManageKits}
 						productCatalog={productCatalog}
 						stockLimitsMap={stockLimitsMap}
 						warehouse={warehouseFilter}
@@ -1414,6 +1418,7 @@ export function InventarioPage({
 							});
 						}}
 						canEditLimits={isEncargado}
+						canManageKits={canManageKits}
 						productCatalog={productCatalog}
 						stockLimitsMap={stockLimitsMap}
 						warehouse={cabinetFilter}
