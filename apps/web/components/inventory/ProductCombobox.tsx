@@ -45,7 +45,9 @@ export function ProductCombobox({
 	const [open, setOpen] = useState(false);
 
 	const searchOptions = useMemo(() => {
+		const seenKeys = new Set<string>();
 		const options: Array<{
+			key: string;
 			value: string;
 			label: string;
 			barcode: number;
@@ -54,23 +56,40 @@ export function ProductCombobox({
 		}> = [];
 
 		for (const product of products) {
-			// Add option for product name
-			options.push({
-				value: product.name.toLowerCase(),
-				label: product.name,
-				barcode: product.barcode,
-				category: product.category,
-				productName: product.name,
-			});
+			const safeName =
+				typeof product.name === 'string' && product.name.trim().length > 0
+					? product.name.trim()
+					: `Producto ${product.barcode}`;
+			const normalizedNameValue = safeName.toLowerCase();
+			const entries = [
+				{
+					key: `${product.barcode}-${normalizedNameValue}`,
+					value: normalizedNameValue,
+					label: safeName,
+				},
+				{
+					key: `${product.barcode}-${product.barcode}`,
+					value: product.barcode.toString(),
+					label: `${product.barcode} - ${safeName}`,
+				},
+			];
 
-			// Add option for barcode
-			options.push({
-				value: product.barcode.toString(),
-				label: `${product.barcode} - ${product.name}`,
-				barcode: product.barcode,
-				category: product.category,
-				productName: product.name,
-			});
+			// Add entries for product name and barcode, skipping duplicate combinations
+			for (const entry of entries) {
+				const key = entry.key;
+				if (seenKeys.has(key)) {
+					continue;
+				}
+				seenKeys.add(key);
+				options.push({
+					key,
+					value: entry.value,
+					label: entry.label,
+					barcode: product.barcode,
+					category: product.category,
+					productName: safeName,
+				});
+			}
 		}
 
 		return options;
@@ -111,7 +130,7 @@ export function ProductCombobox({
 							{searchOptions.map((option) => (
 								<CommandItem
 									className="cursor-pointer text-[#11181C] hover:bg-[#F9FAFB] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
-									key={`${option.barcode}-${option.value}`}
+									key={option.key}
 									onSelect={() => {
 										if (onSelectProduct) {
 											onSelectProduct({

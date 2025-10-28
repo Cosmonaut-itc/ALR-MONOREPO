@@ -26,11 +26,13 @@ export default async function PedidosRoute() {
 	const auth = await getServerAuth();
 	const warehouseId = auth.user?.warehouseId ?? "";
 	const role = auth.user?.role ?? "";
-	const isEncargado = role === "encargado";
-	const scopeKey = isEncargado ? "all" : warehouseId || "unknown";
+	const normalizedRole = typeof role === "string" ? role.toLowerCase() : "";
+	const canManageAllWarehouses =
+		normalizedRole === "encargado" || normalizedRole === "admin";
+	const scopeKey = canManageAllWarehouses ? "all" : warehouseId || "unknown";
 
 	try {
-		if (isEncargado) {
+		if (canManageAllWarehouses) {
 			await queryClient.prefetchQuery({
 				queryKey: createQueryKey(queryKeys.replenishmentOrders, [
 					scopeKey,
@@ -62,10 +64,10 @@ export default async function PedidosRoute() {
 	return (
 		<HydrationBoundary state={dehydrate(queryClient)}>
 			<GenericBoundaryWrapper fallbackComponent={<SkeletonPedidosPage />}>
-				<PedidosPage
-					isEncargado={isEncargado}
-					warehouseId={warehouseId}
-				/>
+		<PedidosPage
+			canManageAllWarehouses={canManageAllWarehouses}
+			warehouseId={warehouseId}
+		/>
 			</GenericBoundaryWrapper>
 		</HydrationBoundary>
 	);

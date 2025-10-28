@@ -164,25 +164,29 @@ function getOrderIdentifier(order: OrderSummary) {
 
 type PedidosPageProps = {
 	warehouseId: string;
-	isEncargado: boolean;
+	canManageAllWarehouses: boolean;
 };
 
-export function PedidosPage({ warehouseId, isEncargado }: PedidosPageProps) {
+export function PedidosPage({
+	warehouseId,
+	canManageAllWarehouses,
+}: PedidosPageProps) {
 	const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 	const [isDialogOpen, setIsDialogOpen] = useState(false);
 	const [cedisWarehouseId, setCedisWarehouseId] = useState("");
 	const [notes, setNotes] = useState("");
+	const [sourceWarehouseId, setSourceWarehouseId] = useState(warehouseId);
 	const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([]);
 	const [productSearch, setProductSearch] = useState("");
 	const [itemsSearch, setItemsSearch] = useState("");
 
-	const scopeKey = isEncargado ? "all" : warehouseId || "unknown";
-	const ordersQueryKey = isEncargado
+	const scopeKey = canManageAllWarehouses ? "all" : warehouseId || "unknown";
+	const ordersQueryKey = canManageAllWarehouses
 		? createQueryKey(queryKeys.replenishmentOrders, [scopeKey, statusFilter])
 		: createQueryKey(queryKeys.replenishmentOrders, [scopeKey]);
 
 	const statusParam =
-		isEncargado && statusFilter !== "all"
+		canManageAllWarehouses && statusFilter !== "all"
 			? (statusFilter as Exclude<StatusFilter, "all">)
 			: undefined;
 
@@ -193,7 +197,7 @@ export function PedidosPage({ warehouseId, isEncargado }: PedidosPageProps) {
 	>({
 		queryKey: ordersQueryKey,
 		queryFn: () =>
-			isEncargado
+			canManageAllWarehouses
 				? getReplenishmentOrders(
 						statusParam ? { status: statusParam } : undefined,
 					)
@@ -262,24 +266,45 @@ export function PedidosPage({ warehouseId, isEncargado }: PedidosPageProps) {
 			);
 	}, [warehousesResponse]);
 
-	const cedisWarehouses = useMemo(
-		() => warehouses.filter((warehouse) => warehouse.isCedis),
-		[warehouses],
-	);
+const cedisWarehouses = useMemo(
+	() => warehouses.filter((warehouse) => warehouse.isCedis),
+	[warehouses],
+);
 
-	useEffect(() => {
-		if (cedisWarehouses.length >= 1) {
-			setCedisWarehouseId((prev) => {
-				if (
-					prev &&
-					cedisWarehouses.some((warehouse) => warehouse.id === prev)
-				) {
+const requesterWarehouses = useMemo(
+	() => warehouses.filter((warehouse) => !warehouse.isCedis),
+	[warehouses],
+);
+
+useEffect(() => {
+	if (cedisWarehouses.length >= 1) {
+		setCedisWarehouseId((prev) => {
+			if (
+				prev &&
+				cedisWarehouses.some((warehouse) => warehouse.id === prev)
+			) {
+				return prev;
+			}
+			return cedisWarehouses[0]?.id ?? prev ?? "";
+		});
+	}
+}, [cedisWarehouses]);
+
+useEffect(() => {
+	if (canManageAllWarehouses) {
+		if (requesterWarehouses.length > 0) {
+			setSourceWarehouseId((prev) => {
+				if (prev && requesterWarehouses.some((warehouse) => warehouse.id === prev)) {
 					return prev;
 				}
-				return cedisWarehouses[0]?.id ?? prev ?? "";
+				const fallback = requesterWarehouses.find((wh) => wh.id === warehouseId);
+				return fallback?.id ?? requesterWarehouses[0]?.id ?? prev ?? "";
 			});
 		}
-	}, [cedisWarehouses]);
+	} else {
+		setSourceWarehouseId(warehouseId);
+	}
+}, [canManageAllWarehouses, requesterWarehouses, warehouseId]);
 
 	const productOptions = useMemo<ProductOption[]>(() => {
 		if (
@@ -381,11 +406,11 @@ export function PedidosPage({ warehouseId, isEncargado }: PedidosPageProps) {
 	}, [ordersResponse]);
 
 	const filteredOrders = useMemo(() => {
-		if (statusFilter === "all" || isEncargado) {
-			return orders;
-		}
-		return orders.filter((order) => statusFromOrder(order) === statusFilter);
-	}, [orders, statusFilter, isEncargado]);
+	if (statusFilter === "all" || canManageAllWarehouses) {
+		return orders;
+	}
+	return orders.filter((order) => statusFromOrder(order) === statusFilter);
+}, [orders, statusFilter, canManageAllWarehouses]);
 
 	const warehouseNameMap = useMemo(() => {
 		const entries = new Map<string, string>();
@@ -403,18 +428,30 @@ export function PedidosPage({ warehouseId, isEncargado }: PedidosPageProps) {
 		return entries;
 	}, [warehouses]);
 
-	const selectedCedisName = useMemo(() => {
-		if (!cedisWarehouseId) {
-			return "";
-		}
-		return (
-			warehouseNameMap.get(cedisWarehouseId) ??
-			`Bodega ${cedisWarehouseId.slice(0, 6)}`
-		);
-	}, [cedisWarehouseId, warehouseNameMap]);
+const selectedCedisName = useMemo(() => {
+	if (!cedisWarehouseId) {
+		return "";
+	}
+	return (
+		warehouseNameMap.get(cedisWarehouseId) ??
+		`Bodega ${cedisWarehouseId.slice(0, 6)}`
+	);
+}, [cedisWarehouseId, warehouseNameMap]);
 
-	const cedisOptions =
-		cedisWarehouses.length > 0 ? cedisWarehouses : warehouses;
+const selectedRequesterName = useMemo(() => {
+	if (!sourceWarehouseId) {
+		return "";
+	}
+	return (
+		warehouseNameMap.get(sourceWarehouseId) ??
+		`Bodega ${sourceWarehouseId.slice(0, 6)}`
+	);
+}, [sourceWarehouseId, warehouseNameMap]);
+
+const cedisOptions =
+	cedisWarehouses.length > 0 ? cedisWarehouses : warehouses;
+
+const requesterSelectDisabled = requesterWarehouses.length <= 1;
 	const isCedisSelectDisabled = cedisWarehouses.length >= 1;
 
 	const handleSelectProduct = useCallback(
@@ -475,27 +512,44 @@ export function PedidosPage({ warehouseId, isEncargado }: PedidosPageProps) {
 		});
 	}, [itemsSearch, selectedItems]);
 
-	const resetForm = useCallback(() => {
-		setSelectedItems([]);
-		setNotes("");
-		setItemsSearch("");
-		setProductSearch("");
-		if (cedisWarehouses.length < 1) {
-			setCedisWarehouseId("");
-		} else {
-			setCedisWarehouseId(cedisWarehouses[0]?.id ?? "");
-		}
-	}, [cedisWarehouses]);
+const resetForm = useCallback(() => {
+	setSelectedItems([]);
+	setNotes("");
+	setItemsSearch("");
+	setProductSearch("");
+	if (cedisWarehouses.length < 1) {
+		setCedisWarehouseId("");
+	} else {
+		setCedisWarehouseId(cedisWarehouses[0]?.id ?? "");
+	}
+	if (canManageAllWarehouses) {
+		const fallbackRequester = requesterWarehouses.find((wh) => wh.id === warehouseId);
+		setSourceWarehouseId(
+			fallbackRequester?.id ?? requesterWarehouses[0]?.id ?? warehouseId ?? "",
+		);
+	} else {
+		setSourceWarehouseId(warehouseId);
+	}
+}, [
+	cedisWarehouses,
+	canManageAllWarehouses,
+	requesterWarehouses,
+	warehouseId,
+]);
 
 	const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
 
-		if (!warehouseId) {
-			toast.error(
-				"No se encontró la bodega del usuario. Contacta al administrador.",
-			);
-			return;
-		}
+	const effectiveSourceWarehouseId = canManageAllWarehouses
+		? sourceWarehouseId
+		: warehouseId;
+
+	if (!effectiveSourceWarehouseId) {
+		toast.error(
+			"Selecciona la bodega solicitante antes de crear el pedido.",
+		);
+		return;
+	}
 		if (!cedisWarehouseId) {
 			toast.error("Selecciona el CEDIS que surtirá este pedido.");
 			return;
@@ -520,13 +574,13 @@ export function PedidosPage({ warehouseId, isEncargado }: PedidosPageProps) {
 			return;
 		}
 
-		try {
-			await mutation.mutateAsync({
-				sourceWarehouseId: warehouseId,
-				cedisWarehouseId,
-				items: preparedItems,
-				notes: notes.trim().length > 0 ? notes.trim() : undefined,
-			});
+	try {
+		await mutation.mutateAsync({
+			sourceWarehouseId: effectiveSourceWarehouseId,
+			cedisWarehouseId,
+			items: preparedItems,
+			notes: notes.trim().length > 0 ? notes.trim() : undefined,
+		});
 			setIsDialogOpen(false);
 			resetForm();
 		} catch (error) {
@@ -536,7 +590,7 @@ export function PedidosPage({ warehouseId, isEncargado }: PedidosPageProps) {
 		}
 	};
 
-	const isEncargadoNonInteractive = !isEncargado && !warehouseId;
+const isNonInteractive = !canManageAllWarehouses && !warehouseId;
 
 	return (
 		<div className="theme-transition flex-1 space-y-6 bg-white p-4 md:p-6 dark:bg-[#151718]">
@@ -549,8 +603,8 @@ export function PedidosPage({ warehouseId, isEncargado }: PedidosPageProps) {
 						Visualiza y administra las solicitudes de reabastecimiento.
 					</p>
 				</div>
-				{isEncargado && (
-					<Dialog onOpenChange={setIsDialogOpen} open={isDialogOpen}>
+		{canManageAllWarehouses && (
+			<Dialog onOpenChange={setIsDialogOpen} open={isDialogOpen}>
 						<DialogTrigger asChild>
 							<Button className="bg-[#0a7ea4] text-white hover:bg-[#086885] dark:bg-[#0a7ea4] dark:hover:bg-[#0a7ea4]/80">
 								Nuevo pedido
@@ -586,14 +640,44 @@ export function PedidosPage({ warehouseId, isEncargado }: PedidosPageProps) {
 												))}
 											</SelectContent>
 										</Select>
-										{selectedCedisName && (
-											<p className="text-[#687076] text-sm dark:text-[#9BA1A6]">
-												Se solicitará al CEDIS:{" "}
-												<span className="font-medium">{selectedCedisName}</span>
-											</p>
-										)}
-									</div>
-									<div className="space-y-3">
+						{selectedCedisName && (
+							<p className="text-[#687076] text-sm dark:text-[#9BA1A6]">
+								Se solicitará al CEDIS:{" "}
+								<span className="font-medium">{selectedCedisName}</span>
+							</p>
+						)}
+					</div>
+					{canManageAllWarehouses && (
+						<div className="space-y-2">
+							<Label className="text-[#11181C] dark:text-[#ECEDEE]">
+								Bodega solicitante
+							</Label>
+							<Select
+								disabled={requesterSelectDisabled}
+								onValueChange={setSourceWarehouseId}
+								value={sourceWarehouseId}
+							>
+								<SelectTrigger className="input-transition border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]">
+									<SelectValue placeholder="Selecciona la bodega solicitante" />
+								</SelectTrigger>
+								<SelectContent>
+									{requesterWarehouses.map((warehouse) => (
+										<SelectItem key={warehouse.id} value={warehouse.id}>
+											{warehouse.name}
+											{warehouse.code ? ` • ${warehouse.code}` : ""}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+							{selectedRequesterName && (
+								<p className="text-[#687076] text-sm dark:text-[#9BA1A6]">
+									Bodega solicitante: {" "}
+									<span className="font-medium">{selectedRequesterName}</span>
+								</p>
+							)}
+						</div>
+					)}
+					<div className="space-y-3">
 										<Label className="text-[#11181C] dark:text-[#ECEDEE]">
 											Artículos
 										</Label>
@@ -790,7 +874,7 @@ export function PedidosPage({ warehouseId, isEncargado }: PedidosPageProps) {
 											className="py-10 text-center text-[#687076] dark:text-[#9BA1A6]"
 											colSpan={6}
 										>
-											{isEncargadoNonInteractive
+								{isNonInteractive
 												? "Tu usuario no tiene una bodega asignada. Contacta al administrador."
 												: "No hay pedidos que coincidan con el filtro seleccionado."}
 										</TableCell>

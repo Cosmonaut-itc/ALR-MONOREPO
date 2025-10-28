@@ -4,16 +4,19 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { format, formatDistanceToNow } from "date-fns";
 import { es } from "date-fns/locale";
-import { ArrowLeft, ExternalLink, Package } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronUp, ExternalLink, Package, Search } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
 	Select,
 	SelectContent,
@@ -459,6 +462,8 @@ export function PedidoDetailsPage({
 	const updateOrderMutation = useUpdateReplenishmentOrder();
 
 	const [selectedItems, setSelectedItems] = useState<SelectedItemsMap>({});
+	const [itemSearch, setItemSearch] = useState("");
+	const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
 	const [transferNotes, setTransferNotes] = useState("");
 	const [priority, setPriority] = useState<"normal" | "urgent" | "high">(
 		"normal",
@@ -496,6 +501,49 @@ export function PedidoDetailsPage({
 		}
 		return map;
 	}, [inventoryItems]);
+
+	const productInfoByBarcode = useMemo(() => {
+		const map = new Map<number, { name: string; category: string }>();
+		if (
+			productCatalog &&
+			typeof productCatalog === "object" &&
+			"success" in productCatalog &&
+			productCatalog.success &&
+			Array.isArray(productCatalog.data)
+		) {
+			for (const rawProduct of productCatalog.data as ProductCatalogItem[]) {
+				const rawBarcode = rawProduct.barcode;
+				const fallbackBarcode = rawProduct.good_id;
+				const parsedBarcode =
+					typeof rawBarcode === "string" && rawBarcode.trim().length > 0
+						? Number.parseInt(rawBarcode, 10)
+						: typeof rawBarcode === "number"
+							? rawBarcode
+							: fallbackBarcode;
+				if (!parsedBarcode || Number.isNaN(parsedBarcode)) {
+					continue;
+				}
+				const nameCandidate =
+					typeof rawProduct.title === "string" &&
+					rawProduct.title.trim().length > 0
+						? rawProduct.title.trim()
+						: typeof rawProduct.name === "string" &&
+								rawProduct.name.trim().length > 0
+							? rawProduct.name.trim()
+							: `Producto ${parsedBarcode}`;
+				const categoryCandidate =
+					typeof rawProduct.category === "string" &&
+					rawProduct.category.trim().length > 0
+						? rawProduct.category.trim()
+						: "Sin categoría";
+				map.set(parsedBarcode, {
+					name: nameCandidate,
+					category: categoryCandidate,
+				});
+			}
+		}
+		return map;
+	}, [productCatalog]);
 
 	const status = statusFromOrder(parsedOrder);
 
@@ -547,15 +595,179 @@ export function PedidoDetailsPage({
 		[],
 	);
 
-	const isTransferReady = useMemo(() => {
+	const normalizedItemSearch = itemSearch.trim().toLowerCase();
+
+	const enrichedItems = useMemo(() => {
 		if (!parsedOrder) {
-			return false;
+			return [];
 		}
-		return parsedOrder.items.every((item) => {
-			const selected = selectedItems[item.id] ?? [];
-			return selected.length === item.quantity;
+
+		return parsedOrder.items.map((item) => {
+			const productInfo = productInfoByBarcode.get(item.barcode);
+			const displayName = productInfo?.name ?? `Producto ${item.barcode}`;
+			const category = productInfo?.category ?? "Sin categoría";
+			const availableStocks = inventoryByBarcode.get(item.barcode) ?? [];
+			const selectedForItem = selectedItems[item.id] ?? [];
+			const searchPool = [
+				displayName.toLowerCase(),
+				item.barcode.toString(),
+				category.toLowerCase(),
+				item.notes?.toLowerCase() ?? "",
+			];
+
+			const matchesSearch =
+				normalizedItemSearch.length === 0 ||
+				searchPool.some((value) => value.includes(normalizedItemSearch));
+
+			return {
+				detailId: item.id,
+				barcode: item.barcode,
+				displayName,
+				category,
+				requestedQuantity: item.quantity,
+				selectedIds: selectedForItem,
+				availableStocks,
+				matchesSearch,
+				itemNotes: item.notes,
+			};
 		});
+	}, [
+		inventoryByBarcode,
+		normalizedItemSearch,
+		parsedOrder,
+		productInfoByBarcode,
+		selectedItems,
+	]);
+
+	const filteredItems = useMemo(
+		() => enrichedItems.filter((item) => item.matchesSearch),
+		[enrichedItems],
+	);
+
+	const hasSearchTerm = normalizedItemSearch.length > 0;
+	const itemsToRender = hasSearchTerm ? filteredItems : enrichedItems;
+	const noItemsMatchSearch = hasSearchTerm && filteredItems.length === 0;
+
+	useEffect(() => {
+		if (!hasSearchTerm) {
+			return;
+		}
+		setExpandedItems((prev) => {
+			const next: Record<string, boolean> = { ...prev };
+			let didChange = false;
+			for (const item of filteredItems) {
+				if (next[item.detailId]) {
+					continue;
+				}
+				next[item.detailId] = true;
+				didChange = true;
+			}
+			return didChange ? next : prev;
+		});
+	}, [filteredItems, hasSearchTerm]);
+
+	const handleExpandAll = useCallback(() => {
+		if (itemsToRender.length === 0) {
+			return;
+		}
+		setExpandedItems((prev) => {
+			const next: Record<string, boolean> = { ...prev };
+			for (const item of itemsToRender) {
+				next[item.detailId] = true;
+			}
+			return next;
+		});
+	}, [itemsToRender]);
+
+	const handleCollapseAll = useCallback(() => {
+		if (itemsToRender.length === 0) {
+			return;
+		}
+		setExpandedItems((prev) => {
+			const next: Record<string, boolean> = { ...prev };
+			for (const item of itemsToRender) {
+				next[item.detailId] = false;
+			}
+			return next;
+		});
+	}, [itemsToRender]);
+
+	const handleSelectAllForItem = useCallback(
+		(detailId: string, requested: number, available: InventoryStockItem[]) => {
+			setSelectedItems((prev) => {
+				const current = prev[detailId] ?? [];
+				const remainingSlots = Math.max(requested - current.length, 0);
+				if (remainingSlots <= 0) {
+					return prev;
+				}
+				const candidateIds = available
+					.map((stock) => stock.id)
+					.filter((id) => !current.includes(id));
+				if (candidateIds.length === 0) {
+					return prev;
+				}
+				return {
+					...prev,
+					[detailId]: [...current, ...candidateIds.slice(0, remainingSlots)],
+				};
+			});
+		},
+		[],
+	);
+
+	const handleClearSelectionForItem = useCallback((detailId: string) => {
+		setSelectedItems((prev) => {
+			const current = prev[detailId];
+			if (!current || current.length === 0) {
+				return prev;
+			}
+			return {
+				...prev,
+				[detailId]: [],
+			};
+		});
+	}, []);
+
+	const fulfillmentProgress = useMemo(() => {
+		if (!parsedOrder) {
+			return {
+				requested: 0,
+				selected: 0,
+				missing: 0,
+				complete: false,
+			};
+		}
+
+		let requestedTotal = 0;
+		let selectedTotal = 0;
+		let isComplete = true;
+
+		for (const item of parsedOrder.items) {
+			const requestedQuantity = item.quantity ?? 0;
+			const selectedForItem = selectedItems[item.id]?.length ?? 0;
+
+			requestedTotal += requestedQuantity;
+			selectedTotal += selectedForItem;
+
+			if (selectedForItem !== requestedQuantity) {
+				isComplete = false;
+			}
+		}
+
+		const missingTotal = Math.max(requestedTotal - selectedTotal, 0);
+
+		return {
+			requested: requestedTotal,
+			selected: selectedTotal,
+			missing: missingTotal,
+			complete: isComplete && requestedTotal > 0,
+		};
 	}, [parsedOrder, selectedItems]);
+
+	const isTransferReady =
+		Boolean(parsedOrder) && fulfillmentProgress.selected > 0;
+	const hasCompleteFulfillment = fulfillmentProgress.complete;
+	const pendingPieces = fulfillmentProgress.missing;
 
 	const handleCreateTransfer = useCallback(async () => {
 		if (!parsedOrder) {
@@ -587,7 +799,7 @@ export function PedidoDetailsPage({
 
 		if (!isTransferReady) {
 			toast.error(
-				"Selecciona todas las piezas requeridas antes de crear el traspaso.",
+				"Selecciona al menos un artículo disponible antes de crear el traspaso.",
 			);
 			return;
 		}
@@ -844,28 +1056,29 @@ export function PedidoDetailsPage({
 									</TableRow>
 								</TableHeader>
 								<TableBody>
-									{parsedOrder.items.map((item) => (
-										<TableRow
-											className="theme-transition border-[#E5E7EB] border-b last:border-b-0 dark:border-[#2D3033]"
-											key={item.id}
-										>
-											<TableCell className="font-mono text-[#11181C] dark:text-[#ECEDEE]">
-												{productCatalog?.data?.find(
-													(product: ProductCatalogItem) =>
-														product.good_id === item.barcode,
-												)?.title || `Producto ${item.barcode}`}
-											</TableCell>
-											<TableCell className="font-mono text-[#11181C] dark:text-[#ECEDEE]">
-												{item.barcode}
-											</TableCell>
-											<TableCell className="text-[#11181C] dark:text-[#ECEDEE]">
-												{item.quantity}
-											</TableCell>
-											<TableCell className="text-[#687076] text-sm dark:text-[#9BA1A6]">
-												{item.notes || "Sin notas"}
-											</TableCell>
-										</TableRow>
-									))}
+						{parsedOrder.items.map((item) => {
+							const productInfo = productInfoByBarcode.get(item.barcode);
+							const productName = productInfo?.name ?? `Producto ${item.barcode}`;
+							return (
+								<TableRow
+									className="theme-transition border-[#E5E7EB] border-b last:border-b-0 dark:border-[#2D3033]"
+									key={item.id}
+								>
+									<TableCell className="font-mono text-[#11181C] dark:text-[#ECEDEE]">
+										{productName}
+									</TableCell>
+									<TableCell className="font-mono text-[#11181C] dark:text-[#ECEDEE]">
+										{item.barcode}
+									</TableCell>
+									<TableCell className="text-[#11181C] dark:text-[#ECEDEE]">
+										{item.quantity}
+									</TableCell>
+									<TableCell className="text-[#687076] text-sm dark:text-[#9BA1A6]">
+										{item.notes || "Sin notas"}
+									</TableCell>
+								</TableRow>
+							);
+						})}
 								</TableBody>
 							</Table>
 						</div>
@@ -886,139 +1099,285 @@ export function PedidoDetailsPage({
 							Cumplir pedido
 						</CardTitle>
 					</CardHeader>
-					<CardContent className="space-y-4">
-						{isEncargado ? (
-							<>
-								<div className="space-y-2">
-									<Label className="text-[#687076] dark:text-[#9BA1A6]">
-										Prioridad
-									</Label>
-									<Select
-										onValueChange={(value) =>
-											setPriority(value as "normal" | "urgent" | "high")
-										}
-										value={priority}
-									>
-										<SelectTrigger className="input-transition border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]">
-											<SelectValue placeholder="Selecciona prioridad" />
-										</SelectTrigger>
-										<SelectContent>
-											<SelectItem value="normal">Normal</SelectItem>
-											<SelectItem value="high">Alta</SelectItem>
-											<SelectItem value="urgent">Urgente</SelectItem>
-										</SelectContent>
-									</Select>
+				<CardContent className="space-y-5">
+					{isEncargado ? (
+						<>
+							<div className="space-y-2">
+								<Label className="text-[#687076] dark:text-[#9BA1A6]">
+									Prioridad
+								</Label>
+								<Select
+									onValueChange={(value) =>
+										setPriority(value as "normal" | "urgent" | "high")
+									}
+									value={priority}
+								>
+									<SelectTrigger className="input-transition border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]">
+										<SelectValue placeholder="Selecciona prioridad" />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value="normal">Normal</SelectItem>
+										<SelectItem value="high">Alta</SelectItem>
+										<SelectItem value="urgent">Urgente</SelectItem>
+									</SelectContent>
+								</Select>
+							</div>
+							<div className="space-y-4">
+								<p className="text-[#687076] text-sm dark:text-[#9BA1A6]">
+									Selecciona las piezas disponibles en el CEDIS para enviar. El
+									traspaso se puede generar aun cuando falten unidades por
+									surtir.
+								</p>
+								<div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+									<div className="w-full lg:max-w-sm">
+										<Label className="text-[#687076] text-sm dark:text-[#9BA1A6]" htmlFor="item-search">
+											Buscar artículos en el CEDIS
+										</Label>
+										<div className="relative mt-1">
+											<Search className="text-[#687076] absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 dark:text-[#9BA1A6]" />
+											<Input
+												className="pl-9"
+												id="item-search"
+												onChange={(event) => setItemSearch(event.target.value)}
+												placeholder="Nombre, código o categoría"
+												value={itemSearch}
+											/>
+										</div>
+										{hasSearchTerm && !noItemsMatchSearch && (
+											<p className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+												{filteredItems.length} coincidencia(s) encontradas.
+											</p>
+										)}
+										{noItemsMatchSearch && (
+											<p className="text-[#B54708] text-xs dark:text-[#F7B84B]">
+												No se encontraron artículos que coincidan con la búsqueda.
+											</p>
+										)}
+									</div>
+									<div className="flex flex-wrap items-center gap-2">
+										<Button
+											onClick={handleExpandAll}
+											size="sm"
+											variant="outline"
+											disabled={itemsToRender.length === 0}
+										>
+											Expandir todo
+										</Button>
+										<Button
+											onClick={handleCollapseAll}
+											size="sm"
+											variant="ghost"
+											disabled={itemsToRender.length === 0}
+										>
+											Contraer todo
+										</Button>
+									</div>
 								</div>
-								<div className="space-y-3">
-									<p className="text-[#687076] text-sm dark:text-[#9BA1A6]">
-										Selecciona {parsedOrder.itemsCount} producto(s) del CEDIS
-										para cumplir el pedido.
+								<div className="rounded-md border border-dashed border-[#E5E7EB] bg-[#F9FAFB] p-3 dark:border-[#2D3033] dark:bg-[#1E1F20]">
+									<p className="text-[#11181C] text-sm dark:text-[#ECEDEE]">
+										Seleccionados: {fulfillmentProgress.selected} /{" "}
+										{fulfillmentProgress.requested || parsedOrder.itemsCount}
 									</p>
+									{hasCompleteFulfillment ? (
+										<p className="text-[#10B981] text-xs">
+											Pedido cubierto por completo.
+										</p>
+									) : isTransferReady ? (
+										<p className="text-[#B54708] text-xs dark:text-[#F7B84B]">
+											{pendingPieces} pieza(s) quedarían pendientes de envío.
+										</p>
+									) : (
+										<p className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+											Selecciona al menos una pieza disponible para enviar.
+										</p>
+									)}
+								</div>
+								{noItemsMatchSearch ? (
+									<p className="rounded-md border border-[#E5E7EB] bg-[#F9FAFB] p-4 text-[#687076] text-sm dark:border-[#2D3033] dark:bg-[#1E1F20] dark:text-[#9BA1A6]">
+										Ajusta el término de búsqueda para ubicar los artículos del pedido.
+									</p>
+								) : (
 									<div className="space-y-4">
-										{parsedOrder.items.map((item) => {
-											const available =
-												inventoryByBarcode.get(item.barcode) ?? [];
-											const selected = selectedItems[item.id] ?? [];
+										{itemsToRender.map((item) => {
+											const isExpanded = expandedItems[item.detailId] ?? false;
+											const selectedCount = item.selectedIds.length;
+											const availableCount = item.availableStocks.length;
+											const remainingToSelect = Math.max(
+												item.requestedQuantity - selectedCount,
+												0,
+											);
+											const disableSelectAll =
+												remainingToSelect === 0 || availableCount === selectedCount;
 											return (
-												<div
-													className="rounded-lg border border-[#E5E7EB] p-3 dark:border-[#2D3033]"
-													key={item.id}
+												<Collapsible
+													key={item.detailId}
+													onOpenChange={(open) =>
+														setExpandedItems((prev) => ({
+															...prev,
+															[item.detailId]: open,
+														}))
+													}
+													open={isExpanded}
 												>
-													<div className="flex flex-col gap-2">
-														<div className="flex items-center justify-between">
-															<span className="font-medium text-[#11181C] dark:text-[#ECEDEE]">
-																#{item.barcode}
-															</span>
-															<span className="text-[#687076] text-sm dark:text-[#9BA1A6]">
-																Seleccionados {selected.length} /{" "}
-																{item.quantity}
-															</span>
-														</div>
-														{available.length === 0 ? (
-															<p className="rounded-md bg-amber-50 p-2 text-amber-700 text-sm dark:bg-amber-900/20 dark:text-amber-300">
-																No hay existencias disponibles para este código
-																en el CEDIS.
-															</p>
-														) : (
-															<div className="space-y-2">
-																{available.map((stock) => {
-																	const isChecked = selected.includes(stock.id);
-																	const isDisabled =
-																		!isChecked &&
-																		selected.length >= item.quantity;
-																	return (
-																		<label
-																			className="flex items-center justify-between gap-3 rounded-md border border-transparent px-2 py-1 text-[#11181C] hover:bg-[#F3F4F6] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
-																			key={stock.id}
-																		>
-																			<div className="flex items-center gap-3">
-																				<Checkbox
-																					checked={isChecked}
-																					disabled={isDisabled}
-																					onCheckedChange={() =>
-																						toggleSelection(
-																							item.id,
-																							stock.id,
-																							item.quantity,
-																						)
-																					}
-																				/>
-																				<span className="font-mono text-sm">
-																					{stock.id.slice(0, 8)}
-																				</span>
-																			</div>
-																			<span className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-																				{stock.description || "Sin descripción"}
-																			</span>
-																		</label>
-																	);
-																})}
+													<div className="rounded-lg border border-[#E5E7EB] p-4 dark:border-[#2D3033]">
+														<div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+															<div className="space-y-1">
+																<p className="font-semibold text-[#11181C] dark:text-[#ECEDEE]">
+																	{item.displayName}
+																</p>
+																<div className="flex flex-wrap items-center gap-2 text-[#687076] text-xs dark:text-[#9BA1A6]">
+																	<span>#{item.barcode}</span>
+																	<span className="hidden sm:inline">•</span>
+																	<span>{item.category}</span>
+																	<span className="hidden sm:inline">•</span>
+																	<span>Solicitado: {item.requestedQuantity}</span>
+																	<span className="hidden sm:inline">•</span>
+																	<span>Disponibles: {availableCount}</span>
+																</div>
+																{item.itemNotes && (
+																	<p className="text-[#687076] text-xs italic dark:text-[#9BA1A6]">
+																		Nota: {item.itemNotes}
+																	</p>
+																)}
 															</div>
-														)}
+															<div className="flex flex-col items-start gap-2 sm:items-end">
+																<Badge className="text-xs" variant="outline">
+																	Seleccionados {selectedCount}/{item.requestedQuantity}
+																</Badge>
+																<div className="flex flex-wrap items-center gap-2">
+																	<Button
+																		onClick={() =>
+																			handleSelectAllForItem(
+																				item.detailId,
+																				item.requestedQuantity,
+																				item.availableStocks,
+																			)
+																		}
+																		size="sm"
+																		variant="outline"
+																		disabled={disableSelectAll}
+																	>
+																		Completar selección
+																	</Button>
+																	<Button
+																		onClick={() => handleClearSelectionForItem(item.detailId)}
+																		size="sm"
+																		variant="ghost"
+																		disabled={selectedCount === 0}
+																	>
+																		Limpiar
+																	</Button>
+																	<CollapsibleTrigger asChild>
+																		<Button className="gap-1" size="sm" variant="ghost">
+																			{isExpanded ? "Ocultar" : "Ver existencias"}
+																			{isExpanded ? (
+																				<ChevronUp className="h-4 w-4" />
+																			) : (
+																				<ChevronDown className="h-4 w-4" />
+																			)}
+																		</Button>
+																	</CollapsibleTrigger>
+																</div>
+															</div>
+														</div>
+														<CollapsibleContent>
+															<div className="mt-3">
+																{item.availableStocks.length === 0 ? (
+																	<p className="rounded-md bg-amber-50 p-3 text-amber-700 text-sm dark:bg-amber-900/20 dark:text-amber-300">
+																		No hay existencias disponibles para este código en el CEDIS.
+																	</p>
+																) : (
+																	<ScrollArea className="max-h-60 pr-2">
+																		<div className="space-y-2">
+																			{item.availableStocks.map((stock) => {
+																				const isChecked = item.selectedIds.includes(stock.id);
+																				const disableCheckbox =
+																					!isChecked &&
+																					item.selectedIds.length >= item.requestedQuantity;
+																				return (
+																					<label
+																						className="flex items-start justify-between gap-3 rounded-md border border-transparent px-3 py-2 text-[#11181C] hover:bg-[#F3F4F6] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
+																						key={stock.id}
+																					>
+																						<div className="flex items-start gap-3">
+																							<Checkbox
+																								checked={isChecked}
+																								disabled={disableCheckbox}
+																								onCheckedChange={() =>
+																									toggleSelection(
+																									item.detailId,
+																									stock.id,
+																									item.requestedQuantity,
+																								)
+																								}
+																							/>
+																							<div>
+																								<p className="font-mono text-sm text-[#11181C] dark:text-[#ECEDEE]">
+																									{stock.id.slice(0, 12)}
+																								</p>
+																								<p className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+																									{stock.description || "Sin descripción"}
+																								</p>
+																							</div>
+																						</div>
+																						{stock.currentWarehouse && (
+																							<span className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+																								Ubicación: {stock.currentWarehouse}
+																							</span>
+																						)}
+																					</label>
+																				);
+																			})}
+																		</div>
+																	</ScrollArea>
+																)}
+															</div>
+														</CollapsibleContent>
 													</div>
-												</div>
+												</Collapsible>
 											);
 										})}
 									</div>
-								</div>
-								<div className="space-y-2">
-									<Label
-										className="text-[#687076] dark:text-[#9BA1A6]"
-										htmlFor="transferNotes"
-									>
-										Notas del traspaso (opcional)
-									</Label>
-									<Textarea
-										className="input-transition border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]"
-										id="transferNotes"
-										onChange={(event) => setTransferNotes(event.target.value)}
-										placeholder="Añade observaciones para el traslado..."
-										value={transferNotes}
-									/>
-								</div>
-								<Button
-									className="w-full bg-[#0a7ea4] text-white hover:bg-[#086885] dark:bg-[#0a7ea4] dark:hover:bg-[#0a7ea4]/80"
-									disabled={
-										createTransferMutation.isPending ||
-										linkTransferMutation.isPending ||
-										updateOrderMutation.isPending ||
-										!isTransferReady
-									}
-									onClick={handleCreateTransfer}
+								)}
+							</div>
+							<div className="space-y-2">
+								<Label
+									className="text-[#687076] dark:text-[#9BA1A6]"
+									htmlFor="transferNotes"
 								>
-									{createTransferMutation.isPending ||
-									linkTransferMutation.isPending
-										? "Procesando..."
-										: "Crear traspaso"}
-								</Button>
-							</>
-						) : (
-							<p className="rounded-md border border-[#E5E7EB] bg-[#F9FAFB] p-4 text-[#687076] dark:border-[#2D3033] dark:bg-[#1E1F20] dark:text-[#9BA1A6]">
-								Solo los usuarios con rol de encargado pueden cumplir pedidos y
-								generar traspasos.
-							</p>
-						)}
-					</CardContent>
+									Notas del traspaso (opcional)
+								</Label>
+								<Textarea
+									className="input-transition border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]"
+									id="transferNotes"
+									onChange={(event) => setTransferNotes(event.target.value)}
+									placeholder="Añade observaciones para el traslado..."
+									value={transferNotes}
+								/>
+							</div>
+							<Button
+								className="w-full bg-[#0a7ea4] text-white hover:bg-[#086885] dark:bg-[#0a7ea4] dark:hover:bg-[#0a7ea4]/80"
+								disabled={
+									createTransferMutation.isPending ||
+									linkTransferMutation.isPending ||
+									updateOrderMutation.isPending ||
+									!isTransferReady
+								}
+								onClick={handleCreateTransfer}
+							>
+								{createTransferMutation.isPending ||
+								linkTransferMutation.isPending
+									? "Procesando..."
+									: "Crear traspaso"}
+							</Button>
+						</>
+					) : (
+						<p className="rounded-md border border-[#E5E7EB] bg-[#F9FAFB] p-4 text-[#687076] dark:border-[#2D3033] dark:bg-[#1E1F20] dark:text-[#9BA1A6]">
+							Solo los usuarios con rol de encargado pueden cumplir pedidos y
+							generar traspasos.
+						</p>
+					)}
+				</CardContent>
 				</Card>
 			</section>
 		</div>
