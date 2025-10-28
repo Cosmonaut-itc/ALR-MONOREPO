@@ -1486,6 +1486,80 @@ const route = app
 	)
 
 	/**
+	 * POST /api/auth/product-stock/update-is-kit - Toggle isKit flag for a product stock
+	 *
+	 * Flips the isKit boolean for the specified product stock record.
+	 * If the record is not found, returns 404.
+	 */
+	.post(
+		'/api/auth/product-stock/update-is-kit',
+		zValidator(
+			'json',
+			z.object({
+				productStockId: z.string().uuid('Invalid product stock ID'),
+			}),
+		),
+		async (c) => {
+			try {
+				const { productStockId } = c.req.valid('json');
+
+				const existing = await db
+					.select({ id: schemas.productStock.id, isKit: schemas.productStock.isKit })
+					.from(schemas.productStock)
+					.where(eq(schemas.productStock.id, productStockId))
+					.limit(1);
+
+				if (existing.length === 0) {
+					return c.json(
+						{
+							success: false,
+							message: 'Product stock not found',
+						} satisfies ApiResponse,
+						404,
+					);
+				}
+
+				const nextIsKit = !existing[0].isKit;
+				const updated = await db
+					.update(schemas.productStock)
+					.set({ isKit: nextIsKit })
+					.where(eq(schemas.productStock.id, productStockId))
+					.returning();
+
+				if (updated.length === 0) {
+					return c.json(
+						{
+							success: false,
+							message: 'Failed to update product stock isKit flag',
+						} satisfies ApiResponse,
+						500,
+					);
+				}
+
+				return c.json(
+					{
+						success: true,
+						message: 'Product stock isKit flag updated successfully',
+						data: updated[0],
+					} satisfies ApiResponse,
+					200,
+				);
+			} catch (error) {
+				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
+				console.error('Error toggling product stock isKit flag:', error);
+
+				return c.json(
+					{
+						success: false,
+						message: 'Failed to update product stock isKit flag',
+					} satisfies ApiResponse,
+					500,
+				);
+			}
+		},
+	)
+
+	/**
 	 * DELETE /api/auth/product-stock/delete - Soft delete a product stock record
 	 *
 	 * Marks a product stock record as deleted by setting isDeleted to true instead
