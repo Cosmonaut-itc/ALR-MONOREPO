@@ -136,6 +136,10 @@ export const useSyncInventory = () =>
 			toast.success("Inventario sincronizado correctamente", {
 				id: "sync-inventory",
 			});
+			const queryClient = getQueryClient();
+			queryClient.invalidateQueries({
+				queryKey: createQueryKey(queryKeys.inventory, ["all"]),
+			});
 		},
 		onError: (error) => {
 			toast.error("Error al sincronizar inventario", {

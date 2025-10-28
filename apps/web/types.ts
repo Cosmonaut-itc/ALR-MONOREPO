@@ -6,7 +6,7 @@ export const loginSchema = t({
 });
 
 export const userRoleSchema = t({
-	role: "'encargado' | 'admin'",
+	role: "'employee' | 'encargado' | 'admin'",
 });
 
 export type LoginType = typeof loginSchema.infer;

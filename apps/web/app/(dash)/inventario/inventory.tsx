@@ -5,6 +5,7 @@ import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { v4 as uuidv4 } from "uuid";
+import { RoleGuard } from "@/components/auth-guard";
 import { ProductCatalogTable } from "@/components/inventory/ProductCatalogTable";
 import { ProductCombobox } from "@/components/inventory/ProductCombobox";
 import { Badge } from "@/components/ui/badge";
@@ -28,7 +29,6 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-
 import {
 	Table,
 	TableBody,
@@ -62,6 +62,7 @@ import type {
 	ProductStockWithEmployee,
 	StockLimit,
 	StockLimitListResponse,
+	UserRole,
 	WarehouseMap,
 } from "@/types";
 
@@ -998,19 +999,24 @@ export function InventarioPage({
 					</TabsList>
 					{/* Actions */}
 					<div className="flex items-center gap-3">
-						<Button
-							className="whitespace-nowrap"
-							disabled={isSyncingInventory}
-							onClick={() => {
-								void handleSyncInventory();
-							}}
-							type="button"
-							variant="outline"
+						<RoleGuard
+							allowedRoles={["admin", "encargado"]}
+							userRole={role as unknown as UserRole["role"]}
 						>
-							{isSyncingInventory
-								? "Sincronizando..."
-								: "Sincronizar inventario"}
-						</Button>
+							<Button
+								className="whitespace-nowrap"
+								disabled={isSyncingInventory}
+								onClick={() => {
+									void handleSyncInventory();
+								}}
+								type="button"
+								variant="outline"
+							>
+								{isSyncingInventory
+									? "Sincronizando..."
+									: "Sincronizar inventario"}
+							</Button>
+						</RoleGuard>
 						<Dialog onOpenChange={handleAddDialogChange} open={isAddDialogOpen}>
 							<DialogTrigger asChild>
 								<Button

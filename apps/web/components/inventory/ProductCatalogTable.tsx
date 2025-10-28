@@ -662,8 +662,9 @@ export function ProductCatalogTable({
 	/**
 	 * Tracks expanded warehouse groups per product barcode for nested collapsible sections.
 	 */
-	const [expandedGroupsByBarcode, setExpandedGroupsByBarcode] =
-		useState<Record<number, Set<string>>>({});
+	const [expandedGroupsByBarcode, setExpandedGroupsByBarcode] = useState<
+		Record<number, Set<string>>
+	>({});
 
 	// Extract unique categories from products
 	const uniqueCategories = useMemo(() => {
@@ -903,80 +904,84 @@ export function ProductCatalogTable({
 					>(),
 				);
 
-			const warehouseGroups = Array.from(groupedByWarehouse.entries());
+				const warehouseGroups = Array.from(groupedByWarehouse.entries());
 
-			type EnrichedWarehouseGroup = {
-				key: string;
-				label: string;
-				items: DisplayItem[];
-				isDistributionCenter: boolean;
-				effectiveWarehouseId: string | null;
-				limit: StockLimit | null;
-				belowMinimum: boolean;
-				aboveMaximum: boolean;
-				limitText: string;
-				limitBadgeLabel: string;
-				limitBadgeClassName: string;
-				limitRangeText: string;
-				currentCount: number;
-			};
+				type EnrichedWarehouseGroup = {
+					key: string;
+					label: string;
+					items: DisplayItem[];
+					isDistributionCenter: boolean;
+					effectiveWarehouseId: string | null;
+					limit: StockLimit | null;
+					belowMinimum: boolean;
+					aboveMaximum: boolean;
+					limitText: string;
+					limitBadgeLabel: string;
+					limitBadgeClassName: string;
+					limitRangeText: string;
+					currentCount: number;
+				};
 
-			const enrichedWarehouseGroups: EnrichedWarehouseGroup[] =
-				warehouseGroups.map(([groupKey, group]) => {
-					const effectiveWarehouseId = group.effectiveWarehouseId;
-					const limitKey =
-						effectiveWarehouseId && stockLimitsMap
-							? `${effectiveWarehouseId}:${product.barcode}`
-							: null;
-					const limit =
-						limitKey && stockLimitsMap
-							? stockLimitsMap.get(limitKey) ?? null
-							: null;
-					const currentCount = group.items.length;
-					const belowMinimum = limit ? currentCount < limit.minQuantity : false;
-					const aboveMaximum = limit ? currentCount > limit.maxQuantity : false;
-					const limitText = limit
-						? `Límite: ${limit.minQuantity}–${limit.maxQuantity}`
-						: "Sin límite";
-					const limitRangeText = limit
-						? `${limit.minQuantity}–${limit.maxQuantity}`
-						: "Sin límite";
-					let limitBadgeLabel = "Sin límite configurado";
-					let limitBadgeClassName =
-						"bg-[#F3F4F6] text-[#374151] dark:bg-[#374151] dark:text-[#D1D5DB]";
-					if (limit) {
-						if (belowMinimum) {
-							limitBadgeLabel = "Bajo límite";
-							limitBadgeClassName =
-								"bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-100";
-						} else if (aboveMaximum) {
-							limitBadgeLabel = "Sobre límite";
-							limitBadgeClassName =
-								"bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100";
-						} else {
-							limitBadgeLabel = "Dentro del límite";
-							limitBadgeClassName =
-								"bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-100";
+				const enrichedWarehouseGroups: EnrichedWarehouseGroup[] =
+					warehouseGroups.map(([groupKey, group]) => {
+						const effectiveWarehouseId = group.effectiveWarehouseId;
+						const limitKey =
+							effectiveWarehouseId && stockLimitsMap
+								? `${effectiveWarehouseId}:${product.barcode}`
+								: null;
+						const limit =
+							limitKey && stockLimitsMap
+								? (stockLimitsMap.get(limitKey) ?? null)
+								: null;
+						const currentCount = group.items.length;
+						const belowMinimum = limit
+							? currentCount < limit.minQuantity
+							: false;
+						const aboveMaximum = limit
+							? currentCount > limit.maxQuantity
+							: false;
+						const limitText = limit
+							? `Límite: ${limit.minQuantity}–${limit.maxQuantity}`
+							: "Sin límite";
+						const limitRangeText = limit
+							? `${limit.minQuantity}–${limit.maxQuantity}`
+							: "Sin límite";
+						let limitBadgeLabel = "Sin límite configurado";
+						let limitBadgeClassName =
+							"bg-[#F3F4F6] text-[#374151] dark:bg-[#374151] dark:text-[#D1D5DB]";
+						if (limit) {
+							if (belowMinimum) {
+								limitBadgeLabel = "Bajo límite";
+								limitBadgeClassName =
+									"bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-100";
+							} else if (aboveMaximum) {
+								limitBadgeLabel = "Sobre límite";
+								limitBadgeClassName =
+									"bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100";
+							} else {
+								limitBadgeLabel = "Dentro del límite";
+								limitBadgeClassName =
+									"bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-100";
+							}
 						}
-					}
-					return {
-						key: groupKey,
-						label: group.label,
-						items: group.items,
-						isDistributionCenter: group.isDistributionCenter,
-						effectiveWarehouseId,
-						limit,
-						belowMinimum,
-						aboveMaximum,
-						limitText,
-						limitBadgeLabel,
-						limitBadgeClassName,
-						limitRangeText,
-						currentCount,
-					};
-				});
-			return (
-				<div className="border-[#E5E7EB] border-b bg-[#F8FAFC] p-4 dark:border-[#374151] dark:bg-[#1A1B1C]">
+						return {
+							key: groupKey,
+							label: group.label,
+							items: group.items,
+							isDistributionCenter: group.isDistributionCenter,
+							effectiveWarehouseId,
+							limit,
+							belowMinimum,
+							aboveMaximum,
+							limitText,
+							limitBadgeLabel,
+							limitBadgeClassName,
+							limitRangeText,
+							currentCount,
+						};
+					});
+				return (
+					<div className="border-[#E5E7EB] border-b bg-[#F8FAFC] p-4 dark:border-[#374151] dark:bg-[#1A1B1C]">
 						<div className="mb-3 flex items-center justify-between">
 							<h4 className="font-medium text-[#11181C] text-sm dark:text-[#ECEDEE]">
 								Inventario detallado ({displayItems.length} items)
@@ -992,43 +997,43 @@ export function ProductCatalogTable({
 								</Button>
 							)}
 						</div>
-					{enrichedWarehouseGroups.length > 0 && (
-						<div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-							{enrichedWarehouseGroups.map((group) => (
-								<div
-									className="theme-transition rounded-md border border-[#E5E7EB] bg-white p-3 dark:border-[#2D3033] dark:bg-[#151718]"
-									key={`${group.key}-summary`}
-								>
-									<div className="flex items-center justify-between">
-										<span className="font-medium text-[#11181C] text-sm dark:text-[#ECEDEE]">
-											{group.label}
-										</span>
-										<Badge
-											className={group.limitBadgeClassName}
-											variant="secondary"
-										>
-											{group.limitBadgeLabel}
-										</Badge>
-									</div>
-									<div className="mt-3 flex flex-wrap gap-4 text-[#687076] text-xs dark:text-[#9BA1A6]">
-										<div>
-											<p className="uppercase tracking-wide">Inventario</p>
-											<p className="mt-1 font-semibold text-[#11181C] text-sm dark:text-[#ECEDEE]">
-												{group.currentCount} unidad
-												{group.currentCount === 1 ? "" : "es"}
-											</p>
+						{enrichedWarehouseGroups.length > 0 && (
+							<div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+								{enrichedWarehouseGroups.map((group) => (
+									<div
+										className="theme-transition rounded-md border border-[#E5E7EB] bg-white p-3 dark:border-[#2D3033] dark:bg-[#151718]"
+										key={`${group.key}-summary`}
+									>
+										<div className="flex items-center justify-between">
+											<span className="font-medium text-[#11181C] text-sm dark:text-[#ECEDEE]">
+												{group.label}
+											</span>
+											<Badge
+												className={group.limitBadgeClassName}
+												variant="secondary"
+											>
+												{group.limitBadgeLabel}
+											</Badge>
 										</div>
-										<div>
-											<p className="uppercase tracking-wide">Límite</p>
-											<p className="mt-1 font-semibold text-[#11181C] text-sm dark:text-[#ECEDEE]">
-												{group.limit ? group.limitRangeText : "Sin límite"}
-											</p>
+										<div className="mt-3 flex flex-wrap gap-4 text-[#687076] text-xs dark:text-[#9BA1A6]">
+											<div>
+												<p className="uppercase tracking-wide">Inventario</p>
+												<p className="mt-1 font-semibold text-[#11181C] text-sm dark:text-[#ECEDEE]">
+													{group.currentCount} unidad
+													{group.currentCount === 1 ? "" : "es"}
+												</p>
+											</div>
+											<div>
+												<p className="uppercase tracking-wide">Límite</p>
+												<p className="mt-1 font-semibold text-[#11181C] text-sm dark:text-[#ECEDEE]">
+													{group.limit ? group.limitRangeText : "Sin límite"}
+												</p>
+											</div>
 										</div>
 									</div>
-								</div>
-							))}
-						</div>
-					)}
+								))}
+							</div>
+						)}
 						<div className="overflow-x-auto">
 							<Table>
 								<TableHeader>
@@ -1059,224 +1064,262 @@ export function ProductCatalogTable({
 									</TableRow>
 								</TableHeader>
 								<TableBody>
-							{enrichedWarehouseGroups.map((group) => {
-								const isExpanded = isGroupExpanded(
-									product.barcode,
-									group.key,
-								);
-								const limitTextClassName = group.belowMinimum
-									? "font-semibold text-[#B54708] dark:text-[#F7B84B]"
-									: group.aboveMaximum
-										? "font-semibold text-[#B42318] dark:text-[#F87171]"
-										: "";
-			const canShowAction =
-				canEditLimits && Boolean(group.effectiveWarehouseId);
-			const editActionLabel = group.limit ? "Editar" : "Definir";
-								return (
-									<React.Fragment key={group.key}>
-										<TableRow className="bg-[#EAEDF0] text-left text-[#11181C] text-xs uppercase tracking-wide dark:bg-[#252729] dark:text-[#ECEDEE]">
-											<TableCell colSpan={detailColumnCount}>
-												<div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-													<div className="flex flex-wrap items-center gap-2">
-														<Button
-															aria-controls={`wg-${product.barcode}-${group.key}`}
-															aria-expanded={isExpanded}
-															className="h-6 w-6 p-0"
-															onClick={() =>
-																toggleGroupExpanded(
-																	product.barcode,
-																	group.key,
-																)
-															}
-															size="sm"
-															type="button"
-															variant="ghost"
-														>
-															{isExpanded ? (
-																<ChevronUp className="h-4 w-4" />
-															) : (
-																<ChevronDown className="h-4 w-4" />
-															)}
-														</Button>
-														<span className="font-semibold text-[#11181C] dark:text-[#ECEDEE]">
-															{group.label}
-														</span>
-														{group.isDistributionCenter && (
-															<Badge className="bg-[#6B7280] text-white" variant="secondary">
-																Centro de distribución
-															</Badge>
-														)}
-														{group.belowMinimum && (
-															<Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 dark:bg-amber-900 dark:text-amber-100" variant="secondary">
-																Bajo mínimo
-															</Badge>
-														)}
-														{group.aboveMaximum && (
-															<Badge className="bg-red-100 text-red-800 hover:bg-red-100 dark:bg-red-900 dark:text-red-100" variant="secondary">
-																Sobre límite
-															</Badge>
-														)}
-													</div>
-													<div className="flex flex-wrap items-center gap-3 text-[#687076] text-xs dark:text-[#9BA1A6]">
-														<span>{group.items.length} item(s)</span>
-														<span className={limitTextClassName}>{group.limitText}</span>
-														{canShowAction && (
-															<Button
-																className="h-7 px-2 text-xs"
-																disabled={isSavingStockLimit}
-																onClick={() => {
-															if (!group.effectiveWarehouseId) {
-																return;
-															}
-															handleOpenLimitDialog({
-																product,
-																warehouseId: group.effectiveWarehouseId,
-																groupLabel: group.label,
-																limit: group.limit,
-															});
-														}}
-																size="sm"
-																variant="ghost"
-															>
-																{editActionLabel}
-															</Button>
-														)}
-													</div>
-												</div>
-											</TableCell>
-										</TableRow>
-										<TableRow>
-											<TableCell className="p-0" colSpan={detailColumnCount}>
-												<div id={`wg-${product.barcode}-${group.key}`} />
-											</TableCell>
-										</TableRow>
-										{isExpanded && (
-											<React.Fragment>
-												{group.items.map((item) => {
-												const { data, key: selectionKey } = item;
-												const isSelected = selectionKey
-													? productSelection.has(selectionKey)
-													: false;
-												const isDisabled =
-													data.isBeingUsed ||
-													group.isDistributionCenter ||
-													(selectionKey
-														? disabledUUIDs.has(selectionKey)
-														: false);
-												const hasLimit = Boolean(group.limit);
-												return (
-													<TableRow
-														className="border-[#E5E7EB] border-b last:border-b-0 dark:border-[#374151]"
-														data-has-limit={hasLimit ? "true" : undefined}
-														key={selectionKey || data.id}
-													>
-														<TableCell className="font-mono text-[#687076] text-xs dark:text-[#9BA1A6]">
-															<div className="flex flex-col gap-1">
-																{selectionEnabledRef && (
-																	<Checkbox
-																		checked={isSelected}
-																		disabled={isDisabled}
-																		onCheckedChange={(checked) =>
-																			toggleUUID(selectionKey, Boolean(checked))
-																		}
-																	/>
-																)}
-																<span className="truncate">{(data.id || "").slice(0, 8)}...</span>
-																<Tooltip>
-																	<TooltipTrigger asChild>
-																		<Button
-																			className="h-4 w-4 p-0 hover:bg-[#E5E7EB] dark:hover:bg-[#2D3033]"
-																			onClick={() => {
-																				copyToClipboard(data.uuid || data.id || "");
-																			}}
-																			size="sm"
-																			variant="ghost"
-																		>
-																			<Copy className="h-3 w-3" />
-																		</Button>
-																	</TooltipTrigger>
-																	<TooltipContent side="top">Copiar UUID</TooltipContent>
-																</Tooltip>
-																<Tooltip>
-																	<TooltipTrigger asChild>
-																		<Button
-																			aria-label="Reimprimir código QR"
-																			className="h-4 w-4 p-0 hover:bg-[#E5E7EB] dark:hover:bg-[#2D3033]"
-																			disabled={!onReprintQr || !(data.uuid || data.id)}
-																			onClick={() => {
-																				if (!onReprintQr || !(data.uuid || data.id)) {
-																					return;
-																				}
-																				onReprintQr({ product, item: data });
-																			}}
-																			size="sm"
-																			variant="ghost"
-																		>
-																			<QrCode className="h-3 w-3" />
-																		</Button>
-																	</TooltipTrigger>
-																	<TooltipContent side="top">
-																		Generar nuevamente el código QR
-																	</TooltipContent>
-																</Tooltip>
-															</div>
-														</TableCell>
-														<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-															{formatDate(data.lastUsed)}
-														</TableCell>
-														<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-															{data.lastUsedBy || "N/A"}
-														</TableCell>
-														<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-															{data.numberOfUses}
-														</TableCell>
-														<TableCell>
-															<Badge
-																className={
-																	data.isBeingUsed
-																		? "bg-[#EF4444] text-white text-xs"
-																		: "bg-[#10B981] text-white text-xs"
-																}
-																variant={data.isBeingUsed ? "destructive" : "default"}
-															>
-																{data.isBeingUsed ? "En Uso" : "Disponible"}
-															</Badge>
-														</TableCell>
-														<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-															{formatDate(data.firstUsed)}
-														</TableCell>
-														<TableCell>
-															{enableDispose && (
+									{enrichedWarehouseGroups.map((group) => {
+										const isExpanded = isGroupExpanded(
+											product.barcode,
+											group.key,
+										);
+										const limitTextClassName = group.belowMinimum
+											? "font-semibold text-[#B54708] dark:text-[#F7B84B]"
+											: group.aboveMaximum
+												? "font-semibold text-[#B42318] dark:text-[#F87171]"
+												: "";
+										const canShowAction =
+											canEditLimits && Boolean(group.effectiveWarehouseId);
+										const editActionLabel = group.limit ? "Editar" : "Definir";
+										return (
+											<React.Fragment key={group.key}>
+												<TableRow className="bg-[#EAEDF0] text-left text-[#11181C] text-xs uppercase tracking-wide dark:bg-[#252729] dark:text-[#ECEDEE]">
+													<TableCell colSpan={detailColumnCount}>
+														<div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+															<div className="flex flex-wrap items-center gap-2">
 																<Button
-																	className="h-6 w-6 p-0 text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950 dark:hover:text-red-300"
-																	onClick={() => {
-																		showDisposeDialog({
-																			id: data.id || "",
-																			uuid: data.id || "",
-																			barcode: product.barcode,
-																			productInfo: {
-																				name: product.name,
-																				category: product.category,
-																				description: product.description,
-																			},
-																		});
-																	}}
+																	aria-controls={`wg-${product.barcode}-${group.key}`}
+																	aria-expanded={isExpanded}
+																	className="h-6 w-6 p-0"
+																	onClick={() =>
+																		toggleGroupExpanded(
+																			product.barcode,
+																			group.key,
+																		)
+																	}
 																	size="sm"
-																	title="Dar de baja artículo"
+																	type="button"
 																	variant="ghost"
 																>
-																	<Trash2 className="h-4 w-4" />
+																	{isExpanded ? (
+																		<ChevronUp className="h-4 w-4" />
+																	) : (
+																		<ChevronDown className="h-4 w-4" />
+																	)}
 																</Button>
-															)}
-														</TableCell>
-													</TableRow>
-												);
-											})}
+																<span className="font-semibold text-[#11181C] dark:text-[#ECEDEE]">
+																	{group.label}
+																</span>
+																{group.isDistributionCenter && (
+																	<Badge
+																		className="bg-[#6B7280] text-white"
+																		variant="secondary"
+																	>
+																		Centro de distribución
+																	</Badge>
+																)}
+																{group.belowMinimum && (
+																	<Badge
+																		className="bg-amber-100 text-amber-800 hover:bg-amber-100 dark:bg-amber-900 dark:text-amber-100"
+																		variant="secondary"
+																	>
+																		Bajo mínimo
+																	</Badge>
+																)}
+																{group.aboveMaximum && (
+																	<Badge
+																		className="bg-red-100 text-red-800 hover:bg-red-100 dark:bg-red-900 dark:text-red-100"
+																		variant="secondary"
+																	>
+																		Sobre límite
+																	</Badge>
+																)}
+															</div>
+															<div className="flex flex-wrap items-center gap-3 text-[#687076] text-xs dark:text-[#9BA1A6]">
+																<span>{group.items.length} item(s)</span>
+																<span className={limitTextClassName}>
+																	{group.limitText}
+																</span>
+																{canShowAction && (
+																	<Button
+																		className="h-7 px-2 text-xs"
+																		disabled={isSavingStockLimit}
+																		onClick={() => {
+																			if (!group.effectiveWarehouseId) {
+																				return;
+																			}
+																			handleOpenLimitDialog({
+																				product,
+																				warehouseId: group.effectiveWarehouseId,
+																				groupLabel: group.label,
+																				limit: group.limit,
+																			});
+																		}}
+																		size="sm"
+																		variant="ghost"
+																	>
+																		{editActionLabel}
+																	</Button>
+																)}
+															</div>
+														</div>
+													</TableCell>
+												</TableRow>
+												<TableRow>
+													<TableCell
+														className="p-0"
+														colSpan={detailColumnCount}
+													>
+														<div id={`wg-${product.barcode}-${group.key}`} />
+													</TableCell>
+												</TableRow>
+												{isExpanded && (
+													<React.Fragment>
+														{group.items.map((item) => {
+															const { data, key: selectionKey } = item;
+															const isSelected = selectionKey
+																? productSelection.has(selectionKey)
+																: false;
+															const isDisabled =
+																data.isBeingUsed ||
+																group.isDistributionCenter ||
+																(selectionKey
+																	? disabledUUIDs.has(selectionKey)
+																	: false);
+															const hasLimit = Boolean(group.limit);
+															return (
+																<TableRow
+																	className="border-[#E5E7EB] border-b last:border-b-0 dark:border-[#374151]"
+																	data-has-limit={hasLimit ? "true" : undefined}
+																	key={selectionKey || data.id}
+																>
+																	<TableCell className="font-mono text-[#687076] text-xs dark:text-[#9BA1A6]">
+																		<div className="flex flex-col gap-1">
+																			{selectionEnabledRef && (
+																				<Checkbox
+																					checked={isSelected}
+																					disabled={isDisabled}
+																					onCheckedChange={(checked) =>
+																						toggleUUID(
+																							selectionKey,
+																							Boolean(checked),
+																						)
+																					}
+																				/>
+																			)}
+																			<span className="truncate">
+																				{(data.id || "").slice(0, 8)}...
+																			</span>
+																			<Tooltip>
+																				<TooltipTrigger asChild>
+																					<Button
+																						className="h-4 w-4 p-0 hover:bg-[#E5E7EB] dark:hover:bg-[#2D3033]"
+																						onClick={() => {
+																							copyToClipboard(
+																								data.uuid || data.id || "",
+																							);
+																						}}
+																						size="sm"
+																						variant="ghost"
+																					>
+																						<Copy className="h-3 w-3" />
+																					</Button>
+																				</TooltipTrigger>
+																				<TooltipContent side="top">
+																					Copiar UUID
+																				</TooltipContent>
+																			</Tooltip>
+																			<Tooltip>
+																				<TooltipTrigger asChild>
+																					<Button
+																						aria-label="Reimprimir código QR"
+																						className="h-4 w-4 p-0 hover:bg-[#E5E7EB] dark:hover:bg-[#2D3033]"
+																						disabled={
+																							!onReprintQr ||
+																							!(data.uuid || data.id)
+																						}
+																						onClick={() => {
+																							if (
+																								!onReprintQr ||
+																								!(data.uuid || data.id)
+																							) {
+																								return;
+																							}
+																							onReprintQr({
+																								product,
+																								item: data,
+																							});
+																						}}
+																						size="sm"
+																						variant="ghost"
+																					>
+																						<QrCode className="h-3 w-3" />
+																					</Button>
+																				</TooltipTrigger>
+																				<TooltipContent side="top">
+																					Generar nuevamente el código QR
+																				</TooltipContent>
+																			</Tooltip>
+																		</div>
+																	</TableCell>
+																	<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+																		{formatDate(data.lastUsed)}
+																	</TableCell>
+																	<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+																		{data.lastUsedBy || "N/A"}
+																	</TableCell>
+																	<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+																		{data.numberOfUses}
+																	</TableCell>
+																	<TableCell>
+																		<Badge
+																			className={
+																				data.isBeingUsed
+																					? "bg-[#EF4444] text-white text-xs"
+																					: "bg-[#10B981] text-white text-xs"
+																			}
+																			variant={
+																				data.isBeingUsed
+																					? "destructive"
+																					: "default"
+																			}
+																		>
+																			{data.isBeingUsed
+																				? "En Uso"
+																				: "Disponible"}
+																		</Badge>
+																	</TableCell>
+																	<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+																		{formatDate(data.firstUsed)}
+																	</TableCell>
+																	<TableCell>
+																		{enableDispose && (
+																			<Button
+																				className="h-6 w-6 p-0 text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950 dark:hover:text-red-300"
+																				onClick={() => {
+																					showDisposeDialog({
+																						id: data.id || "",
+																						uuid: data.id || "",
+																						barcode: product.barcode,
+																						productInfo: {
+																							name: product.name,
+																							category: product.category,
+																							description: product.description,
+																						},
+																					});
+																				}}
+																				size="sm"
+																				title="Dar de baja artículo"
+																				variant="ghost"
+																			>
+																				<Trash2 className="h-4 w-4" />
+																			</Button>
+																		)}
+																	</TableCell>
+																</TableRow>
+															);
+														})}
+													</React.Fragment>
+												)}
 											</React.Fragment>
-										)}
-									</React.Fragment>
-								);
-							})}
+										);
+									})}
 								</TableBody>
 							</Table>
 						</div>
