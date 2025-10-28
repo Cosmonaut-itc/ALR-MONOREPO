@@ -1,4 +1,5 @@
 "use client"
+"use memo"
 
 import * as React from "react"
 import * as TabsPrimitive from "@radix-ui/react-tabs"

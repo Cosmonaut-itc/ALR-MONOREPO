@@ -1,6 +1,7 @@
 /** biome-ignore-all lint/suspicious/useAwait: Server prefetch requires await */
 /** biome-ignore-all lint/suspicious/noConsole: Diagnostics aid debugging */
 
+'use memo';
 import { dehydrate, HydrationBoundary } from "@tanstack/react-query";
 import { notFound } from "next/navigation";
 import { getQueryClient } from "@/app/get-query-client";

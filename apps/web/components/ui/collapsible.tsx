@@ -1,4 +1,5 @@
 "use client"
+"use memo"
 
 import * as CollapsiblePrimitive from "@radix-ui/react-collapsible"
 

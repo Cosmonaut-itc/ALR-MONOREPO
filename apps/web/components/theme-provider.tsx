@@ -1,4 +1,5 @@
 "use client"
+"use memo"
 
 import type React from "react"
 import { useEffect } from "react"

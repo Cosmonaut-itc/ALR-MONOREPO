@@ -1,4 +1,5 @@
 'use client';
+'use memo';
 
 import type { ComponentProps } from 'react';
 

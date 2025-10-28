@@ -1,3 +1,5 @@
+'use memo';
+
 import type { ReactNode } from 'react';
 import type { UserRole } from '@/types';
 

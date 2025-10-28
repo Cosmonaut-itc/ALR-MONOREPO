@@ -1,4 +1,5 @@
 'use client';
+'use memo';
 
 import { AlertTriangle, Loader2 } from 'lucide-react';
 import { useEffect } from 'react';

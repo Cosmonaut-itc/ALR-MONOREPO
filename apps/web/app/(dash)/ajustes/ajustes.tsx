@@ -1,4 +1,5 @@
 "use client";
+"use memo";
 
 import { useForm } from "@tanstack/react-form";
 import { useSuspenseQuery } from "@tanstack/react-query";

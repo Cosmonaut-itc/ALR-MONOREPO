@@ -1,4 +1,5 @@
 "use client"
+"use memo"
 
 import * as React from "react"
 import * as SelectPrimitive from "@radix-ui/react-select"

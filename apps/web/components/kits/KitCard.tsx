@@ -1,4 +1,5 @@
 "use client"
+"use memo"
 
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"

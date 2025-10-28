@@ -1,3 +1,5 @@
+'use memo';
+
 import {
 	type ColumnDef,
 	type ColumnFiltersState,

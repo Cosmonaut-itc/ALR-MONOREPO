@@ -1,4 +1,6 @@
 /** biome-ignore-all lint/suspicious/noArrayIndexKey: skeleton only */
+'use memo';
+
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 

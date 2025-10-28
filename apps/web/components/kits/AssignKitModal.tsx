@@ -1,4 +1,5 @@
 "use client";
+"use memo";
 
 import { Check, ChevronsUpDown, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";

@@ -1,6 +1,7 @@
 /** biome-ignore-all lint/suspicious/useAwait: Required for server prefetching */
 /** biome-ignore-all lint/suspicious/noConsole: Logging failures aids debugging */
 
+'use memo';
 import { dehydrate, HydrationBoundary } from "@tanstack/react-query";
 import { getQueryClient } from "@/app/get-query-client";
 import { GenericBoundaryWrapper } from "@/components/suspense-generics/general-wrapper";

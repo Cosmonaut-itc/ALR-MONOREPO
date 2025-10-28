@@ -1,3 +1,5 @@
+'use memo';
+
 import SkeletonKitDetailsPage from '@/ui/skeletons/Skeleton.KitDetailsPage';
 
 export default function Loading() {

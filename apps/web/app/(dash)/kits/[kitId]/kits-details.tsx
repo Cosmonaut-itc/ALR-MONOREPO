@@ -1,4 +1,5 @@
 "use client";
+"use memo";
 
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { ArrowLeft, Package, PackageCheck } from "lucide-react";
