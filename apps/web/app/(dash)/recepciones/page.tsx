@@ -40,44 +40,49 @@ export default async function Page() {
 	const role = auth.user?.role ?? "";
 	const isEncargado = role === "encargado";
 	const transferKeyParam = isEncargado ? "all" : (warehouseId as string);
-	const transferPrefetchFn = isEncargado
-		? fetchWarehouseTrasnferAll
-		: () => fetchWarehouseTransferByWarehouseIdServer(warehouseId as string);
+	try {
+		const transferPrefetchFn = isEncargado
+			? () => fetchWarehouseTrasnferAll()
+			: () => fetchWarehouseTransferByWarehouseIdServer(warehouseId as string);
 
-	// Prefetch inventory data so the client query hydrates
-	queryClient.prefetchQuery({
-		queryKey: createQueryKey(queryKeys.inventory, ["all"]),
-		queryFn: fetchAllProductStockServer,
-	});
+		// Prefetch inventory data so the client query hydrates
+		queryClient.prefetchQuery({
+			queryKey: createQueryKey(queryKeys.inventory, ["all"]),
+			queryFn: () => fetchAllProductStockServer(),
+		});
 
-	// Prefetch transfer/reception data
-	queryClient.prefetchQuery({
-		queryKey: createQueryKey(queryKeys.receptions, [transferKeyParam]),
-		queryFn: transferPrefetchFn,
-	});
+		// Prefetch transfer/reception data
+		queryClient.prefetchQuery({
+			queryKey: createQueryKey(queryKeys.receptions, [transferKeyParam]),
+			queryFn: transferPrefetchFn,
+		});
 
-	// Prefetch product catalog data
-	queryClient.prefetchQuery({
-		queryKey: queryKeys.productCatalog,
-		queryFn: () => fetchAllProductsServer(),
-	});
+		// Prefetch product catalog data
+		queryClient.prefetchQuery({
+			queryKey: queryKeys.productCatalog,
+			queryFn: () => fetchAllProductsServer(),
+		});
 
-	// Prefetch cabinet warehouse data
-	queryClient.prefetchQuery({
-		queryKey: queryKeys.cabinetWarehouse,
-		queryFn: () => fetchCabinetWarehouseServer(),
-	});
+		// Prefetch cabinet warehouse data
+		queryClient.prefetchQuery({
+			queryKey: queryKeys.cabinetWarehouse,
+			queryFn: () => fetchCabinetWarehouseServer(),
+		});
 
-	// Prefetch replenishment orders to link with transfers
-	const replenishmentOrdersPrefetchFn = isEncargado
-		? fetchReplenishmentOrdersServer
-		: () => fetchReplenishmentOrdersByWarehouseServer(warehouseId as string);
-	queryClient.prefetchQuery({
-		queryKey: createQueryKey(queryKeys.replenishmentOrders, [
-			isEncargado ? "all" : (warehouseId as string),
-		]),
-		queryFn: () => replenishmentOrdersPrefetchFn(),
-	});
+		// Prefetch replenishment orders to link with transfers
+		const replenishmentOrdersPrefetchFn = isEncargado
+			? () => fetchReplenishmentOrdersServer()
+			: () => fetchReplenishmentOrdersByWarehouseServer(warehouseId as string);
+		queryClient.prefetchQuery({
+			queryKey: createQueryKey(queryKeys.replenishmentOrders, [
+				isEncargado ? "all" : (warehouseId as string),
+			]),
+			queryFn: replenishmentOrdersPrefetchFn,
+		});
+	} catch (error) {
+		console.error(error);
+		console.error("Error prefetching recepciones data");
+	}
 
 	return (
 		<HydrationBoundary state={dehydrate(queryClient)}>
