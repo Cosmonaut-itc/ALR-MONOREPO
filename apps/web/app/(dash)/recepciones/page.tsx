@@ -1,7 +1,7 @@
 /** biome-ignore-all lint/suspicious/useAwait: Needed for hydration */
 /** biome-ignore-all lint/suspicious/noConsole: Needed for error logging */
 
-'use memo';
+"use memo";
 import { dehydrate, HydrationBoundary } from "@tanstack/react-query";
 import { getQueryClient } from "@/app/get-query-client";
 import { GenericBoundaryWrapper } from "@/components/suspense-generics/general-wrapper";
@@ -11,13 +11,15 @@ import {
 	fetchAllProductStockServer,
 	fetchAllProductsServer,
 	fetchCabinetWarehouseServer,
-	fetchStockByWarehouseServer,
 } from "@/lib/server-functions/inventory";
 import {
-	fetchWarehouseTransferByWarehouseId,
 	fetchWarehouseTransferByWarehouseIdServer,
 	fetchWarehouseTrasnferAll,
 } from "@/lib/server-functions/recepciones";
+import {
+	fetchReplenishmentOrdersByWarehouseServer,
+	fetchReplenishmentOrdersServer,
+} from "@/lib/server-functions/replenishment-orders";
 import { getServerAuth } from "@/lib/server-functions/server-auth";
 import SkeletonRecepcionesPage from "@/ui/skeletons/Skeleton.RecepcionesPage";
 import { RecepcionesPage } from "./recepciones";
@@ -42,53 +44,49 @@ export default async function Page() {
 		? fetchWarehouseTrasnferAll
 		: () => fetchWarehouseTransferByWarehouseIdServer(warehouseId as string);
 
-	try {
-		// Prefetch inventory data so the client query hydrates
-		queryClient.prefetchQuery({
-			queryKey: createQueryKey(queryKeys.inventory, ["all"]),
-			queryFn: fetchAllProductStockServer,
-		});
+	// Prefetch inventory data so the client query hydrates
+	queryClient.prefetchQuery({
+		queryKey: createQueryKey(queryKeys.inventory, ["all"]),
+		queryFn: fetchAllProductStockServer,
+	});
 
-		// Prefetch inventory data so the client query hydrates
-		queryClient.prefetchQuery({
-			queryKey: createQueryKey(queryKeys.receptions, [transferKeyParam]),
-			queryFn: transferPrefetchFn,
-		});
+	// Prefetch transfer/reception data
+	queryClient.prefetchQuery({
+		queryKey: createQueryKey(queryKeys.receptions, [transferKeyParam]),
+		queryFn: transferPrefetchFn,
+	});
 
-		// Prefetch product catalog data
-		queryClient.prefetchQuery({
-			queryKey: queryKeys.productCatalog,
-			queryFn: () => fetchAllProductsServer(),
-		});
+	// Prefetch product catalog data
+	queryClient.prefetchQuery({
+		queryKey: queryKeys.productCatalog,
+		queryFn: () => fetchAllProductsServer(),
+	});
 
-		// Prefetch cabinet warehouse data
-		queryClient.prefetchQuery({
-			queryKey: queryKeys.cabinetWarehouse,
-			queryFn: () => fetchCabinetWarehouseServer(),
-		});
+	// Prefetch cabinet warehouse data
+	queryClient.prefetchQuery({
+		queryKey: queryKeys.cabinetWarehouse,
+		queryFn: () => fetchCabinetWarehouseServer(),
+	});
 
-		return (
-			<HydrationBoundary state={dehydrate(queryClient)}>
-				<GenericBoundaryWrapper fallbackComponent={<SkeletonRecepcionesPage />}>
-					<RecepcionesPage
-						warehouseId={warehouseId as string}
-						isEncargado={isEncargado}
-					/>
-				</GenericBoundaryWrapper>
-			</HydrationBoundary>
-		);
-	} catch (error) {
-		console.error(error);
-		console.error("Error prefetching abastecimiento data");
-		return (
-			<HydrationBoundary state={dehydrate(queryClient)}>
-				<GenericBoundaryWrapper fallbackComponent={<SkeletonRecepcionesPage />}>
-					<RecepcionesPage
-						warehouseId={warehouseId as string}
-						isEncargado={isEncargado}
-					/>
-				</GenericBoundaryWrapper>
-			</HydrationBoundary>
-		);
-	}
+	// Prefetch replenishment orders to link with transfers
+	const replenishmentOrdersPrefetchFn = isEncargado
+		? fetchReplenishmentOrdersServer
+		: () => fetchReplenishmentOrdersByWarehouseServer(warehouseId as string);
+	queryClient.prefetchQuery({
+		queryKey: createQueryKey(queryKeys.replenishmentOrders, [
+			isEncargado ? "all" : (warehouseId as string),
+		]),
+		queryFn: () => replenishmentOrdersPrefetchFn(),
+	});
+
+	return (
+		<HydrationBoundary state={dehydrate(queryClient)}>
+			<GenericBoundaryWrapper fallbackComponent={<SkeletonRecepcionesPage />}>
+				<RecepcionesPage
+					warehouseId={warehouseId as string}
+					isEncargado={isEncargado}
+				/>
+			</GenericBoundaryWrapper>
+		</HydrationBoundary>
+	);
 }

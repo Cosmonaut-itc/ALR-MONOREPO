@@ -1,7 +1,7 @@
 /** biome-ignore-all lint/suspicious/useAwait: Server prefetch requires await */
 /** biome-ignore-all lint/suspicious/noConsole: Diagnostics aid debugging */
 
-'use memo';
+"use memo";
 import { dehydrate, HydrationBoundary } from "@tanstack/react-query";
 import { notFound } from "next/navigation";
 import { getQueryClient } from "@/app/get-query-client";
@@ -70,7 +70,7 @@ export default async function PedidoDetailRoute({ params }: RouteProps) {
 
 	if (cedisWarehouseId) {
 		try {
-			await queryClient.prefetchQuery({
+			queryClient.prefetchQuery({
 				queryKey: createQueryKey(queryKeys.inventory, [cedisWarehouseId]),
 				queryFn: () => fetchStockByWarehouseServer(cedisWarehouseId!),
 			});
@@ -81,11 +81,11 @@ export default async function PedidoDetailRoute({ params }: RouteProps) {
 	}
 
 	try {
-		await queryClient.prefetchQuery({
+		queryClient.prefetchQuery({
 			queryKey: queryKeys.warehouses,
 			queryFn: () => fetchAllWarehousesServer(),
 		});
-		await queryClient.prefetchQuery({
+		queryClient.prefetchQuery({
 			queryKey: queryKeys.cabinetWarehouse,
 			queryFn: () => fetchCabinetWarehouseServer(),
 		});
@@ -95,7 +95,7 @@ export default async function PedidoDetailRoute({ params }: RouteProps) {
 	}
 
 	try {
-		await queryClient.prefetchQuery({
+		queryClient.prefetchQuery({
 			queryKey: queryKeys.productCatalog,
 			queryFn: () => fetchAllProductsServer(),
 		});
@@ -106,13 +106,8 @@ export default async function PedidoDetailRoute({ params }: RouteProps) {
 
 	return (
 		<HydrationBoundary state={dehydrate(queryClient)}>
-			<GenericBoundaryWrapper
-				fallbackComponent={<SkeletonPedidoDetailsPage />}
-			>
-				<PedidoDetailsPage
-					isEncargado={isEncargado}
-					orderId={orderId}
-				/>
+			<GenericBoundaryWrapper fallbackComponent={<SkeletonPedidoDetailsPage />}>
+				<PedidoDetailsPage isEncargado={isEncargado} orderId={orderId} />
 			</GenericBoundaryWrapper>
 		</HydrationBoundary>
 	);

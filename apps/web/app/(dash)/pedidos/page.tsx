@@ -1,7 +1,7 @@
 /** biome-ignore-all lint/suspicious/useAwait: Required for server prefetching */
 /** biome-ignore-all lint/suspicious/noConsole: Logging failures aids debugging */
 
-'use memo';
+"use memo";
 import { dehydrate, HydrationBoundary } from "@tanstack/react-query";
 import { getQueryClient } from "@/app/get-query-client";
 import { GenericBoundaryWrapper } from "@/components/suspense-generics/general-wrapper";
@@ -33,7 +33,7 @@ export default async function PedidosRoute() {
 
 	try {
 		if (canManageAllWarehouses) {
-			await queryClient.prefetchQuery({
+			queryClient.prefetchQuery({
 				queryKey: createQueryKey(queryKeys.replenishmentOrders, [
 					scopeKey,
 					"all",
@@ -41,18 +41,18 @@ export default async function PedidosRoute() {
 				queryFn: () => fetchReplenishmentOrdersServer(),
 			});
 		} else if (warehouseId) {
-			await queryClient.prefetchQuery({
+			queryClient.prefetchQuery({
 				queryKey: createQueryKey(queryKeys.replenishmentOrders, [scopeKey]),
 				queryFn: () => fetchReplenishmentOrdersByWarehouseServer(warehouseId),
 			});
 		}
 
-		await queryClient.prefetchQuery({
+		queryClient.prefetchQuery({
 			queryKey: queryKeys.productCatalog,
 			queryFn: () => fetchAllProductsServer(),
 		});
 
-		await queryClient.prefetchQuery({
+		queryClient.prefetchQuery({
 			queryKey: queryKeys.warehouses,
 			queryFn: () => fetchAllWarehousesServer(),
 		});
@@ -64,10 +64,10 @@ export default async function PedidosRoute() {
 	return (
 		<HydrationBoundary state={dehydrate(queryClient)}>
 			<GenericBoundaryWrapper fallbackComponent={<SkeletonPedidosPage />}>
-		<PedidosPage
-			canManageAllWarehouses={canManageAllWarehouses}
-			warehouseId={warehouseId}
-		/>
+				<PedidosPage
+					canManageAllWarehouses={canManageAllWarehouses}
+					warehouseId={warehouseId}
+				/>
 			</GenericBoundaryWrapper>
 		</HydrationBoundary>
 	);

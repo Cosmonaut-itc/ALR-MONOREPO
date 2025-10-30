@@ -517,7 +517,7 @@ export function InventarioPage({
 		!selectedProduct ||
 		!selectedWarehouseId ||
 		isAddSubmitting ||
-		distributionCenterIds.has(selectedWarehouseId);
+		(!canManageKits && distributionCenterIds.has(selectedWarehouseId));
 
 	const handleAddProductSubmit = useCallback(async () => {
 		if (!selectedProduct) {
@@ -528,7 +528,7 @@ export function InventarioPage({
 			toast.error("Selecciona el almacén donde se creará el producto.");
 			return;
 		}
-		if (distributionCenterIds.has(selectedWarehouseId)) {
+		if (!canManageKits && distributionCenterIds.has(selectedWarehouseId)) {
 			toast.error("Los centros de distribución no permiten alta de producto.");
 			return;
 		}
@@ -587,6 +587,7 @@ export function InventarioPage({
 			setIsPrintingLabels(false);
 		}
 	}, [
+		canManageKits,
 		createInventoryItem,
 		distributionCenterIds,
 		handlePrintQrLabels,
@@ -1037,10 +1038,12 @@ export function InventarioPage({
 							<DialogTrigger asChild>
 								<Button
 									className="whitespace-nowrap"
-									disabled={distributionCenterIds.has(selectedWarehouseId)}
+									disabled={
+										!canManageKits && distributionCenterIds.has(selectedWarehouseId)
+									}
 									variant="default"
 								>
-									{distributionCenterIds.has(selectedWarehouseId)
+									{!canManageKits && distributionCenterIds.has(selectedWarehouseId)
 										? "Centro de distribución (solo consulta)"
 										: "Agregar producto"}
 								</Button>

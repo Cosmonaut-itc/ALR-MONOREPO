@@ -4,7 +4,14 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { format, formatDistanceToNow } from "date-fns";
 import { es } from "date-fns/locale";
-import { ArrowLeft, ChevronDown, ChevronUp, ExternalLink, Package, Search } from "lucide-react";
+import {
+	ArrowLeft,
+	ChevronDown,
+	ChevronUp,
+	ExternalLink,
+	Package,
+	Search,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -13,7 +20,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import {
+	Collapsible,
+	CollapsibleContent,
+	CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -463,7 +474,9 @@ export function PedidoDetailsPage({
 
 	const [selectedItems, setSelectedItems] = useState<SelectedItemsMap>({});
 	const [itemSearch, setItemSearch] = useState("");
-	const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
+	const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>(
+		{},
+	);
 	const [transferNotes, setTransferNotes] = useState("");
 	const [priority, setPriority] = useState<"normal" | "urgent" | "high">(
 		"normal",
@@ -527,9 +540,9 @@ export function PedidoDetailsPage({
 					typeof rawProduct.title === "string" &&
 					rawProduct.title.trim().length > 0
 						? rawProduct.title.trim()
-						: typeof rawProduct.name === "string" &&
-								rawProduct.name.trim().length > 0
-							? rawProduct.name.trim()
+						: typeof rawProduct.title === "string" &&
+								rawProduct.title.trim().length > 0
+							? rawProduct.title.trim()
 							: `Producto ${parsedBarcode}`;
 				const categoryCandidate =
 					typeof rawProduct.category === "string" &&
@@ -804,6 +817,36 @@ export function PedidoDetailsPage({
 			return;
 		}
 
+		// Check if a transfer already exists for this order
+		if (parsedOrder.warehouseTransferId) {
+			toast.info(
+				"Este pedido ya tiene un traspaso asociado. Actualizando estado...",
+			);
+			try {
+				// Try to update the order status if it's not already sent
+				if (!parsedOrder.isSent) {
+					await updateOrderMutation.mutateAsync({
+						param: { id: parsedOrder.id },
+						json: { isSent: true },
+					});
+				}
+				toast.success("Estado del pedido actualizado.");
+				router.push("/pedidos");
+				return;
+			} catch (error) {
+				if (error instanceof Error && error.message) {
+					toast.error(
+						`Error al actualizar el pedido: ${error.message}. El traspaso ya existe con ID: ${parsedOrder.warehouseTransferId}`,
+					);
+				} else {
+					toast.error(
+						`No se pudo actualizar el pedido. El traspaso ya existe con ID: ${parsedOrder.warehouseTransferId}`,
+					);
+				}
+				return;
+			}
+		}
+
 		const cabinetInfo = cabinetMap.get(parsedOrder.sourceWarehouseId);
 		const cabinetId = cabinetInfo?.cabinetId ?? parsedOrder.sourceWarehouseId;
 
@@ -822,6 +865,8 @@ export function PedidoDetailsPage({
 			toast.error("Selecciona al menos un artículo para el traspaso.");
 			return;
 		}
+
+		let transferIdCandidate: string | null = null;
 
 		try {
 			const transferPayload = {
@@ -843,7 +888,7 @@ export function PedidoDetailsPage({
 			const transferResult =
 				await createTransferMutation.mutateAsync(transferPayload);
 
-			const transferIdCandidate =
+			transferIdCandidate =
 				(transferResult as Record<string, unknown>)?.data &&
 				typeof (transferResult as { data?: unknown }).data === "object"
 					? ((
@@ -865,28 +910,73 @@ export function PedidoDetailsPage({
 				);
 				return;
 			}
+		} catch (error) {
+			if (error instanceof Error && error.message) {
+				toast.error(`Error al crear el traspaso: ${error.message}`);
+			} else {
+				toast.error("No se pudo crear el traspaso.");
+			}
+			return;
+		}
 
+		// Try to link the transfer to the order
+		try {
 			await linkTransferMutation.mutateAsync({
 				param: { id: parsedOrder.id },
 				json: { warehouseTransferId: transferIdCandidate },
 			});
+		} catch (linkError) {
+			// If linking fails, warn the user but don't fail completely
+			// The transfer was created, but the link failed
+			if (linkError instanceof Error && linkError.message) {
+				toast.warning(
+					`Traspaso creado exitosamente (ID: ${transferIdCandidate}), pero no se pudo vincular al pedido: ${linkError.message}. Puedes vincularlo manualmente más tarde.`,
+					{ duration: 6000 },
+				);
+			} else {
+				toast.warning(
+					`Traspaso creado exitosamente (ID: ${transferIdCandidate}), pero no se pudo vincular al pedido. Puedes vincularlo manualmente más tarde.`,
+					{ duration: 6000 },
+				);
+			}
+			// Still try to update order status if needed
+			try {
+				if (!parsedOrder.isSent) {
+					await updateOrderMutation.mutateAsync({
+						param: { id: parsedOrder.id },
+						json: { isSent: true },
+					});
+				}
+			} catch {
+				// Ignore status update errors if linking already failed
+			}
+			router.push("/pedidos");
+			return;
+		}
 
+		// Update order status if linking succeeded
+		try {
 			if (!parsedOrder.isSent) {
 				await updateOrderMutation.mutateAsync({
 					param: { id: parsedOrder.id },
 					json: { isSent: true },
 				});
 			}
-
-			toast.success("Traspaso generado y pedido actualizado.");
-			router.push("/pedidos");
-		} catch (error) {
-			if (error instanceof Error && error.message) {
-				toast.error(error.message);
+		} catch (statusError) {
+			// Status update failure is less critical since transfer and link succeeded
+			if (statusError instanceof Error && statusError.message) {
+				toast.warning(
+					`Traspaso creado y vinculado, pero no se pudo actualizar el estado: ${statusError.message}`,
+				);
 			} else {
-				toast.error("No se pudo crear el traspaso.");
+				toast.warning(
+					"Traspaso creado y vinculado, pero no se pudo actualizar el estado del pedido.",
+				);
 			}
 		}
+
+		toast.success("Traspaso generado y pedido actualizado.");
+		router.push("/pedidos");
 	}, [
 		parsedOrder,
 		isEncargado,
@@ -1056,29 +1146,30 @@ export function PedidoDetailsPage({
 									</TableRow>
 								</TableHeader>
 								<TableBody>
-						{parsedOrder.items.map((item) => {
-							const productInfo = productInfoByBarcode.get(item.barcode);
-							const productName = productInfo?.name ?? `Producto ${item.barcode}`;
-							return (
-								<TableRow
-									className="theme-transition border-[#E5E7EB] border-b last:border-b-0 dark:border-[#2D3033]"
-									key={item.id}
-								>
-									<TableCell className="font-mono text-[#11181C] dark:text-[#ECEDEE]">
-										{productName}
-									</TableCell>
-									<TableCell className="font-mono text-[#11181C] dark:text-[#ECEDEE]">
-										{item.barcode}
-									</TableCell>
-									<TableCell className="text-[#11181C] dark:text-[#ECEDEE]">
-										{item.quantity}
-									</TableCell>
-									<TableCell className="text-[#687076] text-sm dark:text-[#9BA1A6]">
-										{item.notes || "Sin notas"}
-									</TableCell>
-								</TableRow>
-							);
-						})}
+									{parsedOrder.items.map((item) => {
+										const productInfo = productInfoByBarcode.get(item.barcode);
+										const productName =
+											productInfo?.name ?? `Producto ${item.barcode}`;
+										return (
+											<TableRow
+												className="theme-transition border-[#E5E7EB] border-b last:border-b-0 dark:border-[#2D3033]"
+												key={item.id}
+											>
+												<TableCell className="font-mono text-[#11181C] dark:text-[#ECEDEE]">
+													{productName}
+												</TableCell>
+												<TableCell className="font-mono text-[#11181C] dark:text-[#ECEDEE]">
+													{item.barcode}
+												</TableCell>
+												<TableCell className="text-[#11181C] dark:text-[#ECEDEE]">
+													{item.quantity}
+												</TableCell>
+												<TableCell className="text-[#687076] text-sm dark:text-[#9BA1A6]">
+													{item.notes || "Sin notas"}
+												</TableCell>
+											</TableRow>
+										);
+									})}
 								</TableBody>
 							</Table>
 						</div>
@@ -1099,285 +1190,325 @@ export function PedidoDetailsPage({
 							Cumplir pedido
 						</CardTitle>
 					</CardHeader>
-				<CardContent className="space-y-5">
-					{isEncargado ? (
-						<>
-							<div className="space-y-2">
-								<Label className="text-[#687076] dark:text-[#9BA1A6]">
-									Prioridad
-								</Label>
-								<Select
-									onValueChange={(value) =>
-										setPriority(value as "normal" | "urgent" | "high")
-									}
-									value={priority}
-								>
-									<SelectTrigger className="input-transition border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]">
-										<SelectValue placeholder="Selecciona prioridad" />
-									</SelectTrigger>
-									<SelectContent>
-										<SelectItem value="normal">Normal</SelectItem>
-										<SelectItem value="high">Alta</SelectItem>
-										<SelectItem value="urgent">Urgente</SelectItem>
-									</SelectContent>
-								</Select>
-							</div>
-							<div className="space-y-4">
-								<p className="text-[#687076] text-sm dark:text-[#9BA1A6]">
-									Selecciona las piezas disponibles en el CEDIS para enviar. El
-									traspaso se puede generar aun cuando falten unidades por
-									surtir.
-								</p>
-								<div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-									<div className="w-full lg:max-w-sm">
-										<Label className="text-[#687076] text-sm dark:text-[#9BA1A6]" htmlFor="item-search">
-											Buscar artículos en el CEDIS
-										</Label>
-										<div className="relative mt-1">
-											<Search className="text-[#687076] absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 dark:text-[#9BA1A6]" />
-											<Input
-												className="pl-9"
-												id="item-search"
-												onChange={(event) => setItemSearch(event.target.value)}
-												placeholder="Nombre, código o categoría"
-												value={itemSearch}
-											/>
-										</div>
-										{hasSearchTerm && !noItemsMatchSearch && (
-											<p className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-												{filteredItems.length} coincidencia(s) encontradas.
-											</p>
-										)}
-										{noItemsMatchSearch && (
-											<p className="text-[#B54708] text-xs dark:text-[#F7B84B]">
-												No se encontraron artículos que coincidan con la búsqueda.
-											</p>
-										)}
-									</div>
-									<div className="flex flex-wrap items-center gap-2">
-										<Button
-											onClick={handleExpandAll}
-											size="sm"
-											variant="outline"
-											disabled={itemsToRender.length === 0}
-										>
-											Expandir todo
-										</Button>
-										<Button
-											onClick={handleCollapseAll}
-											size="sm"
-											variant="ghost"
-											disabled={itemsToRender.length === 0}
-										>
-											Contraer todo
-										</Button>
-									</div>
-								</div>
-								<div className="rounded-md border border-dashed border-[#E5E7EB] bg-[#F9FAFB] p-3 dark:border-[#2D3033] dark:bg-[#1E1F20]">
-									<p className="text-[#11181C] text-sm dark:text-[#ECEDEE]">
-										Seleccionados: {fulfillmentProgress.selected} /{" "}
-										{fulfillmentProgress.requested || parsedOrder.itemsCount}
-									</p>
-									{hasCompleteFulfillment ? (
-										<p className="text-[#10B981] text-xs">
-											Pedido cubierto por completo.
+					<CardContent className="space-y-5">
+						{isEncargado ? (
+							<>
+								{parsedOrder.warehouseTransferId && (
+									<div className="rounded-md border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/20">
+										<p className="text-amber-800 text-sm dark:text-amber-300">
+											<strong>Nota:</strong> Este pedido ya tiene un traspaso
+											asociado (ID:{" "}
+											{parsedOrder.warehouseTransferId.slice(0, 8)}
+											...). No se puede crear otro traspaso.
 										</p>
-									) : isTransferReady ? (
-										<p className="text-[#B54708] text-xs dark:text-[#F7B84B]">
-											{pendingPieces} pieza(s) quedarían pendientes de envío.
-										</p>
-									) : (
-										<p className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-											Selecciona al menos una pieza disponible para enviar.
-										</p>
-									)}
-								</div>
-								{noItemsMatchSearch ? (
-									<p className="rounded-md border border-[#E5E7EB] bg-[#F9FAFB] p-4 text-[#687076] text-sm dark:border-[#2D3033] dark:bg-[#1E1F20] dark:text-[#9BA1A6]">
-										Ajusta el término de búsqueda para ubicar los artículos del pedido.
-									</p>
-								) : (
-									<div className="space-y-4">
-										{itemsToRender.map((item) => {
-											const isExpanded = expandedItems[item.detailId] ?? false;
-											const selectedCount = item.selectedIds.length;
-											const availableCount = item.availableStocks.length;
-											const remainingToSelect = Math.max(
-												item.requestedQuantity - selectedCount,
-												0,
-											);
-											const disableSelectAll =
-												remainingToSelect === 0 || availableCount === selectedCount;
-											return (
-												<Collapsible
-													key={item.detailId}
-													onOpenChange={(open) =>
-														setExpandedItems((prev) => ({
-															...prev,
-															[item.detailId]: open,
-														}))
-													}
-													open={isExpanded}
-												>
-													<div className="rounded-lg border border-[#E5E7EB] p-4 dark:border-[#2D3033]">
-														<div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-															<div className="space-y-1">
-																<p className="font-semibold text-[#11181C] dark:text-[#ECEDEE]">
-																	{item.displayName}
-																</p>
-																<div className="flex flex-wrap items-center gap-2 text-[#687076] text-xs dark:text-[#9BA1A6]">
-																	<span>#{item.barcode}</span>
-																	<span className="hidden sm:inline">•</span>
-																	<span>{item.category}</span>
-																	<span className="hidden sm:inline">•</span>
-																	<span>Solicitado: {item.requestedQuantity}</span>
-																	<span className="hidden sm:inline">•</span>
-																	<span>Disponibles: {availableCount}</span>
-																</div>
-																{item.itemNotes && (
-																	<p className="text-[#687076] text-xs italic dark:text-[#9BA1A6]">
-																		Nota: {item.itemNotes}
-																	</p>
-																)}
-															</div>
-															<div className="flex flex-col items-start gap-2 sm:items-end">
-																<Badge className="text-xs" variant="outline">
-																	Seleccionados {selectedCount}/{item.requestedQuantity}
-																</Badge>
-																<div className="flex flex-wrap items-center gap-2">
-																	<Button
-																		onClick={() =>
-																			handleSelectAllForItem(
-																				item.detailId,
-																				item.requestedQuantity,
-																				item.availableStocks,
-																			)
-																		}
-																		size="sm"
-																		variant="outline"
-																		disabled={disableSelectAll}
-																	>
-																		Completar selección
-																	</Button>
-																	<Button
-																		onClick={() => handleClearSelectionForItem(item.detailId)}
-																		size="sm"
-																		variant="ghost"
-																		disabled={selectedCount === 0}
-																	>
-																		Limpiar
-																	</Button>
-																	<CollapsibleTrigger asChild>
-																		<Button className="gap-1" size="sm" variant="ghost">
-																			{isExpanded ? "Ocultar" : "Ver existencias"}
-																			{isExpanded ? (
-																				<ChevronUp className="h-4 w-4" />
-																			) : (
-																				<ChevronDown className="h-4 w-4" />
-																			)}
-																		</Button>
-																	</CollapsibleTrigger>
-																</div>
-															</div>
-														</div>
-														<CollapsibleContent>
-															<div className="mt-3">
-																{item.availableStocks.length === 0 ? (
-																	<p className="rounded-md bg-amber-50 p-3 text-amber-700 text-sm dark:bg-amber-900/20 dark:text-amber-300">
-																		No hay existencias disponibles para este código en el CEDIS.
-																	</p>
-																) : (
-																	<ScrollArea className="max-h-60 pr-2">
-																		<div className="space-y-2">
-																			{item.availableStocks.map((stock) => {
-																				const isChecked = item.selectedIds.includes(stock.id);
-																				const disableCheckbox =
-																					!isChecked &&
-																					item.selectedIds.length >= item.requestedQuantity;
-																				return (
-																					<label
-																						className="flex items-start justify-between gap-3 rounded-md border border-transparent px-3 py-2 text-[#11181C] hover:bg-[#F3F4F6] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
-																						key={stock.id}
-																					>
-																						<div className="flex items-start gap-3">
-																							<Checkbox
-																								checked={isChecked}
-																								disabled={disableCheckbox}
-																								onCheckedChange={() =>
-																									toggleSelection(
-																									item.detailId,
-																									stock.id,
-																									item.requestedQuantity,
-																								)
-																								}
-																							/>
-																							<div>
-																								<p className="font-mono text-sm text-[#11181C] dark:text-[#ECEDEE]">
-																									{stock.id.slice(0, 12)}
-																								</p>
-																								<p className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-																									{stock.description || "Sin descripción"}
-																								</p>
-																							</div>
-																						</div>
-																						{stock.currentWarehouse && (
-																							<span className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-																								Ubicación: {stock.currentWarehouse}
-																							</span>
-																						)}
-																					</label>
-																				);
-																			})}
-																		</div>
-																	</ScrollArea>
-																)}
-															</div>
-														</CollapsibleContent>
-													</div>
-												</Collapsible>
-											);
-										})}
 									</div>
 								)}
-							</div>
-							<div className="space-y-2">
-								<Label
-									className="text-[#687076] dark:text-[#9BA1A6]"
-									htmlFor="transferNotes"
+								<div className="space-y-2">
+									<Label className="text-[#687076] dark:text-[#9BA1A6]">
+										Prioridad
+									</Label>
+									<Select
+										onValueChange={(value) =>
+											setPriority(value as "normal" | "urgent" | "high")
+										}
+										value={priority}
+									>
+										<SelectTrigger className="input-transition border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]">
+											<SelectValue placeholder="Selecciona prioridad" />
+										</SelectTrigger>
+										<SelectContent>
+											<SelectItem value="normal">Normal</SelectItem>
+											<SelectItem value="high">Alta</SelectItem>
+											<SelectItem value="urgent">Urgente</SelectItem>
+										</SelectContent>
+									</Select>
+								</div>
+								<div className="space-y-4">
+									<p className="text-[#687076] text-sm dark:text-[#9BA1A6]">
+										Selecciona las piezas disponibles en el CEDIS para enviar.
+										El traspaso se puede generar aun cuando falten unidades por
+										surtir.
+									</p>
+									<div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+										<div className="w-full lg:max-w-sm">
+											<Label
+												className="text-[#687076] text-sm dark:text-[#9BA1A6]"
+												htmlFor="item-search"
+											>
+												Buscar artículos en el CEDIS
+											</Label>
+											<div className="relative mt-1">
+												<Search className="text-[#687076] absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 dark:text-[#9BA1A6]" />
+												<Input
+													className="pl-9"
+													id="item-search"
+													onChange={(event) =>
+														setItemSearch(event.target.value)
+													}
+													placeholder="Nombre, código o categoría"
+													value={itemSearch}
+												/>
+											</div>
+											{hasSearchTerm && !noItemsMatchSearch && (
+												<p className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+													{filteredItems.length} coincidencia(s) encontradas.
+												</p>
+											)}
+											{noItemsMatchSearch && (
+												<p className="text-[#B54708] text-xs dark:text-[#F7B84B]">
+													No se encontraron artículos que coincidan con la
+													búsqueda.
+												</p>
+											)}
+										</div>
+										<div className="flex flex-wrap items-center gap-2">
+											<Button
+												onClick={handleExpandAll}
+												size="sm"
+												variant="outline"
+												disabled={itemsToRender.length === 0}
+											>
+												Expandir todo
+											</Button>
+											<Button
+												onClick={handleCollapseAll}
+												size="sm"
+												variant="ghost"
+												disabled={itemsToRender.length === 0}
+											>
+												Contraer todo
+											</Button>
+										</div>
+									</div>
+									<div className="rounded-md border border-dashed border-[#E5E7EB] bg-[#F9FAFB] p-3 dark:border-[#2D3033] dark:bg-[#1E1F20]">
+										<p className="text-[#11181C] text-sm dark:text-[#ECEDEE]">
+											Seleccionados: {fulfillmentProgress.selected} /{" "}
+											{fulfillmentProgress.requested || parsedOrder.itemsCount}
+										</p>
+										{hasCompleteFulfillment ? (
+											<p className="text-[#10B981] text-xs">
+												Pedido cubierto por completo.
+											</p>
+										) : isTransferReady ? (
+											<p className="text-[#B54708] text-xs dark:text-[#F7B84B]">
+												{pendingPieces} pieza(s) quedarían pendientes de envío.
+											</p>
+										) : (
+											<p className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+												Selecciona al menos una pieza disponible para enviar.
+											</p>
+										)}
+									</div>
+									{noItemsMatchSearch ? (
+										<p className="rounded-md border border-[#E5E7EB] bg-[#F9FAFB] p-4 text-[#687076] text-sm dark:border-[#2D3033] dark:bg-[#1E1F20] dark:text-[#9BA1A6]">
+											Ajusta el término de búsqueda para ubicar los artículos
+											del pedido.
+										</p>
+									) : (
+										<div className="space-y-4">
+											{itemsToRender.map((item) => {
+												const isExpanded =
+													expandedItems[item.detailId] ?? false;
+												const selectedCount = item.selectedIds.length;
+												const availableCount = item.availableStocks.length;
+												const remainingToSelect = Math.max(
+													item.requestedQuantity - selectedCount,
+													0,
+												);
+												const disableSelectAll =
+													remainingToSelect === 0 ||
+													availableCount === selectedCount;
+												return (
+													<Collapsible
+														key={item.detailId}
+														onOpenChange={(open) =>
+															setExpandedItems((prev) => ({
+																...prev,
+																[item.detailId]: open,
+															}))
+														}
+														open={isExpanded}
+													>
+														<div className="rounded-lg border border-[#E5E7EB] p-4 dark:border-[#2D3033]">
+															<div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+																<div className="space-y-1">
+																	<p className="font-semibold text-[#11181C] dark:text-[#ECEDEE]">
+																		{item.displayName}
+																	</p>
+																	<div className="flex flex-wrap items-center gap-2 text-[#687076] text-xs dark:text-[#9BA1A6]">
+																		<span>#{item.barcode}</span>
+																		<span className="hidden sm:inline">•</span>
+																		<span>{item.category}</span>
+																		<span className="hidden sm:inline">•</span>
+																		<span>
+																			Solicitado: {item.requestedQuantity}
+																		</span>
+																		<span className="hidden sm:inline">•</span>
+																		<span>Disponibles: {availableCount}</span>
+																	</div>
+																	{item.itemNotes && (
+																		<p className="text-[#687076] text-xs italic dark:text-[#9BA1A6]">
+																			Nota: {item.itemNotes}
+																		</p>
+																	)}
+																</div>
+																<div className="flex flex-col items-start gap-2 sm:items-end">
+																	<Badge className="text-xs" variant="outline">
+																		Seleccionados {selectedCount}/
+																		{item.requestedQuantity}
+																	</Badge>
+																	<div className="flex flex-wrap items-center gap-2">
+																		<Button
+																			onClick={() =>
+																				handleSelectAllForItem(
+																					item.detailId,
+																					item.requestedQuantity,
+																					item.availableStocks,
+																				)
+																			}
+																			size="sm"
+																			variant="outline"
+																			disabled={disableSelectAll}
+																		>
+																			Completar selección
+																		</Button>
+																		<Button
+																			onClick={() =>
+																				handleClearSelectionForItem(
+																					item.detailId,
+																				)
+																			}
+																			size="sm"
+																			variant="ghost"
+																			disabled={selectedCount === 0}
+																		>
+																			Limpiar
+																		</Button>
+																		<CollapsibleTrigger asChild>
+																			<Button
+																				className="gap-1"
+																				size="sm"
+																				variant="ghost"
+																			>
+																				{isExpanded
+																					? "Ocultar"
+																					: "Ver existencias"}
+																				{isExpanded ? (
+																					<ChevronUp className="h-4 w-4" />
+																				) : (
+																					<ChevronDown className="h-4 w-4" />
+																				)}
+																			</Button>
+																		</CollapsibleTrigger>
+																	</div>
+																</div>
+															</div>
+															<CollapsibleContent>
+																<div className="mt-3">
+																	{item.availableStocks.length === 0 ? (
+																		<p className="rounded-md bg-amber-50 p-3 text-amber-700 text-sm dark:bg-amber-900/20 dark:text-amber-300">
+																			No hay existencias disponibles para este
+																			código en el CEDIS.
+																		</p>
+																	) : (
+																		<ScrollArea className="max-h-60 pr-2">
+																			<div className="space-y-2">
+																				{item.availableStocks.map((stock) => {
+																					const isChecked =
+																						item.selectedIds.includes(stock.id);
+																					const disableCheckbox =
+																						!isChecked &&
+																						item.selectedIds.length >=
+																							item.requestedQuantity;
+																					return (
+																						<label
+																							className="flex items-start justify-between gap-3 rounded-md border border-transparent px-3 py-2 text-[#11181C] hover:bg-[#F3F4F6] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
+																							key={stock.id}
+																						>
+																							<div className="flex items-start gap-3">
+																								<Checkbox
+																									checked={isChecked}
+																									disabled={disableCheckbox}
+																									onCheckedChange={() =>
+																										toggleSelection(
+																											item.detailId,
+																											stock.id,
+																											item.requestedQuantity,
+																										)
+																									}
+																								/>
+																								<div>
+																									<p className="font-mono text-sm text-[#11181C] dark:text-[#ECEDEE]">
+																										{stock.id.slice(0, 12)}
+																									</p>
+																									<p className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+																										{stock.description ||
+																											"Sin descripción"}
+																									</p>
+																								</div>
+																							</div>
+																							{stock.currentWarehouse && (
+																								<span className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+																									Ubicación:{" "}
+																									{stock.currentWarehouse}
+																								</span>
+																							)}
+																						</label>
+																					);
+																				})}
+																			</div>
+																		</ScrollArea>
+																	)}
+																</div>
+															</CollapsibleContent>
+														</div>
+													</Collapsible>
+												);
+											})}
+										</div>
+									)}
+								</div>
+								<div className="space-y-2">
+									<Label
+										className="text-[#687076] dark:text-[#9BA1A6]"
+										htmlFor="transferNotes"
+									>
+										Notas del traspaso (opcional)
+									</Label>
+									<Textarea
+										className="input-transition border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]"
+										id="transferNotes"
+										onChange={(event) => setTransferNotes(event.target.value)}
+										placeholder="Añade observaciones para el traslado..."
+										value={transferNotes}
+									/>
+								</div>
+								<Button
+									className="w-full bg-[#0a7ea4] text-white hover:bg-[#086885] dark:bg-[#0a7ea4] dark:hover:bg-[#0a7ea4]/80"
+									disabled={
+										createTransferMutation.isPending ||
+										linkTransferMutation.isPending ||
+										updateOrderMutation.isPending ||
+										!isTransferReady ||
+										Boolean(parsedOrder?.warehouseTransferId)
+									}
+									onClick={handleCreateTransfer}
 								>
-									Notas del traspaso (opcional)
-								</Label>
-								<Textarea
-									className="input-transition border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]"
-									id="transferNotes"
-									onChange={(event) => setTransferNotes(event.target.value)}
-									placeholder="Añade observaciones para el traslado..."
-									value={transferNotes}
-								/>
-							</div>
-							<Button
-								className="w-full bg-[#0a7ea4] text-white hover:bg-[#086885] dark:bg-[#0a7ea4] dark:hover:bg-[#0a7ea4]/80"
-								disabled={
-									createTransferMutation.isPending ||
-									linkTransferMutation.isPending ||
-									updateOrderMutation.isPending ||
-									!isTransferReady
-								}
-								onClick={handleCreateTransfer}
-							>
-								{createTransferMutation.isPending ||
-								linkTransferMutation.isPending
-									? "Procesando..."
-									: "Crear traspaso"}
-							</Button>
-						</>
-					) : (
-						<p className="rounded-md border border-[#E5E7EB] bg-[#F9FAFB] p-4 text-[#687076] dark:border-[#2D3033] dark:bg-[#1E1F20] dark:text-[#9BA1A6]">
-							Solo los usuarios con rol de encargado pueden cumplir pedidos y
-							generar traspasos.
-						</p>
-					)}
-				</CardContent>
+									{createTransferMutation.isPending ||
+									linkTransferMutation.isPending
+										? "Procesando..."
+										: parsedOrder?.warehouseTransferId
+											? "Traspaso ya creado"
+											: "Crear traspaso"}
+								</Button>
+							</>
+						) : (
+							<p className="rounded-md border border-[#E5E7EB] bg-[#F9FAFB] p-4 text-[#687076] dark:border-[#2D3033] dark:bg-[#1E1F20] dark:text-[#9BA1A6]">
+								Solo los usuarios con rol de encargado pueden cumplir pedidos y
+								generar traspasos.
+							</p>
+						)}
+					</CardContent>
 				</Card>
 			</section>
 		</div>

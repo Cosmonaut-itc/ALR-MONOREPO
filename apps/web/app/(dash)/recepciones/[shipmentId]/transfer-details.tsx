@@ -2,7 +2,10 @@
 "use memo";
 
 import { useSuspenseQuery } from "@tanstack/react-query";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
 import { ArrowLeft, CheckCircle2, Package } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useEffect, useMemo } from "react";
 import { toast } from "sonner";
@@ -29,6 +32,11 @@ import {
 import { getCabinetWarehouse } from "@/lib/fetch-functions/inventory";
 import { getAllProducts } from "@/lib/fetch-functions/products";
 import { getTransferDetailsById } from "@/lib/fetch-functions/recepciones";
+import {
+	getReplenishmentOrderById,
+	getReplenishmentOrders,
+	getReplenishmentOrdersByWarehouse,
+} from "@/lib/fetch-functions/replenishment-orders";
 import { createQueryKey } from "@/lib/helpers";
 import {
 	type UpdateTransferItemStatusPayload,
@@ -43,6 +51,8 @@ import { useReceptionStore } from "@/stores/reception-store";
 import type {
 	ProductCatalogItem,
 	ProductCatalogResponse,
+	ReplenishmentOrderDetail,
+	ReplenishmentOrdersResponse,
 	WarehouseMap,
 	WarehouseTransferDetails,
 } from "@/types";
@@ -54,6 +64,7 @@ import type {
 interface PageProps {
 	shipmentId: string;
 	warehouseId: string;
+	isEncargado: boolean;
 }
 
 type APIResponse = WarehouseTransferDetails | null;
@@ -65,7 +76,11 @@ type APIResponse = WarehouseTransferDetails | null;
  * @param warehouseId - The identifier of the warehouse where the transfer is being received
  * @returns The component's JSX for the reception detail page, including progress, item list, and controls to mark items received
  */
-export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
+export function ReceptionDetailPage({
+	shipmentId,
+	warehouseId,
+	isEncargado,
+}: PageProps) {
 	const router = useRouter();
 	const { data: transferDetails } = useSuspenseQuery<
 		APIResponse,
@@ -91,6 +106,21 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 	>({
 		queryKey: queryKeys.cabinetWarehouse,
 		queryFn: getCabinetWarehouse,
+	});
+
+	// Fetch replenishment orders to find the one linked to this transfer
+	const replenishmentOrdersQueryFn = isEncargado
+		? () => getReplenishmentOrders()
+		: () => getReplenishmentOrdersByWarehouse(warehouseId);
+	const { data: replenishmentOrdersResponse } = useSuspenseQuery<
+		ReplenishmentOrdersResponse | null,
+		Error,
+		ReplenishmentOrdersResponse | null
+	>({
+		queryKey: createQueryKey(queryKeys.replenishmentOrders, [
+			isEncargado ? "all" : warehouseId,
+		]),
+		queryFn: replenishmentOrdersQueryFn,
 	});
 
 	const {
@@ -123,6 +153,147 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 			? transferDetails.data.transfer
 			: null;
 	}, [transferDetails]);
+
+	// Find the replenishment order ID linked to this transfer
+	const linkedOrderId = useMemo(() => {
+		if (!generalTransferDetails?.id) {
+			return null;
+		}
+		const transferId = generalTransferDetails.id;
+
+		if (
+			!replenishmentOrdersResponse ||
+			typeof replenishmentOrdersResponse !== "object" ||
+			!("success" in replenishmentOrdersResponse) ||
+			!replenishmentOrdersResponse.success ||
+			!Array.isArray(replenishmentOrdersResponse.data)
+		) {
+			return null;
+		}
+
+		for (const order of replenishmentOrdersResponse.data) {
+			if (!order || typeof order !== "object") {
+				continue;
+			}
+			const record = order as Record<string, unknown>;
+			const warehouseTransferId =
+				typeof record.warehouseTransferId === "string"
+					? record.warehouseTransferId
+					: null;
+			const id = typeof record.id === "string" ? record.id : "";
+
+			if (warehouseTransferId === transferId && id) {
+				return id;
+			}
+		}
+
+		return null;
+	}, [generalTransferDetails?.id, replenishmentOrdersResponse]);
+
+	// Fetch full order details if linked
+	const { data: fullOrderResponse } = useSuspenseQuery<
+		ReplenishmentOrderDetail | null,
+		Error,
+		ReplenishmentOrderDetail | null
+	>({
+		queryKey: createQueryKey(queryKeys.replenishmentOrderDetail, [
+			linkedOrderId ?? "none",
+		]),
+		queryFn: () =>
+			linkedOrderId
+				? getReplenishmentOrderById(linkedOrderId)
+				: Promise.resolve(null),
+	});
+
+	// Parse the full replenishment order details
+	const parsedOrder = useMemo(() => {
+		if (!fullOrderResponse || typeof fullOrderResponse !== "object") {
+			return null;
+		}
+
+		const record = fullOrderResponse as Record<string, unknown>;
+		if (!("success" in record) || !record.success || !("data" in record)) {
+			return null;
+		}
+
+		const data = record.data as Record<string, unknown>;
+		const id = typeof data.id === "string" ? data.id : "";
+		if (!id) {
+			return null;
+		}
+
+		const details = Array.isArray(data.details) ? data.details : [];
+
+		return {
+			id,
+			orderNumber:
+				typeof data.orderNumber === "string" && data.orderNumber.length > 0
+					? data.orderNumber
+					: id,
+			notes: typeof data.notes === "string" ? data.notes : null,
+			createdAt: typeof data.createdAt === "string" ? data.createdAt : null,
+			sourceWarehouseId:
+				typeof data.sourceWarehouseId === "string"
+					? data.sourceWarehouseId
+					: "",
+			cedisWarehouseId:
+				typeof data.cedisWarehouseId === "string" ? data.cedisWarehouseId : "",
+			isSent: Boolean(data.isSent),
+			isReceived: Boolean(data.isReceived),
+			items: details
+				.map((detail) => {
+					if (!detail || typeof detail !== "object") {
+						return null;
+					}
+					const detailRecord = detail as Record<string, unknown>;
+					const barcode =
+						typeof detailRecord.barcode === "number"
+							? detailRecord.barcode
+							: typeof detailRecord.barcode === "string"
+								? Number.parseInt(detailRecord.barcode, 10)
+								: undefined;
+					const quantityRaw =
+						typeof detailRecord.quantity === "number"
+							? detailRecord.quantity
+							: typeof detailRecord.quantity === "string"
+								? Number.parseInt(detailRecord.quantity, 10)
+								: undefined;
+
+					if (!barcode || quantityRaw == null || Number.isNaN(quantityRaw)) {
+						return null;
+					}
+					return {
+						barcode,
+						quantity: quantityRaw,
+						notes:
+							typeof detailRecord.notes === "string"
+								? detailRecord.notes
+								: null,
+					};
+				})
+				.filter(
+					(
+						item,
+					): item is {
+						barcode: number;
+						quantity: number;
+						notes: string | null;
+					} => Boolean(item),
+				),
+		};
+	}, [fullOrderResponse]);
+
+	// Create a map of barcodes in the transfer to their counts
+	const transferBarcodeCounts = useMemo(() => {
+		const map = new Map<number, number>();
+		for (const item of items) {
+			if (item.productBarcode != null) {
+				const current = map.get(item.productBarcode) ?? 0;
+				map.set(item.productBarcode, current + 1);
+			}
+		}
+		return map;
+	}, [items]);
 
 	/**
 	 * Group items by productBarcode to display products with the same barcode together.
@@ -316,6 +487,182 @@ export function ReceptionDetailPage({ shipmentId, warehouseId }: PageProps) {
 					</div>
 				</CardContent>
 			</Card>
+
+			{/* Pedido Details Card - only show if linked to a replenishment order */}
+			{parsedOrder && (
+				<Card className="card-transition border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
+					<CardHeader>
+						<div className="flex items-center justify-between">
+							<CardTitle className="text-[#11181C] text-transition dark:text-[#ECEDEE]">
+								Información del pedido
+							</CardTitle>
+							<Button asChild size="sm" variant="outline">
+								<Link href={`/pedidos/${parsedOrder.id}`}>
+									Ver pedido completo
+								</Link>
+							</Button>
+						</div>
+					</CardHeader>
+					<CardContent className="space-y-6">
+						{/* General Details */}
+						<div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+							<div className="space-y-1">
+								<p className="font-medium text-[#687076] text-sm dark:text-[#9BA1A6]">
+									Número de pedido
+								</p>
+								<p className="font-semibold text-[#11181C] dark:text-[#ECEDEE]">
+									{parsedOrder.orderNumber}
+								</p>
+							</div>
+							<div className="space-y-1">
+								<p className="font-medium text-[#687076] text-sm dark:text-[#9BA1A6]">
+									Fecha de creación
+								</p>
+								<p className="font-semibold text-[#11181C] dark:text-[#ECEDEE]">
+									{parsedOrder.createdAt
+										? format(new Date(parsedOrder.createdAt), "PPpp", {
+												locale: es,
+											})
+										: "Sin fecha"}
+								</p>
+							</div>
+							<div className="space-y-1">
+								<p className="font-medium text-[#687076] text-sm dark:text-[#9BA1A6]">
+									Estado
+								</p>
+								<Badge
+									variant={
+										parsedOrder.isReceived
+											? "default"
+											: parsedOrder.isSent
+												? "secondary"
+												: "outline"
+									}
+								>
+									{parsedOrder.isReceived
+										? "Recibido"
+										: parsedOrder.isSent
+											? "Enviado"
+											: "Abierto"}
+								</Badge>
+							</div>
+							<div className="space-y-1">
+								<p className="font-medium text-[#687076] text-sm dark:text-[#9BA1A6]">
+									Total de artículos
+								</p>
+								<p className="font-semibold text-[#11181C] dark:text-[#ECEDEE]">
+									{parsedOrder.items.reduce(
+										(sum, item) => sum + item.quantity,
+										0,
+									)}
+								</p>
+							</div>
+						</div>
+
+						{/* Notes */}
+						{parsedOrder.notes && (
+							<div className="rounded-md border border-[#E5E7EB] bg-[#F9FAFB] p-4 dark:border-[#2D3033] dark:bg-[#1E1F20]">
+								<p className="font-medium text-[#11181C] text-sm dark:text-[#ECEDEE]">
+									Notas del pedido:
+								</p>
+								<p className="text-[#687076] text-sm dark:text-[#9BA1A6]">
+									{parsedOrder.notes}
+								</p>
+							</div>
+						)}
+
+						{/* Products List */}
+						<div>
+							<CardTitle className="mb-4 text-[#11181C] text-lg text-transition dark:text-[#ECEDEE]">
+								Productos solicitados
+							</CardTitle>
+							<div className="theme-transition rounded-md border border-[#E5E7EB] dark:border-[#2D3033]">
+								<Table>
+									<TableHeader>
+										<TableRow className="border-[#E5E7EB] border-b hover:bg-[#F9FAFB] dark:border-[#2D3033] dark:hover:bg-[#2D3033]">
+											<TableHead className="font-medium text-[#11181C] text-transition dark:text-[#ECEDEE]">
+												Código
+											</TableHead>
+											<TableHead className="font-medium text-[#11181C] text-transition dark:text-[#ECEDEE]">
+												Producto
+											</TableHead>
+											<TableHead className="font-medium text-[#11181C] text-transition dark:text-[#ECEDEE]">
+												Cantidad solicitada
+											</TableHead>
+											<TableHead className="font-medium text-[#11181C] text-transition dark:text-[#ECEDEE]">
+												Cantidad en traspaso
+											</TableHead>
+											<TableHead className="font-medium text-[#11181C] text-transition dark:text-[#ECEDEE]">
+												Estado
+											</TableHead>
+										</TableRow>
+									</TableHeader>
+									<TableBody>
+										{parsedOrder.items.length === 0 ? (
+											<TableRow>
+												<TableCell
+													className="py-8 text-center text-[#687076] dark:text-[#9BA1A6]"
+													colSpan={5}
+												>
+													No hay productos en el pedido
+												</TableCell>
+											</TableRow>
+										) : (
+											parsedOrder.items.map((orderItem) => {
+												const transferCount =
+													transferBarcodeCounts.get(orderItem.barcode) ?? 0;
+												const isMissing = transferCount < orderItem.quantity;
+												const productName =
+													productCatalog?.data?.find(
+														(product: ProductCatalogItem) =>
+															product.good_id === orderItem.barcode,
+													)?.title ?? `Producto ${orderItem.barcode}`;
+
+												return (
+													<TableRow
+														className="theme-transition border-[#E5E7EB] border-b hover:bg-[#F9FAFB] dark:border-[#2D3033] dark:hover:bg-[#2D3033]"
+														key={orderItem.barcode}
+													>
+														<TableCell className="font-mono text-[#11181C] text-sm dark:text-[#ECEDEE]">
+															{orderItem.barcode}
+														</TableCell>
+														<TableCell className="text-[#11181C] dark:text-[#ECEDEE]">
+															{productName}
+														</TableCell>
+														<TableCell className="text-[#11181C] dark:text-[#ECEDEE]">
+															{orderItem.quantity}
+														</TableCell>
+														<TableCell className="text-[#11181C] dark:text-[#ECEDEE]">
+															{transferCount}
+														</TableCell>
+														<TableCell>
+															{isMissing ? (
+																<Badge
+																	className="theme-transition bg-amber-100 text-amber-800 hover:bg-amber-200 dark:bg-amber-900/20 dark:text-amber-400"
+																	variant="secondary"
+																>
+																	Faltan {orderItem.quantity - transferCount}
+																</Badge>
+															) : (
+																<Badge
+																	className="theme-transition bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900/20 dark:text-green-400"
+																	variant="secondary"
+																>
+																	Completo
+																</Badge>
+															)}
+														</TableCell>
+													</TableRow>
+												);
+											})
+										)}
+									</TableBody>
+								</Table>
+							</div>
+						</div>
+					</CardContent>
+				</Card>
+			)}
 
 			{/* Items Table */}
 			<Card className="card-transition border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
