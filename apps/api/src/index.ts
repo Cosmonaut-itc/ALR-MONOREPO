@@ -1381,6 +1381,29 @@ const route = app
 			try {
 				const { warehouseId } = c.req.valid('query');
 
+				// Query the warehouse to check if it's a CEDIS warehouse
+				const warehouseInfo = await db
+					.select({
+						id: schemas.warehouse.id,
+						isCedis: schemas.warehouse.isCedis,
+					})
+					.from(schemas.warehouse)
+					.where(eq(schemas.warehouse.id, warehouseId))
+					.limit(1);
+
+				// Check if warehouse exists
+				if (warehouseInfo.length === 0) {
+					return c.json(
+						{
+							success: false,
+							message: 'Warehouse not found',
+						} satisfies ApiResponse,
+						404,
+					);
+				}
+
+				const isCedisWarehouse = warehouseInfo[0].isCedis;
+
 				// Query the productStock table for records with the specified warehouseId
 				// Join with employee table to get only id, name, and surname from employee data
 				const warehouseProductStock = await db
@@ -1407,16 +1430,19 @@ const route = app
 					);
 
 				// Query the cabinetWarehouse table for the single cabinet belonging to this warehouse
-				const cabinetWarehouse = await db
-					.select()
-					.from(schemas.cabinetWarehouse)
-					.where(eq(schemas.cabinetWarehouse.warehouseId, warehouseId))
-					.limit(1);
+				// CEDIS warehouses don't have cabinets, so skip this query if it's a CEDIS
+				const cabinetWarehouse = isCedisWarehouse
+					? []
+					: await db
+							.select()
+							.from(schemas.cabinetWarehouse)
+							.where(eq(schemas.cabinetWarehouse.warehouseId, warehouseId))
+							.limit(1);
 
 				// Fetch product stock from the cabinet warehouse (if it exists)
 				// Join with employee table to get only id, name, and surname from employee data
 				let cabinetProductStock: typeof warehouseProductStock = [];
-				if (cabinetWarehouse.length > 0) {
+				if (!isCedisWarehouse && cabinetWarehouse.length > 0) {
 					cabinetProductStock = await db
 						.select({
 							// Select all productStock fields
@@ -1441,12 +1467,17 @@ const route = app
 						);
 				}
 
+				// Determine cabinetId - empty string if no cabinet exists (e.g., CEDIS warehouse)
+				const cabinetId = cabinetWarehouse.length > 0 ? cabinetWarehouse[0].id : '';
+
 				// If no records exist in either table, return filtered mock data for development/testing
 				if (warehouseProductStock.length === 0 && cabinetWarehouse.length === 0) {
 					return c.json(
 						{
 							success: true,
-							message: 'Fetching test data filtered by warehouse',
+							message: isCedisWarehouse
+								? 'Fetching test data filtered by CEDIS warehouse (no cabinet)'
+								: 'Fetching test data filtered by warehouse',
 							data: {
 								warehouse: [],
 								cabinet: [],
@@ -1461,11 +1492,13 @@ const route = app
 				return c.json(
 					{
 						success: true,
-						message: `Fetching db data for warehouse ${warehouseId}`,
+						message: isCedisWarehouse
+							? `Fetching db data for CEDIS warehouse ${warehouseId} (no cabinet)`
+							: `Fetching db data for warehouse ${warehouseId}`,
 						data: {
 							warehouse: warehouseProductStock,
 							cabinet: cabinetProductStock,
-							cabinetId: cabinetWarehouse[0].id ?? '',
+							cabinetId,
 						},
 					} satisfies ApiResponse,
 					200,
