@@ -343,42 +343,6 @@ export interface ApiResponse<T = unknown> {
 	meta?: unknown[];
 }
 
-// ===== API Route Types =====
-
-/**
- * Main API route type for Hono RPC client
- * This structure matches how Hono RPC client organizes routes
- */
-export interface AppType {
-	api: {
-		products: {
-			all: {
-				$get: () => Promise<Response>;
-			};
-		};
-		"product-stock": {
-			all: {
-				$get: () => Promise<Response>;
-			};
-		};
-		"withdraw-orders": {
-			all: {
-				$get: () => Promise<Response>;
-			};
-			details: {
-				$get: (args: { query: { dateWithdraw: string } }) => Promise<Response>;
-			};
-		};
-	};
-
-	db: {
-		health: {
-			$get: () => Promise<Response>;
-		};
-	};
-	$get: () => Promise<Response>;
-}
-
 // ===== Runtime Validation Helpers =====
 
 /**

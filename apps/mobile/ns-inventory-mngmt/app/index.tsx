@@ -2,7 +2,6 @@
 "use client"
 
 import { useRouter } from "expo-router"
-import { useState } from "react"
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TouchableOpacity } from "react-native"
 import { ThemedButton } from "@/components/ThemedButton"
 import { ThemedText } from "@/components/ThemedText"
@@ -25,13 +24,12 @@ export default function Login() {
             onChange: LoginFormSchema,
         }
     })
-    const [isLoading, setIsLoading] = useState(false)
     const router = useRouter()
 
     // Get translations for login screen
     const t = Translations.login
 
-    const signUpMutation = useMutation({
+    const signInMutation = useMutation({ mutationKey: ["signIn"],
         mutationFn: async (formData: { email: string; password: string; }) => {
             const result = await authClient.signIn.email({
                 email: formData.email,
@@ -57,14 +55,10 @@ export default function Login() {
     })
 
     const handleLogin = () => {
-        // const formValues = form.state.values
-
-        // signUpMutation.mutate({
-        //     email: formValues.email,
-        //     password: formValues.password,
-        // })
-
-        router.replace("/entry")
+        signInMutation.mutate({
+            email: form.state.values.email, 
+            password: form.state.values.password,
+        })
     }
 
     return (
@@ -125,7 +119,7 @@ export default function Login() {
                             <ThemedButton
                                 title="Login"
                                 onPress={handleLogin}
-                                isLoading={signUpMutation.isPending}
+                                isLoading={signInMutation.isPending}
                                 loadingText="Logging in..."
                                 variant="primary"
                                 size="medium"
