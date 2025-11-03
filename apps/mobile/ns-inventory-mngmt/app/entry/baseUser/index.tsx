@@ -14,14 +14,61 @@ import type { ProductStockItem, SelectedProduct } from "@/types/types"
 import { useBaseUserStore } from "@/app/stores/baseUserStores"
 import { ThemedHeader } from "@/components/ThemedHeader"
 import { ScannerComboboxSection } from "@/components/ui/ScannerComboboxSection"
-import { getProductStock } from "@/lib/fetch-functions"
+import { getProductStock, getCabinetWarehouses } from "@/lib/fetch-functions"
 import { QUERY_KEYS } from "@/lib/query-keys"
 import { useQuery } from "@tanstack/react-query"
-import type { Product } from "@/types/types"
+import type { Product, CabinetWarehouseMapEntry } from "@/types/types"
+
+/**
+ * Custom hook to fetch and manage cabinet warehouse map
+ * @returns Object containing warehouse map data, loading state, and utility functions
+ */
+interface UseCabinetWarehousesQueryResult {
+    /** Array of cabinet warehouse map entries */
+    warehouses: CabinetWarehouseMapEntry[]
+    /** Boolean indicating if the initial data fetch is in progress */
+    isLoading: boolean
+    /** Boolean indicating if there's an error in the query */
+    isError: boolean
+    /** Error object containing details about any query failures */
+    error: Error | null
+    /** Boolean indicating if a background refetch is in progress */
+    isFetching: boolean
+    /** Function to manually trigger a refetch of warehouse map */
+    refetch: () => void
+}
+
+const useCabinetWarehousesQuery = (): UseCabinetWarehousesQueryResult => {
+    const {
+        data: warehouses,
+        isLoading,
+        isError,
+        error,
+        isFetching,
+        refetch,
+    } = useQuery<CabinetWarehouseMapEntry[]>({
+        queryKey: [QUERY_KEYS.CABINET_WAREHOUSES],
+        queryFn: getCabinetWarehouses,
+        staleTime: 10 * 60 * 1000, // 10 minutes - warehouse data doesn't change frequently
+        gcTime: 30 * 60 * 1000, // 30 minutes - cache garbage collection time
+        retry: 3, // Retry failed requests up to 3 times
+        retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // Exponential backoff
+    })
+
+    return {
+        warehouses: (warehouses || []) as CabinetWarehouseMapEntry[],
+        isLoading,
+        isError,
+        error,
+        isFetching,
+        refetch,
+    }
+}
 
 /**
  * Custom hook to manage product stock data with proper error handling and loading states
  * Follows TanStack Query best practices for data fetching and state management
+ * @param cabinetId - The cabinet ID to fetch product stock for
  * @returns Object containing product stock data, loading state, error state, and utility functions
  */
 interface UseProductStockQueryResult {
@@ -39,21 +86,17 @@ interface UseProductStockQueryResult {
     refetch: () => void
 }
 
-const useProductStockQuery = (): UseProductStockQueryResult => {
-    // Get warehouse ID from current employee data
-    const { currentEmployee } = useBaseUserStore();
-    const warehouseId = currentEmployee?.employee.warehouseId;
-
+const useProductStockQuery = (cabinetId: string | undefined): UseProductStockQueryResult => {
     // Fetch product stock data using TanStack Query with proper error handling and loading states
     const { data, isLoading, isError, error, isFetching, refetch } = useQuery({
-        queryKey: [QUERY_KEYS.PRODUCT_STOCK, warehouseId],
+        queryKey: [QUERY_KEYS.PRODUCT_STOCK, cabinetId],
         queryFn: () => {
-            if (!warehouseId) {
-                throw new Error("Warehouse ID is not available");
+            if (!cabinetId) {
+                throw new Error("Cabinet ID is not available");
             }
-            return getProductStock(warehouseId);
+            return getProductStock(cabinetId);
         },
-        enabled: !!warehouseId, // Only fetch when warehouseId is available
+        enabled: !!cabinetId, // Only fetch when cabinetId is available
         staleTime: 5 * 60 * 1000, // 5 minutes - data considered fresh for this duration
         gcTime: 10 * 60 * 1000, // 10 minutes - cache garbage collection time
         retry: 3, // Retry failed requests up to 3 times
@@ -61,69 +104,28 @@ const useProductStockQuery = (): UseProductStockQueryResult => {
     })
 
     // Transform API data to local ProductStockItem interface
-    // Handle both possible response structures:
-    // 1. Direct array: [{ productStock: {...}, employee: {...} }, ...]
-    // 2. Wrapped in warehouse property: { warehouse: [{ productStock: {...}, employee: {...} }, ...], ... }
+    // Handle response structure: [{ cabinet: { productStock: {...}, employee: {...} } }, ...]
     const productStock: ProductStockItem[] = (() => {
         if (!data) return [];
         
-        // Check if data has warehouse property (old structure)
-        if (data.warehouse && Array.isArray(data.warehouse)) {
-            return data.warehouse.map((item: {
-                productStock: {
-                    id: string;
-                    barcode: number;
-                    description?: string | null;
-                    lastUsed: string | null;
-                    lastUsedBy: string | null;
-                    numberOfUses: number;
-                    currentWarehouse: string;
-                    isBeingUsed: boolean;
-                    firstUsed: string | null;
-                };
-            }) => {
-                const stock = item.productStock;
-                const transformed: ProductStockItem = {
-                    id: stock.id,
-                    barcode: stock.barcode,
-                    numberOfUses: stock.numberOfUses,
-                    currentWarehouse: stock.currentWarehouse,
-                    isBeingUsed: stock.isBeingUsed,
-                };
-                
-                if (stock.description !== undefined && stock.description !== null) {
-                    transformed.description = stock.description;
-                }
-                if (stock.lastUsed) {
-                    transformed.lastUsed = new Date(stock.lastUsed);
-                }
-                if (stock.lastUsedBy) {
-                    transformed.lastUsedBy = stock.lastUsedBy;
-                }
-                if (stock.firstUsed) {
-                    transformed.firstUsed = new Date(stock.firstUsed);
-                }
-                
-                return transformed;
-            });
-        }
-        
-        // Check if data is a direct array (new structure)
+        // Check if data is a direct array with cabinet property
         if (Array.isArray(data)) {
             return data.map((item: {
-                productStock: {
-                    id: string;
-                    barcode: number;
-                    description?: string | null;
-                    lastUsed: string | null;
-                    lastUsedBy: string | null;
-                    numberOfUses: number;
-                    currentWarehouse: string;
-                    isBeingUsed: boolean;
-                    firstUsed: string | null;
+                cabinet: {
+                    productStock: {
+                        id: string;
+                        barcode: number;
+                        description?: string | null;
+                        lastUsed: string | null;
+                        lastUsedBy: string | null;
+                        numberOfUses: number;
+                        currentWarehouse: string;
+                        isBeingUsed: boolean;
+                        firstUsed: string | null;
+                    };
                 };
             }) => {
-                const stock = item.productStock;
+                const stock = item.cabinet.productStock;
                 const transformed: ProductStockItem = {
                     id: stock.id,
                     barcode: stock.barcode,
@@ -166,7 +168,21 @@ export default function InventoryScannerScreen() {
     const colorScheme = useColorScheme()
     const isDark = colorScheme === "dark"
     const { currentEmployee } = useBaseUserStore();
-    const warehouseId = currentEmployee?.employee.warehouseId;
+    const employeeWarehouseId = currentEmployee?.employee.warehouseId;
+
+    // Fetch cabinet warehouse map to find matching cabinet
+    const { warehouses } = useCabinetWarehousesQuery()
+    
+    // Find the cabinet entry that matches the employee's warehouse ID
+    const matchedCabinet = useMemo(() => {
+        if (!employeeWarehouseId || !warehouses.length) return undefined
+        return warehouses.find(entry => entry.warehouseId === employeeWarehouseId)
+    }, [employeeWarehouseId, warehouses])
+    
+    // Get cabinet ID and warehouse name from matched cabinet
+    const cabinetId = matchedCabinet?.id
+    const warehouseName = matchedCabinet?.name
+    const warehouseId = employeeWarehouseId // Keep for backward compatibility
 
     const {
         productStock,
@@ -175,7 +191,7 @@ export default function InventoryScannerScreen() {
         error: productStockError,
         isFetching: isFetchingProductStock,
         refetch: refetchProductStock,
-    } = useProductStockQuery()
+    } = useProductStockQuery(cabinetId)
 
     // Track if store has been initialized to prevent infinite loops
     const isInitialized = useRef(false)
@@ -346,6 +362,7 @@ export default function InventoryScannerScreen() {
                     products={availableProducts}
                     productStock={availableStock}
                     {...(warehouseId !== undefined && { targetWarehouse: warehouseId })}
+                    {...(warehouseName !== undefined && { warehouseName })}
                     onStockItemSelect={handleStockItemSelect}
                     onScanPress={() => setShowScanner(true)}
                     onRefreshPress={() => refetchProductStock()}

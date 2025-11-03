@@ -5,11 +5,7 @@ import { ProductCombobox } from "@/components/ui/ProductCombobox"
 import { Colors } from "@/constants/Colors"
 import { useColorScheme } from "@/hooks/useColorScheme"
 import { Camera, RefreshCw } from "lucide-react-native"
-import type { Product, ProductStockItem, CabinetWarehouseMapEntry } from "@/types/types"
-import { useQuery } from "@tanstack/react-query"
-import { getCabinetWarehouses } from "@/lib/fetch-functions"
-import { QUERY_KEYS } from "@/lib/query-keys"
-import { useMemo } from "react"
+import type { Product, ProductStockItem } from "@/types/types"
 
 /**
  * Props interface for the ScannerComboboxSection component
@@ -22,6 +18,8 @@ interface ScannerComboboxSectionProps {
     productStock: ProductStockItem[]
     /** Target warehouse UUID to filter inventory by */
     targetWarehouse?: string
+    /** Warehouse name for display purposes */
+    warehouseName?: string
     /** Callback function when a stock item is selected */
     onStockItemSelect: (item: ProductStockItem) => void
     /** Callback function when the scan button is pressed */
@@ -54,56 +52,11 @@ interface ScannerComboboxSectionProps {
  * @param props - Configuration object containing all component properties
  * @returns JSX.Element representing the warehouse scanner and combobox section
  */
-/**
- * Custom hook to fetch and manage cabinet warehouse map
- * @returns Object containing warehouse map data, loading state, and utility functions
- */
-interface UseCabinetWarehousesQueryResult {
-    /** Array of cabinet warehouse map entries */
-    warehouses: CabinetWarehouseMapEntry[]
-    /** Boolean indicating if the initial data fetch is in progress */
-    isLoading: boolean
-    /** Boolean indicating if there's an error in the query */
-    isError: boolean
-    /** Error object containing details about any query failures */
-    error: Error | null
-    /** Boolean indicating if a background refetch is in progress */
-    isFetching: boolean
-    /** Function to manually trigger a refetch of warehouse map */
-    refetch: () => void
-}
-
-const useCabinetWarehousesQuery = (): UseCabinetWarehousesQueryResult => {
-    const {
-        data: warehouses,
-        isLoading,
-        isError,
-        error,
-        isFetching,
-        refetch,
-    } = useQuery<CabinetWarehouseMapEntry[]>({
-        queryKey: [QUERY_KEYS.CABINET_WAREHOUSES],
-        queryFn: getCabinetWarehouses,
-        staleTime: 10 * 60 * 1000, // 10 minutes - warehouse data doesn't change frequently
-        gcTime: 30 * 60 * 1000, // 30 minutes - cache garbage collection time
-        retry: 3, // Retry failed requests up to 3 times
-        retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // Exponential backoff
-    })
-
-    return {
-        warehouses: (warehouses || []) as CabinetWarehouseMapEntry[],
-        isLoading,
-        isError,
-        error,
-        isFetching,
-        refetch,
-    }
-}
-
 export function ScannerComboboxSection({
     products,
     productStock,
     targetWarehouse,
+    warehouseName,
     onStockItemSelect,
     onScanPress,
     onRefreshPress,
@@ -112,30 +65,6 @@ export function ScannerComboboxSection({
 }: ScannerComboboxSectionProps) {
     const colorScheme = useColorScheme()
     const isDark = colorScheme === "dark"
-    
-    // Fetch cabinet warehouse map to map UUID to name
-    const { warehouses } = useCabinetWarehousesQuery()
-    
-    // Create a map of warehouse ID to name for quick lookup
-    // Since multiple cabinets can belong to the same warehouse, we use the first one we find
-    // or we could use a more sophisticated approach to get the warehouse name
-    const warehouseMap = useMemo(() => {
-        const map = new Map<string, string>()
-        for (const entry of warehouses) {
-            // Only set if not already set (first entry for this warehouse wins)
-            // Or use the entry name if it contains warehouse info
-            if (!map.has(entry.warehouseId)) {
-                map.set(entry.warehouseId, entry.name)
-            }
-        }
-        return map
-    }, [warehouses])
-    
-    // Get warehouse name from UUID, fallback to UUID if not found
-    const warehouseName = useMemo(() => {
-        if (!targetWarehouse) return undefined
-        return warehouseMap.get(targetWarehouse) || targetWarehouse
-    }, [targetWarehouse, warehouseMap])
     /**
      * Determines the appropriate placeholder text based on loading state
      * Provides user feedback during data fetching operations

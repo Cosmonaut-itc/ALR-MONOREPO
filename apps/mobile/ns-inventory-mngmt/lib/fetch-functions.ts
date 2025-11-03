@@ -44,14 +44,14 @@ export const getProducts = async () => {
 };
 
 /**
- * Fetches product stock by warehouse ID from the API
- * @param warehouseId - The warehouse UUID to fetch product stock for
+ * Fetches product stock by cabinet ID from the API
+ * @param cabinetId - The cabinet UUID to fetch product stock for
  * @returns Promise containing the product stock data or throws an error
  */
-export const getProductStock = async (warehouseId: string) => {
+export const getProductStock = async (cabinetId: string) => {
 	try {
-		const response = await client.api.auth["product-stock"]["by-warehouse"].$get({
-			query: { warehouseId },
+		const response = await client.api.auth["product-stock"]["by-cabinet"].$get({
+			query: { cabinetId },
 		});
 		if (!response.ok) {
 			throw new Error(`API request failed with status: ${response.status}`);
