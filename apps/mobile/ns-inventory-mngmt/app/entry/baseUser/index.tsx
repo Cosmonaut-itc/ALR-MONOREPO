@@ -172,16 +172,20 @@ export default function InventoryScannerScreen() {
 
     // Fetch cabinet warehouse map to find matching cabinet
     const { warehouses } = useCabinetWarehousesQuery()
+
+    console.log('warehouses', warehouses)
     
     // Find the cabinet entry that matches the employee's warehouse ID
     const matchedCabinet = useMemo(() => {
         if (!employeeWarehouseId || !warehouses.length) return undefined
         return warehouses.find(entry => entry.warehouseId === employeeWarehouseId)
     }, [employeeWarehouseId, warehouses])
+
+    console.log('matchedCabinet', matchedCabinet)
     
     // Get cabinet ID and warehouse name from matched cabinet
-    const cabinetId = matchedCabinet?.id
-    const warehouseName = matchedCabinet?.name
+    const cabinetId = matchedCabinet?.cabinetId
+    const warehouseName = matchedCabinet?.cabinetName
     const warehouseId = employeeWarehouseId // Keep for backward compatibility
 
     const {

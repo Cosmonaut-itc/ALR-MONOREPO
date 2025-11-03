@@ -96,7 +96,7 @@ export function ScannerComboboxSection({
      */
     const getHelperText = (): string | undefined => {
         if (productStock.length === 0 && !isLoading) {
-            const warehouseDisplay = warehouseName || targetWarehouse || "el almacén"
+            const warehouseDisplay = warehouseName 
             return `No se encontraron elementos en ${warehouseDisplay}`
         }
 

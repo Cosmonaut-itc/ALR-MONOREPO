@@ -273,9 +273,10 @@ export const productStockItemSchema = t({
 
 // Cabinet Warehouse Map Schema
 export const cabinetWarehouseMapSchema = t({
-	id: "string", // UUID of the cabinet
-	name: "string", // Name of the cabinet/warehouse
+	cabinetId: "string", // UUID of the cabinet
+	cabinetName: "string", // Name of the cabinet/warehouse
 	warehouseId: "string", // UUID of the warehouse
+	warehouseName: "string", // Name of the warehouse
 });
 
 // Specific response schemas using the factory
