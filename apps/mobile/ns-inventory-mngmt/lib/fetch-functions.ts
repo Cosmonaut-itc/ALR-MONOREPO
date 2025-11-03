@@ -89,6 +89,31 @@ export const getWithdrawalOrdersDetails = async (date: string) => {
 }
 
 /**
+ * Fetches employee data by user ID from the API
+ * @param userId - The user ID to fetch employee data for
+ * @returns Promise containing the employee data or throws an error
+ */
+export const getEmployeeByUserId = async (userId: string) => {
+	try {
+		const response = await client.api.auth.employee["by-user-id"].$get({
+			query: { userId },
+		});
+		if (!response.ok) {
+			throw new Error(`API request failed with status: ${response.status}`);
+		}
+		const data = (await response.json()) as Awaited<ReturnType<typeof response.json>>;
+		return data;
+	} catch (error) {
+		console.error('Error fetching employee by user ID:', error);
+		throw new Error(
+			error instanceof Error
+				? `Failed to fetch employee: ${error.message}`
+				: 'Failed to fetch employee: Unknown error'
+		);
+	}
+};
+
+/**
  * Checks the health of the database connection
  * @returns Promise containing the health status
  */

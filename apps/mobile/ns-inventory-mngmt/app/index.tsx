@@ -13,6 +13,7 @@ import { LoginFormSchema } from "@/types/types"
 import { authClient } from "@/lib/auth";
 import { useMutation } from "@tanstack/react-query"
 import { toast } from 'sonner-native';
+import { useRootUserStore } from "@/app/stores/rootUserStore";
 
 export default function Login() {
     const form = useAppForm({
@@ -25,6 +26,7 @@ export default function Login() {
         }
     })
     const router = useRouter()
+    const { setUserData } = useRootUserStore()
 
     // Get translations for login screen
     const t = Translations.login
@@ -43,9 +45,25 @@ export default function Login() {
             return result
         },
         onSuccess: (data) => {
+            // Extract user ID from Better Auth result
+            // Better Auth returns Data<T> which wraps the response in a data property
+            // Structure: result.data.user.id
+            const userId = 
+                (data as { data?: { user?: { id?: string } } })?.data?.user?.id ||
+                null;
+
+            if (!userId) {
+                console.error("Failed to extract user ID from login result:", data);
+                toast.error("Error al obtener información del usuario");
+                return;
+            }
+
+            // Store user data in the root user store
+            setUserData(userId, data);
+
             // Handle success - maybe redirect or show success message
-            console.log("Sign up successful:", data)
-            router.replace("/entry") // Redirect to explore page on successful login
+            console.log("Sign in successful:", data);
+            router.replace("/entry"); // Redirect to explore page on successful login
         },
         onError: (error) => {
             console.error("Sign up error:", error)

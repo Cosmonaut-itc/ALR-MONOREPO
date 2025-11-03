@@ -10,20 +10,155 @@ import { Colors } from "@/constants/Colors"
 import { useColorScheme } from "@/hooks/useColorScheme"
 import { ThemedNumpad } from "@/components/ui/ThemedNumpad"
 import { useNumpadStore } from "@/app/stores/baseUserStores"
+import { useQuery } from "@tanstack/react-query"
+import { getEmployeeByUserId } from "@/lib/fetch-functions"
+import { QUERY_KEYS } from "@/lib/query-keys"
+import { toast } from "sonner-native"
+import React, { useState, useEffect } from "react"
+import { useRootUserStore } from "@/app/stores/rootUserStore"
 
+/**
+ * Type definition for the employee API response
+ */
+type EmployeeApiResponse =
+	| {
+			success: false;
+			message: string;
+			data: never[];
+	  }
+	| {
+			success: true;
+			message: string;
+			data: {
+				employee: {
+					id: string;
+					name: string;
+					surname: string;
+					warehouseId: string;
+					passcode: number;
+					userId: string | null;
+					permissions: string | null;
+				};
+				permissions: {
+					id: string;
+					permission: string;
+				} | null;
+			}[];
+	  }
+	| undefined;
+
+/**
+ * Helper function to check if a passcode matches in the employee data
+ * Works with the specific API response structure
+ * @param data - The employee API response data
+ * @param passcode - The passcode string to match (will be converted to number)
+ * @returns true if passcode matches any employee in the response
+ */
+const findMatchingPasscode = (
+	data: unknown,
+	passcode: string,
+): boolean => {
+	// Convert passcode string to number for comparison
+	const passcodeNumber = Number(passcode);
+	
+	// Check if conversion was successful (not NaN)
+	if (Number.isNaN(passcodeNumber)) {
+		return false;
+	}
+
+	const response = data as EmployeeApiResponse;
+
+	// Check if response is undefined
+	if (!response) {
+		return false;
+	}
+
+	// Check if response was unsuccessful
+	if (response.success === false) {
+		return false;
+	}
+
+	// Check if response was successful and has data
+	if (response.success === true && Array.isArray(response.data)) {
+		// Check each employee in the data array
+		return response.data.some((item) => {
+			// Compare the employee's passcode (number) with the typed passcode (converted to number)
+			return item.employee.passcode === passcodeNumber;
+		});
+	}
+
+	return false;
+};
 
 export default function NumpadScreen() {
     const colorScheme = useColorScheme()
     const isDark = colorScheme === "dark"
     const { value: storedValue, setValue, deleteValue, clearValue } = useNumpadStore()
+    const { userId } = useRootUserStore()
+    const [shouldQuery, setShouldQuery] = useState(false);
 
+    // Query employee data when shouldQuery is true, we have a passcode, and userId is available
+    const { data: employeeData, isLoading, isError } = useQuery({
+        queryKey: [QUERY_KEYS.EMPLOYEE_BY_USER_ID, userId],
+        queryFn: () => {
+            if (!userId) {
+                throw new Error("User ID is not available");
+            }
+            return getEmployeeByUserId(userId);
+        },
+        enabled: shouldQuery && storedValue.length > 0 && userId !== null,
+        retry: false,
+    });
 
+    /**
+     * Handles the submission of the passcode
+     * Triggers the query to fetch employee data
+     */
     const handleSubmit = () => {
-        // Handle submission logic here
-        console.log("Submitted value:", storedValue)
-        // Navigate back or to another screen
-        router.push('/entry/baseUser')
+        // Don't submit if value is empty or if already loading
+        if (storedValue.length === 0 || isLoading) {
+            return;
+        }
+
+        // Check if userId is available
+        if (!userId) {
+            toast.error("Sesión no válida. Por favor, inicia sesión nuevamente.");
+            return;
+        }
+
+        // Trigger the query
+        setShouldQuery(true);
     }
+
+    // Check passcode when employee data changes or when query fails
+    useEffect(() => {
+        if (!shouldQuery) {
+            return;
+        }
+
+        // Handle error case - query failed (likely no employee found)
+        if (isError) {
+            toast.error("No hay ningún usuario registrado con ese código de acceso");
+            setShouldQuery(false);
+            return;
+        }
+
+        // Check passcode when employee data is available
+        if (employeeData) {
+            const hasMatch = findMatchingPasscode(employeeData, storedValue);
+            
+            if (hasMatch) {
+                // Passcode matches, navigate to next page
+                router.push('/entry/baseUser');
+                setShouldQuery(false);
+                clearValue();
+            } else {
+                // No match found, show error toast
+                toast.error("No hay ningún usuario registrado con ese código de acceso");
+                setShouldQuery(false);
+            }
+        }
+    }, [employeeData, isError, shouldQuery, storedValue, clearValue, isLoading]);
 
     return (
 
@@ -51,7 +186,15 @@ export default function NumpadScreen() {
             />
 
             <ThemedView style={styles.buttonContainer}>
-                <ThemedButton title="Submit" onPress={handleSubmit} disabled={storedValue.length === 0} style={styles.submitButton} variant={"primary"} size={"medium"} />
+                <ThemedButton 
+                    title="Submit" 
+                    onPress={handleSubmit} 
+                    disabled={storedValue.length === 0 || isLoading || !userId} 
+                    isLoading={isLoading}
+                    style={styles.submitButton} 
+                    variant={"primary"} 
+                    size={"medium"} 
+                />
             </ThemedView>
         </ThemedView>
 
