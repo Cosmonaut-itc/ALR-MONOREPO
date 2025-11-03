@@ -25,6 +25,25 @@ const Product = type({
 });
 
 /**
+ * Employee data structure matching the API response
+ */
+export interface EmployeeData {
+	employee: {
+		id: string;
+		name: string;
+		surname: string;
+		warehouseId: string;
+		passcode: number;
+		userId: string | null;
+		permissions: string | null;
+	};
+	permissions: {
+		id: string;
+		permission: string;
+	} | null;
+}
+
+/**
  * BaseUserState interface defines the shape of the store
  * Contains all state properties and their corresponding action methods
  */
@@ -34,6 +53,7 @@ interface BaseUserState {
 	showScanner: boolean; // Controls visibility of barcode scanner
 	availableProducts: Array<typeof Product.infer>; // Available products in the system
 	productStock: ProductStockItem[]; // Available product stock items
+	currentEmployee: EmployeeData | null; // Currently logged in employee data
 
 	// Action Methods
 	/**
@@ -108,7 +128,7 @@ interface BaseUserState {
 	 * @param targetWarehouse - Optional warehouse filter
 	 * @returns Array of available ProductStockItem objects
 	 */
-	getAvailableStockItems: (targetWarehouse?: number) => ProductStockItem[];
+	getAvailableStockItems: (targetWarehouse?: string) => ProductStockItem[];
 
 	/**
 	 * Initializes the store with available products, product stock, and pending orders
@@ -119,6 +139,17 @@ interface BaseUserState {
 		products: Array<typeof Product.infer>,
 		productStock: ProductStockItem[],
 	) => void;
+
+	/**
+	 * Sets the current employee data after successful passcode authentication
+	 * @param employeeData - The employee data from the API response
+	 */
+	setCurrentEmployee: (employeeData: EmployeeData) => void;
+
+	/**
+	 * Clears the current employee data (e.g., on logout)
+	 */
+	clearCurrentEmployee: () => void;
 }
 
 /**
@@ -133,6 +164,7 @@ export const useBaseUserStore = create<BaseUserState>()(
 			showScanner: false,
 			availableProducts: [],
 			productStock: [],
+			currentEmployee: null,
 
 			// Action Implementations
 			handleProductStockSelect: (stockItem, productInfo) => {
@@ -178,8 +210,9 @@ export const useBaseUserStore = create<BaseUserState>()(
 				const { productStock } = get();
 
 				// Find an available stock item for this product
+				// Compare ProductStockItem.barcode (number) with Product.barcode (string)
 				const availableStockItem = productStock.find(
-					item => item.barcode === Number(product.barcode) && !item.isBeingUsed
+					item => (item.barcode.toString() === product.barcode || item.barcode === Number(product.barcode)) && !item.isBeingUsed
 				);
 
 				if (availableStockItem) {
@@ -210,8 +243,9 @@ export const useBaseUserStore = create<BaseUserState>()(
 
 				if (stockItem) {
 					// Find the corresponding product information
+					// Compare Product.barcode (string) with ProductStockItem.barcode (number)
 					const product = availableProducts.find(
-						(p) => Number(p.barcode) === stockItem.barcode
+						(p) => p.barcode === stockItem.barcode.toString() || Number(p.barcode) === stockItem.barcode
 					);
 
 					if (product) {
@@ -299,13 +333,18 @@ export const useBaseUserStore = create<BaseUserState>()(
 
 			setShowScanner: (show) => set({ showScanner: show }),
 
-			getAvailableStockItems: (targetWarehouse = 1) => {
+			getAvailableStockItems: (targetWarehouse?: string) => {
 				const { productStock } = get();
 
 
 				if (productStock.length === 0) {
 					console.log('⚠️ ProductStock is empty - store may not be initialized yet');
 					return [];
+				}
+
+				// If no target warehouse specified, return all available items
+				if (!targetWarehouse) {
+					return productStock.filter(item => !item.isBeingUsed);
 				}
 
 				const filtered = productStock.filter(item => {
@@ -322,6 +361,14 @@ export const useBaseUserStore = create<BaseUserState>()(
 					availableProducts: products,
 					productStock: productStock,
 				});
+			},
+
+			setCurrentEmployee: (employeeData) => {
+				set({ currentEmployee: employeeData });
+			},
+
+			clearCurrentEmployee: () => {
+				set({ currentEmployee: null });
 			},
 		}),
 		{

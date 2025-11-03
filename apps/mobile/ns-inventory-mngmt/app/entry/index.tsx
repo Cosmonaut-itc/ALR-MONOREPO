@@ -9,13 +9,14 @@ import { ThemedButton } from "@/components/ThemedButton"
 import { Colors } from "@/constants/Colors"
 import { useColorScheme } from "@/hooks/useColorScheme"
 import { ThemedNumpad } from "@/components/ui/ThemedNumpad"
-import { useNumpadStore } from "@/app/stores/baseUserStores"
+import { useNumpadStore, useBaseUserStore } from "@/app/stores/baseUserStores"
 import { useQuery } from "@tanstack/react-query"
 import { getEmployeeByUserId } from "@/lib/fetch-functions"
 import { QUERY_KEYS } from "@/lib/query-keys"
 import { toast } from "sonner-native"
 import React, { useState, useEffect } from "react"
 import { useRootUserStore } from "@/app/stores/rootUserStore"
+import type { EmployeeData } from "@/app/stores/baseUserStores"
 
 /**
  * Type definition for the employee API response
@@ -48,46 +49,48 @@ type EmployeeApiResponse =
 	| undefined;
 
 /**
- * Helper function to check if a passcode matches in the employee data
+ * Helper function to find the matching employee data by passcode
  * Works with the specific API response structure
  * @param data - The employee API response data
  * @param passcode - The passcode string to match (will be converted to number)
- * @returns true if passcode matches any employee in the response
+ * @returns The matching employee data or null if no match found
  */
-const findMatchingPasscode = (
+const findMatchingEmployee = (
 	data: unknown,
 	passcode: string,
-): boolean => {
+): EmployeeData | null => {
 	// Convert passcode string to number for comparison
 	const passcodeNumber = Number(passcode);
 	
 	// Check if conversion was successful (not NaN)
 	if (Number.isNaN(passcodeNumber)) {
-		return false;
+		return null;
 	}
 
 	const response = data as EmployeeApiResponse;
 
 	// Check if response is undefined
 	if (!response) {
-		return false;
+		return null;
 	}
 
 	// Check if response was unsuccessful
 	if (response.success === false) {
-		return false;
+		return null;
 	}
 
 	// Check if response was successful and has data
 	if (response.success === true && Array.isArray(response.data)) {
-		// Check each employee in the data array
-		return response.data.some((item) => {
+		// Find the matching employee in the data array
+		const matchingEmployee = response.data.find((item) => {
 			// Compare the employee's passcode (number) with the typed passcode (converted to number)
 			return item.employee.passcode === passcodeNumber;
 		});
+		
+		return matchingEmployee || null;
 	}
 
-	return false;
+	return null;
 };
 
 export default function NumpadScreen() {
@@ -95,6 +98,7 @@ export default function NumpadScreen() {
     const isDark = colorScheme === "dark"
     const { value: storedValue, setValue, deleteValue, clearValue } = useNumpadStore()
     const { userId } = useRootUserStore()
+    const { setCurrentEmployee } = useBaseUserStore()
     const [shouldQuery, setShouldQuery] = useState(false);
 
     // Query employee data when shouldQuery is true, we have a passcode, and userId is available
@@ -145,10 +149,11 @@ export default function NumpadScreen() {
 
         // Check passcode when employee data is available
         if (employeeData) {
-            const hasMatch = findMatchingPasscode(employeeData, storedValue);
-            
-            if (hasMatch) {
-                // Passcode matches, navigate to next page
+            const matchingEmployee = findMatchingEmployee(employeeData, storedValue);
+            if (matchingEmployee) {
+                // Passcode matches, store employee data and navigate to next page
+                setCurrentEmployee(matchingEmployee);
+                console.log("Employee data stored:", matchingEmployee);
                 router.push('/entry/baseUser');
                 setShouldQuery(false);
                 clearValue();
@@ -158,7 +163,7 @@ export default function NumpadScreen() {
                 setShouldQuery(false);
             }
         }
-    }, [employeeData, isError, shouldQuery, storedValue, clearValue, isLoading]);
+    }, [employeeData, isError, shouldQuery, storedValue, clearValue, isLoading, setCurrentEmployee]);
 
     return (
 

@@ -41,12 +41,12 @@ interface Product {
  */
 const transformApiProductToProduct = (apiProduct: DataItemArticulosType): Product => {
     return {
-        id: apiProduct.good_id,
+        id: apiProduct.good_id.toString(), // Convert number to string for Product.id
         name: apiProduct.title,
         brand: apiProduct.unit_short_title, // Using unit short title as brand fallback
         price: apiProduct.cost,
-        stock: apiProduct.value, // Using value as stock amount
-        barcode: apiProduct.barcode?.toString(), // Convert number to string, handle optional
+        stock: Number(apiProduct.value), // Convert string to number for Product.stock
+        barcode: apiProduct.barcode, // barcode is already a string from API
     }
 }
 
@@ -126,10 +126,20 @@ interface UseProductStockQueryResult {
 }
 
 const useProductStockQuery = (): UseProductStockQueryResult => {
+    // Get warehouse ID from current employee data
+    const { currentEmployee } = useBaseUserStore();
+    const warehouseId = currentEmployee?.employee.warehouseId;
+
     // Fetch product stock data using TanStack Query with proper error handling and loading states
     const { data, isLoading, isError, error, isFetching, refetch } = useQuery({
-        queryKey: [QUERY_KEYS.PRODUCT_STOCK],
-        queryFn: getProductStock,
+        queryKey: [QUERY_KEYS.PRODUCT_STOCK, warehouseId],
+        queryFn: () => {
+            if (!warehouseId) {
+                throw new Error("Warehouse ID is not available");
+            }
+            return getProductStock(warehouseId);
+        },
+        enabled: !!warehouseId, // Only fetch when warehouseId is available
         staleTime: 5 * 60 * 1000, // 5 minutes - data considered fresh for this duration
         gcTime: 10 * 60 * 1000, // 10 minutes - cache garbage collection time
         retry: 3, // Retry failed requests up to 3 times
@@ -137,9 +147,91 @@ const useProductStockQuery = (): UseProductStockQueryResult => {
     })
 
     // Transform API data to local ProductStockItem interface
-    // Only transform if data is available to avoid runtime errors
+    // Handle both possible response structures:
+    // 1. Direct array: [{ productStock: {...}, employee: {...} }, ...]
+    // 2. Wrapped in warehouse property: { warehouse: [{ productStock: {...}, employee: {...} }, ...], ... }
+    const productStock: ProductStockItem[] = (() => {
+        if (!data) return [];
+        
+        // Check if data has warehouse property (old structure)
+        if (data.warehouse && Array.isArray(data.warehouse)) {
+            return data.warehouse.map((item: {
+                productStock: {
+                    id: string;
+                    barcode: number;
+                    lastUsed: string | null;
+                    lastUsedBy: string | null;
+                    numberOfUses: number;
+                    currentWarehouse: string;
+                    isBeingUsed: boolean;
+                    firstUsed: string | null;
+                };
+            }) => {
+                const stock = item.productStock;
+                const transformed: ProductStockItem = {
+                    id: stock.id,
+                    barcode: stock.barcode,
+                    numberOfUses: stock.numberOfUses,
+                    currentWarehouse: stock.currentWarehouse,
+                    isBeingUsed: stock.isBeingUsed,
+                };
+                
+                if (stock.lastUsed) {
+                    transformed.lastUsed = new Date(stock.lastUsed);
+                }
+                if (stock.lastUsedBy) {
+                    transformed.lastUsedBy = stock.lastUsedBy;
+                }
+                if (stock.firstUsed) {
+                    transformed.firstUsed = new Date(stock.firstUsed);
+                }
+                
+                return transformed;
+            });
+        }
+        
+        // Check if data is a direct array (new structure)
+        if (Array.isArray(data)) {
+            return data.map((item: {
+                productStock: {
+                    id: string;
+                    barcode: number;
+                    lastUsed: string | null;
+                    lastUsedBy: string | null;
+                    numberOfUses: number;
+                    currentWarehouse: string;
+                    isBeingUsed: boolean;
+                    firstUsed: string | null;
+                };
+            }) => {
+                const stock = item.productStock;
+                const transformed: ProductStockItem = {
+                    id: stock.id,
+                    barcode: stock.barcode,
+                    numberOfUses: stock.numberOfUses,
+                    currentWarehouse: stock.currentWarehouse,
+                    isBeingUsed: stock.isBeingUsed,
+                };
+                
+                if (stock.lastUsed) {
+                    transformed.lastUsed = new Date(stock.lastUsed);
+                }
+                if (stock.lastUsedBy) {
+                    transformed.lastUsedBy = stock.lastUsedBy;
+                }
+                if (stock.firstUsed) {
+                    transformed.firstUsed = new Date(stock.firstUsed);
+                }
+                
+                return transformed;
+            });
+        }
+        
+        return [];
+    })();
+
     return {
-        productStock: data || [],
+        productStock,
         isLoading,
         isError,
         error,
@@ -206,8 +298,9 @@ export default function InventoryScannerScreen() {
     } = useBaseUserStore()
 
 
-    // Get available stock items from the store (filters by warehouse and availability) 
-    const availableStock = getAvailableStockItems(1)
+    // Get available stock items from the store (filters by warehouse and availability)
+    // TODO: Replace with actual warehouse UUID from server/user context
+    const availableStock = getAvailableStockItems()
 
     /**
      * Enhanced barcode scan handler that works with API product data
@@ -235,7 +328,8 @@ export default function InventoryScannerScreen() {
      */
     const handleStockItemSelect = (stockItem: ProductStockItem) => {
         // Find the full product information by barcode
-        const fullProduct = products.find(p => Number(p.barcode) === stockItem.barcode)
+        // Compare Product.barcode (string) with ProductStockItem.barcode (number)
+        const fullProduct = products.find(p => p.barcode === stockItem.barcode.toString() || Number(p.barcode) === stockItem.barcode)
 
         if (fullProduct) {
             // Use the new stock-based selection method
@@ -322,10 +416,10 @@ export default function InventoryScannerScreen() {
                 />
 
                 {/* Warehouse Inventory Section */}
+                {/* TODO: Replace with actual warehouse UUID from server/user context */}
                 <ScannerComboboxSection
                     products={products}
                     productStock={availableStock}
-                    targetWarehouse={1}
                     onStockItemSelect={handleStockItemSelect}
                     onScanPress={() => setShowScanner(true)}
                     isLoading={isFetchingProducts || isFetchingProductStock}

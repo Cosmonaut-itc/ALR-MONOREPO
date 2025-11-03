@@ -24,11 +24,12 @@ import { getShortId } from "@/lib/functions"
 const groupProductStock = (
     productStock: ProductStockItem[],
     products: Product[],
-    targetWarehouse: number = 1
+    targetWarehouse?: string
 ): WarehouseStockGroup[] => {
     // Filter stock by warehouse and availability
+    // If targetWarehouse is not provided, show all available items
     const availableStock = productStock.filter(
-        stock => stock.currentWarehouse === targetWarehouse && !stock.isBeingUsed
+        stock => (!targetWarehouse || stock.currentWarehouse === targetWarehouse) && !stock.isBeingUsed
     )
 
     // Group by barcode
@@ -43,7 +44,8 @@ const groupProductStock = (
     // Convert to WarehouseStockGroup objects with product information
     return Array.from(groups.entries()).map(([barcode, items]) => {
         // Find matching product by barcode for metadata
-        const product = products.find(p => Number(p.barcode) === barcode)
+        // Compare Product.barcode (string) with ProductStockItem.barcode (number)
+        const product = products.find(p => p.barcode === barcode.toString() || Number(p.barcode) === barcode)
 
         return {
             barcode,
@@ -85,7 +87,7 @@ const filterStockGroups = (
 export function ProductCombobox({
     products,
     productStock = [],
-    targetWarehouse = 1,
+    targetWarehouse,
     onStockItemSelect,
     placeholder = "Buscar en inventario...",
     disabled = false,

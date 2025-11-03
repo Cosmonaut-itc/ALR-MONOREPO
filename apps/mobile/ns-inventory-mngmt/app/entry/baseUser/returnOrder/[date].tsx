@@ -153,7 +153,8 @@ export default function OrderDetailsScreen() {
  */
     const handleStockItemSelect = (stockItem: ProductStockItem) => {
         // Find the full product information by barcode
-        const fullProduct = availableProducts.find((p: Product) => Number(p.barcode) === stockItem.barcode)
+        // Compare Product.barcode (string) with ProductStockItem.barcode (number)
+        const fullProduct = availableProducts.find((p: Product) => p.barcode === stockItem.barcode.toString() || Number(p.barcode) === stockItem.barcode)
 
         if (fullProduct) {
             // Use the new stock-based selection method
@@ -233,7 +234,6 @@ export default function OrderDetailsScreen() {
                 <ScannerComboboxSection
                     products={availableProducts}
                     productStock={productStock}
-                    targetWarehouse={1}
                     onStockItemSelect={handleStockItemSelect}
                     onScanPress={() => setShowScanner(true)}
                     isLoading={isFetching}

@@ -16,8 +16,8 @@ interface ScannerComboboxSectionProps {
     products: Product[]
     /** Array of product stock items to display */
     productStock: ProductStockItem[]
-    /** Target warehouse to filter inventory by */
-    targetWarehouse?: number
+    /** Target warehouse UUID to filter inventory by */
+    targetWarehouse?: string
     /** Callback function when a stock item is selected */
     onStockItemSelect: (item: ProductStockItem) => void
     /** Callback function when the scan button is pressed */
@@ -51,7 +51,7 @@ interface ScannerComboboxSectionProps {
 export function ScannerComboboxSection({
     products,
     productStock,
-    targetWarehouse = 1,
+    targetWarehouse,
     onStockItemSelect,
     onScanPress,
     placeholder = "Buscar en inventario...",

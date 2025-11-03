@@ -199,25 +199,25 @@ export type ReturnOrderModalProps = typeof returnOrderModalPropsArk.infer;
 // ===== API Response Schemas =====
 
 const actualAmountSchema = t({
-	storage_id: "string",
-	amount: "string",
+	storage_id: "number", // API returns number, not string
+	amount: "number", // API returns number, not string
 });
 
 export const dataItemSchema = t({
 	title: "string",
-	value: "number",
+	value: "string", // API returns string, not number
 	label: "string",
-	good_id: "string",
+	good_id: "number", // API returns number, not string
 	cost: "number",
-	unit_id: "string",
+	unit_id: "number", // API returns number, not string
 	unit_short_title: "string",
-	service_unit_id: "string",
+	service_unit_id: "number", // API returns number, not string
 	service_unit_short_title: "string",
 	actual_cost: "number",
 	unit_actual_cost: "number",
 	unit_actual_cost_format: "string",
 	unit_equals: "number",
-	barcode: "number",
+	barcode: "string", // API returns string, not number
 	loyalty_abonement_type_id: "number",
 	loyalty_certificate_type_id: "number",
 	loyalty_allow_empty_code: "number",
@@ -261,9 +261,9 @@ export const productStockItemSchema = t({
 	id: "string",
 	barcode: "number",
 	lastUsed: "string.date.iso.parse?",
-	lastUsedBy: "number?",
+	lastUsedBy: "string?", // UUID string from server
 	numberOfUses: "number",
-	currentWarehouse: "number",
+	currentWarehouse: "string", // UUID string from server
 	isBeingUsed: "boolean",
 	firstUsed: "string.date.iso.parse?",
 });
@@ -327,7 +327,7 @@ export type WarehouseStockGroup = typeof WarehouseStockGroup.infer;
 export const productComboboxPropsArk = t({
 	products: t(Product, "[]"), // For product metadata lookup
 	productStock: t(productStockItemSchema, "[]"), // Stock items to display
-	targetWarehouse: "number?", // Warehouse to filter by (defaults to 1)
+	targetWarehouse: "string?", // Warehouse UUID to filter by
 	onStockItemSelect: "string?" as t.cast<(item: typeof productStockItemSchema.infer) => void>, // Select ProductStockItem directly
 	placeholder: "string?",
 	disabled: "boolean?",
