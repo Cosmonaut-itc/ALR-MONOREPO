@@ -14,96 +14,10 @@ import type { ProductStockItem, SelectedProduct } from "@/types/types"
 import { useBaseUserStore } from "@/app/stores/baseUserStores"
 import { ThemedHeader } from "@/components/ThemedHeader"
 import { ScannerComboboxSection } from "@/components/ui/ScannerComboboxSection"
-import { getProducts, getProductStock } from "@/lib/fetch-functions"
+import { getProductStock } from "@/lib/fetch-functions"
 import { QUERY_KEYS } from "@/lib/query-keys"
 import { useQuery } from "@tanstack/react-query"
-import type { DataItemArticulosType } from "@/types/types"
-
-/**
- * Product type definition
- * Represents a nail salon product with its essential properties
- * This interface is used throughout the application for product-related operations
- */
-interface Product {
-    id: string
-    name: string
-    brand: string
-    price: number
-    stock: number
-    barcode?: string
-}
-
-/**
- * Transforms API product data to the application's Product interface
- * This mapping function ensures type safety and data consistency throughout the app
- * @param apiProduct - Raw product data from the API endpoint
- * @returns Transformed product following the local Product interface
- */
-const transformApiProductToProduct = (apiProduct: DataItemArticulosType): Product => {
-    return {
-        id: apiProduct.good_id.toString(), // Convert number to string for Product.id
-        name: apiProduct.title,
-        brand: apiProduct.unit_short_title, // Using unit short title as brand fallback
-        price: apiProduct.cost,
-        stock: Number(apiProduct.value), // Convert string to number for Product.stock
-        barcode: apiProduct.barcode, // barcode is already a string from API
-    }
-}
-
-/**
- * Custom hook to manage product data with proper error handling and loading states
- * Follows TanStack Query best practices for data fetching and state management
- * @returns Object containing products data, loading state, error state, and utility functions
- */
-interface UseProductsQueryResult {
-    /** Array of transformed products ready for UI consumption */
-    products: Product[]
-    /** Boolean indicating if the initial data fetch is in progress */
-    isLoading: boolean
-    /** Boolean indicating if there's an error in the query */
-    isError: boolean
-    /** Error object containing details about any query failures */
-    error: Error | null
-    /** Boolean indicating if a background refetch is in progress */
-    isFetching: boolean
-    /** Function to manually trigger a refetch of products */
-    refetch: () => void
-}
-
-const useProductsQuery = (): UseProductsQueryResult => {
-    const {
-        data: apiProducts,
-        isLoading,
-        isError,
-        error,
-        isFetching,
-        refetch,
-    } = useQuery({
-        queryKey: [QUERY_KEYS.PRODUCTS],
-        queryFn: getProducts,
-        staleTime: 5 * 60 * 1000, // 5 minutes - data considered fresh for this duration
-        gcTime: 10 * 60 * 1000, // 10 minutes - cache garbage collection time
-        retry: 3, // Retry failed requests up to 3 times
-        retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // Exponential backoff
-    })
-
-    // Transform API data to local Product interface with memoization
-    // Only transform if data is available to avoid runtime errors
-    const products: Product[] = useMemo(() => {
-        // Return empty array only if there's an error or no data
-        if (isError || !apiProducts) return []
-        return apiProducts.map(transformApiProductToProduct)
-    }, [apiProducts, isError])
-
-    return {
-        products,
-        isLoading,
-        isError,
-        error,
-        isFetching,
-        refetch,
-    }
-}
+import type { Product } from "@/types/types"
 
 /**
  * Custom hook to manage product stock data with proper error handling and loading states
@@ -159,6 +73,7 @@ const useProductStockQuery = (): UseProductStockQueryResult => {
                 productStock: {
                     id: string;
                     barcode: number;
+                    description?: string | null;
                     lastUsed: string | null;
                     lastUsedBy: string | null;
                     numberOfUses: number;
@@ -176,6 +91,9 @@ const useProductStockQuery = (): UseProductStockQueryResult => {
                     isBeingUsed: stock.isBeingUsed,
                 };
                 
+                if (stock.description !== undefined && stock.description !== null) {
+                    transformed.description = stock.description;
+                }
                 if (stock.lastUsed) {
                     transformed.lastUsed = new Date(stock.lastUsed);
                 }
@@ -196,6 +114,7 @@ const useProductStockQuery = (): UseProductStockQueryResult => {
                 productStock: {
                     id: string;
                     barcode: number;
+                    description?: string | null;
                     lastUsed: string | null;
                     lastUsedBy: string | null;
                     numberOfUses: number;
@@ -213,6 +132,9 @@ const useProductStockQuery = (): UseProductStockQueryResult => {
                     isBeingUsed: stock.isBeingUsed,
                 };
                 
+                if (stock.description !== undefined && stock.description !== null) {
+                    transformed.description = stock.description;
+                }
                 if (stock.lastUsed) {
                     transformed.lastUsed = new Date(stock.lastUsed);
                 }
@@ -243,16 +165,8 @@ const useProductStockQuery = (): UseProductStockQueryResult => {
 export default function InventoryScannerScreen() {
     const colorScheme = useColorScheme()
     const isDark = colorScheme === "dark"
-
-    // Fetch products using TanStack Query with proper error handling and loading states
-    const {
-        products,
-        isLoading: isLoadingProducts,
-        isError: isProductsError,
-        error: productsError,
-        isFetching: isFetchingProducts,
-        refetch: refetchProducts,
-    } = useProductsQuery()
+    const { currentEmployee } = useBaseUserStore();
+    const warehouseId = currentEmployee?.employee.warehouseId;
 
     const {
         productStock,
@@ -268,27 +182,29 @@ export default function InventoryScannerScreen() {
 
     const currentDate = useMemo(() => new Date().toISOString().split('T')[0], [])
 
-    // Initialize store with fetched data only when BOTH datasets are available
+    // Initialize store with fetched product stock when available
     useEffect(() => {
-        // Wait for both datasets to have data and not be in loading state
-        const hasProducts = products.length > 0
         const hasProductStock = productStock.length > 0
-        const bothLoaded = !isLoadingProducts && !isLoadingProductStock
+        const stockLoaded = !isLoadingProductStock
 
-        if (hasProducts && hasProductStock && bothLoaded && !isInitialized.current) {
-            console.log('🚀 Initializing store with:', {
-                productsCount: products.length,
+        if (hasProductStock && stockLoaded && !isInitialized.current) {
+            console.log('🚀 Initializing store with product stock:', {
                 productStockCount: productStock.length
             })
-            useBaseUserStore.getState().initializeStore(products, productStock)
+            const store = useBaseUserStore.getState()
+            // Only update productStock, products should already be in store from elsewhere
+            if (store.productStock.length === 0 || store.productStock !== productStock) {
+                store.initializeStore(store.availableProducts, productStock)
+            }
             isInitialized.current = true
         }
-    }, [products, productStock, isLoadingProducts, isLoadingProductStock])
+    }, [productStock, isLoadingProductStock])
 
     // Get store state and actions
     const {
         selectedProducts,
         showScanner,
+        availableProducts,
         handleProductStockSelect,
         handleBarcodeScanned,
         handleRemoveProduct,
@@ -299,16 +215,16 @@ export default function InventoryScannerScreen() {
 
 
     // Get available stock items from the store (filters by warehouse and availability)
-    // TODO: Replace with actual warehouse UUID from server/user context
-    const availableStock = getAvailableStockItems()
+    // Uses warehouse ID from current employee state
+    const availableStock = getAvailableStockItems(warehouseId)
 
     /**
-     * Enhanced barcode scan handler that works with API product data
-     * Searches through the fetched products to find matches by barcode
+     * Enhanced barcode scan handler that works with store product data
+     * Searches through the available products to find matches by barcode
      * @param barcode - Scanned barcode string to match against products
      */
     const handleEnhancedBarcodeScanned = (barcode: string) => {
-        const foundProduct = products.find(
+        const foundProduct = availableProducts.find(
             (product) => product.barcode === barcode || product.id === barcode
         )
 
@@ -329,28 +245,38 @@ export default function InventoryScannerScreen() {
     const handleStockItemSelect = (stockItem: ProductStockItem) => {
         // Find the full product information by barcode
         // Compare Product.barcode (string) with ProductStockItem.barcode (number)
-        const fullProduct = products.find(p => p.barcode === stockItem.barcode.toString() || Number(p.barcode) === stockItem.barcode)
+        const fullProduct = availableProducts.find(p => p.barcode === stockItem.barcode.toString() || Number(p.barcode) === stockItem.barcode)
 
         if (fullProduct) {
             // Use the new stock-based selection method
             handleProductStockSelect(stockItem, fullProduct)
         } else {
             // Create a basic product object if full product not found
+            // Try to find product by barcode from available products first
+            const fallbackProduct = availableProducts.find(
+                (p) => p.barcode === stockItem.barcode.toString() || Number(p.barcode) === stockItem.barcode
+            );
             const basicProduct: Product = {
                 id: `product-${stockItem.barcode}`, // Use product prefix + barcode as product ID
-                name: `Producto ${stockItem.barcode}`, // Fallback name
-                brand: "Sin marca", // Default brand
-                price: 0, // Default price since we don't have it in stock data
+                name: fallbackProduct?.name || `Producto ${stockItem.barcode}`, // Use product name if available, otherwise fallback
+                brand: fallbackProduct?.brand || "Sin marca", // Use product brand if available
+                price: fallbackProduct?.price || 0, // Use product price if available
                 stock: 1, // Set to 1 since we know this specific item exists
                 barcode: stockItem.barcode.toString(),
             }
+            
+            // Add description only if it exists (for exactOptionalPropertyTypes compatibility)
+            if (fallbackProduct?.description !== undefined) {
+                basicProduct.description = fallbackProduct.description
+            }
+            
             handleProductStockSelect(stockItem, basicProduct)
         }
     }
 
     // Early return pattern for loading state
     // This prevents rendering the main UI while data is still being fetched
-    if (isLoadingProducts || isLoadingProductStock) {
+    if (isLoadingProductStock) {
         return (
             <ThemedView style={styles.container}>
                 <StatusBar style={isDark ? "light" : "dark"} />
@@ -359,7 +285,7 @@ export default function InventoryScannerScreen() {
                     <ThemedText style={styles.loadingText}>
                         Cargando inventario...
                     </ThemedText>
-                    {(isFetchingProducts || isFetchingProductStock) && (
+                    {isFetchingProductStock && (
                         <ThemedText style={styles.subLoadingText}>
                             Actualizando datos...
                         </ThemedText>
@@ -371,7 +297,7 @@ export default function InventoryScannerScreen() {
 
     // Early return pattern for error state
     // Provides user with clear error messaging and recovery options
-    if (isProductsError || isProductStockError) {
+    if (isProductStockError) {
         return (
             <ThemedView style={styles.container}>
                 <StatusBar style={isDark ? "light" : "dark"} />
@@ -381,12 +307,11 @@ export default function InventoryScannerScreen() {
                         Error al Cargar Inventario
                     </ThemedText>
                     <ThemedText style={styles.errorMessage}>
-                        {productsError?.message || productStockError?.message || "Ocurrió un error inesperado"}
+                        {productStockError?.message || "Ocurrió un error inesperado"}
                     </ThemedText>
                     <ThemedButton
                         title="Reintentar"
                         onPress={() => {
-                            refetchProducts()
                             refetchProductStock()
                         }}
                         variant="primary"
@@ -416,13 +341,15 @@ export default function InventoryScannerScreen() {
                 />
 
                 {/* Warehouse Inventory Section */}
-                {/* TODO: Replace with actual warehouse UUID from server/user context */}
+                {/* Uses warehouse ID from current employee state */}
                 <ScannerComboboxSection
-                    products={products}
+                    products={availableProducts}
                     productStock={availableStock}
+                    {...(warehouseId !== undefined && { targetWarehouse: warehouseId })}
                     onStockItemSelect={handleStockItemSelect}
                     onScanPress={() => setShowScanner(true)}
-                    isLoading={isFetchingProducts || isFetchingProductStock}
+                    onRefreshPress={() => refetchProductStock()}
+                    isLoading={isFetchingProductStock}
                     itemCount={availableStock.length}
                 />
 

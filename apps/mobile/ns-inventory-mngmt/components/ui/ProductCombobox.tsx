@@ -46,10 +46,15 @@ const groupProductStock = (
         // Find matching product by barcode for metadata
         // Compare Product.barcode (string) with ProductStockItem.barcode (number)
         const product = products.find(p => p.barcode === barcode.toString() || Number(p.barcode) === barcode)
+        
+        // Use description from productStock item if available, otherwise use product name or barcode fallback
+        // Prefer description from the first item in the group (all items should have same description)
+        const itemDescription = items[0]?.description
+        const productName = itemDescription || product?.name || `Producto ${barcode}`
 
         return {
             barcode,
-            productName: product?.name || `Producto ${barcode}`,
+            productName,
             brand: product?.brand || "Sin marca",
             items,
             totalCount: items.length,
@@ -88,6 +93,7 @@ export function ProductCombobox({
     products,
     productStock = [],
     targetWarehouse,
+    warehouseName,
     onStockItemSelect,
     placeholder = "Buscar en inventario...",
     disabled = false,
@@ -246,7 +252,7 @@ export function ProductCombobox({
                         ]}
                     >
                         <ThemedText type="title" style={styles.modalTitle}>
-                            Productos en Almacén {targetWarehouse}
+                            Productos en {warehouseName || targetWarehouse || "Almacén"}
                         </ThemedText>
                         <TouchableOpacity onPress={() => setIsOpen(false)} style={styles.closeButton}>
                             <ThemedText style={{ color: isDark ? Colors.dark.tint : Colors.light.tint }}>✕</ThemedText>
@@ -272,7 +278,7 @@ export function ProductCombobox({
                         {filteredStockGroups.length === 0 && searchText && (
                             <ThemedView style={styles.noResultsContainer}>
                                 <ThemedText style={styles.noResultsText}>
-                                    No se encontraron elementos en el almacén {targetWarehouse}
+                                    No se encontraron elementos en {warehouseName || targetWarehouse || "el almacén"}
                                 </ThemedText>
                             </ThemedView>
                         )}
@@ -280,7 +286,7 @@ export function ProductCombobox({
                         {filteredStockGroups.length === 0 && !searchText && stockGroups.length === 0 && (
                             <ThemedView style={styles.noResultsContainer}>
                                 <ThemedText style={styles.noResultsText}>
-                                    No hay elementos disponibles en el almacén {targetWarehouse}
+                                    No hay elementos disponibles en {warehouseName || targetWarehouse || "el almacén"}
                                 </ThemedText>
                             </ThemedView>
                         )}

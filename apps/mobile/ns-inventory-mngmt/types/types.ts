@@ -137,6 +137,7 @@ export const Product = t({
 	price: "number",
 	stock: "number",
 	barcode: "string?",
+	description: "string?",
 });
 
 export type Product = typeof Product.infer;
@@ -218,6 +219,7 @@ export const dataItemSchema = t({
 	unit_actual_cost_format: "string",
 	unit_equals: "number",
 	barcode: "string", // API returns string, not number
+	description: "string?", // Optional product description
 	loyalty_abonement_type_id: "number",
 	loyalty_certificate_type_id: "number",
 	loyalty_allow_empty_code: "number",
@@ -260,12 +262,20 @@ export const createApiResponseSchema = (dataSchema: any) => t({
 export const productStockItemSchema = t({
 	id: "string",
 	barcode: "number",
+	description: "string?", // Optional product description
 	lastUsed: "string.date.iso.parse?",
 	lastUsedBy: "string?", // UUID string from server
 	numberOfUses: "number",
 	currentWarehouse: "string", // UUID string from server
 	isBeingUsed: "boolean",
 	firstUsed: "string.date.iso.parse?",
+});
+
+// Cabinet Warehouse Map Schema
+export const cabinetWarehouseMapSchema = t({
+	id: "string", // UUID of the cabinet
+	name: "string", // Name of the cabinet/warehouse
+	warehouseId: "string", // UUID of the warehouse
 });
 
 // Specific response schemas using the factory
@@ -300,6 +310,7 @@ export type DataItemArticulosType = typeof dataItemSchema.infer;
 export type ApiResponseType = typeof articulosResponseSchema.infer;
 export type ProductStockItem = typeof productStockItemSchema.infer;
 export type ProductStockResponse = typeof productStockResponseSchema.infer;
+export type CabinetWarehouseMapEntry = typeof cabinetWarehouseMapSchema.infer;
 // Withdraw Orders Types
 export type WithdrawOrder = typeof withdrawOrderSchema.infer;
 export type WithdrawOrderDetails = typeof withdrawOrderDetailsSchema.infer;
@@ -328,6 +339,7 @@ export const productComboboxPropsArk = t({
 	products: t(Product, "[]"), // For product metadata lookup
 	productStock: t(productStockItemSchema, "[]"), // Stock items to display
 	targetWarehouse: "string?", // Warehouse UUID to filter by
+	warehouseName: "string?", // Warehouse name for display
 	onStockItemSelect: "string?" as t.cast<(item: typeof productStockItemSchema.infer) => void>, // Select ProductStockItem directly
 	placeholder: "string?",
 	disabled: "boolean?",

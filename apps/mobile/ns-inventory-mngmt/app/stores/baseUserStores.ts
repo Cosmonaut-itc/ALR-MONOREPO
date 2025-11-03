@@ -22,6 +22,7 @@ const Product = type({
 	price: "number", // Product price in the local currency
 	stock: "number", // Current stock quantity
 	barcode: "string?", // Optional barcode for scanning
+	description: "string?", // Optional product description
 });
 
 /**
@@ -257,19 +258,28 @@ export const useBaseUserStore = create<BaseUserState>()(
 						);
 					} else {
 						// Fallback: create basic product info
+						// Try to find product by barcode from available products
+						const fallbackProduct = availableProducts.find(
+							(p) => p.barcode === stockItem.barcode.toString() || Number(p.barcode) === stockItem.barcode
+						);
 						const basicProduct: ProductType = {
 							id: `product-${stockItem.barcode}`,
-							name: `Producto ${stockItem.barcode}`,
-							brand: "Sin marca",
-							price: 0,
+							name: fallbackProduct?.name || `Producto ${stockItem.barcode}`,
+							brand: fallbackProduct?.brand || "Sin marca",
+							price: fallbackProduct?.price || 0,
 							stock: 1,
 							barcode: stockItem.barcode.toString(),
 						};
+						
+						// Add description only if it exists (for exactOptionalPropertyTypes compatibility)
+						if (fallbackProduct?.description !== undefined) {
+							basicProduct.description = fallbackProduct.description;
+						}
 						get().handleProductStockSelect(stockItem, basicProduct);
 						set({ showScanner: false });
 						Alert.alert(
 							"Producto Encontrado",
-							`Producto ${stockItem.barcode} agregado al inventario`,
+							`${basicProduct.name} agregado al inventario`,
 						);
 					}
 				} else {

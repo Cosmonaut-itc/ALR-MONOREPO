@@ -1,6 +1,6 @@
 import client from "./hono-client";
 import { validateProductsResponse } from "../types/types";
-import type { ApiResponse } from "../types/types";
+import type { ApiResponse, CabinetWarehouseMapEntry } from "../types/types";
 
 /**
  * Fetches all products from the API
@@ -112,6 +112,31 @@ export const getEmployeeByUserId = async (userId: string) => {
 			error instanceof Error
 				? `Failed to fetch employee: ${error.message}`
 				: 'Failed to fetch employee: Unknown error'
+		);
+	}
+};
+
+/**
+ * Fetches cabinet warehouse map from the API
+ * @returns Promise containing the cabinet warehouse map data or throws an error
+ */
+export const getCabinetWarehouses = async (): Promise<CabinetWarehouseMapEntry[]> => {
+	try {
+		const response = await client.api.auth["cabinet-warehouse"].map.$get();
+
+		if (!response.ok) {
+			throw new Error(`API request failed with status: ${response.status}`);
+		}
+
+		const data = (await response.json()) as Awaited<ReturnType<typeof response.json>>;
+		return (data.data || []) as CabinetWarehouseMapEntry[];
+
+	} catch (error) {
+		console.error('Error fetching cabinet warehouse map:', error);
+		throw new Error(
+			error instanceof Error
+				? `Failed to fetch cabinet warehouse map: ${error.message}`
+				: 'Failed to fetch cabinet warehouse map: Unknown error'
 		);
 	}
 };
