@@ -1,7 +1,7 @@
 import { useFormContext } from "@/hooks/form-context"
 import type { ThemedButtonProps } from "@/types/types"
 import { ActivityIndicator, StyleSheet, TouchableOpacity, ViewStyle, useColorScheme } from "react-native"
-import { Colors } from "react-native/Libraries/NewAppScreen"
+import { Colors } from "@/constants/Colors"
 import { ThemedText } from "../ThemedText"
 
 export function ThemedButtonForm({

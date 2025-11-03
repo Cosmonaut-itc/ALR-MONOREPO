@@ -10,7 +10,7 @@ import { Colors } from "@/constants/Colors"
 import { Translations } from "@/constants/Translations"
 import { useAppForm } from "@/hooks/form"
 import { LoginFormSchema } from "@/types/types"
-import { authClient } from "@/lib/auth";
+import { authClient, API_URL } from "@/lib/auth";
 import { useMutation } from "@tanstack/react-query"
 import { toast } from 'sonner-native';
 import { useRootUserStore } from "@/app/stores/rootUserStore";
@@ -33,13 +33,25 @@ export default function Login() {
 
     const signInMutation = useMutation({ mutationKey: ["signIn"],
         mutationFn: async (formData: { email: string; password: string; }) => {
+            // Log the request data for debugging
+            if (__DEV__) {
+                console.log('[Sign In] Attempting sign in with email:', formData.email);
+                console.log('[Sign In] Password length:', formData.password?.length || 0);
+            }
+
             const result = await authClient.signIn.email({
-                email: formData.email,
+                email: formData.email.trim(), // Trim whitespace from email
                 password: formData.password,
             })
 
             if (result.error) {
+                console.error('[Sign In] Better Auth error:', result.error);
+                console.error('[Sign In] Error details:', JSON.stringify(result.error, null, 2));
                 throw new Error(` Error al inicar sesion - ${result.error.message}`)
+            }
+
+            if (__DEV__) {
+                console.log('[Sign In] Success, result:', result);
             }
 
             return result
@@ -66,9 +78,28 @@ export default function Login() {
             router.replace("/entry"); // Redirect to explore page on successful login
         },
         onError: (error) => {
-            console.error("Sign up error:", error)
-            toast.error(`${error}`) // Show error message to user
-            // Handle error - show error message to user
+            console.error("Sign in error:", error)
+            // Enhanced error logging for debugging
+            if (error instanceof Error) {
+                console.error("Sign in error message:", error.message);
+                console.error("Sign in error name:", error.name);
+                console.error("Sign in error stack:", error.stack);
+                
+                // Check if it's a network error
+                if (error.message.includes("Network request failed") || error.message.includes("fetch")) {
+                    console.error("Network error detected - check:");
+                    console.error("1. Device is connected to Tailscale");
+                    console.error("2. API server should be running on:", API_URL);
+                    console.error("3. API server must be listening on 0.0.0.0:3000 (not localhost)");
+                    console.error("4. Verify API is accessible by testing:", API_URL, "in your device's browser");
+                    console.error("5. Current EXPO_PUBLIC_API_URL env var:", process.env.EXPO_PUBLIC_API_URL || "not set");
+                    toast.error("Error de red: Verifica tu conexión a Tailscale y que el servidor esté ejecutándose");
+                } else {
+                    toast.error(`Error al iniciar sesión: ${error.message}`);
+                }
+            } else {
+                toast.error(`Error al iniciar sesión: ${String(error)}`);
+            }
         }
     })
 
