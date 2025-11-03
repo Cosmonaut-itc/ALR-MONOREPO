@@ -15,19 +15,23 @@
 /** biome-ignore-all lint/complexity/noExcessiveCognitiveComplexity: Logging middleware needs comprehensive coverage */
 /** biome-ignore-all lint/performance/noNamespaceImport: Required for zod */
 
-import { zValidator } from '@hono/zod-validator';
-import { formatInTimeZone } from 'date-fns-tz';
-import { and, desc, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
-import { Hono } from 'hono';
-import { cors } from 'hono/cors';
-import { HTTPException } from 'hono/http-exception';
-import { z } from 'zod';
-import { productStockData, withdrawOrderData, withdrawOrderDetailsData } from './constants';
-import { db } from './db/index';
-import * as schemas from './db/schema';
-import { auth } from './lib/auth';
-import { InventorySyncError, syncInventory } from './lib/inventory-sync';
-import type { SessionUser } from './lib/replenishment-orders';
+import { zValidator } from "@hono/zod-validator";
+import { formatInTimeZone } from "date-fns-tz";
+import { and, desc, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { HTTPException } from "hono/http-exception";
+import { z } from "zod";
+import {
+	productStockData,
+	withdrawOrderData,
+	withdrawOrderDetailsData,
+} from "./constants";
+import { db } from "./db/index";
+import * as schemas from "./db/schema";
+import { auth } from "./lib/auth";
+import { InventorySyncError, syncInventory } from "./lib/inventory-sync";
+import type { SessionUser } from "./lib/replenishment-orders";
 import {
 	createReplenishmentOrder,
 	getReplenishmentOrder,
@@ -35,14 +39,14 @@ import {
 	listReplenishmentOrders,
 	listReplenishmentOrdersByWarehouse,
 	updateReplenishmentOrder,
-} from './lib/replenishment-orders';
+} from "./lib/replenishment-orders";
 import type {
 	AltegioDocumentTypeId,
 	AltegioOperationTypeId,
 	DataItemArticulosType,
 	SyncOptions,
 	SyncResult,
-} from './types';
+} from "./types";
 import {
 	apiResponseSchema,
 	apiResponseSchemaDocument,
@@ -52,7 +56,7 @@ import {
 	replenishmentOrderLinkTransferSchema,
 	replenishmentOrderStatusQuerySchema,
 	replenishmentOrderUpdateSchema,
-} from './types';
+} from "./types";
 
 /**
  * Custom type definitions for Hono context variables
@@ -83,26 +87,49 @@ type CabinetWarehouseMapEntry = {
 
 const stockLimitCreateSchema = z
 	.object({
-		warehouseId: z.string().uuid('Invalid warehouse ID'),
-		barcode: z.number().int().nonnegative('Barcode must be a non-negative integer'),
-		minQuantity: z.number().int().nonnegative('Minimum quantity cannot be negative'),
-		maxQuantity: z.number().int().nonnegative('Maximum quantity cannot be negative'),
-		notes: z.string().max(1000, 'Notes must be 1000 characters or less').optional(),
+		warehouseId: z.string().uuid("Invalid warehouse ID"),
+		barcode: z
+			.number()
+			.int()
+			.nonnegative("Barcode must be a non-negative integer"),
+		minQuantity: z
+			.number()
+			.int()
+			.nonnegative("Minimum quantity cannot be negative"),
+		maxQuantity: z
+			.number()
+			.int()
+			.nonnegative("Maximum quantity cannot be negative"),
+		notes: z
+			.string()
+			.max(1000, "Notes must be 1000 characters or less")
+			.optional(),
 	})
 	.refine((data) => data.minQuantity <= data.maxQuantity, {
-		message: 'minQuantity must be ≤ maxQuantity',
-		path: ['maxQuantity'],
+		message: "minQuantity must be ≤ maxQuantity",
+		path: ["maxQuantity"],
 	});
 
 const stockLimitUpdateSchema = z.object({
-	minQuantity: z.number().int().nonnegative('Minimum quantity cannot be negative').optional(),
-	maxQuantity: z.number().int().nonnegative('Maximum quantity cannot be negative').optional(),
-	notes: z.string().max(1000, 'Notes must be 1000 characters or less').optional(),
+	minQuantity: z
+		.number()
+		.int()
+		.nonnegative("Minimum quantity cannot be negative")
+		.optional(),
+	maxQuantity: z
+		.number()
+		.int()
+		.nonnegative("Maximum quantity cannot be negative")
+		.optional(),
+	notes: z
+		.string()
+		.max(1000, "Notes must be 1000 characters or less")
+		.optional(),
 });
 
 const inventorySyncRequestSchema = z
 	.object({
-		warehouseId: z.string().uuid('Invalid warehouse ID').optional(),
+		warehouseId: z.string().uuid("Invalid warehouse ID").optional(),
 		dryRun: z.boolean().optional(),
 	})
 	.strict();
@@ -112,27 +139,27 @@ const inventorySyncRequestSchema = z
  */
 function logErrorDetails(error: unknown, method: string, path: string): void {
 	// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
-	console.error('\n🚨 API ERROR DETAILS:');
+	console.error("\n🚨 API ERROR DETAILS:");
 	// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
-	console.error('📍 Route:', method, path);
+	console.error("📍 Route:", method, path);
 	// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
-	console.error('🕐 Timestamp:', new Date().toISOString());
+	console.error("🕐 Timestamp:", new Date().toISOString());
 
 	if (error instanceof Error) {
 		// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
-		console.error('❌ Error Name:', error.name);
+		console.error("❌ Error Name:", error.name);
 		// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
-		console.error('💬 Error Message:', error.message);
+		console.error("💬 Error Message:", error.message);
 		// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
-		console.error('📚 Stack Trace:');
+		console.error("📚 Stack Trace:");
 		// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
 		console.error(error.stack);
 	} else {
 		// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
-		console.error('🔍 Raw Error:', error);
+		console.error("🔍 Raw Error:", error);
 	}
 	// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
-	console.error('🔚 END ERROR DETAILS\n');
+	console.error("🔚 END ERROR DETAILS\n");
 }
 
 /**
@@ -146,10 +173,10 @@ function getDetailedStatusDescription(status: number): string {
 	// 1xx Informational responses
 	if (status >= 100 && status < 200) {
 		const informationalCodes: Record<number, string> = {
-			100: 'Continue - Client should continue with request',
-			101: 'Switching Protocols - Server switching protocols per client request',
-			102: 'Processing - Server received and processing request',
-			103: 'Early Hints - Server sending preliminary response headers',
+			100: "Continue - Client should continue with request",
+			101: "Switching Protocols - Server switching protocols per client request",
+			102: "Processing - Server received and processing request",
+			103: "Early Hints - Server sending preliminary response headers",
 		};
 		return informationalCodes[status] || `Informational response (${status})`;
 	}
@@ -157,16 +184,16 @@ function getDetailedStatusDescription(status: number): string {
 	// 2xx Success responses
 	if (status >= 200 && status < 300) {
 		const successCodes: Record<number, string> = {
-			200: 'OK - Request successful',
-			201: 'Created - Resource successfully created',
-			202: 'Accepted - Request accepted for processing',
-			203: 'Non-Authoritative Information - Modified response from proxy',
-			204: 'No Content - Request successful, no content to return',
-			205: 'Reset Content - Client should reset document view',
-			206: 'Partial Content - Partial resource delivered',
-			207: 'Multi-Status - Multiple status codes for WebDAV',
-			208: 'Already Reported - DAV binding already enumerated',
-			226: 'IM Used - Instance manipulation applied',
+			200: "OK - Request successful",
+			201: "Created - Resource successfully created",
+			202: "Accepted - Request accepted for processing",
+			203: "Non-Authoritative Information - Modified response from proxy",
+			204: "No Content - Request successful, no content to return",
+			205: "Reset Content - Client should reset document view",
+			206: "Partial Content - Partial resource delivered",
+			207: "Multi-Status - Multiple status codes for WebDAV",
+			208: "Already Reported - DAV binding already enumerated",
+			226: "IM Used - Instance manipulation applied",
 		};
 		return successCodes[status] || `Success response (${status})`;
 	}
@@ -174,14 +201,14 @@ function getDetailedStatusDescription(status: number): string {
 	// 3xx Redirection responses
 	if (status >= 300 && status < 400) {
 		const redirectCodes: Record<number, string> = {
-			300: 'Multiple Choices - Multiple possible responses',
-			301: 'Moved Permanently - Resource permanently moved',
-			302: 'Found - Resource temporarily moved',
-			303: 'See Other - Response located elsewhere',
-			304: 'Not Modified - Resource unchanged since last request',
-			305: 'Use Proxy - Must access resource through proxy',
-			307: 'Temporary Redirect - Resource temporarily moved, method preserved',
-			308: 'Permanent Redirect - Resource permanently moved, method preserved',
+			300: "Multiple Choices - Multiple possible responses",
+			301: "Moved Permanently - Resource permanently moved",
+			302: "Found - Resource temporarily moved",
+			303: "See Other - Response located elsewhere",
+			304: "Not Modified - Resource unchanged since last request",
+			305: "Use Proxy - Must access resource through proxy",
+			307: "Temporary Redirect - Resource temporarily moved, method preserved",
+			308: "Permanent Redirect - Resource permanently moved, method preserved",
 		};
 		return redirectCodes[status] || `Redirection response (${status})`;
 	}
@@ -189,35 +216,35 @@ function getDetailedStatusDescription(status: number): string {
 	// 4xx Client error responses
 	if (status >= 400 && status < 500) {
 		const clientErrorCodes: Record<number, string> = {
-			400: 'Bad Request - Invalid request syntax or parameters',
-			401: 'Unauthorized - Authentication required or failed',
-			402: 'Payment Required - Payment needed for access',
-			403: 'Forbidden - Server understood but refuses authorization',
-			404: 'Not Found - Requested resource not found',
-			405: 'Method Not Allowed - HTTP method not supported',
-			406: 'Not Acceptable - Content not acceptable per headers',
-			407: 'Proxy Authentication Required - Proxy authentication needed',
-			408: 'Request Timeout - Server timeout waiting for request',
-			409: 'Conflict - Request conflicts with current resource state',
-			410: 'Gone - Resource permanently deleted',
-			411: 'Length Required - Content-Length header required',
-			412: 'Precondition Failed - Precondition in headers failed',
-			413: 'Payload Too Large - Request entity too large',
-			414: 'URI Too Long - Request URI too long',
-			415: 'Unsupported Media Type - Media type not supported',
-			416: 'Range Not Satisfiable - Range header cannot be satisfied',
-			417: 'Expectation Failed - Expect header cannot be satisfied',
+			400: "Bad Request - Invalid request syntax or parameters",
+			401: "Unauthorized - Authentication required or failed",
+			402: "Payment Required - Payment needed for access",
+			403: "Forbidden - Server understood but refuses authorization",
+			404: "Not Found - Requested resource not found",
+			405: "Method Not Allowed - HTTP method not supported",
+			406: "Not Acceptable - Content not acceptable per headers",
+			407: "Proxy Authentication Required - Proxy authentication needed",
+			408: "Request Timeout - Server timeout waiting for request",
+			409: "Conflict - Request conflicts with current resource state",
+			410: "Gone - Resource permanently deleted",
+			411: "Length Required - Content-Length header required",
+			412: "Precondition Failed - Precondition in headers failed",
+			413: "Payload Too Large - Request entity too large",
+			414: "URI Too Long - Request URI too long",
+			415: "Unsupported Media Type - Media type not supported",
+			416: "Range Not Satisfiable - Range header cannot be satisfied",
+			417: "Expectation Failed - Expect header cannot be satisfied",
 			418: "I'm a teapot - April Fools' joke (RFC 2324)",
-			421: 'Misdirected Request - Request directed to wrong server',
-			422: 'Unprocessable Entity - Request syntax correct but semantically incorrect',
-			423: 'Locked - Resource is locked',
-			424: 'Failed Dependency - Request failed due to previous request failure',
-			425: 'Too Early - Server unwilling to risk replay attack',
-			426: 'Upgrade Required - Client must upgrade to different protocol',
-			428: 'Precondition Required - Origin server requires conditional request',
-			429: 'Too Many Requests - Rate limit exceeded',
-			431: 'Request Header Fields Too Large - Header fields too large',
-			451: 'Unavailable For Legal Reasons - Access denied for legal reasons',
+			421: "Misdirected Request - Request directed to wrong server",
+			422: "Unprocessable Entity - Request syntax correct but semantically incorrect",
+			423: "Locked - Resource is locked",
+			424: "Failed Dependency - Request failed due to previous request failure",
+			425: "Too Early - Server unwilling to risk replay attack",
+			426: "Upgrade Required - Client must upgrade to different protocol",
+			428: "Precondition Required - Origin server requires conditional request",
+			429: "Too Many Requests - Rate limit exceeded",
+			431: "Request Header Fields Too Large - Header fields too large",
+			451: "Unavailable For Legal Reasons - Access denied for legal reasons",
 		};
 		return clientErrorCodes[status] || `Client error (${status})`;
 	}
@@ -225,17 +252,17 @@ function getDetailedStatusDescription(status: number): string {
 	// 5xx Server error responses
 	if (status >= 500 && status < 600) {
 		const serverErrorCodes: Record<number, string> = {
-			500: 'Internal Server Error - Generic server error',
-			501: 'Not Implemented - Server does not support functionality',
-			502: 'Bad Gateway - Invalid response from upstream server',
-			503: 'Service Unavailable - Server temporarily overloaded or down',
-			504: 'Gateway Timeout - Upstream server timeout',
-			505: 'HTTP Version Not Supported - HTTP version not supported',
-			506: 'Variant Also Negotiates - Server misconfiguration',
-			507: 'Insufficient Storage - Server cannot store request',
-			508: 'Loop Detected - Infinite loop in request processing',
-			510: 'Not Extended - Extensions required for request',
-			511: 'Network Authentication Required - Network authentication needed',
+			500: "Internal Server Error - Generic server error",
+			501: "Not Implemented - Server does not support functionality",
+			502: "Bad Gateway - Invalid response from upstream server",
+			503: "Service Unavailable - Server temporarily overloaded or down",
+			504: "Gateway Timeout - Upstream server timeout",
+			505: "HTTP Version Not Supported - HTTP version not supported",
+			506: "Variant Also Negotiates - Server misconfiguration",
+			507: "Insufficient Storage - Server cannot store request",
+			508: "Loop Detected - Infinite loop in request processing",
+			510: "Not Extended - Extensions required for request",
+			511: "Network Authentication Required - Network authentication needed",
 		};
 		return serverErrorCodes[status] || `Server error (${status})`;
 	}
@@ -246,23 +273,25 @@ function getDetailedStatusDescription(status: number): string {
 /**
  * Helper function to handle database errors with specific patterns
  */
-function handleDatabaseError(error: Error): { response: ApiResponse; status: number } | null {
+function handleDatabaseError(
+	error: Error,
+): { response: ApiResponse; status: number } | null {
 	const errorMessage = error.message.toLowerCase();
 
 	// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database error patterns
-	console.error('🔍 Database Error Analysis:', {
+	console.error("🔍 Database Error Analysis:", {
 		message: errorMessage,
 		name: error.name,
 		fullMessage: error.message,
 	});
 
-	if (errorMessage.includes('duplicate') || errorMessage.includes('unique')) {
+	if (errorMessage.includes("duplicate") || errorMessage.includes("unique")) {
 		// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
-		console.error('🗃️ Database: Duplicate key violation');
+		console.error("🗃️ Database: Duplicate key violation");
 		return {
 			response: {
 				success: false,
-				message: 'Duplicate record - resource already exists',
+				message: "Duplicate record - resource already exists",
 			},
 			status: 409,
 		};
@@ -270,35 +299,37 @@ function handleDatabaseError(error: Error): { response: ApiResponse; status: num
 
 	// Enhanced foreign key constraint detection for both direct PostgreSQL and Drizzle errors
 	const isForeignKeyError =
-		errorMessage.includes('foreign key') ||
-		errorMessage.includes('foreign key constraint') ||
-		errorMessage.includes('violates foreign key') ||
-		errorMessage.includes('still referenced') ||
-		(errorMessage.includes('constraint') && errorMessage.includes('violates')) ||
-		errorMessage.includes('referenced') ||
-		errorMessage.includes('restrict') ||
-		errorMessage.includes('23503') || // PostgreSQL foreign key violation code
-		errorMessage.includes('_fk'); // Foreign key constraint naming pattern
+		errorMessage.includes("foreign key") ||
+		errorMessage.includes("foreign key constraint") ||
+		errorMessage.includes("violates foreign key") ||
+		errorMessage.includes("still referenced") ||
+		(errorMessage.includes("constraint") &&
+			errorMessage.includes("violates")) ||
+		errorMessage.includes("referenced") ||
+		errorMessage.includes("restrict") ||
+		errorMessage.includes("23503") || // PostgreSQL foreign key violation code
+		errorMessage.includes("_fk"); // Foreign key constraint naming pattern
 
 	if (isForeignKeyError) {
 		// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
-		console.error('🔗 Database: Foreign key constraint violation');
+		console.error("🔗 Database: Foreign key constraint violation");
 		return {
 			response: {
 				success: false,
-				message: 'Cannot delete record because it is referenced by other records',
+				message:
+					"Cannot delete record because it is referenced by other records",
 			},
 			status: 409, // Changed to 409 for consistency with delete operations
 		};
 	}
 
-	if (errorMessage.includes('connection') || errorMessage.includes('timeout')) {
+	if (errorMessage.includes("connection") || errorMessage.includes("timeout")) {
 		// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
-		console.error('🔌 Database: Connection issue');
+		console.error("🔌 Database: Connection issue");
 		return {
 			response: {
 				success: false,
-				message: 'Database connection error',
+				message: "Database connection error",
 			},
 			status: 503,
 		};
@@ -308,7 +339,7 @@ function handleDatabaseError(error: Error): { response: ApiResponse; status: num
 }
 
 function isTransferTypeInternal(transferType: string): boolean {
-	return transferType === 'internal';
+	return transferType === "internal";
 }
 
 /**
@@ -340,7 +371,7 @@ function validateTransferStatusLogic(
 	if (isCompleted === true && isCancelled === true) {
 		return {
 			success: false,
-			message: 'Transfer cannot be both completed and cancelled',
+			message: "Transfer cannot be both completed and cancelled",
 		};
 	}
 
@@ -348,7 +379,7 @@ function validateTransferStatusLogic(
 	if (isCompleted === true && isPending === true) {
 		return {
 			success: false,
-			message: 'Completed transfers cannot be pending',
+			message: "Completed transfers cannot be pending",
 		};
 	}
 
@@ -356,7 +387,7 @@ function validateTransferStatusLogic(
 	if (isCompleted === true && !completedBy) {
 		return {
 			success: false,
-			message: 'completedBy is required when marking transfer as completed',
+			message: "completedBy is required when marking transfer as completed",
 		};
 	}
 
@@ -424,7 +455,7 @@ function validateProductStockCreationRules(data: {
 	if (data.isBeingUsed === true && !data.lastUsedBy) {
 		return {
 			success: false,
-			message: 'lastUsedBy is required when product is being used',
+			message: "lastUsedBy is required when product is being used",
 		};
 	}
 
@@ -432,7 +463,7 @@ function validateProductStockCreationRules(data: {
 	if (data.lastUsed && !data.lastUsedBy) {
 		return {
 			success: false,
-			message: 'lastUsedBy is required when lastUsed is provided',
+			message: "lastUsedBy is required when lastUsed is provided",
 		};
 	}
 
@@ -448,22 +479,23 @@ function handleProductStockCreationError(
 ): { response: ApiResponse; status: number } | null {
 	if (error instanceof Error) {
 		// Handle foreign key constraint errors (invalid warehouse or employee ID)
-		if (error.message.includes('foreign key')) {
+		if (error.message.includes("foreign key")) {
 			return {
 				response: {
 					success: false,
-					message: 'Invalid warehouse ID or employee ID - record does not exist',
+					message:
+						"Invalid warehouse ID or employee ID - record does not exist",
 				},
 				status: 400,
 			};
 		}
 
 		// Handle other validation errors
-		if (error.message.includes('invalid input')) {
+		if (error.message.includes("invalid input")) {
 			return {
 				response: {
 					success: false,
-					message: 'Invalid input data provided',
+					message: "Invalid input data provided",
 				},
 				status: 400,
 			};
@@ -473,11 +505,11 @@ function handleProductStockCreationError(
 	return null; // No specific error handling
 }
 
-const ALTEGIO_BASE_URL = 'https://api.alteg.io';
-const ALTEGIO_STORAGE_DOCUMENT_PATH = '/api/v1/storage_operations/documents';
-const ALTEGIO_STORAGE_OPERATION_PATH = '/api/v1/storage_operations/operation';
+const ALTEGIO_BASE_URL = "https://api.alteg.io";
+const ALTEGIO_STORAGE_DOCUMENT_PATH = "/api/v1/storage_operations/documents";
+const ALTEGIO_STORAGE_OPERATION_PATH = "/api/v1/storage_operations/operation";
 const ALTEGIO_DATETIME_FORMAT = "yyyy-MM-dd'T'HH:mm:ss.SSSxxx";
-const DEFAULT_TIME_ZONE = 'UTC';
+const DEFAULT_TIME_ZONE = "UTC";
 const ALTEGIO_DOCUMENT_TYPE_ARRIVAL: AltegioDocumentTypeId = 3;
 const ALTEGIO_DOCUMENT_TYPE_DEPARTURE: AltegioDocumentTypeId = 7;
 const ALTEGIO_OPERATION_TYPE_ARRIVAL: AltegioOperationTypeId = 3;
@@ -530,11 +562,15 @@ const altegioStorageOperationRequestSchema = z.object({
 });
 
 export type AltegioAuthHeaders = z.infer<typeof altegioAuthHeadersSchema>;
-export type AltegioStorageDocumentRequest = z.infer<typeof altegioStorageDocumentRequestSchema>;
+export type AltegioStorageDocumentRequest = z.infer<
+	typeof altegioStorageDocumentRequestSchema
+>;
 export type AltegioStorageOperationTransaction = z.infer<
 	typeof altegioStorageOperationTransactionSchema
 >;
-export type AltegioStorageOperationRequest = z.infer<typeof altegioStorageOperationRequestSchema>;
+export type AltegioStorageOperationRequest = z.infer<
+	typeof altegioStorageOperationRequestSchema
+>;
 
 export type AltegioStorageDocumentPayload = {
 	type_id: AltegioDocumentTypeId;
@@ -580,7 +616,11 @@ export type AltegioResponseSchema<TResponse> = z.ZodType<TResponse>;
  * @returns A formatted timestamp string accepted by the Altegio API.
  */
 const formatCreateDate = (date: Date, timeZone?: string): string => {
-	return formatInTimeZone(date, timeZone ?? DEFAULT_TIME_ZONE, ALTEGIO_DATETIME_FORMAT);
+	return formatInTimeZone(
+		date,
+		timeZone ?? DEFAULT_TIME_ZONE,
+		ALTEGIO_DATETIME_FORMAT,
+	);
 };
 
 /**
@@ -589,11 +629,14 @@ const formatCreateDate = (date: Date, timeZone?: string): string => {
  * @param authHeaders - Authorization and content negotiation headers.
  * @returns A HeadersInit object ready for Altegio API calls.
  */
-const createHeaders = ({ authHeader, acceptHeader }: AltegioAuthHeaders): HeadersInit => {
+const createHeaders = ({
+	authHeader,
+	acceptHeader,
+}: AltegioAuthHeaders): HeadersInit => {
 	return {
 		Authorization: authHeader,
 		Accept: acceptHeader,
-		'Content-Type': 'application/json',
+		"Content-Type": "application/json",
 	};
 };
 
@@ -603,7 +646,9 @@ const createHeaders = ({ authHeader, acceptHeader }: AltegioAuthHeaders): Header
  * @param headers - Authorization and accept header values sourced from configuration.
  * @returns A HeadersInit value with the required Altegio headers.
  */
-export const createAltegioHeaders = (headers: AltegioAuthHeaders): HeadersInit => {
+export const createAltegioHeaders = (
+	headers: AltegioAuthHeaders,
+): HeadersInit => {
 	const parsed = altegioAuthHeadersSchema.parse(headers);
 	return createHeaders(parsed);
 };
@@ -650,12 +695,18 @@ export const createAltegioStorageOperationRequestBody = (
 			discount: transaction.discount,
 			cost: transaction.cost,
 			operation_unit_type: transaction.operationUnitType,
-			...(transaction.masterId !== undefined ? { master_id: transaction.masterId } : {}),
-			...(transaction.clientId !== undefined ? { client_id: transaction.clientId } : {}),
+			...(transaction.masterId !== undefined
+				? { master_id: transaction.masterId }
+				: {}),
+			...(transaction.clientId !== undefined
+				? { client_id: transaction.clientId }
+				: {}),
 			...(transaction.supplierId !== undefined
 				? { supplier_id: transaction.supplierId }
 				: {}),
-			...(transaction.comment !== undefined ? { comment: transaction.comment } : {}),
+			...(transaction.comment !== undefined
+				? { comment: transaction.comment }
+				: {}),
 		})),
 	};
 };
@@ -686,14 +737,16 @@ export const postAltegioStorageDocument = async <TResponse>(
 	const response = await fetch(
 		`${baseUrl}${ALTEGIO_STORAGE_DOCUMENT_PATH}/${validatedCompanyId}`,
 		{
-			method: 'POST',
+			method: "POST",
 			headers: requestHeaders,
 			body: JSON.stringify(payload),
 		},
 	);
 
 	if (!response.ok) {
-		throw new Error(`Altegio storage document creation failed with status ${response.status}`);
+		throw new Error(
+			`Altegio storage document creation failed with status ${response.status}`,
+		);
 	}
 
 	const json = (await response.json()) as unknown;
@@ -726,14 +779,16 @@ export const postAltegioStorageOperation = async <TResponse>(
 	const response = await fetch(
 		`${baseUrl}${ALTEGIO_STORAGE_OPERATION_PATH}/${validatedCompanyId}`,
 		{
-			method: 'POST',
+			method: "POST",
 			headers: requestHeaders,
 			body: JSON.stringify(payload),
 		},
 	);
 
 	if (!response.ok) {
-		throw new Error(`Altegio storage operation creation failed with status ${response.status}`);
+		throw new Error(
+			`Altegio storage operation creation failed with status ${response.status}`,
+		);
 	}
 
 	const json = (await response.json()) as unknown;
@@ -753,11 +808,12 @@ const app = new Hono<{
  * Enhanced logging middleware for requests and responses
  * Logs detailed information for debugging API issues
  */
-app.use('*', async (c, next) => {
+app.use("*", async (c, next) => {
 	const start = Date.now();
 	const method = c.req.method;
 	const path = c.req.path;
-	const isDev = process.env.NODE_ENV === 'development' || process.env.DEBUG === 'true';
+	const isDev =
+		process.env.NODE_ENV === "development" || process.env.DEBUG === "true";
 
 	// Log incoming request with timestamp
 	// biome-ignore lint/suspicious/noConsole: Intentional debug logging
@@ -765,8 +821,8 @@ app.use('*', async (c, next) => {
 
 	// Log auth headers for debugging (only in development)
 	if (isDev) {
-		const authHeader = c.req.header('Authorization');
-		const cookieHeader = c.req.header('Cookie');
+		const authHeader = c.req.header("Authorization");
+		const cookieHeader = c.req.header("Cookie");
 		if (authHeader) {
 			// biome-ignore lint/suspicious/noConsole: Intentional debug logging
 			console.log(`🔑 Authorization: ${authHeader.substring(0, 20)}...`);
@@ -777,20 +833,21 @@ app.use('*', async (c, next) => {
 		}
 
 		// Log request body for POST/PUT/PATCH requests
-		if (['POST', 'PUT', 'PATCH'].includes(method)) {
+		if (["POST", "PUT", "PATCH"].includes(method)) {
 			try {
-				const contentType = c.req.header('Content-Type');
-				if (contentType?.includes('application/json')) {
+				const contentType = c.req.header("Content-Type");
+				if (contentType?.includes("application/json")) {
 					const rawBody = await c.req.raw.text();
 					const body = JSON.parse(rawBody);
 					// biome-ignore lint/suspicious/noConsole: Intentional debug logging
-					console.log('📝 Request Body:', JSON.stringify(body, null, 2));
+					console.log("📝 Request Body:", JSON.stringify(body, null, 2));
 				}
 			} catch (error) {
-				const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+				const errorMessage =
+					error instanceof Error ? error.message : "Unknown error";
 				logErrorDetails(error, c.req.method, c.req.path);
 				// biome-ignore lint/suspicious/noConsole: Intentional debug logging
-				console.log('⚠️ Could not parse request body:', errorMessage);
+				console.log("⚠️ Could not parse request body:", errorMessage);
 			}
 		}
 	}
@@ -803,37 +860,37 @@ app.use('*', async (c, next) => {
 	const status = c.res.status;
 
 	// Determine status emoji and detailed status information based on HTTP status code
-	let statusEmoji = '🟢';
-	let statusCategory = '';
-	let statusDescription = '';
+	let statusEmoji = "🟢";
+	let statusCategory = "";
+	let statusDescription = "";
 
 	if (status >= 500) {
-		statusEmoji = '🔴';
-		statusCategory = 'SERVER_ERROR';
+		statusEmoji = "🔴";
+		statusCategory = "SERVER_ERROR";
 		statusDescription = getDetailedStatusDescription(status);
 		// Log additional details for server errors
 		// biome-ignore lint/suspicious/noConsole: Intentional error logging for debugging
 		console.error(`🚨 SERVER ERROR DETECTED - ${status}: ${statusDescription}`);
 	} else if (status >= 400) {
-		statusEmoji = '🟡';
-		statusCategory = 'CLIENT_ERROR';
+		statusEmoji = "🟡";
+		statusCategory = "CLIENT_ERROR";
 		statusDescription = getDetailedStatusDescription(status);
 		// Log client errors for debugging API usage issues
 		// biome-ignore lint/suspicious/noConsole: Intentional error logging for debugging
 		console.warn(`⚠️ CLIENT ERROR - ${status}: ${statusDescription}`);
 	} else if (status >= 300) {
-		statusEmoji = '🟠';
-		statusCategory = 'REDIRECT';
+		statusEmoji = "🟠";
+		statusCategory = "REDIRECT";
 		statusDescription = getDetailedStatusDescription(status);
 		// biome-ignore lint/suspicious/noConsole: Intentional debug logging
 		console.log(`🔄 REDIRECT - ${status}: ${statusDescription}`);
 	} else if (status >= 200) {
-		statusEmoji = '🟢';
-		statusCategory = 'SUCCESS';
+		statusEmoji = "🟢";
+		statusCategory = "SUCCESS";
 		statusDescription = getDetailedStatusDescription(status);
 	} else if (status >= 100) {
-		statusEmoji = '🔵';
-		statusCategory = 'INFORMATIONAL';
+		statusEmoji = "🔵";
+		statusCategory = "INFORMATIONAL";
 		statusDescription = getDetailedStatusDescription(status);
 	}
 
@@ -852,14 +909,16 @@ app.use('*', async (c, next) => {
 	// Log performance warnings for slow requests
 	if (duration > 1000) {
 		// biome-ignore lint/suspicious/noConsole: Intentional performance logging
-		console.warn(`⏱️ SLOW REQUEST WARNING: ${method} ${path} took ${duration}ms`);
+		console.warn(
+			`⏱️ SLOW REQUEST WARNING: ${method} ${path} took ${duration}ms`,
+		);
 	} else if (duration > 500) {
 		// biome-ignore lint/suspicious/noConsole: Intentional performance logging
 		console.log(`⏰ Performance Notice: ${method} ${path} took ${duration}ms`);
 	}
 
 	// biome-ignore lint/suspicious/noConsole: Intentional debug logging
-	console.log('─'.repeat(80));
+	console.log("─".repeat(80));
 });
 
 /**
@@ -868,19 +927,19 @@ app.use('*', async (c, next) => {
  * security headers and credential support for authentication flows
  */
 app.use(
-	'/api/auth/*',
+	"/api/auth/*",
 	cors({
 		// Allowed origins for CORS requests
 		origin: [
-			'http://localhost:3000', // Local development
-			'http://localhost:3001', // Local development
-			'http://100.89.145.51:3000', // Development server IP
-			'nsinventorymngmt://', // Mobile app deep link
-			'http://100.111.159.14:3000', // Additional development IP
+			"http://localhost:3000", // Local development
+			"http://localhost:3001", // Local development
+			"http://100.89.145.51:3000", // Development server IP
+			"nsinventorymngmt://", // Mobile app deep link
+			"http://100.111.159.14:3000", // Additional development IP
 		],
-		allowHeaders: ['Content-Type', 'Authorization'],
-		allowMethods: ['POST', 'GET', 'OPTIONS'],
-		exposeHeaders: ['Content-Length'],
+		allowHeaders: ["Content-Type", "Authorization"],
+		allowMethods: ["POST", "GET", "OPTIONS"],
+		exposeHeaders: ["Content-Length"],
 		maxAge: 600, // Cache preflight for 10 minutes
 		credentials: true, // Required for cookie-based authentication
 	}),
@@ -891,26 +950,26 @@ app.use(
  * Extracts and validates user session for all requests
  * Sets user and session variables in context for downstream handlers
  */
-app.use('*', async (c, next) => {
+app.use("*", async (c, next) => {
 	try {
 		// Extract session from request headers using Better Auth
 		const session = await auth.api.getSession({ headers: c.req.raw.headers });
 
 		// Always set context variables for all requests
-		c.set('user', session?.user || null);
-		c.set('session', session?.session || null);
+		c.set("user", session?.user || null);
+		c.set("session", session?.session || null);
 
 		// Define Better Auth endpoints that should NOT be protected
 		// These are the public authentication endpoints that Better Auth handles
 		const betterAuthPublicEndpoints = [
-			'/api/auth/sign-in/email',
-			'/api/auth/sign-up',
-			'/api/auth/sign-out',
-			'/api/auth/session',
-			'/api/auth/callback',
-			'/api/auth/verify-email',
-			'/api/auth/reset-password',
-			'/api/auth/forgot-password',
+			"/api/auth/sign-in/email",
+			"/api/auth/sign-up",
+			"/api/auth/sign-out",
+			"/api/auth/session",
+			"/api/auth/callback",
+			"/api/auth/verify-email",
+			"/api/auth/reset-password",
+			"/api/auth/forgot-password",
 		];
 
 		// Check if this is a Better Auth public endpoint
@@ -919,14 +978,15 @@ app.use('*', async (c, next) => {
 		);
 
 		// Automatically protect ALL custom routes under /api/auth/ except Better Auth endpoints
-		const isCustomProtectedRoute = c.req.path.startsWith('/api/auth/') && !isBetterAuthEndpoint;
+		const isCustomProtectedRoute =
+			c.req.path.startsWith("/api/auth/") && !isBetterAuthEndpoint;
 
 		// If it's a custom protected route and no session, block access
 		if (isCustomProtectedRoute && !session) {
 			return c.json(
 				{
 					success: false,
-					message: 'Authentication required',
+					message: "Authentication required",
 				},
 				401,
 			);
@@ -937,9 +997,9 @@ app.use('*', async (c, next) => {
 	} catch (error) {
 		// Log authentication errors but don't fail the request
 		// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging authentication issues
-		console.error('Authentication middleware error:', error);
-		c.set('user', null);
-		c.set('session', null);
+		console.error("Authentication middleware error:", error);
+		c.set("user", null);
+		c.set("session", null);
 		return next();
 	}
 });
@@ -953,13 +1013,13 @@ const route = app
 	 * Enhanced error handling middleware for API routes
 	 * Catches and properly formats any unhandled errors in API endpoints with detailed logging
 	 */
-	.use('/api/auth/*', async (c, next) => {
+	.use("/api/auth/*", async (c, next) => {
 		try {
 			await next();
 		} catch (error) {
 			// Log detailed error information for global handler
 			// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
-			console.error('🌐 Global Error Handler Caught:', {
+			console.error("🌐 Global Error Handler Caught:", {
 				path: c.req.path,
 				method: c.req.method,
 				error: error instanceof Error ? error.message : error,
@@ -970,7 +1030,7 @@ const route = app
 			// Handle HTTP exceptions with proper status codes
 			if (error instanceof HTTPException) {
 				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
-				console.error('🌐 HTTP Exception Status:', error.status);
+				console.error("🌐 HTTP Exception Status:", error.status);
 				return c.json(
 					{
 						success: false,
@@ -981,13 +1041,16 @@ const route = app
 			}
 
 			// Handle Zod validation errors
-			if (error instanceof Error && error.name === 'ZodError') {
+			if (error instanceof Error && error.name === "ZodError") {
 				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
-				console.error('📋 Validation Error Details:', JSON.stringify(error, null, 2));
+				console.error(
+					"📋 Validation Error Details:",
+					JSON.stringify(error, null, 2),
+				);
 				return c.json(
 					{
 						success: false,
-						message: 'Validation error',
+						message: "Validation error",
 						data: error,
 					} satisfies ApiResponse,
 					400,
@@ -1005,14 +1068,14 @@ const route = app
 			// Handle generic errors with 500 status
 			// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
 			console.error(
-				'🚨 SERVER ERROR DETECTED - 500: Internal Server Error - Generic server error',
+				"🚨 SERVER ERROR DETECTED - 500: Internal Server Error - Generic server error",
 			);
 			return c.json(
 				{
 					success: false,
-					message: 'Internal server error',
-					...(process.env.NODE_ENV === 'development' && {
-						error: error instanceof Error ? error.message : 'Unknown error',
+					message: "Internal server error",
+					...(process.env.NODE_ENV === "development" && {
+						error: error instanceof Error ? error.message : "Unknown error",
 					}),
 				} satisfies ApiResponse,
 				500,
@@ -1034,7 +1097,7 @@ const route = app
 	 * @throws {400} Bad request if required environment variables are missing
 	 * @throws {500} Internal server error if API call fails
 	 */
-	.get('/api/auth/products/all', async (c) => {
+	.get("/api/auth/products/all", async (c) => {
 		try {
 			// Validate required environment variables
 			const authHeader = process.env.AUTH_HEADER;
@@ -1042,13 +1105,13 @@ const route = app
 
 			if (!authHeader) {
 				// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
-				console.error('Missing required environment variable: AUTH_HEADER');
+				console.error("Missing required environment variable: AUTH_HEADER");
 
 				// Return error response when environment variables are missing
 				return c.json(
 					{
 						success: false,
-						message: 'Missing required authentication configuration',
+						message: "Missing required authentication configuration",
 						data: [],
 					} satisfies ApiResponse<DataItemArticulosType[]>,
 					400,
@@ -1057,12 +1120,12 @@ const route = app
 
 			if (!acceptHeader) {
 				// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
-				console.error('Missing required environment variable: ACCEPT_HEADER');
+				console.error("Missing required environment variable: ACCEPT_HEADER");
 
 				return c.json(
 					{
 						success: false,
-						message: 'Missing required authentication configuration',
+						message: "Missing required authentication configuration",
 						data: [],
 					} satisfies ApiResponse<DataItemArticulosType[]>,
 					400,
@@ -1072,7 +1135,7 @@ const route = app
 			const requestHeaders: HeadersInit = {
 				Authorization: authHeader,
 				Accept: acceptHeader,
-				'Content-Type': 'application/json',
+				"Content-Type": "application/json",
 			};
 
 			// Server-side pagination to aggregate all products across ALL warehouses
@@ -1094,11 +1157,15 @@ const route = app
 				page: number,
 				accumulated: DataItemArticulosType[],
 				metaAccumulated: unknown[],
-			): Promise<{ data: DataItemArticulosType[]; meta: unknown[]; success: boolean }> {
+			): Promise<{
+				data: DataItemArticulosType[];
+				meta: unknown[];
+				success: boolean;
+			}> {
 				const apiUrl = `https://api.alteg.io/api/v1/goods/${altegioId}?count=${PAGE_SIZE}&page=${page}`;
 
 				const response = await fetch(apiUrl, {
-					method: 'GET',
+					method: "GET",
 					headers: requestHeaders,
 				});
 
@@ -1115,7 +1182,8 @@ const route = app
 				const combinedData = accumulated.concat(currentPageData);
 				const combinedMeta = metaAccumulated.concat(validated.meta ?? []);
 
-				const fetchedEnough = currentPageData.length < PAGE_SIZE || page >= MAX_PAGES;
+				const fetchedEnough =
+					currentPageData.length < PAGE_SIZE || page >= MAX_PAGES;
 				if (fetchedEnough) {
 					return {
 						data: combinedData,
@@ -1124,7 +1192,12 @@ const route = app
 					};
 				}
 
-				return fetchWarehouseProducts(altegioId, page + 1, combinedData, combinedMeta);
+				return fetchWarehouseProducts(
+					altegioId,
+					page + 1,
+					combinedData,
+					combinedMeta,
+				);
 			}
 
 			// Load all active warehouses with valid Altegio IDs
@@ -1146,7 +1219,7 @@ const route = app
 					{
 						success: false,
 						message:
-							'No active warehouses are configured with valid Altegio IDs to fetch products from',
+							"No active warehouses are configured with valid Altegio IDs to fetch products from",
 						data: [],
 					} satisfies ApiResponse<DataItemArticulosType[]>,
 					400,
@@ -1168,7 +1241,10 @@ const route = app
 				}
 			}
 
-			const allProducts = Array.from(uniqueByGoodId.values()).slice(0, MAX_ITEMS);
+			const allProducts = Array.from(uniqueByGoodId.values()).slice(
+				0,
+				MAX_ITEMS,
+			);
 			const meta = warehouseResults.flatMap((r) => r.meta ?? []);
 			const success = warehouseResults.every((r) => r.success === true);
 
@@ -1183,69 +1259,75 @@ const route = app
 			);
 		} catch (error) {
 			// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
-			console.error('Error fetching products from Altegio API:', error);
+			console.error("Error fetching products from Altegio API:", error);
 
 			// Return error response with empty data array
 			return c.json(
 				{
 					success: false,
-					message: 'Failed to fetch products from Altegio API',
+					message: "Failed to fetch products from Altegio API",
 					data: [],
 				} satisfies ApiResponse<DataItemArticulosType[]>,
 				500,
 			);
 		}
 	})
-	.post('/api/auth/inventory/sync', zValidator('json', inventorySyncRequestSchema), async (c) => {
-		const { warehouseId, dryRun = false } = c.req.valid('json');
+	.post(
+		"/api/auth/inventory/sync",
+		zValidator("json", inventorySyncRequestSchema),
+		async (c) => {
+			const { warehouseId, dryRun = false } = c.req.valid("json");
 
-		const syncOptions: SyncOptions = {
-			dryRun,
-			...(warehouseId !== undefined ? { warehouseId } : {}),
-		};
+			const syncOptions: SyncOptions = {
+				dryRun,
+				...(warehouseId !== undefined ? { warehouseId } : {}),
+			};
 
-		try {
-			const result = await syncInventory(syncOptions);
+			try {
+				const result = await syncInventory(syncOptions);
 
-			return c.json(
-				{
-					success: true,
-					message: dryRun
-						? 'Dry-run inventory sync completed successfully'
-						: 'Inventory sync completed successfully',
-					data: {
-						warehouses: result.warehouses,
-						totals: result.totals,
-					},
-					meta: [result.meta],
-				} satisfies ApiResponse<{
-					warehouses: SyncResult['warehouses'];
-					totals: SyncResult['totals'];
-				}>,
-				200,
-			);
-		} catch (error) {
-			if (error instanceof InventorySyncError) {
-				const errorDetails = error.details as Record<string, unknown> | undefined;
 				return c.json(
 					{
-						success: false,
-						message: error.message,
-						...(errorDetails !== undefined ? { data: errorDetails } : {}),
-						meta: [
-							{
-								dryRun,
-								warehouseId,
-							},
-						],
-					} satisfies ApiResponse<Record<string, unknown>>,
-					error.status,
+						success: true,
+						message: dryRun
+							? "Dry-run inventory sync completed successfully"
+							: "Inventory sync completed successfully",
+						data: {
+							warehouses: result.warehouses,
+							totals: result.totals,
+						},
+						meta: [result.meta],
+					} satisfies ApiResponse<{
+						warehouses: SyncResult["warehouses"];
+						totals: SyncResult["totals"];
+					}>,
+					200,
 				);
-			}
+			} catch (error) {
+				if (error instanceof InventorySyncError) {
+					const errorDetails = error.details as
+						| Record<string, unknown>
+						| undefined;
+					return c.json(
+						{
+							success: false,
+							message: error.message,
+							...(errorDetails !== undefined ? { data: errorDetails } : {}),
+							meta: [
+								{
+									dryRun,
+									warehouseId,
+								},
+							],
+						} satisfies ApiResponse<Record<string, unknown>>,
+						error.status,
+					);
+				}
 
-			throw error;
-		}
-	})
+				throw error;
+			}
+		},
+	)
 
 	/**
 	 * GET / - Root endpoint health check
@@ -1255,7 +1337,7 @@ const route = app
 	 *
 	 * @returns {string} Simple greeting message
 	 */
-	.get('/', (c) => c.json('Hello Bun!'))
+	.get("/", (c) => c.json("Hello Bun!"))
 
 	/**
 	 * GET /api/product-stock - Retrieve product stock data
@@ -1268,7 +1350,7 @@ const route = app
 	 * @returns {ApiResponse} Success response with product stock data (from DB or mock)
 	 * @throws {500} If an unexpected error occurs during data retrieval
 	 */
-	.get('/api/auth/product-stock/all', async (c) => {
+	.get("/api/auth/product-stock/all", async (c) => {
 		try {
 			// Build two arrays to mirror by-warehouse response shape, but across all data
 			// 1) All items that are in a warehouse (regardless of cabinet)
@@ -1319,15 +1401,18 @@ const route = app
 				);
 
 			// If no records exist, return mock data for development/testing
-			if (warehouseProductStock.length === 0 && cabinetProductStock.length === 0) {
+			if (
+				warehouseProductStock.length === 0 &&
+				cabinetProductStock.length === 0
+			) {
 				return c.json(
 					{
 						success: true,
-						message: 'Fetching test data filtered by warehouse',
+						message: "Fetching test data filtered by warehouse",
 						data: {
 							warehouse: [],
 							cabinet: [],
-							cabinetId: '',
+							cabinetId: "",
 						},
 					} satisfies ApiResponse,
 					200,
@@ -1338,23 +1423,23 @@ const route = app
 			return c.json(
 				{
 					success: true,
-					message: 'Fetching db data',
+					message: "Fetching db data",
 					data: {
 						warehouse: warehouseProductStock,
 						cabinet: cabinetProductStock,
-						cabinetId: '',
+						cabinetId: "",
 					},
 				} satisfies ApiResponse,
 				200,
 			);
 		} catch (error) {
 			// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
-			console.error('Error fetching product stock:', error);
+			console.error("Error fetching product stock:", error);
 
 			return c.json(
 				{
 					success: false,
-					message: 'Failed to fetch product stock',
+					message: "Failed to fetch product stock",
 				} satisfies ApiResponse,
 				500,
 			);
@@ -1375,11 +1460,14 @@ const route = app
 	 * @throws {500} If an unexpected error occurs during data retrieval
 	 */
 	.get(
-		'/api/auth/product-stock/by-warehouse',
-		zValidator('query', z.object({ warehouseId: z.string('Invalid warehouse ID') })),
+		"/api/auth/product-stock/by-warehouse",
+		zValidator(
+			"query",
+			z.object({ warehouseId: z.string("Invalid warehouse ID") }),
+		),
 		async (c) => {
 			try {
-				const { warehouseId } = c.req.valid('query');
+				const { warehouseId } = c.req.valid("query");
 
 				// Query the warehouse to check if it's a CEDIS warehouse
 				const warehouseInfo = await db
@@ -1396,7 +1484,7 @@ const route = app
 					return c.json(
 						{
 							success: false,
-							message: 'Warehouse not found',
+							message: "Warehouse not found",
 						} satisfies ApiResponse,
 						404,
 					);
@@ -1468,20 +1556,24 @@ const route = app
 				}
 
 				// Determine cabinetId - empty string if no cabinet exists (e.g., CEDIS warehouse)
-				const cabinetId = cabinetWarehouse.length > 0 ? cabinetWarehouse[0].id : '';
+				const cabinetId =
+					cabinetWarehouse.length > 0 ? cabinetWarehouse[0].id : "";
 
 				// If no records exist in either table, return filtered mock data for development/testing
-				if (warehouseProductStock.length === 0 && cabinetWarehouse.length === 0) {
+				if (
+					warehouseProductStock.length === 0 &&
+					cabinetWarehouse.length === 0
+				) {
 					return c.json(
 						{
 							success: true,
 							message: isCedisWarehouse
-								? 'Fetching test data filtered by CEDIS warehouse (no cabinet)'
-								: 'Fetching test data filtered by warehouse',
+								? "Fetching test data filtered by CEDIS warehouse (no cabinet)"
+								: "Fetching test data filtered by warehouse",
 							data: {
 								warehouse: [],
 								cabinet: [],
-								cabinetId: '',
+								cabinetId: "",
 							},
 						} satisfies ApiResponse,
 						200,
@@ -1505,12 +1597,113 @@ const route = app
 				);
 			} catch (error) {
 				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
-				console.error('Error fetching product stock by warehouse:', error);
+				console.error("Error fetching product stock by warehouse:", error);
 
 				return c.json(
 					{
 						success: false,
-						message: 'Failed to fetch product stock by warehouse',
+						message: "Failed to fetch product stock by warehouse",
+					} satisfies ApiResponse,
+					500,
+				);
+			}
+		},
+	)
+
+	/**
+	 * GET /api/auth/product-stock/by-cabinet - Retrieve product stock by cabinet ID
+	 *
+	 * This endpoint fetches product stock records from the database filtered by
+	 * the specified cabinet ID. It joins with the employee table to include
+	 * employee information for products that were last used by an employee.
+	 * Returns only non-deleted product stock records.
+	 *
+	 * @param {string} cabinetId - UUID of the cabinet to filter by (required query parameter)
+	 * @returns {ApiResponse} Success response with product stock data filtered by cabinet
+	 * @throws {400} If cabinetId is not provided or invalid
+	 * @throws {404} If cabinet not found
+	 * @throws {500} If an unexpected error occurs during data retrieval
+	 */
+	.get(
+		"/api/auth/product-stock/by-cabinet",
+		zValidator(
+			"query",
+			z.object({ cabinetId: z.string().uuid("Invalid cabinet ID") }),
+		),
+		async (c) => {
+			try {
+				const { cabinetId } = c.req.valid("query");
+
+				// Query the cabinetWarehouse table to verify the cabinet exists
+				const cabinetInfo = await db
+					.select({
+						id: schemas.cabinetWarehouse.id,
+						name: schemas.cabinetWarehouse.name,
+						warehouseId: schemas.cabinetWarehouse.warehouseId,
+					})
+					.from(schemas.cabinetWarehouse)
+					.where(eq(schemas.cabinetWarehouse.id, cabinetId))
+					.limit(1);
+
+				// Check if cabinet exists
+				if (cabinetInfo.length === 0) {
+					return c.json(
+						{
+							success: false,
+							message: "Cabinet not found",
+						} satisfies ApiResponse,
+						404,
+					);
+				}
+
+				// Query the productStock table for records with the specified cabinetId
+				// Join with employee table to get only id, name, and surname from employee data
+				const cabinetProductStock = await db
+					.select({
+						// Select all productStock fields
+						productStock: schemas.productStock,
+						// Select only specific employee fields
+						employee: {
+							id: schemas.employee.id,
+							name: schemas.employee.name,
+							surname: schemas.employee.surname,
+						},
+					})
+					.from(schemas.productStock)
+					.leftJoin(
+						schemas.employee,
+						eq(schemas.productStock.lastUsedBy, schemas.employee.id),
+					)
+					.where(
+						and(
+							eq(schemas.productStock.currentCabinet, cabinetId),
+							eq(schemas.productStock.isDeleted, false),
+						),
+					);
+
+				// Return structured data with cabinet product stock
+				return c.json(
+					{
+						success: true,
+						message: `Product stock for cabinet ${cabinetId} retrieved successfully`,
+						data: {
+							cabinet: cabinetProductStock,
+							cabinetId,
+							cabinetName: cabinetInfo[0].name,
+							warehouseId: cabinetInfo[0].warehouseId,
+							totalItems: cabinetProductStock.length,
+						},
+					} satisfies ApiResponse,
+					200,
+				);
+			} catch (error) {
+				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
+				console.error("Error fetching product stock by cabinet:", error);
+
+				return c.json(
+					{
+						success: false,
+						message: "Failed to fetch product stock by cabinet",
 					} satisfies ApiResponse,
 					500,
 				);
@@ -1525,19 +1718,22 @@ const route = app
 	 * If the record is not found, returns 404.
 	 */
 	.post(
-		'/api/auth/product-stock/update-is-kit',
+		"/api/auth/product-stock/update-is-kit",
 		zValidator(
-			'json',
+			"json",
 			z.object({
-				productStockId: z.string().uuid('Invalid product stock ID'),
+				productStockId: z.string().uuid("Invalid product stock ID"),
 			}),
 		),
 		async (c) => {
 			try {
-				const { productStockId } = c.req.valid('json');
+				const { productStockId } = c.req.valid("json");
 
 				const existing = await db
-					.select({ id: schemas.productStock.id, isKit: schemas.productStock.isKit })
+					.select({
+						id: schemas.productStock.id,
+						isKit: schemas.productStock.isKit,
+					})
 					.from(schemas.productStock)
 					.where(eq(schemas.productStock.id, productStockId))
 					.limit(1);
@@ -1546,7 +1742,7 @@ const route = app
 					return c.json(
 						{
 							success: false,
-							message: 'Product stock not found',
+							message: "Product stock not found",
 						} satisfies ApiResponse,
 						404,
 					);
@@ -1563,7 +1759,7 @@ const route = app
 					return c.json(
 						{
 							success: false,
-							message: 'Failed to update product stock isKit flag',
+							message: "Failed to update product stock isKit flag",
 						} satisfies ApiResponse,
 						500,
 					);
@@ -1572,19 +1768,19 @@ const route = app
 				return c.json(
 					{
 						success: true,
-						message: 'Product stock isKit flag updated successfully',
+						message: "Product stock isKit flag updated successfully",
 						data: updated[0],
 					} satisfies ApiResponse,
 					200,
 				);
 			} catch (error) {
 				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
-				console.error('Error toggling product stock isKit flag:', error);
+				console.error("Error toggling product stock isKit flag:", error);
 
 				return c.json(
 					{
 						success: false,
-						message: 'Failed to update product stock isKit flag',
+						message: "Failed to update product stock isKit flag",
 					} satisfies ApiResponse,
 					500,
 				);
@@ -1603,28 +1799,28 @@ const route = app
 	 * @returns {ApiResponse} Success response with updated record
 	 */
 	.delete(
-		'/api/auth/product-stock/delete',
-		zValidator('query', z.object({ id: z.string('Invalid product stock ID') })),
+		"/api/auth/product-stock/delete",
+		zValidator("query", z.object({ id: z.string("Invalid product stock ID") })),
 		async (c) => {
 			try {
-				const { id } = c.req.valid('query');
+				const { id } = c.req.valid("query");
 
 				// Authorization: only 'encargado' can delete
-				const user = c.get('user');
+				const user = c.get("user");
 				if (!user) {
 					return c.json(
 						{
 							success: false,
-							message: 'Authentication required',
+							message: "Authentication required",
 						} satisfies ApiResponse,
 						401,
 					);
 				}
-				if (user.role !== 'encargado') {
+				if (user.role !== "encargado") {
 					return c.json(
 						{
 							success: false,
-							message: 'Forbidden - insufficient permissions',
+							message: "Forbidden - insufficient permissions",
 						} satisfies ApiResponse,
 						403,
 					);
@@ -1645,7 +1841,7 @@ const route = app
 					return c.json(
 						{
 							success: false,
-							message: 'Product stock not found or already deleted',
+							message: "Product stock not found or already deleted",
 						} satisfies ApiResponse,
 						404,
 					);
@@ -1664,9 +1860,9 @@ const route = app
 						productStockId: updated[0].id,
 						employeeId: employeeRecord[0].id,
 						warehouseId: updated[0].currentWarehouse,
-						movementType: 'other',
-						action: 'checkout',
-						notes: 'Product stock marked as deleted',
+						movementType: "other",
+						action: "checkout",
+						notes: "Product stock marked as deleted",
 						usageDate: new Date(),
 						previousWarehouseId: updated[0].currentWarehouse,
 					});
@@ -1675,16 +1871,16 @@ const route = app
 				return c.json(
 					{
 						success: true,
-						message: 'Product stock marked as deleted successfully',
+						message: "Product stock marked as deleted successfully",
 						data: updated[0],
 					} satisfies ApiResponse,
 					200,
 				);
 			} catch (error) {
 				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging soft delete operation issues
-				console.error('🚨 Soft Delete Error Details:', {
+				console.error("🚨 Soft Delete Error Details:", {
 					error,
-					message: error instanceof Error ? error.message : 'Unknown error',
+					message: error instanceof Error ? error.message : "Unknown error",
 					stack: error instanceof Error ? error.stack : undefined,
 					type: typeof error,
 					name: error instanceof Error ? error.name : undefined,
@@ -1720,41 +1916,55 @@ const route = app
 	 * @throws {500} Database error if insertion fails
 	 */
 	.post(
-		'/api/auth/product-stock/create',
+		"/api/auth/product-stock/create",
 		zValidator(
-			'json',
+			"json",
 			z.object({
-				barcode: z.number().int().nonnegative().describe('Product barcode identifier'),
+				barcode: z
+					.number()
+					.int()
+					.nonnegative()
+					.describe("Product barcode identifier"),
 				currentWarehouse: z
 					.string()
-					.uuid('Invalid warehouse ID')
-					.describe('Warehouse UUID'),
+					.uuid("Invalid warehouse ID")
+					.describe("Warehouse UUID"),
 				lastUsedBy: z
 					.string()
-					.uuid('Invalid employee ID')
+					.uuid("Invalid employee ID")
 					.optional()
-					.describe('Employee UUID'),
-				lastUsed: z.string().optional().describe('ISO date string for last use'),
-				firstUsed: z.string().optional().describe('ISO date string for first use'),
+					.describe("Employee UUID"),
+				lastUsed: z
+					.string()
+					.optional()
+					.describe("ISO date string for last use"),
+				firstUsed: z
+					.string()
+					.optional()
+					.describe("ISO date string for first use"),
 				numberOfUses: z
 					.number()
 					.int()
 					.nonnegative()
 					.optional()
 					.default(0)
-					.describe('Number of uses'),
+					.describe("Number of uses"),
 				isBeingUsed: z
 					.boolean()
 					.optional()
 					.default(false)
-					.describe('Whether currently being used'),
-				isKit: z.boolean().optional().default(false).describe('Whether it is a kit'),
-				description: z.string().optional().describe('Description'),
+					.describe("Whether currently being used"),
+				isKit: z
+					.boolean()
+					.optional()
+					.default(false)
+					.describe("Whether it is a kit"),
+				description: z.string().optional().describe("Description"),
 			}),
 		),
 		async (c) => {
 			try {
-				const requestData = c.req.valid('json');
+				const requestData = c.req.valid("json");
 
 				// Validate input data business rules
 				const validationError = validateProductStockCreationRules({
@@ -1787,7 +1997,7 @@ const route = app
 					return c.json(
 						{
 							success: false,
-							message: 'Failed to create product stock - no record inserted',
+							message: "Failed to create product stock - no record inserted",
 							data: null,
 						} satisfies ApiResponse,
 						500,
@@ -1800,9 +2010,9 @@ const route = app
 						productStockId: insertedProductStock[0].id,
 						employeeId: requestData.lastUsedBy,
 						warehouseId: requestData.currentWarehouse,
-						movementType: 'other',
-						action: 'checkin',
-						notes: 'Product stock created and added to inventory',
+						movementType: "other",
+						action: "checkin",
+						notes: "Product stock created and added to inventory",
 						usageDate: new Date(),
 						newWarehouseId: requestData.currentWarehouse,
 					});
@@ -1812,7 +2022,7 @@ const route = app
 				return c.json(
 					{
 						success: true,
-						message: 'Product stock created successfully',
+						message: "Product stock created successfully",
 						data: insertedProductStock[0],
 					} satisfies ApiResponse,
 					201,
@@ -1821,14 +2031,17 @@ const route = app
 				// Handle specific database errors
 				const errorResponse = handleProductStockCreationError(error);
 				if (errorResponse) {
-					return c.json(errorResponse.response, errorResponse.status as 400 | 500);
+					return c.json(
+						errorResponse.response,
+						errorResponse.status as 400 | 500,
+					);
 				}
 
 				// Handle generic database errors
 				return c.json(
 					{
 						success: false,
-						message: 'Failed to create product stock',
+						message: "Failed to create product stock",
 					} satisfies ApiResponse,
 					500,
 				);
@@ -1856,30 +2069,36 @@ const route = app
 	 * @throws {500} Database error if update fails
 	 */
 	.post(
-		'/api/auth/product-stock/update-usage',
+		"/api/auth/product-stock/update-usage",
 		zValidator(
-			'json',
+			"json",
 			z.object({
 				productStockId: z
 					.string()
-					.uuid('Invalid product stock ID')
-					.describe('Product stock UUID'),
+					.uuid("Invalid product stock ID")
+					.describe("Product stock UUID"),
 				isBeingUsed: z
 					.boolean()
 					.optional()
-					.describe('Whether the product is currently being used'),
+					.describe("Whether the product is currently being used"),
 				lastUsedBy: z
 					.string()
-					.uuid('Invalid employee ID')
+					.uuid("Invalid employee ID")
 					.optional()
-					.describe('Employee UUID who last used the product'),
-				lastUsed: z.string().optional().describe('ISO date string for last use'),
-				firstUsed: z.string().optional().describe('ISO date string for first use'),
+					.describe("Employee UUID who last used the product"),
+				lastUsed: z
+					.string()
+					.optional()
+					.describe("ISO date string for last use"),
+				firstUsed: z
+					.string()
+					.optional()
+					.describe("ISO date string for first use"),
 				incrementUses: z
 					.boolean()
 					.optional()
 					.default(false)
-					.describe('Whether to increment the number of uses'),
+					.describe("Whether to increment the number of uses"),
 			}),
 		),
 		async (c) => {
@@ -1891,14 +2110,15 @@ const route = app
 					lastUsed,
 					firstUsed,
 					incrementUses,
-				} = c.req.valid('json');
+				} = c.req.valid("json");
 
 				// Validate business logic: if marking as being used, lastUsedBy should be provided
 				if (isBeingUsed === true && !lastUsedBy) {
 					return c.json(
 						{
 							success: false,
-							message: 'lastUsedBy is required when marking product as being used',
+							message:
+								"lastUsedBy is required when marking product as being used",
 						} satisfies ApiResponse,
 						400,
 					);
@@ -1909,7 +2129,7 @@ const route = app
 					return c.json(
 						{
 							success: false,
-							message: 'lastUsedBy is required when lastUsed is provided',
+							message: "lastUsedBy is required when lastUsed is provided",
 						} satisfies ApiResponse,
 						400,
 					);
@@ -1930,7 +2150,7 @@ const route = app
 					return c.json(
 						{
 							success: false,
-							message: 'Product stock not found',
+							message: "Product stock not found",
 						} satisfies ApiResponse,
 						404,
 					);
@@ -1953,7 +2173,10 @@ const route = app
 
 				// Only set firstUsed if it was not previously set (is null) and a new value is provided
 				// If firstUsed is already set, we skip updating it to preserve the original first use date
-				if (firstUsed !== undefined && existingProductStock[0].firstUsed === null) {
+				if (
+					firstUsed !== undefined &&
+					existingProductStock[0].firstUsed === null
+				) {
 					updateValues.firstUsed = firstUsed;
 				}
 
@@ -1967,7 +2190,7 @@ const route = app
 					return c.json(
 						{
 							success: false,
-							message: 'At least one usage field must be provided to update',
+							message: "At least one usage field must be provided to update",
 						} satisfies ApiResponse,
 						400,
 					);
@@ -1982,22 +2205,22 @@ const route = app
 
 				// Create usage history record for usage update if we have an employee
 				if (lastUsedBy) {
-					let action = 'other';
+					let action = "other";
 					if (isBeingUsed === true) {
-						action = 'checkout';
+						action = "checkout";
 					} else if (isBeingUsed === false) {
-						action = 'checkin';
+						action = "checkin";
 					}
 
 					const notes = isBeingUsed
-						? 'Product usage updated - checked out'
-						: 'Product usage updated - checked in';
+						? "Product usage updated - checked out"
+						: "Product usage updated - checked in";
 
 					await db.insert(schemas.productStockUsageHistory).values({
 						productStockId,
 						employeeId: lastUsedBy,
 						warehouseId: updatedProductStock[0].currentWarehouse,
-						movementType: 'other',
+						movementType: "other",
 						action,
 						notes,
 						usageDate: new Date(),
@@ -2008,21 +2231,21 @@ const route = app
 				return c.json(
 					{
 						success: true,
-						message: 'Product stock usage updated successfully',
+						message: "Product stock usage updated successfully",
 						data: updatedProductStock[0],
 					} satisfies ApiResponse,
 					200,
 				);
 			} catch (error) {
 				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
-				console.error('Error updating product stock usage:', error);
+				console.error("Error updating product stock usage:", error);
 
 				// Handle foreign key constraint errors (invalid employee ID)
-				if (error instanceof Error && error.message.includes('foreign key')) {
+				if (error instanceof Error && error.message.includes("foreign key")) {
 					return c.json(
 						{
 							success: false,
-							message: 'Invalid employee ID - employee does not exist',
+							message: "Invalid employee ID - employee does not exist",
 						} satisfies ApiResponse,
 						400,
 					);
@@ -2032,7 +2255,7 @@ const route = app
 				return c.json(
 					{
 						success: false,
-						message: 'Failed to update product stock usage',
+						message: "Failed to update product stock usage",
 					} satisfies ApiResponse,
 					500,
 				);
@@ -2050,7 +2273,7 @@ const route = app
 	 * @returns {ApiResponse} Success response with product stock + employee join data
 	 * @throws {500} If an unexpected error occurs during data retrieval
 	 */
-	.get('/api/auth/product-stock/with-employee', async (c) => {
+	.get("/api/auth/product-stock/with-employee", async (c) => {
 		try {
 			const productStockWithEmployee = await db
 				.select()
@@ -2064,7 +2287,7 @@ const route = app
 				return c.json(
 					{
 						success: true,
-						message: 'Fetching test data',
+						message: "Fetching test data",
 						data: productStockData,
 					} satisfies ApiResponse,
 					200,
@@ -2074,19 +2297,19 @@ const route = app
 			return c.json(
 				{
 					success: true,
-					message: 'Fetching db data',
+					message: "Fetching db data",
 					data: productStockWithEmployee,
 				} satisfies ApiResponse,
 				200,
 			);
 		} catch (error) {
 			// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
-			console.error('Error fetching product stock with employee:', error);
+			console.error("Error fetching product stock with employee:", error);
 
 			return c.json(
 				{
 					success: false,
-					message: 'Failed to fetch product stock with employee',
+					message: "Failed to fetch product stock with employee",
 				} satisfies ApiResponse,
 				500,
 			);
@@ -2098,106 +2321,111 @@ const route = app
 	 * Stores minimum and maximum quantity thresholds for a barcode in a given warehouse.
 	 * Requires authenticated user with role 'encargado'.
 	 */
-	.post('/api/auth/stock-limits', zValidator('json', stockLimitCreateSchema), async (c) => {
-		const user = c.get('user');
-		if (!user) {
-			return c.json(
-				{
-					success: false,
-					message: 'Authentication required',
-				} satisfies ApiResponse,
-				401,
-			);
-		}
-
-		if (user.role !== 'encargado') {
-			return c.json(
-				{
-					success: false,
-					message: 'Forbidden - insufficient permissions',
-				} satisfies ApiResponse,
-				403,
-			);
-		}
-
-		const payload = c.req.valid('json');
-
-		try {
-			const [created] = await db
-				.insert(schemas.stockLimit)
-				.values({
-					warehouseId: payload.warehouseId,
-					barcode: payload.barcode,
-					minQuantity: payload.minQuantity,
-					maxQuantity: payload.maxQuantity,
-					notes: payload.notes,
-					createdBy: user.id,
-					createdAt: new Date(),
-					updatedAt: new Date(),
-				})
-				.returning();
-
-			if (!created) {
+	.post(
+		"/api/auth/stock-limits",
+		zValidator("json", stockLimitCreateSchema),
+		async (c) => {
+			const user = c.get("user");
+			if (!user) {
 				return c.json(
 					{
 						success: false,
-						message: 'Failed to create stock limit',
+						message: "Authentication required",
 					} satisfies ApiResponse,
-					500,
+					401,
 				);
 			}
 
-			return c.json(
-				{
-					success: true,
-					message: 'Stock limit created successfully',
-					data: created,
-				} satisfies ApiResponse,
-				201,
-			);
-		} catch (error) {
-			const normalizedError = error instanceof Error ? error : new Error(String(error));
-			const dbError = handleDatabaseError(normalizedError);
+			if (user.role !== "encargado") {
+				return c.json(
+					{
+						success: false,
+						message: "Forbidden - insufficient permissions",
+					} satisfies ApiResponse,
+					403,
+				);
+			}
 
-			if (dbError) {
-				if (dbError.status === 409) {
-					const isDuplicate =
-						typeof dbError.response.message === 'string' &&
-						dbError.response.message.toLowerCase().includes('duplicate');
+			const payload = c.req.valid("json");
 
-					if (isDuplicate) {
+			try {
+				const [created] = await db
+					.insert(schemas.stockLimit)
+					.values({
+						warehouseId: payload.warehouseId,
+						barcode: payload.barcode,
+						minQuantity: payload.minQuantity,
+						maxQuantity: payload.maxQuantity,
+						notes: payload.notes,
+						createdBy: user.id,
+						createdAt: new Date(),
+						updatedAt: new Date(),
+					})
+					.returning();
+
+				if (!created) {
+					return c.json(
+						{
+							success: false,
+							message: "Failed to create stock limit",
+						} satisfies ApiResponse,
+						500,
+					);
+				}
+
+				return c.json(
+					{
+						success: true,
+						message: "Stock limit created successfully",
+						data: created,
+					} satisfies ApiResponse,
+					201,
+				);
+			} catch (error) {
+				const normalizedError =
+					error instanceof Error ? error : new Error(String(error));
+				const dbError = handleDatabaseError(normalizedError);
+
+				if (dbError) {
+					if (dbError.status === 409) {
+						const isDuplicate =
+							typeof dbError.response.message === "string" &&
+							dbError.response.message.toLowerCase().includes("duplicate");
+
+						if (isDuplicate) {
+							return c.json(
+								{
+									success: false,
+									message:
+										"Stock limit already exists for this warehouse and barcode",
+								} satisfies ApiResponse,
+								409,
+							);
+						}
+
 						return c.json(
 							{
 								success: false,
-								message:
-									'Stock limit already exists for this warehouse and barcode',
+								message: "Invalid warehouse or user reference for stock limit",
 							} satisfies ApiResponse,
 							409,
 						);
 					}
 
-					return c.json(
-						{
-							success: false,
-							message: 'Invalid warehouse or user reference for stock limit',
-						} satisfies ApiResponse,
-						409,
-					);
+					return c.json(dbError.response, dbError.status as 400 | 500);
 				}
 
-				return c.json(dbError.response, dbError.status as 400 | 500);
+				logErrorDetails(normalizedError, "POST", "/api/auth/stock-limits");
+				return c.json(
+					{
+						success: false,
+						message: "Failed to create stock limit",
+					} satisfies ApiResponse,
+					500,
+				);
 			}
-
-			logErrorDetails(normalizedError, 'POST', '/api/auth/stock-limits');
-			return c.json(
-				{
-					success: false,
-					message: 'Failed to create stock limit',
-				} satisfies ApiResponse,
-				500,
-			);
-		}
-	})
+		},
+	)
 	/**
 	 * PUT /api/auth/stock-limits/:warehouseId/:barcode - Update an existing stock limit
 	 *
@@ -2205,42 +2433,42 @@ const route = app
 	 * Requires authenticated user with role 'encargado'.
 	 */
 	.put(
-		'/api/auth/stock-limits/:warehouseId/:barcode',
+		"/api/auth/stock-limits/:warehouseId/:barcode",
 		zValidator(
-			'param',
+			"param",
 			z.object({
-				warehouseId: z.string().uuid('Invalid warehouse ID'),
+				warehouseId: z.string().uuid("Invalid warehouse ID"),
 				barcode: z.coerce
 					.number()
 					.int()
-					.nonnegative('Barcode must be a non-negative integer'),
+					.nonnegative("Barcode must be a non-negative integer"),
 			}),
 		),
-		zValidator('json', stockLimitUpdateSchema),
+		zValidator("json", stockLimitUpdateSchema),
 		async (c) => {
-			const user = c.get('user');
+			const user = c.get("user");
 			if (!user) {
 				return c.json(
 					{
 						success: false,
-						message: 'Authentication required',
+						message: "Authentication required",
 					} satisfies ApiResponse,
 					401,
 				);
 			}
 
-			if (user.role !== 'encargado') {
+			if (user.role !== "encargado") {
 				return c.json(
 					{
 						success: false,
-						message: 'Forbidden - insufficient permissions',
+						message: "Forbidden - insufficient permissions",
 					} satisfies ApiResponse,
 					403,
 				);
 			}
 
-			const { warehouseId, barcode } = c.req.valid('param');
-			const payload = c.req.valid('json');
+			const { warehouseId, barcode } = c.req.valid("param");
+			const payload = c.req.valid("json");
 
 			if (
 				payload.minQuantity === undefined &&
@@ -2250,7 +2478,7 @@ const route = app
 				return c.json(
 					{
 						success: false,
-						message: 'At least one field must be provided to update',
+						message: "At least one field must be provided to update",
 					} satisfies ApiResponse,
 					400,
 				);
@@ -2271,7 +2499,8 @@ const route = app
 					return c.json(
 						{
 							success: false,
-							message: 'Stock limit not found for provided warehouse and barcode',
+							message:
+								"Stock limit not found for provided warehouse and barcode",
 						} satisfies ApiResponse,
 						404,
 					);
@@ -2285,7 +2514,7 @@ const route = app
 					return c.json(
 						{
 							success: false,
-							message: 'minQuantity must be ≤ maxQuantity',
+							message: "minQuantity must be ≤ maxQuantity",
 						} satisfies ApiResponse,
 						400,
 					);
@@ -2316,7 +2545,7 @@ const route = app
 					return c.json(
 						{
 							success: false,
-							message: 'Failed to update stock limit',
+							message: "Failed to update stock limit",
 						} satisfies ApiResponse,
 						500,
 					);
@@ -2325,23 +2554,24 @@ const route = app
 				return c.json(
 					{
 						success: true,
-						message: 'Stock limit updated successfully',
+						message: "Stock limit updated successfully",
 						data: updated,
 					} satisfies ApiResponse,
 					200,
 				);
 			} catch (error) {
-				const normalizedError = error instanceof Error ? error : new Error(String(error));
+				const normalizedError =
+					error instanceof Error ? error : new Error(String(error));
 				logErrorDetails(
 					normalizedError,
-					'PUT',
-					'/api/auth/stock-limits/:warehouseId/:barcode',
+					"PUT",
+					"/api/auth/stock-limits/:warehouseId/:barcode",
 				);
 
 				return c.json(
 					{
 						success: false,
-						message: 'Failed to update stock limit',
+						message: "Failed to update stock limit",
 					} satisfies ApiResponse,
 					500,
 				);
@@ -2353,26 +2583,27 @@ const route = app
 	 *
 	 * Returns all configured stock limits across warehouses. Requires an authenticated session.
 	 */
-	.get('/api/auth/stock-limits/all', async (c) => {
+	.get("/api/auth/stock-limits/all", async (c) => {
 		try {
 			const limits = await db.select().from(schemas.stockLimit);
 
 			return c.json(
 				{
 					success: true,
-					message: 'Stock limits fetched successfully',
+					message: "Stock limits fetched successfully",
 					data: limits,
 				} satisfies ApiResponse,
 				200,
 			);
 		} catch (error) {
-			const normalizedError = error instanceof Error ? error : new Error(String(error));
-			logErrorDetails(normalizedError, 'GET', '/api/auth/stock-limits/all');
+			const normalizedError =
+				error instanceof Error ? error : new Error(String(error));
+			logErrorDetails(normalizedError, "GET", "/api/auth/stock-limits/all");
 
 			return c.json(
 				{
 					success: false,
-					message: 'Failed to fetch stock limits',
+					message: "Failed to fetch stock limits",
 				} satisfies ApiResponse,
 				500,
 			);
@@ -2384,15 +2615,15 @@ const route = app
 	 * Accepts warehouseId as a query parameter and returns filtered stock limits.
 	 */
 	.get(
-		'/api/auth/stock-limits/by-warehouse',
+		"/api/auth/stock-limits/by-warehouse",
 		zValidator(
-			'query',
+			"query",
 			z.object({
-				warehouseId: z.string().uuid('Invalid warehouse ID'),
+				warehouseId: z.string().uuid("Invalid warehouse ID"),
 			}),
 		),
 		async (c) => {
-			const { warehouseId } = c.req.valid('query');
+			const { warehouseId } = c.req.valid("query");
 
 			try {
 				const limits = await db
@@ -2403,19 +2634,24 @@ const route = app
 				return c.json(
 					{
 						success: true,
-						message: 'Stock limits fetched successfully',
+						message: "Stock limits fetched successfully",
 						data: limits,
 					} satisfies ApiResponse,
 					200,
 				);
 			} catch (error) {
-				const normalizedError = error instanceof Error ? error : new Error(String(error));
-				logErrorDetails(normalizedError, 'GET', '/api/auth/stock-limits/by-warehouse');
+				const normalizedError =
+					error instanceof Error ? error : new Error(String(error));
+				logErrorDetails(
+					normalizedError,
+					"GET",
+					"/api/auth/stock-limits/by-warehouse",
+				);
 
 				return c.json(
 					{
 						success: false,
-						message: 'Failed to fetch stock limits for warehouse',
+						message: "Failed to fetch stock limits for warehouse",
 					} satisfies ApiResponse,
 					500,
 				);
@@ -2434,7 +2670,7 @@ const route = app
 	 * @returns {ApiResponse} Success response with cabinet warehouse data (from DB or mock)
 	 * @throws {500} If an unexpected error occurs during data retrieval
 	 */
-	.get('/api/auth/cabinet-warehouse/all', async (c) => {
+	.get("/api/auth/cabinet-warehouse/all", async (c) => {
 		try {
 			// Query the cabinetWarehouse table for all records
 			const cabinetWarehouse = await db.select().from(schemas.cabinetWarehouse);
@@ -2444,7 +2680,7 @@ const route = app
 				return c.json(
 					{
 						success: false,
-						message: 'No data found',
+						message: "No data found",
 						data: [],
 					} satisfies ApiResponse,
 					200,
@@ -2455,19 +2691,19 @@ const route = app
 			return c.json(
 				{
 					success: true,
-					message: 'Fetching db data',
+					message: "Fetching db data",
 					data: cabinetWarehouse,
 				} satisfies ApiResponse,
 				200,
 			);
 		} catch (error) {
 			// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
-			console.error('Error fetching cabinet warehouse:', error);
+			console.error("Error fetching cabinet warehouse:", error);
 
 			return c.json(
 				{
 					success: false,
-					message: 'Failed to fetch cabinet warehouse',
+					message: "Failed to fetch cabinet warehouse",
 				} satisfies ApiResponse,
 				500,
 			);
@@ -2500,7 +2736,7 @@ const route = app
 	 * @returns {ApiResponse} Success response with cabinet and warehouse name pairs
 	 * @throws {500} If an unexpected error occurs during data retrieval
 	 */
-	.get('/api/auth/cabinet-warehouse/map', async (c) => {
+	.get("/api/auth/cabinet-warehouse/map", async (c) => {
 		try {
 			// Build a cabinet-to-warehouse mapping via inner join for quick lookups
 			const cabinetWarehouseMapRaw = await db
@@ -2545,10 +2781,11 @@ const route = app
 					cabinetWarehouseMap.push({
 						cabinetId: null,
 						cabinetName: null,
-						warehouseId: cedisWarehouseRecord[0]?.warehouseId ?? DistributionCenterId,
+						warehouseId:
+							cedisWarehouseRecord[0]?.warehouseId ?? DistributionCenterId,
 						warehouseName:
 							cedisWarehouseRecord[0]?.warehouseName ??
-							'CEDIS warehouse entry missing name',
+							"CEDIS warehouse entry missing name",
 					});
 				}
 			}
@@ -2561,7 +2798,7 @@ const route = app
 				return c.json(
 					{
 						success: false,
-						message: 'No cabinet to warehouse mappings found',
+						message: "No cabinet to warehouse mappings found",
 						data: [],
 					} satisfies ApiResponse,
 					200,
@@ -2571,19 +2808,19 @@ const route = app
 			return c.json(
 				{
 					success: true,
-					message: 'Cabinet to warehouse mapping retrieved',
+					message: "Cabinet to warehouse mapping retrieved",
 					data: cabinetWarehouseMap,
 				} satisfies ApiResponse,
 				200,
 			);
 		} catch (error) {
 			// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging mapping issues
-			console.error('Error fetching cabinet to warehouse mapping:', error);
+			console.error("Error fetching cabinet to warehouse mapping:", error);
 
 			return c.json(
 				{
 					success: false,
-					message: 'Failed to fetch cabinet to warehouse mapping',
+					message: "Failed to fetch cabinet to warehouse mapping",
 				} satisfies ApiResponse,
 				500,
 			);
@@ -2602,11 +2839,11 @@ const route = app
 	 * @throws {500} If an unexpected error occurs during data retrieval
 	 */
 	.get(
-		'/api/auth/employee/by-user-id',
-		zValidator('query', z.object({ userId: z.string() })),
+		"/api/auth/employee/by-user-id",
+		zValidator("query", z.object({ userId: z.string() })),
 		async (c) => {
 			try {
-				const { userId } = c.req.valid('query');
+				const { userId } = c.req.valid("query");
 
 				// Query the employee table for all records and permissions
 				const employee = await db
@@ -2623,7 +2860,7 @@ const route = app
 					return c.json(
 						{
 							success: false,
-							message: 'No data found',
+							message: "No data found",
 							data: [],
 						} satisfies ApiResponse,
 						200,
@@ -2634,19 +2871,19 @@ const route = app
 				return c.json(
 					{
 						success: true,
-						message: 'Fetching db data',
+						message: "Fetching db data",
 						data: employee,
 					} satisfies ApiResponse,
 					200,
 				);
 			} catch (error) {
 				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
-				console.error('Error fetching employee:', error);
+				console.error("Error fetching employee:", error);
 
 				return c.json(
 					{
 						success: false,
-						message: 'No data found',
+						message: "No data found",
 						data: [],
 					} satisfies ApiResponse,
 					200,
@@ -2665,7 +2902,7 @@ const route = app
 	 * @returns {ApiResponse} Success response with all employee data and their permissions
 	 * @throws {500} If an unexpected error occurs during data retrieval
 	 */
-	.get('/api/auth/employee/all', async (c) => {
+	.get("/api/auth/employee/all", async (c) => {
 		try {
 			// Query the employee table for all records and permissions
 			const employees = await db
@@ -2681,7 +2918,7 @@ const route = app
 				return c.json(
 					{
 						success: false,
-						message: 'No employees found',
+						message: "No employees found",
 						data: [],
 					} satisfies ApiResponse,
 					200,
@@ -2692,19 +2929,19 @@ const route = app
 			return c.json(
 				{
 					success: true,
-					message: 'Successfully fetched all employees',
+					message: "Successfully fetched all employees",
 					data: employees,
 				} satisfies ApiResponse,
 				200,
 			);
 		} catch (error) {
 			// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
-			console.error('Error fetching all employees:', error);
+			console.error("Error fetching all employees:", error);
 
 			return c.json(
 				{
 					success: false,
-					message: 'Error fetching employees',
+					message: "Error fetching employees",
 					data: [],
 				} satisfies ApiResponse,
 				500,
@@ -2725,11 +2962,11 @@ const route = app
 	 * @throws {500} If an unexpected error occurs during data retrieval
 	 */
 	.get(
-		'/api/auth/employee/by-warehouse-id',
-		zValidator('query', z.object({ warehouseId: z.string().uuid() })),
+		"/api/auth/employee/by-warehouse-id",
+		zValidator("query", z.object({ warehouseId: z.string().uuid() })),
 		async (c) => {
 			try {
-				const { warehouseId } = c.req.valid('query');
+				const { warehouseId } = c.req.valid("query");
 
 				// Query the employee table for records matching the warehouse ID
 				const employees = await db
@@ -2764,12 +3001,12 @@ const route = app
 				);
 			} catch (error) {
 				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
-				console.error('Error fetching employees by warehouse ID:', error);
+				console.error("Error fetching employees by warehouse ID:", error);
 
 				return c.json(
 					{
 						success: false,
-						message: 'Error fetching employees by warehouse ID',
+						message: "Error fetching employees by warehouse ID",
 						data: [],
 					} satisfies ApiResponse,
 					500,
@@ -2797,35 +3034,44 @@ const route = app
 	 * @throws {500} If database insertion fails or foreign key constraints are violated
 	 */
 	.post(
-		'/api/auth/employee/create',
+		"/api/auth/employee/create",
 		zValidator(
-			'json',
+			"json",
 			z.object({
-				name: z.string().min(1, 'Name is required').describe('Employee first name'),
-				surname: z.string().min(1, 'Surname is required').describe('Employee last name'),
+				name: z
+					.string()
+					.min(1, "Name is required")
+					.describe("Employee first name"),
+				surname: z
+					.string()
+					.min(1, "Surname is required")
+					.describe("Employee last name"),
 				warehouseId: z
 					.string()
-					.uuid('Invalid warehouse ID format')
-					.describe('Warehouse UUID where employee is assigned'),
+					.uuid("Invalid warehouse ID format")
+					.describe("Warehouse UUID where employee is assigned"),
 				passcode: z
 					.number()
 					.int()
-					.min(1000, 'Passcode must be at least 4 digits')
-					.max(9999, 'Passcode must be at most 4 digits')
+					.min(1000, "Passcode must be at least 4 digits")
+					.max(9999, "Passcode must be at most 4 digits")
 					.optional()
-					.describe('Employee 4-digit passcode'),
-				userId: z.string().optional().describe('Optional user account ID to link'),
+					.describe("Employee 4-digit passcode"),
+				userId: z
+					.string()
+					.optional()
+					.describe("Optional user account ID to link"),
 				permissions: z
 					.string()
-					.uuid('Invalid permissions ID format')
+					.uuid("Invalid permissions ID format")
 					.optional()
-					.describe('Optional permissions UUID to assign'),
+					.describe("Optional permissions UUID to assign"),
 			}),
 		),
 		async (c) => {
 			try {
 				const { name, surname, warehouseId, passcode, userId, permissions } =
-					c.req.valid('json');
+					c.req.valid("json");
 
 				// Insert the new employee into the database
 				// Using .returning() to get the inserted record back
@@ -2847,7 +3093,7 @@ const route = app
 					return c.json(
 						{
 							success: false,
-							message: 'Failed to create employee - no record inserted',
+							message: "Failed to create employee - no record inserted",
 							data: null,
 						} satisfies ApiResponse,
 						500,
@@ -2868,24 +3114,24 @@ const route = app
 				return c.json(
 					{
 						success: true,
-						message: 'Employee created successfully',
+						message: "Employee created successfully",
 						data: employeeWithPermissions[0], // Return the single created record with permissions
 					} satisfies ApiResponse,
 					201, // 201 Created status for successful resource creation
 				);
 			} catch (error) {
 				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
-				console.error('Error creating employee:', error);
+				console.error("Error creating employee:", error);
 
 				// Check if it's a validation error or database constraint error
 				if (error instanceof Error) {
 					// Handle specific database errors (e.g., foreign key constraints)
-					if (error.message.includes('foreign key')) {
+					if (error.message.includes("foreign key")) {
 						return c.json(
 							{
 								success: false,
 								message:
-									'Failed to create employee - invalid warehouse ID, user ID, or permissions ID',
+									"Failed to create employee - invalid warehouse ID, user ID, or permissions ID",
 								data: null,
 							} satisfies ApiResponse,
 							400,
@@ -2893,11 +3139,11 @@ const route = app
 					}
 
 					// Handle unique constraint violations
-					if (error.message.includes('unique')) {
+					if (error.message.includes("unique")) {
 						return c.json(
 							{
 								success: false,
-								message: 'Failed to create employee - duplicate entry detected',
+								message: "Failed to create employee - duplicate entry detected",
 								data: null,
 							} satisfies ApiResponse,
 							400,
@@ -2909,7 +3155,7 @@ const route = app
 				return c.json(
 					{
 						success: false,
-						message: 'An unexpected error occurred while creating the employee',
+						message: "An unexpected error occurred while creating the employee",
 						data: null,
 					} satisfies ApiResponse,
 					500,
@@ -2930,7 +3176,7 @@ const route = app
 	 * @returns {ApiResponse} Success response with all permission data from the database
 	 * @throws {500} If an unexpected error occurs during data retrieval
 	 */
-	.get('/api/auth/permissions/all', async (c) => {
+	.get("/api/auth/permissions/all", async (c) => {
 		try {
 			// Query the permissions table for all records
 			const permissions = await db
@@ -2943,7 +3189,7 @@ const route = app
 				return c.json(
 					{
 						success: false,
-						message: 'No permissions found',
+						message: "No permissions found",
 						data: [],
 					} satisfies ApiResponse,
 					200,
@@ -2954,19 +3200,19 @@ const route = app
 			return c.json(
 				{
 					success: true,
-					message: 'Successfully fetched all permissions',
+					message: "Successfully fetched all permissions",
 					data: permissions,
 				} satisfies ApiResponse,
 				200,
 			);
 		} catch (error) {
 			// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
-			console.error('Error fetching permissions:', error);
+			console.error("Error fetching permissions:", error);
 
 			return c.json(
 				{
 					success: false,
-					message: 'Error fetching permissions',
+					message: "Error fetching permissions",
 					data: [],
 				} satisfies ApiResponse,
 				500,
@@ -2985,7 +3231,7 @@ const route = app
 	 * @returns {ApiResponse} Success response with withdraw orders data (from DB or mock)
 	 * @throws {500} If an unexpected error occurs during data retrieval
 	 */
-	.get('/api/auth/withdraw-orders/all', async (c) => {
+	.get("/api/auth/withdraw-orders/all", async (c) => {
 		try {
 			// Query the withdrawOrder table for all records
 			const withdrawOrder = await db.select().from(schemas.withdrawOrder);
@@ -2995,7 +3241,7 @@ const route = app
 				return c.json(
 					{
 						success: true,
-						message: 'Fetching test data',
+						message: "Fetching test data",
 						data: withdrawOrderData,
 					} satisfies ApiResponse,
 					200,
@@ -3006,19 +3252,19 @@ const route = app
 			return c.json(
 				{
 					success: true,
-					message: 'Fetching db data',
+					message: "Fetching db data",
 					data: withdrawOrder,
 				} satisfies ApiResponse,
 				200,
 			);
 		} catch (error) {
 			// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
-			console.error('Error fetching withdraw orders:', error);
+			console.error("Error fetching withdraw orders:", error);
 
 			return c.json(
 				{
 					success: false,
-					message: 'Failed to fetch withdraw orders',
+					message: "Failed to fetch withdraw orders",
 				} satisfies ApiResponse,
 				500,
 			);
@@ -3037,11 +3283,11 @@ const route = app
 	 * @throws {500} If an unexpected error occurs during data retrieval
 	 */
 	.get(
-		'/api/auth/withdraw-orders/details',
-		zValidator('query', z.object({ dateWithdraw: z.string() })),
+		"/api/auth/withdraw-orders/details",
+		zValidator("query", z.object({ dateWithdraw: z.string() })),
 		async (c) => {
 			try {
-				const { dateWithdraw } = c.req.valid('query');
+				const { dateWithdraw } = c.req.valid("query");
 				// Query the withdrawOrderDetails table for all records
 				const withdrawOrderDetails = await db
 					.select()
@@ -3053,7 +3299,7 @@ const route = app
 					return c.json(
 						{
 							success: true,
-							message: 'Fetching test data',
+							message: "Fetching test data",
 							data: withdrawOrderDetailsData.filter(
 								(item) => item.dateWithdraw.toISOString() === dateWithdraw,
 							),
@@ -3066,19 +3312,19 @@ const route = app
 				return c.json(
 					{
 						success: true,
-						message: 'Fetching db data',
+						message: "Fetching db data",
 						data: withdrawOrderDetails,
 					} satisfies ApiResponse,
 					200,
 				);
 			} catch (error) {
 				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
-				console.error('Error fetching withdraw orders details:', error);
+				console.error("Error fetching withdraw orders details:", error);
 
 				return c.json(
 					{
 						success: false,
-						message: 'Failed to fetch withdraw orders details',
+						message: "Failed to fetch withdraw orders details",
 					} satisfies ApiResponse,
 					500,
 				);
@@ -3102,19 +3348,32 @@ const route = app
 	 * @throws {500} Database error if insertion fails
 	 */
 	.post(
-		'/api/auth/withdraw-orders/create',
+		"/api/auth/withdraw-orders/create",
 		zValidator(
-			'json',
+			"json",
 			z.object({
-				dateWithdraw: z.string().describe('ISO date string for withdrawal date'),
-				employeeId: z.string().uuid('Invalid employee ID').describe('Employee UUID'),
-				numItems: z.number().int().positive().describe('Number of items to withdraw'),
-				isComplete: z.boolean().optional().describe('Whether the order is complete'),
+				dateWithdraw: z
+					.string()
+					.describe("ISO date string for withdrawal date"),
+				employeeId: z
+					.string()
+					.uuid("Invalid employee ID")
+					.describe("Employee UUID"),
+				numItems: z
+					.number()
+					.int()
+					.positive()
+					.describe("Number of items to withdraw"),
+				isComplete: z
+					.boolean()
+					.optional()
+					.describe("Whether the order is complete"),
 			}),
 		),
 		async (c) => {
 			try {
-				const { dateWithdraw, employeeId, numItems, isComplete } = c.req.valid('json');
+				const { dateWithdraw, employeeId, numItems, isComplete } =
+					c.req.valid("json");
 
 				// Insert the new withdraw order into the database
 				// Using .returning() to get the inserted record back from the database
@@ -3134,7 +3393,7 @@ const route = app
 					return c.json(
 						{
 							success: false,
-							message: 'Failed to create withdraw order - no record inserted',
+							message: "Failed to create withdraw order - no record inserted",
 							data: null,
 						} satisfies ApiResponse,
 						500,
@@ -3146,34 +3405,34 @@ const route = app
 				return c.json(
 					{
 						success: true,
-						message: 'Withdraw order created successfully',
+						message: "Withdraw order created successfully",
 						data: insertedWithdrawOrder[0], // Return the single created record
 					} satisfies ApiResponse,
 					201, // 201 Created status for successful resource creation
 				);
 			} catch (error) {
 				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
-				console.error('Error creating withdraw order:', error);
+				console.error("Error creating withdraw order:", error);
 
 				// Check if it's a validation error or database constraint error
 				if (error instanceof Error) {
 					// Handle specific database errors (e.g., foreign key constraints)
-					if (error.message.includes('foreign key')) {
+					if (error.message.includes("foreign key")) {
 						return c.json(
 							{
 								success: false,
-								message: 'Invalid employee ID - employee does not exist',
+								message: "Invalid employee ID - employee does not exist",
 							} satisfies ApiResponse,
 							400,
 						);
 					}
 
 					// Handle other validation errors
-					if (error.message.includes('invalid input')) {
+					if (error.message.includes("invalid input")) {
 						return c.json(
 							{
 								success: false,
-								message: 'Invalid input data provided',
+								message: "Invalid input data provided",
 							} satisfies ApiResponse,
 							400,
 						);
@@ -3184,7 +3443,7 @@ const route = app
 				return c.json(
 					{
 						success: false,
-						message: 'Failed to create withdraw order',
+						message: "Failed to create withdraw order",
 					} satisfies ApiResponse,
 					500,
 				);
@@ -3205,9 +3464,9 @@ const route = app
 	 * @throws {500} Database error if update fails
 	 */
 	.post(
-		'/api/auth/withdraw-orders/update',
+		"/api/auth/withdraw-orders/update",
 		zValidator(
-			'json',
+			"json",
 			z.object({
 				withdrawOrderId: z.string(),
 				dateReturn: z.string(),
@@ -3216,7 +3475,7 @@ const route = app
 		),
 		async (c) => {
 			try {
-				const { withdrawOrderId, dateReturn, isComplete } = c.req.valid('json');
+				const { withdrawOrderId, dateReturn, isComplete } = c.req.valid("json");
 
 				// Update the withdraw order in the database
 				const updatedWithdrawOrder = await db
@@ -3233,7 +3492,7 @@ const route = app
 						{
 							success: false,
 							data: null,
-							message: 'Failed to update withdraw order',
+							message: "Failed to update withdraw order",
 						} satisfies ApiResponse,
 						500,
 					);
@@ -3243,19 +3502,19 @@ const route = app
 				return c.json(
 					{
 						success: true,
-						message: 'Withdraw order updated successfully',
+						message: "Withdraw order updated successfully",
 						data: updatedWithdrawOrder[0],
 					} satisfies ApiResponse,
 					200,
 				);
 			} catch (error) {
 				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
-				console.error('Error updating withdraw order:', error);
+				console.error("Error updating withdraw order:", error);
 
 				return c.json(
 					{
 						success: false,
-						message: 'Failed to update withdraw order',
+						message: "Failed to update withdraw order",
 					} satisfies ApiResponse,
 					500,
 				);
@@ -3277,20 +3536,20 @@ const route = app
 	 * @throws {500} Database error if insertion fails
 	 */
 	.post(
-		'/api/auth/withdraw-orders/details/create',
+		"/api/auth/withdraw-orders/details/create",
 		zValidator(
-			'json',
+			"json",
 			z.object({
 				productId: z.string(),
 				withdrawOrderId: z.string(),
 				dateWithdraw: z.string(),
-				employeeId: z.string().uuid('Invalid employee ID'),
+				employeeId: z.string().uuid("Invalid employee ID"),
 			}),
 		),
 		async (c) => {
 			try {
 				const { productId, withdrawOrderId, dateWithdraw, employeeId } =
-					c.req.valid('json');
+					c.req.valid("json");
 
 				// Insert the new withdraw order details into the database
 				const insertedWithdrawOrderDetails = await db
@@ -3313,7 +3572,7 @@ const route = app
 					return c.json(
 						{
 							success: false,
-							message: 'Product is currently being used',
+							message: "Product is currently being used",
 						} satisfies ApiResponse,
 						400,
 					);
@@ -3338,8 +3597,8 @@ const route = app
 					productStockId: productId,
 					employeeId,
 					warehouseId: productStockCheck[0].currentWarehouse,
-					movementType: 'withdraw',
-					action: 'checkout',
+					movementType: "withdraw",
+					action: "checkout",
 					notes: `Product withdrawn via order ${withdrawOrderId}`,
 					usageDate: new Date(dateWithdraw),
 				});
@@ -3349,7 +3608,7 @@ const route = app
 						{
 							success: false,
 							data: null,
-							message: 'Failed to create withdraw order details',
+							message: "Failed to create withdraw order details",
 						} satisfies ApiResponse,
 						500,
 					);
@@ -3359,19 +3618,19 @@ const route = app
 				return c.json(
 					{
 						success: true,
-						message: 'Withdraw order details created successfully',
+						message: "Withdraw order details created successfully",
 						data: insertedWithdrawOrderDetails[0],
 					} satisfies ApiResponse,
 					201,
 				);
 			} catch (error) {
 				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
-				console.error('Error creating withdraw order details:', error);
+				console.error("Error creating withdraw order details:", error);
 
 				return c.json(
 					{
 						success: false,
-						message: 'Failed to create withdraw order details',
+						message: "Failed to create withdraw order details",
 					} satisfies ApiResponse,
 					500,
 				);
@@ -3391,9 +3650,9 @@ const route = app
 	 * @throws {500} Database error if update fails
 	 */
 	.post(
-		'/api/auth/withdraw-orders/details/update',
+		"/api/auth/withdraw-orders/details/update",
 		zValidator(
-			'json',
+			"json",
 			z.object({
 				id: z.string(),
 				dateReturn: z.string(),
@@ -3401,7 +3660,7 @@ const route = app
 		),
 		async (c) => {
 			try {
-				const { id, dateReturn } = c.req.valid('json');
+				const { id, dateReturn } = c.req.valid("json");
 
 				// Update the withdraw order details in the database
 				const updatedWithdrawOrderDetails = await db
@@ -3425,7 +3684,7 @@ const route = app
 					return c.json(
 						{
 							success: false,
-							message: 'Product is not currently being used',
+							message: "Product is not currently being used",
 						} satisfies ApiResponse,
 						400,
 					);
@@ -3447,7 +3706,7 @@ const route = app
 						return c.json(
 							{
 								success: false,
-								message: 'Failed to update product stock',
+								message: "Failed to update product stock",
 							} satisfies ApiResponse,
 							500,
 						);
@@ -3459,9 +3718,9 @@ const route = app
 							productStockId: productId,
 							employeeId: productStockCheck[0].lastUsedBy,
 							warehouseId: productStockCheck[0].currentWarehouse,
-							movementType: 'return',
-							action: 'checkin',
-							notes: 'Product returned from withdraw order',
+							movementType: "return",
+							action: "checkin",
+							notes: "Product returned from withdraw order",
 							usageDate: new Date(dateReturn),
 						});
 					}
@@ -3471,7 +3730,7 @@ const route = app
 					return c.json(
 						{
 							success: false,
-							message: 'Failed to update withdraw order details',
+							message: "Failed to update withdraw order details",
 						} satisfies ApiResponse,
 						500,
 					);
@@ -3481,19 +3740,19 @@ const route = app
 				return c.json(
 					{
 						success: true,
-						message: 'Withdraw order details updated successfully',
+						message: "Withdraw order details updated successfully",
 						data: updatedWithdrawOrderDetails[0],
 					} satisfies ApiResponse,
 					200,
 				);
 			} catch (error) {
 				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
-				console.error('Error updating withdraw order details:', error);
+				console.error("Error updating withdraw order details:", error);
 
 				return c.json(
 					{
 						success: false,
-						message: 'Failed to update withdraw order details',
+						message: "Failed to update withdraw order details",
 					} satisfies ApiResponse,
 					500,
 				);
@@ -3511,7 +3770,7 @@ const route = app
 	 * @returns {ApiResponse} Success response with warehouse data from DB
 	 * @throws {500} If an unexpected error occurs during data retrieval
 	 */
-	.get('/api/auth/warehouse/all', async (c) => {
+	.get("/api/auth/warehouse/all", async (c) => {
 		try {
 			// Query the warehouse table for all records
 			const warehouses = await db.select().from(schemas.warehouse);
@@ -3522,20 +3781,20 @@ const route = app
 					success: true,
 					message:
 						warehouses.length > 0
-							? 'Warehouses retrieved successfully'
-							: 'No warehouses found',
+							? "Warehouses retrieved successfully"
+							: "No warehouses found",
 					data: warehouses,
 				} satisfies ApiResponse,
 				200,
 			);
 		} catch (error) {
 			// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
-			console.error('Error fetching warehouses:', error);
+			console.error("Error fetching warehouses:", error);
 
 			return c.json(
 				{
 					success: false,
-					message: 'Failed to fetch warehouses',
+					message: "Failed to fetch warehouses",
 				} satisfies ApiResponse,
 				500,
 			);
@@ -3568,44 +3827,54 @@ const route = app
 	 * @throws {500} Database error if insertion fails
 	 */
 	.post(
-		'/api/auth/warehouse/create',
+		"/api/auth/warehouse/create",
 		zValidator(
-			'json',
+			"json",
 			z.object({
 				name: z
 					.string()
-					.min(1, 'Warehouse name is required')
-					.max(255, 'Warehouse name too long'),
+					.min(1, "Warehouse name is required")
+					.max(255, "Warehouse name too long"),
 				code: z
 					.string()
-					.min(1, 'Warehouse code is required')
-					.max(50, 'Warehouse code too long'),
-				description: z.string().max(1000, 'Description too long').optional(),
+					.min(1, "Warehouse code is required")
+					.max(50, "Warehouse code too long"),
+				description: z.string().max(1000, "Description too long").optional(),
 				isActive: z.boolean().optional().default(true),
 				allowsInbound: z.boolean().optional().default(true),
 				allowsOutbound: z.boolean().optional().default(true),
 				requiresApproval: z.boolean().optional().default(false),
 				operatingHoursStart: z
 					.string()
-					.regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Invalid time format (HH:MM)')
+					.regex(
+						/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/,
+						"Invalid time format (HH:MM)",
+					)
 					.optional()
-					.default('08:00'),
+					.default("08:00"),
 				operatingHoursEnd: z
 					.string()
-					.regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Invalid time format (HH:MM)')
+					.regex(
+						/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/,
+						"Invalid time format (HH:MM)",
+					)
 					.optional()
-					.default('18:00'),
-				timeZone: z.string().max(50, 'Timezone too long').optional().default('UTC'),
-				notes: z.string().max(2000, 'Notes too long').optional(),
-				customFields: z.string().max(5000, 'Custom fields too long').optional(),
+					.default("18:00"),
+				timeZone: z
+					.string()
+					.max(50, "Timezone too long")
+					.optional()
+					.default("UTC"),
+				notes: z.string().max(2000, "Notes too long").optional(),
+				customFields: z.string().max(5000, "Custom fields too long").optional(),
 			}),
 		),
 		async (c) => {
 			try {
-				const warehouseData = c.req.valid('json');
+				const warehouseData = c.req.valid("json");
 
 				// Get the current user for audit trail
-				const currentUser = c.get('user');
+				const currentUser = c.get("user");
 				const userId = currentUser?.id || null;
 
 				// Create the warehouse and its default cabinet within a single transaction
@@ -3623,7 +3892,7 @@ const route = app
 						.returning();
 
 					if (inserted.length === 0) {
-						throw new Error('Failed to create warehouse - no record inserted');
+						throw new Error("Failed to create warehouse - no record inserted");
 					}
 
 					const warehouseRow = inserted[0];
@@ -3641,36 +3910,37 @@ const route = app
 				return c.json(
 					{
 						success: true,
-						message: 'Warehouse created successfully',
+						message: "Warehouse created successfully",
 						data: createdWarehouse,
 					} satisfies ApiResponse,
 					201,
 				);
 			} catch (error) {
 				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
-				console.error('Error creating warehouse:', error);
+				console.error("Error creating warehouse:", error);
 
 				// Handle unique constraint violation (duplicate warehouse code)
 				if (
 					error instanceof Error &&
-					error.message.includes('duplicate') &&
-					error.message.includes('code')
+					error.message.includes("duplicate") &&
+					error.message.includes("code")
 				) {
 					return c.json(
 						{
 							success: false,
-							message: 'Warehouse code already exists - please use a unique code',
+							message:
+								"Warehouse code already exists - please use a unique code",
 						} satisfies ApiResponse,
 						409, // 409 Conflict for duplicate resource
 					);
 				}
 
 				// Handle validation errors
-				if (error instanceof Error && error.message.includes('validation')) {
+				if (error instanceof Error && error.message.includes("validation")) {
 					return c.json(
 						{
 							success: false,
-							message: 'Invalid input data provided',
+							message: "Invalid input data provided",
 						} satisfies ApiResponse,
 						400,
 					);
@@ -3680,7 +3950,7 @@ const route = app
 				return c.json(
 					{
 						success: false,
-						message: 'Failed to create warehouse',
+						message: "Failed to create warehouse",
 					} satisfies ApiResponse,
 					500,
 				);
@@ -3698,7 +3968,7 @@ const route = app
 	 * @returns {ApiResponse} Success response with warehouse transfers data from DB
 	 * @throws {500} If an unexpected error occurs during data retrieval
 	 */
-	.get('/api/auth/warehouse-transfers/all', async (c) => {
+	.get("/api/auth/warehouse-transfers/all", async (c) => {
 		try {
 			// Query warehouse transfers with basic information - simplified query due to join complexity
 			const warehouseTransfers = await db
@@ -3711,20 +3981,20 @@ const route = app
 					success: true,
 					message:
 						warehouseTransfers.length > 0
-							? 'Warehouse transfers retrieved successfully'
-							: 'No warehouse transfers found',
+							? "Warehouse transfers retrieved successfully"
+							: "No warehouse transfers found",
 					data: warehouseTransfers,
 				} satisfies ApiResponse,
 				200,
 			);
 		} catch (error) {
 			// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
-			console.error('Error fetching warehouse transfers:', error);
+			console.error("Error fetching warehouse transfers:", error);
 
 			return c.json(
 				{
 					success: false,
-					message: 'Failed to fetch warehouse transfers',
+					message: "Failed to fetch warehouse transfers",
 				} satisfies ApiResponse,
 				500,
 			);
@@ -3743,11 +4013,14 @@ const route = app
 	 * @throws {500} If an unexpected error occurs during data retrieval
 	 */
 	.get(
-		'/api/auth/warehouse-transfers/by-warehouse',
-		zValidator('query', z.object({ warehouseId: z.string('Invalid warehouse ID') })),
+		"/api/auth/warehouse-transfers/by-warehouse",
+		zValidator(
+			"query",
+			z.object({ warehouseId: z.string("Invalid warehouse ID") }),
+		),
 		async (c) => {
 			try {
-				const { warehouseId } = c.req.valid('query');
+				const { warehouseId } = c.req.valid("query");
 
 				// Query warehouse transfers with basic information - simplified query due to join complexity
 				const warehouseTransfers = await db
@@ -3762,19 +4035,22 @@ const route = app
 						message:
 							warehouseTransfers.length > 0
 								? `Warehouse transfers for warehouse ${warehouseId} retrieved successfully`
-								: 'No warehouse transfers found',
+								: "No warehouse transfers found",
 						data: warehouseTransfers,
 					} satisfies ApiResponse,
 					200,
 				);
 			} catch (error) {
 				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
-				console.error('Error fetching warehouse transfers by warehouse ID:', error);
+				console.error(
+					"Error fetching warehouse transfers by warehouse ID:",
+					error,
+				);
 
 				return c.json(
 					{
 						success: false,
-						message: 'Failed to fetch warehouse transfers by warehouse ID',
+						message: "Failed to fetch warehouse transfers by warehouse ID",
 					} satisfies ApiResponse,
 					500,
 				);
@@ -3795,11 +4071,14 @@ const route = app
 	 * @throws {500} If an unexpected error occurs during data retrieval
 	 */
 	.get(
-		'/api/auth/warehouse-transfers/external',
-		zValidator('query', z.object({ warehouseId: z.string('Invalid warehouse ID') })),
+		"/api/auth/warehouse-transfers/external",
+		zValidator(
+			"query",
+			z.object({ warehouseId: z.string("Invalid warehouse ID") }),
+		),
 		async (c) => {
 			try {
-				const { warehouseId } = c.req.valid('query');
+				const { warehouseId } = c.req.valid("query");
 
 				// Query external warehouse transfers where the specified warehouse is the destination
 				const warehouseTransfers = await db
@@ -3807,7 +4086,7 @@ const route = app
 					.from(schemas.warehouseTransfer)
 					.where(
 						and(
-							eq(schemas.warehouseTransfer.transferType, 'external'),
+							eq(schemas.warehouseTransfer.transferType, "external"),
 							eq(schemas.warehouseTransfer.destinationWarehouseId, warehouseId),
 						),
 					)
@@ -3827,7 +4106,7 @@ const route = app
 			} catch (error) {
 				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
 				console.error(
-					'Error fetching external warehouse transfers by destination warehouse:',
+					"Error fetching external warehouse transfers by destination warehouse:",
 					error,
 				);
 
@@ -3835,7 +4114,7 @@ const route = app
 					{
 						success: false,
 						message:
-							'Failed to fetch external warehouse transfers by destination warehouse',
+							"Failed to fetch external warehouse transfers by destination warehouse",
 					} satisfies ApiResponse,
 					500,
 				);
@@ -3857,11 +4136,14 @@ const route = app
 	 * @throws {500} If an unexpected error occurs during data retrieval
 	 */
 	.get(
-		'/api/auth/warehouse-transfers/details',
-		zValidator('query', z.object({ transferId: z.string('Invalid transfer ID') })),
+		"/api/auth/warehouse-transfers/details",
+		zValidator(
+			"query",
+			z.object({ transferId: z.string("Invalid transfer ID") }),
+		),
 		async (c) => {
 			try {
-				const { transferId } = c.req.valid('query');
+				const { transferId } = c.req.valid("query");
 
 				// Query the main transfer data
 				const transfer = await db
@@ -3874,7 +4156,7 @@ const route = app
 					return c.json(
 						{
 							success: false,
-							message: 'Warehouse transfer not found',
+							message: "Warehouse transfer not found",
 						} satisfies ApiResponse,
 						404,
 					);
@@ -3886,7 +4168,8 @@ const route = app
 						id: schemas.warehouseTransferDetails.id,
 						transferId: schemas.warehouseTransferDetails.transferId,
 						productStockId: schemas.warehouseTransferDetails.productStockId,
-						quantityTransferred: schemas.warehouseTransferDetails.quantityTransferred,
+						quantityTransferred:
+							schemas.warehouseTransferDetails.quantityTransferred,
 						itemCondition: schemas.warehouseTransferDetails.itemCondition,
 						itemNotes: schemas.warehouseTransferDetails.itemNotes,
 						isReceived: schemas.warehouseTransferDetails.isReceived,
@@ -3921,10 +4204,12 @@ const route = app
 							details: transferDetails,
 							summary: {
 								totalItems: transferDetails.length,
-								receivedItems: transferDetails.filter((detail) => detail.isReceived)
-									.length,
-								pendingItems: transferDetails.filter((detail) => !detail.isReceived)
-									.length,
+								receivedItems: transferDetails.filter(
+									(detail) => detail.isReceived,
+								).length,
+								pendingItems: transferDetails.filter(
+									(detail) => !detail.isReceived,
+								).length,
 							},
 						},
 					} satisfies ApiResponse,
@@ -3932,12 +4217,15 @@ const route = app
 				);
 			} catch (error) {
 				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
-				console.error('Error fetching warehouse transfer details by ID:', error);
+				console.error(
+					"Error fetching warehouse transfer details by ID:",
+					error,
+				);
 
 				return c.json(
 					{
 						success: false,
-						message: 'Failed to fetch warehouse transfer details',
+						message: "Failed to fetch warehouse transfer details",
 					} satisfies ApiResponse,
 					500,
 				);
@@ -3966,26 +4254,32 @@ const route = app
 	 * @throws {500} Database error if insertion fails
 	 */
 	.post(
-		'/api/auth/warehouse-transfers/create',
+		"/api/auth/warehouse-transfers/create",
 		zValidator(
-			'json',
+			"json",
 			z.object({
 				transferNumber: z
 					.string()
-					.min(1, 'Transfer number is required')
-					.max(100, 'Transfer number too long'),
+					.min(1, "Transfer number is required")
+					.max(100, "Transfer number too long"),
 				transferType: z
-					.enum(['external', 'internal'])
+					.enum(["external", "internal"])
 					.describe(
-						'Type of transfer: external (DC → Almacen) or internal (Almacen → Counter)',
+						"Type of transfer: external (DC → Almacen) or internal (Almacen → Counter)",
 					),
 				sourceWarehouseId: z.string(),
 				destinationWarehouseId: z.string(),
-				initiatedBy: z.string('Invalid employee ID'),
+				initiatedBy: z.string("Invalid employee ID"),
 				cabinetId: z.string().optional(),
-				transferReason: z.string().max(500, 'Transfer reason too long').optional(),
-				notes: z.string().max(1000, 'Notes too long').optional(),
-				priority: z.enum(['normal', 'high', 'urgent']).optional().default('normal'),
+				transferReason: z
+					.string()
+					.max(500, "Transfer reason too long")
+					.optional(),
+				notes: z.string().max(1000, "Notes too long").optional(),
+				priority: z
+					.enum(["normal", "high", "urgent"])
+					.optional()
+					.default("normal"),
 				transferDetails: z
 					.array(
 						z.object({
@@ -3993,18 +4287,20 @@ const route = app
 							quantityTransferred: z
 								.number()
 								.int()
-								.positive('Quantity must be positive'),
+								.positive("Quantity must be positive"),
 							itemCondition: z
-								.enum(['good', 'damaged', 'needs_inspection'])
+								.enum(["good", "damaged", "needs_inspection"])
 								.optional()
-								.default('good'),
-							itemNotes: z.string().max(500, 'Item notes too long').optional(),
-							goodId: z.number().int().positive('Good ID must be positive'),
-							costPerUnit: z.number().min(0, 'Cost per unit must be 0 or greater'),
+								.default("good"),
+							itemNotes: z.string().max(500, "Item notes too long").optional(),
+							goodId: z.number().int().positive("Good ID must be positive"),
+							costPerUnit: z
+								.number()
+								.min(0, "Cost per unit must be 0 or greater"),
 						}),
 					)
-					.min(1, 'At least one transfer detail is required')
-					.max(100, 'Too many items in single transfer'),
+					.min(1, "At least one transfer detail is required")
+					.max(100, "Too many items in single transfer"),
 				isCabinetToWarehouse: z.boolean().optional().default(false),
 			}),
 		),
@@ -4022,15 +4318,18 @@ const route = app
 					priority,
 					transferDetails,
 					isCabinetToWarehouse,
-				} = c.req.valid('json');
+				} = c.req.valid("json");
 
 				// Validate that source and destination warehouses are different
-				if (sourceWarehouseId === destinationWarehouseId && transferType === 'external') {
+				if (
+					sourceWarehouseId === destinationWarehouseId &&
+					transferType === "external"
+				) {
 					return c.json(
 						{
 							success: false,
 							message:
-								'Source and destination warehouses must be different for external transfers',
+								"Source and destination warehouses must be different for external transfers",
 						} satisfies ApiResponse,
 						400,
 					);
@@ -4039,7 +4338,9 @@ const route = app
 				// Altegio replication moved to update-status endpoint when quantities are confirmed
 
 				//Get all of the product stock id from the transfer details
-				const productStockIds = transferDetails.map((detail) => detail.productStockId);
+				const productStockIds = transferDetails.map(
+					(detail) => detail.productStockId,
+				);
 
 				// Start database transaction to ensure data consistency
 				const result = await db.transaction(async (tx) => {
@@ -4052,14 +4353,15 @@ const route = app
 							sourceWarehouseId,
 							// For internal transfers, destination warehouse equals source warehouse
 							destinationWarehouseId:
-								transferType === 'internal'
+								transferType === "internal"
 									? sourceWarehouseId
 									: destinationWarehouseId,
 							initiatedBy,
 							transferReason,
 							notes,
 							priority,
-							cabinetId: transferType === 'internal' ? (cabinetId ?? null) : null,
+							cabinetId:
+								transferType === "internal" ? (cabinetId ?? null) : null,
 							totalItems: transferDetails.length,
 							transferDate: new Date(),
 							isCompleted: isTransferTypeInternal(transferType),
@@ -4069,7 +4371,7 @@ const route = app
 						.returning();
 
 					if (insertedTransfer.length === 0) {
-						throw new Error('Failed to create warehouse transfer');
+						throw new Error("Failed to create warehouse transfer");
 					}
 
 					const transferId = insertedTransfer[0].id;
@@ -4090,7 +4392,7 @@ const route = app
 						.returning();
 
 					// If internal transfer, immediately move the involved product stock to/from the cabinet
-					if (transferType === 'internal' && productStockIds.length > 0) {
+					if (transferType === "internal" && productStockIds.length > 0) {
 						if (isCabinetToWarehouse) {
 							// Moving FROM cabinet TO warehouse - set currentCabinet to null
 							await tx
@@ -4118,9 +4420,9 @@ const route = app
 							userId: initiatedBy,
 							warehouseId: sourceWarehouseId,
 							warehouseTransferId: insertedTransfer[0].id,
-							movementType: 'transfer' as const,
-							action: 'transfer' as const,
-							notes: `Internal transfer - ${isCabinetToWarehouse ? 'cabinet to warehouse' : 'warehouse to cabinet'}`,
+							movementType: "transfer" as const,
+							action: "transfer" as const,
+							notes: `Internal transfer - ${isCabinetToWarehouse ? "cabinet to warehouse" : "warehouse to cabinet"}`,
 							usageDate: new Date(),
 							previousWarehouseId: sourceWarehouseId,
 							newWarehouseId: sourceWarehouseId,
@@ -4129,15 +4431,18 @@ const route = app
 						await tx
 							.insert(schemas.productStockUsageHistory)
 							.values(internalHistoryRecords);
-					} else if (transferType === 'external' && productStockIds.length > 0) {
+					} else if (
+						transferType === "external" &&
+						productStockIds.length > 0
+					) {
 						// Create usage history records for external transfer
 						const externalHistoryRecords = transferDetails.map((detail) => ({
 							productStockId: detail.productStockId,
 							userId: initiatedBy,
 							warehouseId: sourceWarehouseId,
 							warehouseTransferId: insertedTransfer[0].id,
-							movementType: 'transfer' as const,
-							action: 'transfer' as const,
+							movementType: "transfer" as const,
+							action: "transfer" as const,
 							notes: `External transfer initiated from ${sourceWarehouseId} to ${destinationWarehouseId}`,
 							usageDate: new Date(),
 							previousWarehouseId: sourceWarehouseId,
@@ -4158,7 +4463,7 @@ const route = app
 				return c.json(
 					{
 						success: true,
-						message: 'Warehouse transfer created successfully',
+						message: "Warehouse transfer created successfully",
 						data: {
 							transfer: result.transfer,
 							details: result.details,
@@ -4169,32 +4474,32 @@ const route = app
 				);
 			} catch (error) {
 				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
-				console.error('Error creating warehouse transfer:', error);
+				console.error("Error creating warehouse transfer:", error);
 
 				// Handle specific database errors
 				if (error instanceof Error) {
 					// Handle unique constraint violation (duplicate transfer number)
 					if (
-						error.message.includes('duplicate') &&
-						error.message.includes('transfer_number')
+						error.message.includes("duplicate") &&
+						error.message.includes("transfer_number")
 					) {
 						return c.json(
 							{
 								success: false,
 								message:
-									'Transfer number already exists - please use a unique transfer number',
+									"Transfer number already exists - please use a unique transfer number",
 							} satisfies ApiResponse,
 							409,
 						);
 					}
 
 					// Handle foreign key constraint violations
-					if (error.message.includes('foreign key')) {
+					if (error.message.includes("foreign key")) {
 						return c.json(
 							{
 								success: false,
 								message:
-									'Invalid reference - warehouse, employee, or product does not exist',
+									"Invalid reference - warehouse, employee, or product does not exist",
 							} satisfies ApiResponse,
 							400,
 						);
@@ -4204,7 +4509,7 @@ const route = app
 				return c.json(
 					{
 						success: false,
-						message: 'Failed to create warehouse transfer',
+						message: "Failed to create warehouse transfer",
 					} satisfies ApiResponse,
 					500,
 				);
@@ -4231,25 +4536,25 @@ const route = app
 	 * @throws {500} Database error if update fails
 	 */
 	.post(
-		'/api/auth/warehouse-transfers/update-status',
+		"/api/auth/warehouse-transfers/update-status",
 		zValidator(
-			'json',
+			"json",
 			z.object({
 				transferId: z.string(),
 				isCompleted: z.boolean().optional(),
 				isPending: z.boolean().optional(),
 				isCancelled: z.boolean().optional(),
 				completedBy: z.string().optional(),
-				notes: z.string().max(1000, 'Notes too long').optional(),
+				notes: z.string().max(1000, "Notes too long").optional(),
 				replicateToAltegio: z.boolean().optional(),
 				altegioTotals: z.array(
 					z.object({
-						goodId: z.number().int().positive('Good ID must be positive'),
+						goodId: z.number().int().positive("Good ID must be positive"),
 						totalQuantity: z
 							.number()
 							.int()
-							.nonnegative('Quantity must be 0 or greater'),
-						totalCost: z.number().min(0, 'Total cost must be 0 or greater'),
+							.nonnegative("Quantity must be 0 or greater"),
+						totalCost: z.number().min(0, "Total cost must be 0 or greater"),
 					}),
 				),
 			}),
@@ -4265,7 +4570,7 @@ const route = app
 					notes,
 					replicateToAltegio,
 					altegioTotals,
-				} = c.req.valid('json');
+				} = c.req.valid("json");
 
 				// Validate business logic constraints
 				const validationError = validateTransferStatusLogic(
@@ -4298,7 +4603,7 @@ const route = app
 					return c.json(
 						{
 							success: false,
-							message: 'Warehouse transfer not found',
+							message: "Warehouse transfer not found",
 						} satisfies ApiResponse,
 						404,
 					);
@@ -4311,17 +4616,17 @@ const route = app
 					isCompleted === true
 				) {
 					const transferRow = updatedTransfer[0];
-					if (transferRow.transferType === 'external') {
+					if (transferRow.transferType === "external") {
 						const authHeader = process.env.AUTH_HEADER;
 						const acceptHeader = process.env.ACCEPT_HEADER;
 
 						if (!(authHeader && acceptHeader)) {
 							// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
-							console.error('Missing required authentication configuration');
+							console.error("Missing required authentication configuration");
 							return c.json(
 								{
 									success: false,
-									message: 'Missing required authentication configuration',
+									message: "Missing required authentication configuration",
 								} satisfies ApiResponse,
 								400,
 							);
@@ -4332,7 +4637,7 @@ const route = app
 								{
 									success: false,
 									message:
-										'When replicateToAltegio is true, altegioTotals must be provided',
+										"When replicateToAltegio is true, altegioTotals must be provided",
 								} satisfies ApiResponse,
 								400,
 							);
@@ -4397,11 +4702,11 @@ const route = app
 
 							if (!arrivalDocument.success) {
 								// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
-								console.error('Failed to create arrival document');
+								console.error("Failed to create arrival document");
 								return c.json(
 									{
 										success: false,
-										message: 'Failed to create arrival document',
+										message: "Failed to create arrival document",
 									} satisfies ApiResponse,
 									500,
 								);
@@ -4424,11 +4729,11 @@ const route = app
 
 							if (!arrivalOperation.success) {
 								// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
-								console.error('Failed to create storage operation');
+								console.error("Failed to create storage operation");
 								return c.json(
 									{
 										success: false,
-										message: 'Failed to create storage operation',
+										message: "Failed to create storage operation",
 									} satisfies ApiResponse,
 									500,
 								);
@@ -4448,7 +4753,9 @@ const route = app
 								.where(eq(schemas.warehouse.id, transferRow.sourceWarehouseId));
 
 							const sourceWarehouse = sourceWarehouses[0];
-							if (!(sourceWarehouse?.altegioId && sourceWarehouse.consumablesId)) {
+							if (
+								!(sourceWarehouse?.altegioId && sourceWarehouse.consumablesId)
+							) {
 								// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
 								console.error(
 									`Source warehouse ${transferRow.sourceWarehouseId} not found`,
@@ -4476,23 +4783,24 @@ const route = app
 
 							if (!departureDocument.success) {
 								// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
-								console.error('Failed to create departure document');
+								console.error("Failed to create departure document");
 								return c.json(
 									{
 										success: false,
-										message: 'Failed to create departure document',
+										message: "Failed to create departure document",
 									} satisfies ApiResponse,
 									500,
 								);
 							}
 
-							const departureOperationRequest = createAggregatedOperationRequest({
-								documentId: departureDocument.data.id,
-								storageId: sourceWarehouse.consumablesId,
-								typeId: ALTEGIO_OPERATION_TYPE_DEPARTURE,
-								transferNumber: transferRow.transferNumber,
-								aggregatedTransactions,
-							});
+							const departureOperationRequest =
+								createAggregatedOperationRequest({
+									documentId: departureDocument.data.id,
+									storageId: sourceWarehouse.consumablesId,
+									typeId: ALTEGIO_OPERATION_TYPE_DEPARTURE,
+									transferNumber: transferRow.transferNumber,
+									aggregatedTransactions,
+								});
 
 							const departureOperation = await postAltegioStorageOperation(
 								sourceWarehouse.altegioId,
@@ -4503,11 +4811,11 @@ const route = app
 
 							if (!departureOperation.success) {
 								// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
-								console.error('Failed to create departure storage operation');
+								console.error("Failed to create departure storage operation");
 								return c.json(
 									{
 										success: false,
-										message: 'Failed to create departure storage operation',
+										message: "Failed to create departure storage operation",
 									} satisfies ApiResponse,
 									500,
 								);
@@ -4519,21 +4827,21 @@ const route = app
 				return c.json(
 					{
 						success: true,
-						message: 'Warehouse transfer status updated successfully',
+						message: "Warehouse transfer status updated successfully",
 						data: updatedTransfer[0],
 					} satisfies ApiResponse,
 					200,
 				);
 			} catch (error) {
 				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
-				console.error('Error updating warehouse transfer status:', error);
+				console.error("Error updating warehouse transfer status:", error);
 
 				// Handle foreign key constraint violations
-				if (error instanceof Error && error.message.includes('foreign key')) {
+				if (error instanceof Error && error.message.includes("foreign key")) {
 					return c.json(
 						{
 							success: false,
-							message: 'Invalid employee ID - employee does not exist',
+							message: "Invalid employee ID - employee does not exist",
 						} satisfies ApiResponse,
 						400,
 					);
@@ -4542,7 +4850,7 @@ const route = app
 				return c.json(
 					{
 						success: false,
-						message: 'Failed to update warehouse transfer status',
+						message: "Failed to update warehouse transfer status",
 					} satisfies ApiResponse,
 					500,
 				);
@@ -4568,28 +4876,35 @@ const route = app
 	 * @throws {500} Database error if update fails
 	 */
 	.post(
-		'/api/auth/warehouse-transfers/update-item-status',
+		"/api/auth/warehouse-transfers/update-item-status",
 		zValidator(
-			'json',
+			"json",
 			z.object({
 				transferDetailId: z.string(),
 				isReceived: z.boolean().optional(),
 				receivedBy: z.string().optional(),
-				itemCondition: z.enum(['good', 'damaged', 'needs_inspection']).optional(),
-				itemNotes: z.string().max(500, 'Item notes too long').optional(),
+				itemCondition: z
+					.enum(["good", "damaged", "needs_inspection"])
+					.optional(),
+				itemNotes: z.string().max(500, "Item notes too long").optional(),
 			}),
 		),
 		async (c) => {
 			try {
-				const { transferDetailId, isReceived, receivedBy, itemCondition, itemNotes } =
-					c.req.valid('json');
+				const {
+					transferDetailId,
+					isReceived,
+					receivedBy,
+					itemCondition,
+					itemNotes,
+				} = c.req.valid("json");
 
 				// Validate business logic: if marking as received, receivedBy is required
 				if (isReceived === true && !receivedBy) {
 					return c.json(
 						{
 							success: false,
-							message: 'receivedBy is required when marking item as received',
+							message: "receivedBy is required when marking item as received",
 						} satisfies ApiResponse,
 						400,
 					);
@@ -4627,7 +4942,7 @@ const route = app
 
 					const updatedDetail = updatedRows[0];
 					if (!updatedDetail) {
-						return { type: 'not_found' as const };
+						return { type: "not_found" as const };
 					}
 
 					// Fetch transfer to get destination warehouse
@@ -4642,7 +4957,7 @@ const route = app
 
 					const transfer = transferRows[0];
 					if (!transfer) {
-						return { type: 'transfer_not_found' as const };
+						return { type: "transfer_not_found" as const };
 					}
 
 					// If received, update the product stock current warehouse
@@ -4660,9 +4975,9 @@ const route = app
 								userId: receivedBy,
 								warehouseId: transfer.destinationWarehouseId,
 								warehouseTransferId: updatedDetail.transferId,
-								movementType: 'transfer',
-								action: 'checkin',
-								notes: 'Transfer item received at destination warehouse',
+								movementType: "transfer",
+								action: "checkin",
+								notes: "Transfer item received at destination warehouse",
 								usageDate: new Date(),
 								previousWarehouseId: productStock[0].currentWarehouse,
 								newWarehouseId: transfer.destinationWarehouseId,
@@ -4670,24 +4985,24 @@ const route = app
 						}
 					}
 
-					return { type: 'ok' as const, updatedDetail };
+					return { type: "ok" as const, updatedDetail };
 				});
 
-				if (txResult.type === 'not_found') {
+				if (txResult.type === "not_found") {
 					return c.json(
 						{
 							success: false,
-							message: 'Transfer detail not found',
+							message: "Transfer detail not found",
 						} satisfies ApiResponse,
 						404,
 					);
 				}
 
-				if (txResult.type === 'transfer_not_found') {
+				if (txResult.type === "transfer_not_found") {
 					return c.json(
 						{
 							success: false,
-							message: 'Transfer not found',
+							message: "Transfer not found",
 						} satisfies ApiResponse,
 						404,
 					);
@@ -4696,21 +5011,21 @@ const route = app
 				return c.json(
 					{
 						success: true,
-						message: 'Transfer item status updated successfully',
+						message: "Transfer item status updated successfully",
 						data: txResult.updatedDetail,
 					} satisfies ApiResponse,
 					200,
 				);
 			} catch (error) {
 				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
-				console.error('Error updating transfer item status:', error);
+				console.error("Error updating transfer item status:", error);
 
 				// Handle foreign key constraint violations
-				if (error instanceof Error && error.message.includes('foreign key')) {
+				if (error instanceof Error && error.message.includes("foreign key")) {
 					return c.json(
 						{
 							success: false,
-							message: 'Invalid employee ID - employee does not exist',
+							message: "Invalid employee ID - employee does not exist",
 						} satisfies ApiResponse,
 						400,
 					);
@@ -4719,7 +5034,7 @@ const route = app
 				return c.json(
 					{
 						success: false,
-						message: 'Failed to update transfer item status',
+						message: "Failed to update transfer item status",
 					} satisfies ApiResponse,
 					500,
 				);
@@ -4737,7 +5052,7 @@ const route = app
 	 * @returns {ApiResponse} Success response with kits data from DB
 	 * @throws {500} If an unexpected error occurs during data retrieval
 	 */
-	.get('/api/auth/kits/all', async (c) => {
+	.get("/api/auth/kits/all", async (c) => {
 		try {
 			// Query kits with employee information
 			const kits = await db
@@ -4759,19 +5074,20 @@ const route = app
 			return c.json(
 				{
 					success: true,
-					message: kits.length > 0 ? 'Kits retrieved successfully' : 'No kits found',
+					message:
+						kits.length > 0 ? "Kits retrieved successfully" : "No kits found",
 					data: kits,
 				} satisfies ApiResponse,
 				200,
 			);
 		} catch (error) {
 			// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
-			console.error('Error fetching kits:', error);
+			console.error("Error fetching kits:", error);
 
 			return c.json(
 				{
 					success: false,
-					message: 'Failed to fetch kits',
+					message: "Failed to fetch kits",
 				} satisfies ApiResponse,
 				500,
 			);
@@ -4791,11 +5107,14 @@ const route = app
 	 * @throws {500} If an unexpected error occurs during data retrieval
 	 */
 	.get(
-		'/api/auth/kits/by-employee',
-		zValidator('query', z.object({ employeeId: z.string('Invalid employee ID') })),
+		"/api/auth/kits/by-employee",
+		zValidator(
+			"query",
+			z.object({ employeeId: z.string("Invalid employee ID") }),
+		),
 		async (c) => {
 			try {
-				const { employeeId } = c.req.valid('query');
+				const { employeeId } = c.req.valid("query");
 
 				// Query kits assigned to specific employee
 				const kits = await db
@@ -4835,12 +5154,12 @@ const route = app
 				);
 			} catch (error) {
 				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
-				console.error('Error fetching kits by employee:', error);
+				console.error("Error fetching kits by employee:", error);
 
 				return c.json(
 					{
 						success: false,
-						message: 'Failed to fetch kits by employee',
+						message: "Failed to fetch kits by employee",
 					} satisfies ApiResponse,
 					500,
 				);
@@ -4862,11 +5181,11 @@ const route = app
 	 * @throws {500} If an unexpected error occurs during data retrieval
 	 */
 	.get(
-		'/api/auth/kits/details',
-		zValidator('query', z.object({ kitId: z.string('Invalid kit ID') })),
+		"/api/auth/kits/details",
+		zValidator("query", z.object({ kitId: z.string("Invalid kit ID") })),
 		async (c) => {
 			try {
-				const { kitId } = c.req.valid('query');
+				const { kitId } = c.req.valid("query");
 
 				// Query the main kit data with employee information
 				const kit = await db
@@ -4897,7 +5216,7 @@ const route = app
 					return c.json(
 						{
 							success: false,
-							message: 'Kit not found',
+							message: "Kit not found",
 						} satisfies ApiResponse,
 						404,
 					);
@@ -4940,8 +5259,10 @@ const route = app
 							items: kitDetails,
 							summary: {
 								totalItems: kitDetails.length,
-								returnedItems: kitDetails.filter((item) => item.isReturned).length,
-								activeItems: kitDetails.filter((item) => !item.isReturned).length,
+								returnedItems: kitDetails.filter((item) => item.isReturned)
+									.length,
+								activeItems: kitDetails.filter((item) => !item.isReturned)
+									.length,
 							},
 						},
 					} satisfies ApiResponse,
@@ -4949,12 +5270,12 @@ const route = app
 				);
 			} catch (error) {
 				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
-				console.error('Error fetching kit details by ID:', error);
+				console.error("Error fetching kit details by ID:", error);
 
 				return c.json(
 					{
 						success: false,
-						message: 'Failed to fetch kit details',
+						message: "Failed to fetch kit details",
 					} satisfies ApiResponse,
 					500,
 				);
@@ -4977,29 +5298,30 @@ const route = app
 	 * @throws {500} Database error if insertion fails
 	 */
 	.post(
-		'/api/auth/kits/create',
+		"/api/auth/kits/create",
 		zValidator(
-			'json',
+			"json",
 			z.object({
-				assignedEmployee: z.string().uuid('Invalid employee ID'),
-				observations: z.string().max(1000, 'Observations too long').optional(),
+				assignedEmployee: z.string().uuid("Invalid employee ID"),
+				observations: z.string().max(1000, "Observations too long").optional(),
 				kitItems: z
 					.array(
 						z.object({
-							productId: z.string().uuid('Invalid product stock ID'),
+							productId: z.string().uuid("Invalid product stock ID"),
 							observations: z
 								.string()
-								.max(500, 'Item observations too long')
+								.max(500, "Item observations too long")
 								.optional(),
 						}),
 					)
-					.min(1, 'At least one kit item is required')
-					.max(50, 'Too many items in single kit'),
+					.min(1, "At least one kit item is required")
+					.max(50, "Too many items in single kit"),
 			}),
 		),
 		async (c) => {
 			try {
-				const { assignedEmployee, observations, kitItems } = c.req.valid('json');
+				const { assignedEmployee, observations, kitItems } =
+					c.req.valid("json");
 
 				// Get the product stock IDs for validation
 				const productStockIds = kitItems.map((item) => item.productId);
@@ -5018,7 +5340,7 @@ const route = app
 
 					// Check if all products were found
 					if (productStockCheck.length !== productStockIds.length) {
-						throw new Error('One or more product stock items not found');
+						throw new Error("One or more product stock items not found");
 					}
 
 					// Check if any products are currently being used
@@ -5027,7 +5349,7 @@ const route = app
 					);
 					if (productsInUse.length > 0) {
 						throw new Error(
-							`Products with barcodes ${productsInUse.map((p) => p.barcode).join(', ')} are currently being used`,
+							`Products with barcodes ${productsInUse.map((p) => p.barcode).join(", ")} are currently being used`,
 						);
 					}
 
@@ -5038,12 +5360,12 @@ const route = app
 							assignedEmployee,
 							observations,
 							numProducts: kitItems.length,
-							assignedDate: new Date().toISOString().split('T')[0], // Today's date as string
+							assignedDate: new Date().toISOString().split("T")[0], // Today's date as string
 						})
 						.returning();
 
 					if (insertedKit.length === 0) {
-						throw new Error('Failed to create kit');
+						throw new Error("Failed to create kit");
 					}
 
 					const kitId = insertedKit[0].id;
@@ -5066,7 +5388,7 @@ const route = app
 						.update(schemas.productStock)
 						.set({
 							isBeingUsed: true,
-							lastUsed: new Date().toISOString().split('T')[0],
+							lastUsed: new Date().toISOString().split("T")[0],
 							lastUsedBy: assignedEmployee,
 							numberOfUses: sql`${schemas.productStock.numberOfUses} + 1`,
 						})
@@ -5079,13 +5401,15 @@ const route = app
 						employeeId: assignedEmployee,
 						warehouseId: product.currentWarehouse,
 						kitId: insertedKit[0].id,
-						movementType: 'kit_assignment' as const,
-						action: 'assign' as const,
+						movementType: "kit_assignment" as const,
+						action: "assign" as const,
 						notes: `Product assigned to kit ${insertedKit[0].id}`,
 						usageDate: new Date(),
 					}));
 
-					await tx.insert(schemas.productStockUsageHistory).values(kitHistoryRecords);
+					await tx
+						.insert(schemas.productStockUsageHistory)
+						.values(kitHistoryRecords);
 
 					return {
 						kit: insertedKit[0],
@@ -5096,7 +5420,7 @@ const route = app
 				return c.json(
 					{
 						success: true,
-						message: 'Kit created successfully',
+						message: "Kit created successfully",
 						data: {
 							kit: result.kit,
 							items: result.items,
@@ -5107,14 +5431,14 @@ const route = app
 				);
 			} catch (error) {
 				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
-				console.error('Error creating kit:', error);
+				console.error("Error creating kit:", error);
 
 				// Handle specific database errors
 				if (error instanceof Error) {
 					// Handle custom validation errors
 					if (
-						error.message.includes('not found') ||
-						error.message.includes('being used')
+						error.message.includes("not found") ||
+						error.message.includes("being used")
 					) {
 						return c.json(
 							{
@@ -5126,11 +5450,12 @@ const route = app
 					}
 
 					// Handle foreign key constraint violations
-					if (error.message.includes('foreign key')) {
+					if (error.message.includes("foreign key")) {
 						return c.json(
 							{
 								success: false,
-								message: 'Invalid reference - employee or product does not exist',
+								message:
+									"Invalid reference - employee or product does not exist",
 							} satisfies ApiResponse,
 							400,
 						);
@@ -5140,7 +5465,7 @@ const route = app
 				return c.json(
 					{
 						success: false,
-						message: 'Failed to create kit',
+						message: "Failed to create kit",
 					} satisfies ApiResponse,
 					500,
 				);
@@ -5163,19 +5488,20 @@ const route = app
 	 * @throws {500} Database error if update fails
 	 */
 	.post(
-		'/api/auth/kits/update',
+		"/api/auth/kits/update",
 		zValidator(
-			'json',
+			"json",
 			z.object({
-				kitId: z.string().uuid('Invalid kit ID'),
-				observations: z.string().max(1000, 'Observations too long').optional(),
+				kitId: z.string().uuid("Invalid kit ID"),
+				observations: z.string().max(1000, "Observations too long").optional(),
 				isPartial: z.boolean().optional(),
 				isComplete: z.boolean().optional(),
 			}),
 		),
 		async (c) => {
 			try {
-				const { kitId, observations, isPartial, isComplete } = c.req.valid('json');
+				const { kitId, observations, isPartial, isComplete } =
+					c.req.valid("json");
 
 				// Build update values
 				const updateValues: Record<string, unknown> = {
@@ -5205,7 +5531,7 @@ const route = app
 					return c.json(
 						{
 							success: false,
-							message: 'Kit not found',
+							message: "Kit not found",
 						} satisfies ApiResponse,
 						404,
 					);
@@ -5214,19 +5540,19 @@ const route = app
 				return c.json(
 					{
 						success: true,
-						message: 'Kit updated successfully',
+						message: "Kit updated successfully",
 						data: updatedKit[0],
 					} satisfies ApiResponse,
 					200,
 				);
 			} catch (error) {
 				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
-				console.error('Error updating kit:', error);
+				console.error("Error updating kit:", error);
 
 				return c.json(
 					{
 						success: false,
-						message: 'Failed to update kit',
+						message: "Failed to update kit",
 					} satisfies ApiResponse,
 					500,
 				);
@@ -5250,18 +5576,21 @@ const route = app
 	 * @throws {500} Database error if update fails
 	 */
 	.post(
-		'/api/auth/kits/items/update-status',
+		"/api/auth/kits/items/update-status",
 		zValidator(
-			'json',
+			"json",
 			z.object({
-				kitItemId: z.string().uuid('Invalid kit item ID'),
+				kitItemId: z.string().uuid("Invalid kit item ID"),
 				isReturned: z.boolean().optional(),
-				observations: z.string().max(500, 'Item observations too long').optional(),
+				observations: z
+					.string()
+					.max(500, "Item observations too long")
+					.optional(),
 			}),
 		),
 		async (c) => {
 			try {
-				const { kitItemId, isReturned, observations } = c.req.valid('json');
+				const { kitItemId, isReturned, observations } = c.req.valid("json");
 
 				// Perform the kit item update and potential product stock update atomically
 				const txResult = await db.transaction(async (tx) => {
@@ -5273,7 +5602,9 @@ const route = app
 					if (isReturned !== undefined) {
 						updateValues.isReturned = isReturned;
 						if (isReturned) {
-							updateValues.returnedDate = new Date().toISOString().split('T')[0];
+							updateValues.returnedDate = new Date()
+								.toISOString()
+								.split("T")[0];
 						} else {
 							updateValues.returnedDate = null;
 						}
@@ -5292,7 +5623,7 @@ const route = app
 
 					const updatedItem = updatedRows[0];
 					if (!updatedItem) {
-						return { type: 'not_found' as const };
+						return { type: "not_found" as const };
 					}
 
 					// Update the product stock status based on return status
@@ -5301,7 +5632,7 @@ const route = app
 							.update(schemas.productStock)
 							.set({
 								isBeingUsed: !isReturned,
-								lastUsed: new Date().toISOString().split('T')[0],
+								lastUsed: new Date().toISOString().split("T")[0],
 							})
 							.where(eq(schemas.productStock.id, updatedItem.productId))
 							.returning();
@@ -5313,22 +5644,22 @@ const route = app
 								employeeId: productStock[0].lastUsedBy,
 								warehouseId: productStock[0].currentWarehouse,
 								kitId: updatedItem.kitId,
-								movementType: 'kit_return',
-								action: isReturned ? 'return' : 'assign',
-								notes: `Kit item ${isReturned ? 'returned' : 'assigned back'}`,
+								movementType: "kit_return",
+								action: isReturned ? "return" : "assign",
+								notes: `Kit item ${isReturned ? "returned" : "assigned back"}`,
 								usageDate: new Date(),
 							});
 						}
 					}
 
-					return { type: 'ok' as const, updatedItem };
+					return { type: "ok" as const, updatedItem };
 				});
 
-				if (txResult.type === 'not_found') {
+				if (txResult.type === "not_found") {
 					return c.json(
 						{
 							success: false,
-							message: 'Kit item not found',
+							message: "Kit item not found",
 						} satisfies ApiResponse,
 						404,
 					);
@@ -5337,19 +5668,19 @@ const route = app
 				return c.json(
 					{
 						success: true,
-						message: 'Kit item status updated successfully',
+						message: "Kit item status updated successfully",
 						data: txResult.updatedItem,
 					} satisfies ApiResponse,
 					200,
 				);
 			} catch (error) {
 				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
-				console.error('Error updating kit item status:', error);
+				console.error("Error updating kit item status:", error);
 
 				return c.json(
 					{
 						success: false,
-						message: 'Failed to update kit item status',
+						message: "Failed to update kit item status",
 					} satisfies ApiResponse,
 					500,
 				);
@@ -5400,35 +5731,36 @@ const route = app
 	 * }
 	 */
 	.post(
-		'/api/auth/users/update',
+		"/api/auth/users/update",
 		zValidator(
-			'json',
+			"json",
 			z.object({
 				// User ID is a text field in the schema, not UUID
-				userId: z.string().min(1, 'User ID is required'),
+				userId: z.string().min(1, "User ID is required"),
 				// Role must be one of the predefined valid roles
 				role: z
-					.enum(['employee', 'encargado'], {
-						message: 'Invalid role. Must be one of: employee, encargado',
+					.enum(["employee", "encargado"], {
+						message: "Invalid role. Must be one of: employee, encargado",
 					})
 					.optional(),
 				// Warehouse ID is a UUID that must reference an existing warehouse
 				warehouseId: z
 					.string()
-					.uuid('Invalid warehouse ID format - must be a valid UUID')
+					.uuid("Invalid warehouse ID format - must be a valid UUID")
 					.optional(),
 			}),
 		),
 		async (c) => {
 			try {
-				const { userId, role, warehouseId } = c.req.valid('json');
+				const { userId, role, warehouseId } = c.req.valid("json");
 
 				// Validate that at least one field is being updated
 				if (role === undefined && warehouseId === undefined) {
 					return c.json(
 						{
 							success: false,
-							message: 'At least one field (role or warehouseId) must be provided',
+							message:
+								"At least one field (role or warehouseId) must be provided",
 						} satisfies ApiResponse,
 						400,
 					);
@@ -5471,22 +5803,22 @@ const route = app
 				return c.json(
 					{
 						success: true,
-						message: 'User updated successfully',
+						message: "User updated successfully",
 						data: updatedUser[0],
 					} satisfies ApiResponse,
 					200,
 				);
 			} catch (error) {
 				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
-				console.error('Error updating user:', error);
+				console.error("Error updating user:", error);
 
 				// Handle foreign key constraint violations (invalid warehouse reference)
-				if (error instanceof Error && error.message.includes('foreign key')) {
+				if (error instanceof Error && error.message.includes("foreign key")) {
 					return c.json(
 						{
 							success: false,
 							message:
-								'Invalid warehouse ID - the specified warehouse does not exist',
+								"Invalid warehouse ID - the specified warehouse does not exist",
 						} satisfies ApiResponse,
 						400,
 					);
@@ -5496,7 +5828,7 @@ const route = app
 				return c.json(
 					{
 						success: false,
-						message: 'Failed to update user',
+						message: "Failed to update user",
 					} satisfies ApiResponse,
 					500,
 				);
@@ -5539,7 +5871,7 @@ const route = app
 	 *   ]
 	 * }
 	 */
-	.get('/api/auth/users/all', async (c) => {
+	.get("/api/auth/users/all", async (c) => {
 		try {
 			// Query the user table and select only id, name, and email fields
 			const users = await db
@@ -5555,31 +5887,34 @@ const route = app
 			return c.json(
 				{
 					success: true,
-					message: users.length > 0 ? 'Users retrieved successfully' : 'No users found',
+					message:
+						users.length > 0
+							? "Users retrieved successfully"
+							: "No users found",
 					data: users,
 				} satisfies ApiResponse,
 				200,
 			);
 		} catch (error) {
 			// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
-			console.error('Error fetching users:', error);
+			console.error("Error fetching users:", error);
 
 			// Return error response with generic failure message
 			return c.json(
 				{
 					success: false,
-					message: 'Failed to fetch users',
+					message: "Failed to fetch users",
 				} satisfies ApiResponse,
 				500,
 			);
 		}
 	})
 	.post(
-		'/api/auth/replenishment-orders',
-		zValidator('json', replenishmentOrderCreateSchema),
+		"/api/auth/replenishment-orders",
+		zValidator("json", replenishmentOrderCreateSchema),
 		async (c) => {
-			const payload = c.req.valid('json');
-			const user = c.get('user') as SessionUser | null;
+			const payload = c.req.valid("json");
+			const user = c.get("user") as SessionUser | null;
 
 			const order = await createReplenishmentOrder({
 				input: payload,
@@ -5589,7 +5924,7 @@ const route = app
 			return c.json(
 				{
 					success: true,
-					message: 'Replenishment order created successfully',
+					message: "Replenishment order created successfully",
 					data: order,
 				} satisfies ApiResponse,
 				201,
@@ -5597,13 +5932,13 @@ const route = app
 		},
 	)
 	.put(
-		'/api/auth/replenishment-orders/:id',
-		zValidator('param', z.object({ id: z.string().uuid('Invalid order ID') })),
-		zValidator('json', replenishmentOrderUpdateSchema),
+		"/api/auth/replenishment-orders/:id",
+		zValidator("param", z.object({ id: z.string().uuid("Invalid order ID") })),
+		zValidator("json", replenishmentOrderUpdateSchema),
 		async (c) => {
-			const { id } = c.req.valid('param');
-			const payload = c.req.valid('json');
-			const user = c.get('user') as SessionUser | null;
+			const { id } = c.req.valid("param");
+			const payload = c.req.valid("json");
+			const user = c.get("user") as SessionUser | null;
 
 			const order = await updateReplenishmentOrder({
 				id,
@@ -5614,7 +5949,7 @@ const route = app
 			return c.json(
 				{
 					success: true,
-					message: 'Replenishment order updated successfully',
+					message: "Replenishment order updated successfully",
 					data: order,
 				} satisfies ApiResponse,
 				200,
@@ -5622,11 +5957,11 @@ const route = app
 		},
 	)
 	.get(
-		'/api/auth/replenishment-orders',
-		zValidator('query', replenishmentOrderStatusQuerySchema),
+		"/api/auth/replenishment-orders",
+		zValidator("query", replenishmentOrderStatusQuerySchema),
 		async (c) => {
-			const { status } = c.req.valid('query');
-			const user = c.get('user') as SessionUser | null;
+			const { status } = c.req.valid("query");
+			const user = c.get("user") as SessionUser | null;
 
 			const orders = await listReplenishmentOrders({
 				status,
@@ -5636,7 +5971,7 @@ const route = app
 			return c.json(
 				{
 					success: true,
-					message: 'Replenishment orders retrieved successfully',
+					message: "Replenishment orders retrieved successfully",
 					data: orders,
 				} satisfies ApiResponse,
 				200,
@@ -5644,11 +5979,14 @@ const route = app
 		},
 	)
 	.get(
-		'/api/auth/replenishment-orders/warehouse/:warehouseId',
-		zValidator('param', z.object({ warehouseId: z.string().uuid('Invalid warehouse ID') })),
+		"/api/auth/replenishment-orders/warehouse/:warehouseId",
+		zValidator(
+			"param",
+			z.object({ warehouseId: z.string().uuid("Invalid warehouse ID") }),
+		),
 		async (c) => {
-			const { warehouseId } = c.req.valid('param');
-			const user = c.get('user') as SessionUser | null;
+			const { warehouseId } = c.req.valid("param");
+			const user = c.get("user") as SessionUser | null;
 
 			const orders = await listReplenishmentOrdersByWarehouse({
 				warehouseId,
@@ -5658,7 +5996,7 @@ const route = app
 			return c.json(
 				{
 					success: true,
-					message: 'Warehouse replenishment orders retrieved successfully',
+					message: "Warehouse replenishment orders retrieved successfully",
 					data: orders,
 				} satisfies ApiResponse,
 				200,
@@ -5666,11 +6004,11 @@ const route = app
 		},
 	)
 	.get(
-		'/api/auth/replenishment-orders/:id',
-		zValidator('param', z.object({ id: z.string().uuid('Invalid order ID') })),
+		"/api/auth/replenishment-orders/:id",
+		zValidator("param", z.object({ id: z.string().uuid("Invalid order ID") })),
 		async (c) => {
-			const { id } = c.req.valid('param');
-			const user = c.get('user') as SessionUser | null;
+			const { id } = c.req.valid("param");
+			const user = c.get("user") as SessionUser | null;
 
 			const order = await getReplenishmentOrder({
 				id,
@@ -5680,7 +6018,7 @@ const route = app
 			return c.json(
 				{
 					success: true,
-					message: 'Replenishment order retrieved successfully',
+					message: "Replenishment order retrieved successfully",
 					data: order,
 				} satisfies ApiResponse,
 				200,
@@ -5688,13 +6026,13 @@ const route = app
 		},
 	)
 	.patch(
-		'/api/auth/replenishment-orders/:id/link-transfer',
-		zValidator('param', z.object({ id: z.string().uuid('Invalid order ID') })),
-		zValidator('json', replenishmentOrderLinkTransferSchema),
+		"/api/auth/replenishment-orders/:id/link-transfer",
+		zValidator("param", z.object({ id: z.string().uuid("Invalid order ID") })),
+		zValidator("json", replenishmentOrderLinkTransferSchema),
 		async (c) => {
-			const { id } = c.req.valid('param');
-			const payload = c.req.valid('json');
-			const user = c.get('user') as SessionUser | null;
+			const { id } = c.req.valid("param");
+			const payload = c.req.valid("json");
+			const user = c.get("user") as SessionUser | null;
 
 			const order = await linkReplenishmentOrderToTransfer({
 				id,
@@ -5705,7 +6043,8 @@ const route = app
 			return c.json(
 				{
 					success: true,
-					message: 'Replenishment order linked to warehouse transfer successfully',
+					message:
+						"Replenishment order linked to warehouse transfer successfully",
 					data: order,
 				} satisfies ApiResponse,
 				200,
@@ -5721,7 +6060,7 @@ const route = app
  * IMPORTANT: This is placed AFTER all custom routes to avoid conflicts
  * Custom routes under /api/auth/* are handled first, then Better Auth takes over
  */
-app.on(['POST', 'GET'], '/api/auth/*', async (c) => {
+app.on(["POST", "GET"], "/api/auth/*", async (c) => {
 	return await auth.handler(c.req.raw);
 });
 
