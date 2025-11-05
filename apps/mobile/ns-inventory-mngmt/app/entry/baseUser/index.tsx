@@ -16,8 +16,10 @@ import { ThemedHeader } from "@/components/ThemedHeader"
 import { ScannerComboboxSection } from "@/components/ui/ScannerComboboxSection"
 import { getProductStock, getCabinetWarehouses } from "@/lib/fetch-functions"
 import { QUERY_KEYS } from "@/lib/query-keys"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner-native"
+import { useCreateWithdrawOrderMutation } from "@/lib/mutations"
+import type { CreateWithdrawOrderPayload } from "@/lib/mutations"
 
 /**
  * Custom hook to fetch and manage cabinet warehouse map
@@ -166,8 +168,29 @@ const useProductStockQuery = (cabinetId: string | undefined): UseProductStockQue
 export default function InventoryScannerScreen() {
     const colorScheme = useColorScheme()
     const isDark = colorScheme === "dark"
-    const { currentEmployee } = useBaseUserStore();
-    const employeeWarehouseId = currentEmployee?.employee.warehouseId;
+
+    // Get store state and actions first to access currentEmployee
+    const {
+        selectedProducts,
+        showScanner,
+        productStock: storeProductStock,
+        handleProductStockSelect,
+        handleBarcodeScanned,
+        handleRemoveProduct,
+        clearSelectedProducts,
+        setShowScanner,
+        getAvailableStockItems,
+        currentEmployee,
+    } = useBaseUserStore()
+
+    // Get query client for cache invalidation
+    const queryClient = useQueryClient()
+
+    // Initialize mutation hook
+    const createWithdrawOrderMutation = useCreateWithdrawOrderMutation()
+
+    // Get employee warehouse ID for filtering
+    const employeeWarehouseId = currentEmployee?.employee.warehouseId
 
     // Fetch cabinet warehouse map to find matching cabinet
     const { warehouses } = useCabinetWarehousesQuery()
@@ -210,20 +233,6 @@ export default function InventoryScannerScreen() {
             isInitialized.current = true
         }
     }, [productStock, isLoadingProductStock])
-
-    // Get store state and actions
-    const {
-        selectedProducts,
-        showScanner,
-        productStock: storeProductStock,
-        handleProductStockSelect,
-        handleBarcodeScanned,
-        handleRemoveProduct,
-        handleSubmit,
-        setShowScanner,
-        getAvailableStockItems,
-    } = useBaseUserStore()
-
 
     // Get available stock items from the store (filters by warehouse and availability)
     // Uses warehouse ID from current employee state
@@ -294,6 +303,58 @@ export default function InventoryScannerScreen() {
         }
         
         handleProductStockSelect(stockItem, basicProduct)
+    }
+
+    /**
+     * Handles the submission of the withdraw order
+     * Builds the payload from selected products and employee data,
+     * calls the mutation with toast feedback, and clears selection on success
+     */
+    const handleSubmitWithdrawOrder = async () => {
+        // Validate that we have selected products
+        if (selectedProducts.length === 0) {
+            toast.error("Agrega al menos un producto antes de continuar")
+            return
+        }
+
+        // Validate that we have employee data
+        if (!currentEmployee?.employee.id) {
+            toast.error("No se pudo obtener la información del empleado")
+            return
+        }
+
+        // Build the payload for the API
+        const payload: CreateWithdrawOrderPayload = {
+            dateWithdraw: new Date().toISOString(),
+            employeeId: currentEmployee.employee.id,
+            numItems: selectedProducts.length,
+            products: selectedProducts.map(p => p.id),
+            isComplete: false,
+        }
+
+        // Call mutation with toast.promise for automatic loading/success/error feedback
+        toast.promise(
+            createWithdrawOrderMutation.mutateAsync(payload),
+            {
+                loading: "Procesando retiro de productos...",
+                success: (data) => {
+                    // Clear selected products on success
+                    clearSelectedProducts()
+                    // Invalidate product stock query to refetch updated data
+                    if (cabinetId) {
+                        queryClient.invalidateQueries({
+                            queryKey: [QUERY_KEYS.PRODUCT_STOCK, cabinetId],
+                        })
+                    }
+                    return data.message || "Retiro procesado correctamente"
+                },
+                error: (error) => {
+                    return error instanceof Error 
+                        ? error.message 
+                        : "Error al procesar el retiro"
+                },
+            }
+        )
     }
 
     // Early return pattern for loading state
@@ -398,10 +459,12 @@ export default function InventoryScannerScreen() {
                     <ThemedView style={styles.submitContainer}>
                         <ThemedButton
                             title="Procesar Retiro"
-                            onPress={handleSubmit}
+                            onPress={handleSubmitWithdrawOrder}
                             style={styles.submitButton}
                             variant="primary"
                             size="medium"
+                            isLoading={createWithdrawOrderMutation.isPending}
+                            disabled={createWithdrawOrderMutation.isPending}
                         />
                     </ThemedView>
                 )}

@@ -107,9 +107,10 @@ interface BaseUserState {
 	) => void;
 
 	/**
-	 * Submits the current inventory selection for processing
+	 * Clears all selected products and resets their isBeingUsed flags in productStock
+	 * Used after successful order submission to reset the selection state
 	 */
-	handleSubmit: () => void;
+	clearSelectedProducts: () => void;
 
 	/**
 	 * Controls the visibility of the barcode scanner
@@ -291,34 +292,22 @@ export const useBaseUserStore = create<BaseUserState>()(
 				}
 			},
 
-			handleSubmit: () => {
-				const { selectedProducts } = get();
-				if (selectedProducts.length === 0) {
-					Alert.alert(
-						"Sin Productos",
-						"Agrega al menos un producto antes de continuar",
-					);
-					return;
-				}
+			clearSelectedProducts: () => {
+				const { selectedProducts, productStock } = get();
 
-				Alert.alert(
-					"Confirmar Inventario",
-					`¿Deseas procesar ${selectedProducts.length} producto(s)?`,
-					[
-						{ text: "Cancelar", style: "cancel" },
-						{
-							text: "Confirmar",
-							onPress: () => {
-								// Process inventory and clear selection
-								console.log("Processing inventory:", selectedProducts);
-								set({
-									selectedProducts: [],
-								});
-								Alert.alert("Éxito", "Inventario procesado correctamente");
-							},
-						},
-					],
+				// Reset isBeingUsed flags for all selected products
+				const productIds = new Set(selectedProducts.map(p => p.id));
+				const updatedStock = productStock.map(item =>
+					productIds.has(item.id)
+						? { ...item, isBeingUsed: false }
+						: item
 				);
+
+				// Clear selected products
+				set({
+					selectedProducts: [],
+					productStock: updatedStock,
+				});
 			},
 
 			setShowScanner: (show) => set({ showScanner: show }),
