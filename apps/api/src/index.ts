@@ -1678,6 +1678,7 @@ const route = app
 						and(
 							eq(schemas.productStock.currentCabinet, cabinetId),
 							eq(schemas.productStock.isDeleted, false),
+							eq(schemas.productStock.isBeingUsed, false),
 						),
 					);
 
