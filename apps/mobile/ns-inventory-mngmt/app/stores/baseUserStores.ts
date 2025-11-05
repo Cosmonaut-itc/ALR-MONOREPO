@@ -140,6 +140,15 @@ interface BaseUserState {
 	) => void;
 
 	/**
+	 * Syncs product stock from query while preserving local state (isBeingUsed flags for selected items)
+	 * This ensures the store stays in sync with server data while maintaining user selections
+	 * @param newProductStock - Array of product stock items from the query
+	 */
+	syncProductStock: (
+		newProductStock: ProductStockItem[],
+	) => void;
+
+	/**
 	 * Sets the current employee data after successful passcode authentication
 	 * @param employeeData - The employee data from the API response
 	 */
@@ -339,6 +348,56 @@ export const useBaseUserStore = create<BaseUserState>()(
 				set({
 					productStock: productStock,
 				});
+			},
+
+			syncProductStock: (newProductStock) => {
+				const { selectedProducts, productStock: currentProductStock } = get();
+
+				// Create a map of selected product IDs for quick lookup
+				const selectedProductIds = new Set(selectedProducts.map(p => p.id));
+
+				// Merge new data with existing state
+				// Preserve isBeingUsed flags for items that are still selected
+				const syncedStock: ProductStockItem[] = newProductStock.map(newItem => {
+					// Find corresponding item in current stock
+					const currentItem = currentProductStock.find(item => item.id === newItem.id);
+					
+					// If item is selected, preserve its isBeingUsed state
+					if (selectedProductIds.has(newItem.id) && currentItem) {
+						return {
+							...newItem,
+							// Preserve isBeingUsed if the item is currently selected
+							isBeingUsed: currentItem.isBeingUsed,
+							// Preserve other local state like lastUsed if needed
+							...(currentItem.lastUsed && { lastUsed: currentItem.lastUsed }),
+							...(currentItem.lastUsedBy && { lastUsedBy: currentItem.lastUsedBy }),
+						};
+					}
+					
+					// For non-selected items, use the fresh data from the API
+					return newItem;
+				});
+
+				// Only update if there are actual changes
+				// Compare by serializing the arrays to avoid unnecessary updates
+				const currentSerialized = JSON.stringify(currentProductStock.map(item => ({
+					id: item.id,
+					isBeingUsed: item.isBeingUsed,
+					numberOfUses: item.numberOfUses,
+					currentWarehouse: item.currentWarehouse,
+				})));
+				const syncedSerialized = JSON.stringify(syncedStock.map(item => ({
+					id: item.id,
+					isBeingUsed: item.isBeingUsed,
+					numberOfUses: item.numberOfUses,
+					currentWarehouse: item.currentWarehouse,
+				})));
+
+				if (currentSerialized !== syncedSerialized) {
+					set({
+						productStock: syncedStock,
+					});
+				}
 			},
 
 			setCurrentEmployee: (employeeData) => {

@@ -216,21 +216,30 @@ export default function InventoryScannerScreen() {
         refetch: refetchProductStock,
     } = useProductStockQuery(cabinetId)
 
-    // Track if store has been initialized to prevent infinite loops
-    const isInitialized = useRef(false)
-
     const currentDate = useMemo(() => new Date().toISOString().split('T')[0], [])
 
-    // Initialize store with product stock when available
+    // Track last synced productStock to prevent infinite loops
+    const lastSyncedProductStock = useRef<ProductStockItem[]>([])
+
+    // Sync store with product stock whenever query data changes
+    // This ensures the store stays updated when queries are invalidated or refetched
     useEffect(() => {
         const hasProductStock = productStock.length > 0
         const stockLoaded = !isLoadingProductStock
 
-        if (hasProductStock && stockLoaded && !isInitialized.current) {
-            const store = useBaseUserStore.getState()
-            // Initialize store with productStock only
-            store.initializeStore(productStock)
-            isInitialized.current = true
+        if (hasProductStock && stockLoaded) {
+            // Check if data actually changed by comparing IDs
+            const currentIds = productStock.map(item => item.id).sort().join(',')
+            const lastSyncedIds = lastSyncedProductStock.current.map(item => item.id).sort().join(',')
+            
+            // Only sync if the data actually changed
+            if (currentIds !== lastSyncedIds) {
+                const store = useBaseUserStore.getState()
+                // Sync store with productStock, preserving local state for selected items
+                store.syncProductStock(productStock)
+                // Update ref to track what we've synced
+                lastSyncedProductStock.current = productStock
+            }
         }
     }, [productStock, isLoadingProductStock])
 
