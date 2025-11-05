@@ -104,28 +104,27 @@ const useProductStockQuery = (cabinetId: string | undefined): UseProductStockQue
     })
 
     // Transform API data to local ProductStockItem interface
-    // Handle response structure: [{ cabinet: { productStock: {...}, employee: {...} } }, ...]
+    // Handle response structure: { cabinet: [{ employee: {...}, productStock: {...} }, ...], cabinetId, cabinetName, totalItems, warehouseId }
     const productStock: ProductStockItem[] = (() => {
         if (!data) return [];
         
-        // Check if data is a direct array with cabinet property
-        if (Array.isArray(data)) {
-            return data.map((item: {
-                cabinet: {
-                    productStock: {
-                        id: string;
-                        barcode: number;
-                        description?: string | null;
-                        lastUsed: string | null;
-                        lastUsedBy: string | null;
-                        numberOfUses: number;
-                        currentWarehouse: string;
-                        isBeingUsed: boolean;
-                        firstUsed: string | null;
-                    };
+        // Check if data has cabinet property with array
+        if (data.cabinet && Array.isArray(data.cabinet)) {
+            return data.cabinet.map((item: {
+                employee: unknown | null;
+                productStock: {
+                    id: string;
+                    barcode: number;
+                    description?: string | null;
+                    lastUsed: string | null;
+                    lastUsedBy: string | null;
+                    numberOfUses: number;
+                    currentWarehouse: string;
+                    isBeingUsed: boolean;
+                    firstUsed: string | null;
                 };
             }) => {
-                const stock = item.cabinet.productStock;
+                const stock = item.productStock;
                 const transformed: ProductStockItem = {
                     id: stock.id,
                     barcode: stock.barcode,
@@ -196,6 +195,8 @@ export default function InventoryScannerScreen() {
         isFetching: isFetchingProductStock,
         refetch: refetchProductStock,
     } = useProductStockQuery(cabinetId)
+    console.log('cabinetId', cabinetId)
+    console.log('productStock', productStock)
 
     // Track if store has been initialized to prevent infinite loops
     const isInitialized = useRef(false)

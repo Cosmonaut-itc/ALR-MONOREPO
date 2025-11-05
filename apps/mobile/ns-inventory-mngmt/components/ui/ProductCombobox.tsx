@@ -192,7 +192,6 @@ export function ProductCombobox({
                                 darkColor={Colors.dark.highlight}
                                 lightColor={Colors.light.highlight}
                             >
-                                <ThemedText style={styles.subProductBrand}>{group.brand}</ThemedText>
                                 <ThemedText style={styles.subProductDetails}>
                                     ID: {getShortId(item.id)}
                                 </ThemedText>
