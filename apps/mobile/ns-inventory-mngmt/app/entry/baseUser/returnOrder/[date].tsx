@@ -11,14 +11,14 @@ import { BarcodeScanner } from "@/components/ui/BarcodeScanner"
 import { ProductCard } from "@/components/ui/ProductCard"
 import { Colors } from "@/constants/Colors"
 import { useColorScheme } from "@/hooks/useColorScheme"
-import type { Product, SelectedProduct, WithdrawOrderDetails, ProductStockItem } from "@/types/types"
+import type { Product, SelectedProduct, WithdrawOrderDetails, ProductStockItem, DataItemArticulosType } from "@/types/types"
 import { ThemedHeader } from "@/components/ThemedHeader"
 import { ScannerComboboxSection } from "@/components/ui/ScannerComboboxSection"
 import { useBaseUserStore, useReturnOrderStore } from "@/app/stores/baseUserStores"
 import { Collapsible } from "@/components/Collapsible"
 import { useQuery } from "@tanstack/react-query"
 import { QUERY_KEYS } from "@/lib/query-keys"
-import { getWithdrawalOrdersDetails } from "@/lib/fetch-functions"
+import { getWithdrawalOrdersDetails, getProducts } from "@/lib/fetch-functions"
 import { useMemo } from "react"
 
 
@@ -59,8 +59,20 @@ const useWithdrawalOrderDetailsQuery = (date: string): UseWithdrawOrderDetailsQu
         retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // Exponential backoff
     })
 
+    // Transform API response to match expected types (convert string dates to Date objects)
+    const transformedProducts = useMemo(() => {
+        if (!apiProducts) return []
+        return apiProducts.map((orderDetail: { id: string; productId: string; withdrawOrderId: string | null; dateWithdraw: string; dateReturn: string | null }): WithdrawOrderDetails => ({
+            id: orderDetail.id,
+            productId: orderDetail.productId,
+            dateWithdraw: new Date(orderDetail.dateWithdraw),
+            ...(orderDetail.withdrawOrderId && { withdrawOrderId: orderDetail.withdrawOrderId }),
+            ...(orderDetail.dateReturn && { dateReturn: new Date(orderDetail.dateReturn) }),
+        }))
+    }, [apiProducts])
+
     return {
-        products: apiProducts || [],
+        products: transformedProducts,
         isLoading,
         isError,
         error,
@@ -78,7 +90,40 @@ export default function OrderDetailsScreen() {
 
     console.log("date", date)
 
-    const { productStock, availableProducts, selectedProducts, handleProductStockSelect } = useBaseUserStore()
+    const { productStock, selectedProducts, handleProductStockSelect } = useBaseUserStore()
+
+    // Fetch products for metadata lookup and transform to Product type
+    const {
+        data: apiProductsData = [],
+        isLoading: isLoadingProducts,
+    } = useQuery<DataItemArticulosType[]>({
+        queryKey: [QUERY_KEYS.PRODUCTS],
+        queryFn: getProducts,
+        staleTime: 10 * 60 * 1000, // 10 minutes - products don't change frequently
+        gcTime: 30 * 60 * 1000, // 30 minutes - cache garbage collection time
+    })
+
+    // Transform API products (DataItemArticulosType) to Product type
+    const availableProducts = useMemo<Product[]>(() => {
+        if (!apiProductsData || !Array.isArray(apiProductsData)) return []
+        return apiProductsData.map((item: DataItemArticulosType): Product => {
+            const product: Product = {
+                id: item.good_id.toString(), // Convert good_id to string for id
+                name: item.title || item.label || `Producto ${item.good_id}`, // Use title or label as name
+                brand: item.label || "Sin marca", // Use label as brand
+                price: item.cost || 0, // Use cost as price
+                stock: item.actual_amounts.reduce((sum, amt) => sum + amt.amount, 0), // Sum actual amounts for stock
+            }
+            // Conditionally add optional properties only if they have values
+            if (item.barcode) {
+                product.barcode = item.barcode
+            }
+            if (item.description) {
+                product.description = item.description
+            }
+            return product
+        })
+    }, [apiProductsData])
 
     // Get return order state and actions
     const {

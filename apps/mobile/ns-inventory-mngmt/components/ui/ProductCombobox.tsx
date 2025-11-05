@@ -112,7 +112,11 @@ export function ProductCombobox({
     } = useProductComboboxStore()
 
     // Group and filter warehouse stock
+    // Ensure products is always an array to prevent undefined errors
     const stockGroups = useMemo(() => {
+        if (!products || !Array.isArray(products)) {
+            return []
+        }
         return groupProductStock(productStock, products, targetWarehouse)
     }, [productStock, products, targetWarehouse])
 
@@ -126,7 +130,7 @@ export function ProductCombobox({
         resetToInitialState()
 
         // Then reset search with proper products if we have any
-        if (products.length > 0) {
+        if (products && Array.isArray(products) && products.length > 0) {
             resetSearch(products)
         }
     }, [productStock, resetSearch, resetToInitialState, products])
@@ -148,13 +152,19 @@ export function ProductCombobox({
 
     const handleSearchInput = (text: string) => {
         // Just update the search text - filtering is handled in useMemo
-        handleSearch(text, products) // Pass products for consistency
+        // Ensure products is an array before passing
+        if (products && Array.isArray(products)) {
+            handleSearch(text, products) // Pass products for consistency
+        }
     }
 
     const handleOpenModal = () => {
         if (!disabled) {
             // Ensure we reset any stale state before opening
-            resetSearch(products)
+            // Ensure products is an array before passing
+            if (products && Array.isArray(products)) {
+                resetSearch(products)
+            }
             setIsOpen(true)
         }
     }
