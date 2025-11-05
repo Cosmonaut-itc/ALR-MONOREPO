@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useEffect, useMemo } from "react"
+import React, { useCallback, useEffect, useMemo, useState } from "react"
 import { StyleSheet, TouchableOpacity, Modal, ScrollView } from "react-native"
 import { ThemedText } from "@/components/ThemedText"
 import { ThemedView } from "@/components/ThemedView"
@@ -14,8 +14,8 @@ import type {
     WarehouseStockGroup
 } from "@/types/types"
 import { Collapsible } from "@/components/Collapsible"
-import { useProductComboboxStore } from "@/app/stores/baseUserStores"
 import { getShortId } from "@/lib/functions"
+import { useFocusEffect } from "expo-router"
 
 /**
  * Groups ProductStockItems by barcode, enriching with product information
@@ -101,15 +101,8 @@ export function ProductCombobox({
     const colorScheme = useColorScheme()
     const isDark = colorScheme === "dark"
 
-    // Get store state and actions for search functionality
-    const {
-        searchText,
-        isOpen,
-        handleSearch,
-        setIsOpen,
-        resetSearch,
-        resetToInitialState
-    } = useProductComboboxStore()
+    const [searchText, setSearchText] = useState<string>("")
+    const [isOpen, setIsOpen] = useState<boolean>(false)
 
     // Group and filter warehouse stock
     // Ensure products is always an array to prevent undefined errors
@@ -124,49 +117,57 @@ export function ProductCombobox({
         return filterStockGroups(stockGroups, searchText)
     }, [stockGroups, searchText])
 
-    // Reset search and ensure proper state when component mounts or when key dependencies change
     useEffect(() => {
-        // Reset to initial state first to clear any stale state from previous navigation
-        resetToInitialState()
+        setSearchText("")
+    }, [productStock, products, targetWarehouse])
 
-        // Then reset search with proper products if we have any
-        if (products && Array.isArray(products) && products.length > 0) {
-            resetSearch(products)
-        }
-    }, [productStock, resetSearch, resetToInitialState, products])
+    useFocusEffect(
+        useCallback(() => {
+            return () => {
+                setIsOpen(false)
+                setSearchText("")
+            }
+        }, [])
+    )
 
-    // Cleanup effect to reset state when component unmounts (navigation cleanup)
-    useEffect(() => {
-        return () => {
-            // Reset the store to initial state when component unmounts to prevent state persistence issues
-            resetToInitialState()
-        }
-    }, [resetToInitialState])
-
-    const handleStockItemSelection = (item: ProductStockItem) => {
+    /**
+     * Handles the selection of a stock item from the modal list.
+     * Closes the modal and clears the search input for a clean state.
+     * @param item - Stock item selected by the user
+     */
+    const handleStockItemSelection = (item: ProductStockItem): void => {
         if (onStockItemSelect) {
             onStockItemSelect(item)
         }
         setIsOpen(false)
+        setSearchText("")
     }
 
-    const handleSearchInput = (text: string) => {
-        // Just update the search text - filtering is handled in useMemo
-        // Ensure products is an array before passing
-        if (products && Array.isArray(products)) {
-            handleSearch(text, products) // Pass products for consistency
-        }
+    /**
+     * Updates the search text used to filter stock groups.
+     * @param text - Text entered by the user in the search field
+     */
+    const handleSearchInput = (text: string): void => {
+        setSearchText(text)
     }
 
-    const handleOpenModal = () => {
+    /**
+     * Opens the combobox modal when the trigger is pressed.
+     * Ignores the action if the component is disabled.
+     */
+    const handleOpenModal = (): void => {
         if (!disabled) {
-            // Ensure we reset any stale state before opening
-            // Ensure products is an array before passing
-            if (products && Array.isArray(products)) {
-                resetSearch(products)
-            }
             setIsOpen(true)
+            setSearchText("")
         }
+    }
+
+    /**
+     * Closes the combobox modal and resets the search text.
+     */
+    const handleCloseModal = (): void => {
+        setIsOpen(false)
+        setSearchText("")
     }
 
     const renderStockGroup = (group: WarehouseStockGroup) => {
@@ -249,7 +250,12 @@ export function ProductCombobox({
                 <ThemedText style={styles.dropdownIcon}>▼</ThemedText>
             </TouchableOpacity>
 
-            <Modal visible={isOpen} animationType="slide" presentationStyle="pageSheet">
+            <Modal
+                visible={isOpen}
+                animationType="slide"
+                presentationStyle="pageSheet"
+                onRequestClose={handleCloseModal}
+            >
                 <ThemedView style={styles.modalContainer}>
                     <ThemedView
                         style={[
@@ -263,7 +269,7 @@ export function ProductCombobox({
                         <ThemedText type="title" style={styles.modalTitle}>
                             Productos en {warehouseName || targetWarehouse || "Almacén"}
                         </ThemedText>
-                        <TouchableOpacity onPress={() => setIsOpen(false)} style={styles.closeButton}>
+                        <TouchableOpacity onPress={handleCloseModal} style={styles.closeButton}>
                             <ThemedText style={{ color: isDark ? Colors.dark.tint : Colors.light.tint }}>✕</ThemedText>
                         </TouchableOpacity>
                     </ThemedView>
