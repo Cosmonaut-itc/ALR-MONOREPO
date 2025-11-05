@@ -90,9 +90,7 @@ export type BarcodeScannerProps = typeof BarcodeScannerPropsArk.infer;
 // QR Code data structure for inventory items
 export const QRCodeData = t({
 	barcode: "string", // The product's barcode identifier
-	productId: "string", // Unique product ID in the system
-	name: "string?", // Optional product name for verification
-	type: t.enumerated("product", "inventory"), // QR code type identifier
+	uuid: "string", // Unique product ID in the system
 });
 
 export type QRCodeData = typeof QRCodeData.infer;

@@ -10,14 +10,14 @@ import { ThemedButton } from "@/components/ThemedButton"
 import { BarcodeScanner } from "@/components/ui/BarcodeScanner"
 import { ProductCard } from "@/components/ui/ProductCard"
 import { useColorScheme } from "@/hooks/useColorScheme"
-import type { ProductStockItem, SelectedProduct } from "@/types/types"
+import type { ProductStockItem, SelectedProduct, Product, CabinetWarehouseMapEntry } from "@/types/types"
 import { useBaseUserStore } from "@/app/stores/baseUserStores"
 import { ThemedHeader } from "@/components/ThemedHeader"
 import { ScannerComboboxSection } from "@/components/ui/ScannerComboboxSection"
 import { getProductStock, getCabinetWarehouses } from "@/lib/fetch-functions"
 import { QUERY_KEYS } from "@/lib/query-keys"
 import { useQuery } from "@tanstack/react-query"
-import type { Product, CabinetWarehouseMapEntry } from "@/types/types"
+import { toast } from "sonner-native"
 
 /**
  * Custom hook to fetch and manage cabinet warehouse map
@@ -171,8 +171,6 @@ export default function InventoryScannerScreen() {
 
     // Fetch cabinet warehouse map to find matching cabinet
     const { warehouses } = useCabinetWarehousesQuery()
-
-    console.log('warehouses', warehouses)
     
     // Find the cabinet entry that matches the employee's warehouse ID
     const matchedCabinet = useMemo(() => {
@@ -180,7 +178,6 @@ export default function InventoryScannerScreen() {
         return warehouses.find(entry => entry.warehouseId === employeeWarehouseId)
     }, [employeeWarehouseId, warehouses])
 
-    console.log('matchedCabinet', matchedCabinet)
     
     // Get cabinet ID and warehouse name from matched cabinet
     const cabinetId = matchedCabinet?.cabinetId
@@ -195,28 +192,21 @@ export default function InventoryScannerScreen() {
         isFetching: isFetchingProductStock,
         refetch: refetchProductStock,
     } = useProductStockQuery(cabinetId)
-    console.log('cabinetId', cabinetId)
-    console.log('productStock', productStock)
 
     // Track if store has been initialized to prevent infinite loops
     const isInitialized = useRef(false)
 
     const currentDate = useMemo(() => new Date().toISOString().split('T')[0], [])
 
-    // Initialize store with fetched product stock when available
+    // Initialize store with product stock when available
     useEffect(() => {
         const hasProductStock = productStock.length > 0
         const stockLoaded = !isLoadingProductStock
 
         if (hasProductStock && stockLoaded && !isInitialized.current) {
-            console.log('🚀 Initializing store with product stock:', {
-                productStockCount: productStock.length
-            })
             const store = useBaseUserStore.getState()
-            // Only update productStock, products should already be in store from elsewhere
-            if (store.productStock.length === 0 || store.productStock !== productStock) {
-                store.initializeStore(store.availableProducts, productStock)
-            }
+            // Initialize store with productStock only
+            store.initializeStore(productStock)
             isInitialized.current = true
         }
     }, [productStock, isLoadingProductStock])
@@ -225,7 +215,7 @@ export default function InventoryScannerScreen() {
     const {
         selectedProducts,
         showScanner,
-        availableProducts,
+        productStock: storeProductStock,
         handleProductStockSelect,
         handleBarcodeScanned,
         handleRemoveProduct,
@@ -240,59 +230,70 @@ export default function InventoryScannerScreen() {
     const availableStock = getAvailableStockItems(warehouseId)
 
     /**
-     * Enhanced barcode scan handler that works with store product data
-     * Searches through the available products to find matches by barcode
-     * @param barcode - Scanned barcode string to match against products
+     * Extracts product information from a ProductStockItem's description
+     * @param stockItem - The stock item to extract info from
+     * @returns Object with name and brand
      */
-    const handleEnhancedBarcodeScanned = (barcode: string) => {
-        const foundProduct = availableProducts.find(
-            (product) => product.barcode === barcode || product.id === barcode
+    const extractProductInfoFromStock = (stockItem: ProductStockItem): { name: string; brand: string } => {
+        const description = stockItem.description || `Producto ${stockItem.barcode}`
+        const nameParts = description.split(" - ")
+        return {
+            name: nameParts[0] || description,
+            brand: nameParts[1] || "Sin marca",
+        }
+    }
+
+    /**
+     * Enhanced barcode scan handler that works with product stock data
+     * Searches through product stock items to find matches by UUID (stock item ID)
+     * Shows success toast with product details when product is found and added
+     * @param identifier - Scanned UUID or barcode string to match against stock items
+     */
+    const handleEnhancedBarcodeScanned = (identifier: string) => {
+        // Search by stock item ID (UUID) first, then fall back to barcode if needed
+        const foundStockItem = availableStock.find(
+            (item) => item.id === identifier || item.barcode.toString() === identifier
         )
 
-        if (foundProduct) {
-            handleBarcodeScanned(barcode)
+        if (foundStockItem) {
+            handleBarcodeScanned(identifier)
+            // Extract product info from stock item
+            const productInfo = extractProductInfoFromStock(foundStockItem)
+            // Show success toast with product information
+            toast.success(
+                `${productInfo.name}${productInfo.brand ? ` - ${productInfo.brand}` : ""} agregado`,
+                {
+                    description: `Código: ${identifier}`,
+                }
+            )
         } else {
             // Show user-friendly error message when product not found
-            console.warn(`Product with barcode ${barcode} not found in inventory`)
-            // You could show a toast notification here
+            toast.warning(`Producto con código ${identifier} no encontrado en el inventario`)
         }
     }
 
     /**
      * Handler for warehouse stock item selection
-     * Uses the new stock-based selection system that tracks individual items
+     * Uses the stock-based selection system that tracks individual items
+     * Extracts product information from stock item description
      * @param stockItem - The selected warehouse stock item
      */
     const handleStockItemSelect = (stockItem: ProductStockItem) => {
-        // Find the full product information by barcode
-        // Compare Product.barcode (string) with ProductStockItem.barcode (number)
-        const fullProduct = availableProducts.find(p => p.barcode === stockItem.barcode.toString() || Number(p.barcode) === stockItem.barcode)
-
-        if (fullProduct) {
-            // Use the new stock-based selection method
-            handleProductStockSelect(stockItem, fullProduct)
-        } else {
-            // Create a basic product object if full product not found
-            // Try to find product by barcode from available products first
-            const fallbackProduct = availableProducts.find(
-                (p) => p.barcode === stockItem.barcode.toString() || Number(p.barcode) === stockItem.barcode
-            );
-            const basicProduct: Product = {
-                id: `product-${stockItem.barcode}`, // Use product prefix + barcode as product ID
-                name: fallbackProduct?.name || `Producto ${stockItem.barcode}`, // Use product name if available, otherwise fallback
-                brand: fallbackProduct?.brand || "Sin marca", // Use product brand if available
-                price: fallbackProduct?.price || 0, // Use product price if available
-                stock: 1, // Set to 1 since we know this specific item exists
-                barcode: stockItem.barcode.toString(),
-            }
-            
-            // Add description only if it exists (for exactOptionalPropertyTypes compatibility)
-            if (fallbackProduct?.description !== undefined) {
-                basicProduct.description = fallbackProduct.description
-            }
-            
-            handleProductStockSelect(stockItem, basicProduct)
+        // Extract product info from stock item
+        const productInfo = extractProductInfoFromStock(stockItem)
+        
+        // Create a basic product object from stock item data
+        const basicProduct: Product = {
+            id: stockItem.id,
+            name: productInfo.name,
+            brand: productInfo.brand,
+            price: 0, // Price not available in stock data
+            stock: 1, // Individual stock item
+            barcode: stockItem.barcode.toString(),
+            ...(stockItem.description && { description: stockItem.description }),
         }
+        
+        handleProductStockSelect(stockItem, basicProduct)
     }
 
     // Early return pattern for loading state
@@ -364,7 +365,7 @@ export default function InventoryScannerScreen() {
                 {/* Warehouse Inventory Section */}
                 {/* Uses warehouse ID from current employee state */}
                 <ScannerComboboxSection
-                    products={availableProducts}
+                    products={[]}
                     productStock={availableStock}
                     {...(warehouseId !== undefined && { targetWarehouse: warehouseId })}
                     {...(warehouseName !== undefined && { warehouseName })}

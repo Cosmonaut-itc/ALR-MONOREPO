@@ -52,7 +52,6 @@ interface BaseUserState {
 	// State Properties
 	selectedProducts: SelectedProduct[]; // Products currently selected for inventory
 	showScanner: boolean; // Controls visibility of barcode scanner
-	availableProducts: Array<typeof Product.infer>; // Available products in the system
 	productStock: ProductStockItem[]; // Available product stock items
 	currentEmployee: EmployeeData | null; // Currently logged in employee data
 
@@ -132,12 +131,10 @@ interface BaseUserState {
 	getAvailableStockItems: (targetWarehouse?: string) => ProductStockItem[];
 
 	/**
-	 * Initializes the store with available products, product stock, and pending orders
-	 * @param products - Array of available products
+	 * Initializes the store with product stock
 	 * @param productStock - Array of product stock items
 	 */
 	initializeStore: (
-		products: Array<typeof Product.infer>,
 		productStock: ProductStockItem[],
 	) => void;
 
@@ -163,7 +160,6 @@ export const useBaseUserStore = create<BaseUserState>()(
 			// Initial State
 			selectedProducts: [],
 			showScanner: false,
-			availableProducts: [],
 			productStock: [],
 			currentEmployee: null,
 
@@ -210,7 +206,7 @@ export const useBaseUserStore = create<BaseUserState>()(
 			handleProductSelect: (product) => {
 				const { productStock } = get();
 
-				// Find an available stock item for this product
+				// Find an available stock item for this product by barcode
 				// Compare ProductStockItem.barcode (number) with Product.barcode (string)
 				const availableStockItem = productStock.find(
 					item => (item.barcode.toString() === product.barcode || item.barcode === Number(product.barcode)) && !item.isBeingUsed
@@ -228,60 +224,44 @@ export const useBaseUserStore = create<BaseUserState>()(
 			},
 
 			handleBarcodeScanned: (barcode) => {
-				const { availableProducts, productStock } = get();
+				const { productStock } = get();
 
-				// First try to find an available stock item by exact barcode match
+				// First try to find stock item by UUID (stock item ID) - this is the primary search method
 				let stockItem = productStock.find(
-					(item) => item.barcode.toString() === barcode && !item.isBeingUsed
+					(item) => item.id === barcode && !item.isBeingUsed
 				);
 
-				// If no stock item found, try to find by stock item ID
+				// If no stock item found by ID, try to find by barcode
 				if (!stockItem) {
 					stockItem = productStock.find(
-						(item) => item.id === barcode && !item.isBeingUsed
+						(item) => item.barcode.toString() === barcode && !item.isBeingUsed
 					);
 				}
 
 				if (stockItem) {
-					// Find the corresponding product information
-					// Compare Product.barcode (string) with ProductStockItem.barcode (number)
-					const product = availableProducts.find(
-						(p) => p.barcode === stockItem.barcode.toString() || Number(p.barcode) === stockItem.barcode
-					);
+					// Extract product info from stock item description
+					const description = stockItem.description || `Producto ${stockItem.barcode}`
+					const nameParts = description.split(" - ")
+					const productName = nameParts[0] || description
+					const brand = nameParts[1] || "Sin marca"
 
-					if (product) {
-						get().handleProductStockSelect(stockItem, product);
-						set({ showScanner: false });
-						Alert.alert(
-							"Producto Encontrado",
-							`${product.name} agregado al inventario`,
-						);
-					} else {
-						// Fallback: create basic product info
-						// Try to find product by barcode from available products
-						const fallbackProduct = availableProducts.find(
-							(p) => p.barcode === stockItem.barcode.toString() || Number(p.barcode) === stockItem.barcode
-						);
-						const basicProduct: ProductType = {
-							id: `product-${stockItem.barcode}`,
-							name: fallbackProduct?.name || `Producto ${stockItem.barcode}`,
-							brand: fallbackProduct?.brand || "Sin marca",
-							price: fallbackProduct?.price || 0,
-							stock: 1,
-							barcode: stockItem.barcode.toString(),
-						};
-						
-						// Add description only if it exists (for exactOptionalPropertyTypes compatibility)
-						if (fallbackProduct?.description !== undefined) {
-							basicProduct.description = fallbackProduct.description;
-						}
-						get().handleProductStockSelect(stockItem, basicProduct);
-						set({ showScanner: false });
-						Alert.alert(
-							"Producto Encontrado",
-							`${basicProduct.name} agregado al inventario`,
-						);
+					// Create product info object from stock item
+					const productInfo: ProductType = {
+						id: stockItem.id,
+						name: productName,
+						brand: brand,
+						price: 0, // Price not available in stock data
+						stock: 1, // Individual stock item
+						barcode: stockItem.barcode.toString(),
+						...(stockItem.description && { description: stockItem.description }),
 					}
+
+					get().handleProductStockSelect(stockItem, productInfo);
+					set({ showScanner: false });
+					Alert.alert(
+						"Producto Encontrado",
+						`${productInfo.name} agregado al inventario`,
+					);
 				} else {
 					Alert.alert(
 						"Producto No Encontrado",
@@ -366,9 +346,8 @@ export const useBaseUserStore = create<BaseUserState>()(
 				return filtered;
 			},
 
-			initializeStore: (products, productStock) => {
+			initializeStore: (productStock) => {
 				set({
-					availableProducts: products,
 					productStock: productStock,
 				});
 			},

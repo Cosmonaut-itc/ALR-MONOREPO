@@ -1,15 +1,16 @@
 "use client"
 
-import { useState } from "react"
-import { StyleSheet, Modal, TouchableOpacity, Platform, Alert, Vibration } from "react-native"
+import { useState, useRef, useEffect } from "react"
+import { StyleSheet, Modal, TouchableOpacity, Platform, Vibration } from "react-native"
 import { CameraView, useCameraPermissions, type CameraType } from "expo-camera"
 import { ThemedText } from "@/components/ThemedText"
 import { ThemedView } from "@/components/ThemedView"
 import { ThemedButton } from "@/components/ThemedButton"
 import { Colors } from "@/constants/Colors"
 import { useColorScheme } from "@/hooks/useColorScheme"
-import { X, Camera } from "lucide-react-native"
+import { X, Camera, CheckCircle2 } from "lucide-react-native"
 import type { BarcodeScannerProps, QRCodeData } from "@/types/types"
+import { toast } from "sonner-native"
 
 /**
  * Type definition for barcode scanning result from expo-camera
@@ -19,17 +20,33 @@ interface BarcodeScanningResult {
     data: string
 }
 
+
 /**
  * Modern barcode scanner component using expo-camera CameraView
  * Focuses on QR code scanning to extract barcode and product ID information
  * Handles camera permissions and provides visual feedback for scan results
+ * Keeps scanner open for continuous scanning with cooldown protection to prevent duplicate scans
  */
 export function BarcodeScanner({ onBarcodeScanned, onClose }: BarcodeScannerProps) {
     const [permission, requestPermission] = useCameraPermissions()
-    const [scanned, setScanned] = useState(false)
+    const [showSuccessFeedback, setShowSuccessFeedback] = useState(false)
     const [facing] = useState<CameraType>('back')
     const colorScheme = useColorScheme()
     const isDark = colorScheme === "dark"
+    
+    // Cooldown refs to prevent duplicate scans of the same code
+    const cooldownRef = useRef(false)
+    const lastDataRef = useRef<string | null>(null)
+    const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+    // Cleanup timeout on unmount
+    useEffect(() => {
+        return () => {
+            if (timeoutRef.current) {
+                clearTimeout(timeoutRef.current)
+            }
+        }
+    }, [])
 
     /**
      * Parses QR code data to extract barcode and product ID
@@ -42,70 +59,37 @@ export function BarcodeScanner({ onBarcodeScanned, onClose }: BarcodeScannerProp
             const parsed = JSON.parse(data)
 
             // Validate required fields
-            if (parsed.barcode && parsed.productId && parsed.type) {
+            if (parsed.barcode && parsed.uuid) {
                 const result: QRCodeData = {
                     barcode: parsed.barcode,
-                    productId: parsed.productId,
-                    type: parsed.type
-                }
-                if (parsed.name) {
-                    result.name = parsed.name
+                    uuid: parsed.uuid
                 }
                 return result
             }
             return null
         } catch {
-            // If not JSON, check if it looks like a structured barcode
-            // Format: "BARCODE:12345|PRODUCT:ABC123|TYPE:product"
-            if (data.includes("|") && data.includes(":")) {
-                const parts = data.split("|")
-                const qrData: Partial<QRCodeData> = {}
-
-                // Replace forEach with for...of loop
-                for (const part of parts) {
-                    const [key, value] = part.split(":")
-                    switch (key?.toUpperCase()) {
-                        case "BARCODE":
-                            qrData.barcode = value
-                            break
-                        case "PRODUCT":
-                        case "PRODUCTID":
-                            qrData.productId = value
-                            break
-                        case "NAME":
-                            qrData.name = value
-                            break
-                        case "TYPE":
-                            qrData.type = value as "product" | "inventory"
-                            break
-                    }
-                }
-
-                if (qrData.barcode && qrData.productId) {
-                    const result: QRCodeData = {
-                        barcode: qrData.barcode,
-                        productId: qrData.productId,
-                        type: qrData.type || "product"
-                    }
-                    if (qrData.name) {
-                        result.name = qrData.name
-                    }
-                    return result
-                }
-            }
-            return null
+           toast.warning("No se pudo parsear el código QR")
+           return null
         }
     }
 
     /**
      * Handles successful barcode/QR code scan using the new expo-camera API
      * Attempts to parse structured QR data, falls back to raw barcode
-     * Provides haptic and visual feedback
+     * Provides haptic and visual feedback, calls callback directly without alerts
+     * Implements cooldown protection to prevent duplicate scans of the same code
+     * Passes UUID from QR code if available, otherwise falls back to raw data
+     * @param scanningResult - The barcode scanning result from expo-camera
      */
     const handleBarcodeScanned = (scanningResult: BarcodeScanningResult) => {
-        if (scanned) return
+        // Prevent duplicate scans of the same code during cooldown period
+        if (cooldownRef.current && scanningResult.data === lastDataRef.current) {
+            return
+        }
 
-        setScanned(true)
+        // Set cooldown and track last scanned data
+        cooldownRef.current = true
+        lastDataRef.current = scanningResult.data
 
         // Provide haptic feedback
         if (Platform.OS !== "web") {
@@ -114,58 +98,26 @@ export function BarcodeScanner({ onBarcodeScanned, onClose }: BarcodeScannerProp
 
         // Extract data from the scanning result
         const data = scanningResult.data
-        console.log(`Scanned ${scanningResult.type} with data: ${data}`)
 
         // Try to parse as structured QR code first
         const qrData = parseQRData(data)
 
-        if (qrData) {
-            Alert.alert(
-                "QR Code Escaneado",
-                `Producto: ${qrData.name || qrData.productId}\nCódigo: ${qrData.barcode}`,
-                [
-                    {
-                        text: "Cancelar",
-                        style: "cancel",
-                        onPress: () => setScanned(false)
-                    },
-                    {
-                        text: "Agregar",
-                        onPress: () => {
-                            onBarcodeScanned(qrData.barcode)
-                            onClose()
-                        }
-                    }
-                ]
-            )
-        } else {
-            // Fall back to treating the raw data as a barcode
-            Alert.alert(
-                "Código Escaneado",
-                `Código: ${data}`,
-                [
-                    {
-                        text: "Cancelar",
-                        style: "cancel",
-                        onPress: () => setScanned(false)
-                    },
-                    {
-                        text: "Agregar",
-                        onPress: () => {
-                            onBarcodeScanned(data)
-                            onClose()
-                        }
-                    }
-                ]
-            )
-        }
-    }
+        // Use UUID from QR code if available, otherwise use raw data as fallback
+        const identifierToSearch = qrData ? qrData.uuid : data
 
-    /**
-     * Resets scanner state to allow scanning again
-     */
-    const resetScanner = () => {
-        setScanned(false)
+        // Call the callback directly to add the product (passing UUID or raw data)
+        onBarcodeScanned(identifierToSearch)
+
+        // Show visual feedback overlay
+        setShowSuccessFeedback(true)
+
+        // Reset cooldown and hide feedback after 1 second
+        timeoutRef.current = setTimeout(() => {
+            setShowSuccessFeedback(false)
+            cooldownRef.current = false
+            timeoutRef.current = null
+            // Keep lastDataRef to prevent immediate re-scan of same code
+        }, 1000)
     }
 
     // Loading state while permissions are being requested
@@ -255,7 +207,7 @@ export function BarcodeScanner({ onBarcodeScanned, onClose }: BarcodeScannerProp
                             "itf14"
                         ],
                     }}
-                    onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
+                    onBarcodeScanned={handleBarcodeScanned}
                 />
 
                 {/* Scanning overlay */}
@@ -263,7 +215,7 @@ export function BarcodeScanner({ onBarcodeScanned, onClose }: BarcodeScannerProp
                     {/* Top section */}
                     <ThemedView style={styles.overlaySection}>
                         <ThemedText style={styles.instructionText}>
-                            {scanned ? "¡Código escaneado!" : "Apunta la cámara al código QR"}
+                            Apunta la cámara al código QR
                         </ThemedText>
                     </ThemedView>
 
@@ -277,32 +229,22 @@ export function BarcodeScanner({ onBarcodeScanned, onClose }: BarcodeScannerProp
                             <ThemedView style={[styles.corner, styles.bottomRight]} />
 
                             {/* Scanning line animation */}
-                            {!scanned && (
-                                <ThemedView style={[styles.scanLine, { backgroundColor: isDark ? Colors.dark.tint : Colors.light.tint }]} />
+                            <ThemedView style={[styles.scanLine, { backgroundColor: isDark ? Colors.dark.tint : Colors.light.tint }]} />
+
+                            {/* Success feedback overlay */}
+                            {showSuccessFeedback && (
+                                <ThemedView style={styles.successFeedback}>
+                                    <CheckCircle2 size={48} color={isDark ? Colors.dark.tint : Colors.light.tint} />
+                                    <ThemedText style={styles.successText}>Código agregado</ThemedText>
+                                </ThemedView>
                             )}
                         </ThemedView>
                     </ThemedView>
 
                     {/* Bottom section with controls */}
                     <ThemedView style={styles.overlaySection}>
-                        <ThemedView style={styles.controls}>
-                            {/* Reset scanner button */}
-                            {scanned && (
-                                <ThemedButton
-                                    title="Escanear Otro"
-                                    onPress={resetScanner}
-                                    variant="primary"
-                                    size="medium"
-                                    style={styles.resetButton}
-                                />
-                            )}
-                        </ThemedView>
-
                         <ThemedText style={styles.helpText}>
-                            {scanned
-                                ? "Toca 'Escanear Otro' para continuar"
-                                : "Asegúrate de que el código esté bien iluminado y enfocado"
-                            }
+                            Asegúrate de que el código esté bien iluminado y enfocado
                         </ThemedText>
                     </ThemedView>
                 </ThemedView>
@@ -439,15 +381,23 @@ const styles = StyleSheet.create({
         top: "50%",
         opacity: 0.8,
     },
-    controls: {
-        flexDirection: "row",
-        alignItems: "center",
+    successFeedback: {
+        position: "absolute",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: "rgba(0, 0, 0, 0.8)",
         justifyContent: "center",
-        marginBottom: 16,
-        gap: 20,
+        alignItems: "center",
+        borderRadius: 8,
     },
-    resetButton: {
-        paddingHorizontal: 24,
+    successText: {
+        marginTop: 12,
+        fontSize: 16,
+        fontWeight: "600",
+        color: "white",
+        textAlign: "center",
     },
     helpText: {
         fontSize: 14,
