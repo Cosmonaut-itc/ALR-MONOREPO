@@ -1713,6 +1713,125 @@ const route = app
 	)
 
 	/**
+	 * GET /api/auth/product-stock/by-cabinet/in-use - Retrieve product stock by cabinet ID that are currently being used
+	 *
+	 * This endpoint fetches product stock records from the database filtered by
+	 * the specified cabinet ID where products are currently in use (isBeingUsed = true).
+	 * It joins with the employee table to include employee information for products
+	 * that were last used by an employee. Returns only non-deleted product stock records
+	 * that are actively being used. Optionally filters by lastUsedBy employee ID.
+	 *
+	 * @param {string} cabinetId - UUID of the cabinet to filter by (required query parameter)
+	 * @param {string} [lastUsedBy] - Employee ID to filter by last used by (optional query parameter)
+	 * @returns {ApiResponse} Success response with product stock data filtered by cabinet and in-use status
+	 * @throws {400} If cabinetId is not provided or invalid
+	 * @throws {404} If cabinet not found
+	 * @throws {500} If an unexpected error occurs during data retrieval
+	 */
+	.get(
+		"/api/auth/product-stock/by-cabinet/in-use",
+		zValidator(
+			"query",
+			z.object({
+				cabinetId: z.string().uuid("Invalid cabinet ID"),
+				lastUsedBy: z.string(),
+			}),
+		),
+		async (c) => {
+			try {
+				const { cabinetId, lastUsedBy } = c.req.valid("query");
+
+				// Query the cabinetWarehouse table to verify the cabinet exists
+				const cabinetInfo = await db
+					.select({
+						id: schemas.cabinetWarehouse.id,
+						name: schemas.cabinetWarehouse.name,
+						warehouseId: schemas.cabinetWarehouse.warehouseId,
+					})
+					.from(schemas.cabinetWarehouse)
+					.where(eq(schemas.cabinetWarehouse.id, cabinetId))
+					.limit(1);
+
+				// Check if cabinet exists
+				if (cabinetInfo.length === 0) {
+					return c.json(
+						{
+							success: false,
+							message: "Cabinet not found",
+						} satisfies ApiResponse,
+						404,
+					);
+				}
+
+				// Query the productStock table for records with the specified cabinetId
+				// that are currently being used (isBeingUsed = true)
+				// Join with employee table to get only id, name, and surname from employee data
+				// Build where conditions array
+				const whereConditions = [
+					eq(schemas.productStock.currentCabinet, cabinetId),
+					eq(schemas.productStock.isDeleted, false),
+					eq(schemas.productStock.isBeingUsed, true),
+				];
+
+				// Add lastUsedBy filter if provided
+				if (lastUsedBy) {
+					whereConditions.push(
+						eq(schemas.productStock.lastUsedBy, lastUsedBy),
+					);
+				}
+
+				const cabinetProductStockInUse = await db
+					.select({
+						// Select all productStock fields
+						productStock: schemas.productStock,
+						// Select only specific employee fields
+						employee: {
+							id: schemas.employee.id,
+							name: schemas.employee.name,
+							surname: schemas.employee.surname,
+						},
+					})
+					.from(schemas.productStock)
+					.leftJoin(
+						schemas.employee,
+						eq(schemas.productStock.lastUsedBy, schemas.employee.id),
+					)
+					.where(and(...whereConditions));
+
+				// Return structured data with cabinet product stock that are in use
+				return c.json(
+					{
+						success: true,
+						message: `Product stock in use for cabinet ${cabinetId} retrieved successfully`,
+						data: {
+							cabinet: cabinetProductStockInUse,
+							cabinetId,
+							cabinetName: cabinetInfo[0].name,
+							warehouseId: cabinetInfo[0].warehouseId,
+							totalItems: cabinetProductStockInUse.length,
+						},
+					} satisfies ApiResponse,
+					200,
+				);
+			} catch (error) {
+				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
+				console.error(
+					"Error fetching product stock in use by cabinet:",
+					error,
+				);
+
+				return c.json(
+					{
+						success: false,
+						message: "Failed to fetch product stock in use by cabinet",
+					} satisfies ApiResponse,
+					500,
+				);
+			}
+		},
+	)
+
+	/**
 	 * POST /api/auth/product-stock/update-is-kit - Toggle isKit flag for a product stock
 	 *
 	 * Flips the isKit boolean for the specified product stock record.
