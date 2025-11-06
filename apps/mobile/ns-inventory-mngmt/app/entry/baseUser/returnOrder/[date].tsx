@@ -16,10 +16,12 @@ import { ScannerComboboxSection } from "@/components/ui/ScannerComboboxSection"
 import { Colors } from "@/constants/Colors"
 import { useColorScheme } from "@/hooks/useColorScheme"
 import { getWithdrawOrderDetailsProducts } from "@/lib/fetch-functions"
+import { useUpdateWithdrawOrderMutation } from "@/lib/mutations"
 import { QUERY_KEYS } from "@/lib/query-keys"
 import type { ProductStockItem, WithdrawOrderDetailsProduct } from "@/types/types"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useMemo } from "react"
+import { toast } from "sonner-native"
 
 
 export default function OrderDetailsScreen() {
@@ -93,27 +95,127 @@ export default function OrderDetailsScreen() {
         clearReturnProducts,
     } = useReturnOrderStore()
 
+    // Get query client for cache invalidation
+    const queryClient = useQueryClient()
+
+    // Initialize mutation hook
+    const updateWithdrawOrderMutation = useUpdateWithdrawOrderMutation()
+
     // Use availableProducts directly as renderedProducts since we're fetching products by employeeId
     const renderedProducts = availableProducts
 
+    /**
+     * Groups return products by withdrawOrderId
+     * Creates a map where each key is a withdrawOrderId and value is an array of productStockIds
+     * @param products - Array of products to group
+     * @returns Map of withdrawOrderId to productStockIds array
+     */
+    const groupProductsByOrderId = (
+        products: WithdrawOrderDetailsProduct[]
+    ): Map<string, string[]> => {
+        const grouped = new Map<string, string[]>();
 
+        for (const product of products) {
+            // Skip products without a withdrawOrderId
+            if (!product.withdrawOrderId) {
+                continue;
+            }
+
+            const orderId = product.withdrawOrderId;
+            const stockId = product.productStockId;
+
+            if (!grouped.has(orderId)) {
+                grouped.set(orderId, []);
+            }
+
+            grouped.get(orderId)?.push(stockId);
+        }
+
+        return grouped;
+    };
+
+    /**
+     * Handles the submission of the return order
+     * Groups products by withdrawOrderId, builds the payload,
+     * calls the mutation with toast feedback, and clears selection on success
+     */
     const handleSubmitReturn = () => {
         if (returnProducts.length === 0) {
             Alert.alert("Sin Devoluciones", "Selecciona al menos un producto para devolver")
             return
         }
 
-        const totalReturning = returnProducts.length
+        // Group products by withdrawOrderId
+        const groupedProducts = groupProductsByOrderId(returnProducts);
 
-        Alert.alert("Confirmar Devolución", `¿Deseas procesar la devolución de ${totalReturning} producto(s)?`, [
+        // Validate that we have at least one valid order ID
+        if (groupedProducts.size === 0) {
+            Alert.alert(
+                "Error",
+                "No se pudo obtener el ID de la orden. Por favor, intenta nuevamente."
+            )
+            return
+        }
+
+        const totalReturning = returnProducts.length
+        const totalOrders = groupedProducts.size
+
+        // Create confirmation message
+        const confirmationMessage = totalOrders === 1
+            ? `¿Deseas procesar la devolución de ${totalReturning} producto(s)?`
+            : `¿Deseas procesar la devolución de ${totalReturning} producto(s) de ${totalOrders} orden(es)?`
+
+        Alert.alert("Confirmar Devolución", confirmationMessage, [
             { text: "Cancelar", style: "cancel" },
             {
                 text: "Confirmar",
                 onPress: () => {
-                    // Process return
-                    console.log("Processing return:", returnProducts)
-                    clearReturnProducts()
-                    Alert.alert("Éxito", "Devolución procesada correctamente", [{ text: "OK", onPress: () => router.back() }])
+                    // Build the orders array from grouped products
+                    const orders = Array.from(groupedProducts.entries()).map(
+                        ([withdrawOrderId, productStockIds]) => ({
+                            withdrawOrderId,
+                            productStockIds,
+                        })
+                    );
+
+                    // Build the payload for the API
+                    const payload = {
+                        dateReturn: new Date().toISOString(),
+                        orders,
+                    };
+
+                    // Call mutation with toast.promise for automatic loading/success/error feedback
+                    toast.promise(
+                        updateWithdrawOrderMutation.mutateAsync(payload),
+                        {
+                            loading: "Procesando devolución de productos...",
+                            success: (data) => {
+                                // Clear return products on success
+                                clearReturnProducts()
+                                // Invalidate queries to refetch updated data
+                                // Note: Mutation hook also invalidates these queries, but we do it here
+                                // for immediate UI updates and to ensure employee-specific query is refreshed
+                                queryClient.invalidateQueries({
+                                    queryKey: [QUERY_KEYS.PRODUCT_STOCK],
+                                })
+                                if (employeeId) {
+                                    queryClient.invalidateQueries({
+                                        queryKey: [QUERY_KEYS.WITHDRAW_ORDER_DETAILS_PRODUCTS, employeeId],
+                                    })
+                                }
+                                // Navigate back after a short delay to show success message
+                                setTimeout(() => {
+                                    router.back()
+                                }, 500)
+                                return data.message || "Devolución procesada correctamente"
+                            },
+                            error: (error) => {
+                                return error instanceof Error
+                                    ? error.message
+                                    : "Error al procesar la devolución"
+                            },
+                        }
+                    )
                 },
             },
         ])
@@ -258,6 +360,8 @@ export default function OrderDetailsScreen() {
                                 style={styles.submitButton}
                                 variant="primary"
                                 size="medium"
+                                isLoading={updateWithdrawOrderMutation.isPending}
+                                disabled={updateWithdrawOrderMutation.isPending}
                             />
                         </ThemedView>
                     )
