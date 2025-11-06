@@ -3583,15 +3583,16 @@ const route = app
 		},
 	)
 	/**
-	 * POST /api/auth/withdraw-orders/update - Update a withdraw order
+	 * POST /api/auth/withdraw-orders/update - Update withdraw order details for multiple orders
 	 *
-	 * Updates a withdraw order record in the database with the provided details.
-	 * The endpoint validates input data and returns the updated record upon successful update.
+	 * Updates withdraw order details for multiple withdraw orders in a single request.
+	 * Each order can have multiple products returned. For each product stock, updates its status
+	 * and creates usage history records. Only marks each withdraw order as complete with dateReturn
+	 * when ALL products in that specific order have been returned.
 	 *
-	 * @param {string} withdrawOrderId - ID of the withdraw order to update
-	 * @param {string} dateReturn - ISO date string for return date
-	 * @param {boolean} isComplete - Whether the withdraw order is complete
-	 * @returns {ApiResponse} Success response with updated withdraw order data
+	 * @param {string} dateReturn - ISO date string for return date (for all details)
+	 * @param {Array} orders - Array of order objects, each containing withdrawOrderId and productStockIds
+	 * @returns {ApiResponse} Success response with updated withdraw orders and details data
 	 * @throws {400} Validation error if input data is invalid
 	 * @throws {500} Database error if update fails
 	 */
@@ -3600,175 +3601,288 @@ const route = app
 		zValidator(
 			'json',
 			z.object({
-				withdrawOrderId: z.string(),
 				dateReturn: z.string(),
-				isComplete: z.boolean(),
+				orders: z.array(
+					z.object({
+						withdrawOrderId: z.string().uuid('Invalid withdraw order ID format'),
+						productStockIds: z.array(
+							z.string().uuid('Invalid product stock ID format'),
+						),
+					}),
+				),
 			}),
 		),
 		async (c) => {
 			try {
-				const { withdrawOrderId, dateReturn, isComplete } = c.req.valid('json');
+				const { dateReturn, orders } = c.req.valid('json');
 
-				// Update the withdraw order in the database
-				const updatedWithdrawOrder = await db
-					.update(schemas.withdrawOrder)
-					.set({
-						dateReturn,
-						isComplete,
-					})
-					.where(eq(schemas.withdrawOrder.id, withdrawOrderId))
-					.returning();
-
-				if (updatedWithdrawOrder.length === 0) {
+				if (orders.length === 0) {
 					return c.json(
 						{
 							success: false,
-							data: null,
-							message: 'Failed to update withdraw order',
-						} satisfies ApiResponse,
-						500,
-					);
-				}
-
-				// Return the updated withdraw order
-				return c.json(
-					{
-						success: true,
-						message: 'Withdraw order updated successfully',
-						data: updatedWithdrawOrder[0],
-					} satisfies ApiResponse,
-					200,
-				);
-			} catch (error) {
-				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
-				console.error('Error updating withdraw order:', error);
-
-				return c.json(
-					{
-						success: false,
-						message: 'Failed to update withdraw order',
-					} satisfies ApiResponse,
-					500,
-				);
-			}
-		},
-	)
-	/**
-	 * POST /api/auth/withdraw-orders/details/update - Update a withdraw order details
-	 *
-	 * Updates a withdraw order details record in the database with the provided details.
-	 * The endpoint validates input data and returns the updated record upon successful update.
-	 *
-	 * @param {string} id - ID of the withdraw order details to update
-	 * @param {string} dateReturn - ISO date string for the return date
-	 * @returns {ApiResponse} Success response with updated withdraw order details data
-	 * @throws {400} Validation error if input data is invalid
-	 * @throws {500} Database error if update fails
-	 */
-	.post(
-		'/api/auth/withdraw-orders/details/update',
-		zValidator(
-			'json',
-			z.object({
-				id: z.string(),
-				dateReturn: z.string(),
-			}),
-		),
-		async (c) => {
-			try {
-				const { id, dateReturn } = c.req.valid('json');
-
-				// Update the withdraw order details in the database
-				const updatedWithdrawOrderDetails = await db
-					.update(schemas.withdrawOrderDetails)
-					.set({
-						dateReturn,
-					})
-					.where(eq(schemas.withdrawOrderDetails.id, id))
-					.returning();
-
-				const productId = updatedWithdrawOrderDetails[0].productId;
-
-				// get the product stock id from the productId to check if it is currently being used
-				//if it is currently not being used return an error
-				const productStockCheck = await db
-					.select()
-					.from(schemas.productStock)
-					.where(eq(schemas.productStock.id, productId));
-
-				if (productStockCheck[0].isBeingUsed === false) {
-					return c.json(
-						{
-							success: false,
-							message: 'Product is not currently being used',
+							message: 'Debe proporcionar al menos una orden para actualizar',
 						} satisfies ApiResponse,
 						400,
 					);
 				}
 
-				// update the product stock to be not being used, and set the last_used to the dateReturn
+				// Collect all product stock IDs across all orders for batch fetching
+				const allProductStockIds = orders.flatMap((order) => order.productStockIds);
 
-				if (productStockCheck[0].isBeingUsed === true) {
-					const updatedProductStock = await db
-						.update(schemas.productStock)
-						.set({
-							isBeingUsed: false,
-							lastUsed: dateReturn,
-						})
-						.where(eq(schemas.productStock.id, productId))
-						.returning();
-
-					if (updatedProductStock.length === 0) {
-						return c.json(
-							{
-								success: false,
-								message: 'Failed to update product stock',
-							} satisfies ApiResponse,
-							500,
-						);
-					}
-
-					// Create usage history record for product return
-					if (productStockCheck[0].lastUsedBy) {
-						await db.insert(schemas.productStockUsageHistory).values({
-							productStockId: productId,
-							employeeId: productStockCheck[0].lastUsedBy,
-							warehouseId: productStockCheck[0].currentWarehouse,
-							movementType: 'return',
-							action: 'checkin',
-							notes: 'Product returned from withdraw order',
-							usageDate: new Date(dateReturn),
-						});
-					}
-				}
-
-				if (updatedWithdrawOrderDetails.length === 0) {
+				if (allProductStockIds.length === 0) {
 					return c.json(
 						{
 							success: false,
-							message: 'Failed to update withdraw order details',
+							message: 'Debe proporcionar al menos un producto para actualizar',
 						} satisfies ApiResponse,
-						500,
+						400,
 					);
 				}
 
-				// Return the updated withdraw order details
+				// Get all product stocks that need to be updated (batch fetch)
+				const productStocksToCheck = await db
+					.select()
+					.from(schemas.productStock)
+					.where(inArray(schemas.productStock.id, allProductStockIds));
+
+				// Create a map for quick lookup
+				const productStockMap = new Map(productStocksToCheck.map((ps) => [ps.id, ps]));
+
+				// Batch fetch all withdraw orders upfront
+				const withdrawOrderIds = orders.map((order) => order.withdrawOrderId);
+				const allWithdrawOrders = await db
+					.select()
+					.from(schemas.withdrawOrder)
+					.where(inArray(schemas.withdrawOrder.id, withdrawOrderIds));
+
+				const withdrawOrderMap = new Map(allWithdrawOrders.map((wo) => [wo.id, wo]));
+
+				// Process each withdraw order in parallel
+				const orderProcessingPromises = orders.map(async (order) => {
+					const { withdrawOrderId, productStockIds } = order;
+
+					try {
+						// Verify the withdraw order exists
+						const withdrawOrder = withdrawOrderMap.get(withdrawOrderId);
+
+						if (!withdrawOrder) {
+							return {
+								withdrawOrderId,
+								withdrawOrder:
+									null as unknown as typeof schemas.withdrawOrder.$inferSelect,
+								details: [],
+								productStockUpdates: [],
+								allProductsReturned: false,
+								error: 'No se encontró la orden de retiro',
+							};
+						}
+
+						// Update withdraw order details for specified productStockIds
+						const updatedWithdrawOrderDetails = await db
+							.update(schemas.withdrawOrderDetails)
+							.set({
+								dateReturn,
+							})
+							.where(
+								and(
+									eq(
+										schemas.withdrawOrderDetails.withdrawOrderId,
+										withdrawOrderId,
+									),
+									inArray(
+										schemas.withdrawOrderDetails.productId,
+										productStockIds,
+									),
+								),
+							)
+							.returning();
+
+						if (updatedWithdrawOrderDetails.length === 0) {
+							return {
+								withdrawOrderId,
+								withdrawOrder,
+								details: [],
+								productStockUpdates: [],
+								allProductsReturned: false,
+								error: 'No se encontraron detalles de orden de retiro para los productos especificados',
+							};
+						}
+
+						// Validate all products are being used before processing updates
+						let validationError: string | undefined;
+						for (const detail of updatedWithdrawOrderDetails) {
+							const productId = detail.productId;
+							const productStock = productStockMap.get(productId);
+
+							if (!productStock) {
+								continue;
+							}
+
+							// Check if product is currently being used
+							if (productStock.isBeingUsed === false) {
+								validationError = `El producto ${productId} no está actualmente en uso`;
+								break;
+							}
+						}
+
+						if (validationError) {
+							return {
+								withdrawOrderId,
+								withdrawOrder,
+								details: [],
+								productStockUpdates: [],
+								allProductsReturned: false,
+								error: validationError,
+							};
+						}
+
+						// Batch update all product stocks for this order
+						const productStockUpdatePromises = updatedWithdrawOrderDetails.map(
+							async (detail) => {
+								const productId = detail.productId;
+								const updatedProductStock = await db
+									.update(schemas.productStock)
+									.set({
+										isBeingUsed: false,
+										lastUsed: dateReturn,
+									})
+									.where(eq(schemas.productStock.id, productId))
+									.returning();
+
+								if (updatedProductStock.length === 0) {
+									throw new Error(
+										`Error al actualizar el stock del producto ${productId}`,
+									);
+								}
+
+								return {
+									productId,
+									updatedProductStock: updatedProductStock[0],
+								};
+							},
+						);
+
+						const updateResults = await Promise.all(productStockUpdatePromises);
+						const productStockUpdates = updateResults.map((r) => r.updatedProductStock);
+
+						// Batch create usage history records
+						const historyInsertPromises: Promise<unknown>[] = [];
+						for (const result of updateResults) {
+							const productStock = productStockMap.get(result.productId);
+							if (productStock?.lastUsedBy) {
+								historyInsertPromises.push(
+									db.insert(schemas.productStockUsageHistory).values({
+										productStockId: result.productId,
+										employeeId: productStock.lastUsedBy,
+										warehouseId: productStock.currentWarehouse,
+										movementType: 'return',
+										action: 'checkin',
+										notes: 'Producto devuelto desde orden de retiro',
+										usageDate: new Date(dateReturn),
+									}),
+								);
+							}
+						}
+
+						await Promise.all(historyInsertPromises);
+
+						// Check if all products in this withdraw order have been returned
+						const allOrderDetails = await db
+							.select()
+							.from(schemas.withdrawOrderDetails)
+							.where(
+								eq(schemas.withdrawOrderDetails.withdrawOrderId, withdrawOrderId),
+							);
+
+						const allProductsReturned =
+							allOrderDetails.length > 0 &&
+							allOrderDetails.every((detail) => detail.dateReturn !== null);
+
+						// Only update the withdraw order if all products have been returned
+						let finalWithdrawOrder = withdrawOrder;
+						if (allProductsReturned) {
+							const updatedWithdrawOrder = await db
+								.update(schemas.withdrawOrder)
+								.set({
+									dateReturn,
+									isComplete: true,
+								})
+								.where(eq(schemas.withdrawOrder.id, withdrawOrderId))
+								.returning();
+
+							if (updatedWithdrawOrder.length > 0) {
+								finalWithdrawOrder = updatedWithdrawOrder[0];
+							}
+						}
+
+						return {
+							withdrawOrderId,
+							withdrawOrder: finalWithdrawOrder,
+							details: updatedWithdrawOrderDetails,
+							productStockUpdates,
+							allProductsReturned,
+						};
+					} catch (orderError) {
+						// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging
+						console.error(
+							`Error processing withdraw order ${withdrawOrderId}:`,
+							orderError,
+						);
+						return {
+							withdrawOrderId,
+							withdrawOrder:
+								null as unknown as typeof schemas.withdrawOrder.$inferSelect,
+							details: [],
+							productStockUpdates: [],
+							allProductsReturned: false,
+							error:
+								orderError instanceof Error
+									? orderError.message
+									: 'Error desconocido al procesar la orden',
+						};
+					}
+				});
+
+				const orderResults = await Promise.all(orderProcessingPromises);
+
+				// Check if there were any errors
+				const hasErrors = orderResults.some((result) => result.error !== undefined);
+				const completedOrders = orderResults.filter(
+					(result) => result.allProductsReturned,
+				).length;
+
+				// Build response message
+				let responseMessage: string;
+				if (hasErrors) {
+					responseMessage = 'Algunas órdenes se procesaron con errores';
+				} else if (completedOrders > 0) {
+					responseMessage = `${completedOrders} orden(es) completada(s) correctamente`;
+				} else {
+					responseMessage = 'Detalles de órdenes de retiro actualizados correctamente';
+				}
+
+				// Return results for all processed orders
 				return c.json(
 					{
-						success: true,
-						message: 'Withdraw order details updated successfully',
-						data: updatedWithdrawOrderDetails[0],
+						success: !hasErrors,
+						message: responseMessage,
+						data: {
+							orders: orderResults,
+							totalOrders: orders.length,
+							completedOrders,
+							errors: orderResults.filter((r) => r.error !== undefined).length,
+						},
 					} satisfies ApiResponse,
-					200,
+					hasErrors ? 207 : 200, // 207 Multi-Status if there are partial errors
 				);
 			} catch (error) {
 				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
-				console.error('Error updating withdraw order details:', error);
+				console.error('Error updating withdraw orders:', error);
 
 				return c.json(
 					{
 						success: false,
-						message: 'Failed to update withdraw order details',
+						message: 'Error al actualizar las órdenes de retiro',
 					} satisfies ApiResponse,
 					500,
 				);
