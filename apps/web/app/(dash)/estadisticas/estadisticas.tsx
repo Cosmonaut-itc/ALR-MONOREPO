@@ -247,12 +247,23 @@ const TrendChart = ({
 			<CardContent>
 				<div className="overflow-x-auto">
 					<div
-						className="flex h-48 items-end gap-3"
-						style={{ minWidth: `${minWidth}px` }}
+						className="flex items-end gap-3"
+						style={{ minWidth: `${minWidth}px`, height: "192px" }}
 					>
 						{points.map((point) => {
-							const value =
-								max > 0 ? Math.max((point.count / max) * 100, 8) : 8;
+							const containerHeight = 192; // h-48 = 192px
+							const labelHeight = 16; // Approximate height for labels
+							const availableHeight = containerHeight - labelHeight * 2 - 8; // Subtract label heights and gap
+							const barHeightPercent =
+								max > 0
+									? Math.max((point.count / max) * 100, 8)
+									: point.count > 0
+										? 8
+										: 0;
+							const barHeightPx = Math.max(
+								(barHeightPercent / 100) * availableHeight,
+								point.count > 0 ? 4 : 0,
+							);
 							const isoString =
 								point.date.length > 10 ? point.date : `${point.date}T00:00:00Z`;
 							const labelDate = format(parseISO(isoString), "dd/MM", {
@@ -262,18 +273,24 @@ const TrendChart = ({
 								<div
 									className="flex flex-1 flex-col items-center gap-2"
 									key={`${point.date}-${point.count}`}
+									style={{ height: `${containerHeight}px` }}
 								>
 									<span className="text-xs font-medium text-[#687076] dark:text-[#9BA1A6]">
 										{point.count}
 									</span>
-									<div
-										aria-hidden
-										className={cn(
-											"w-7 rounded-full bg-[#0a7ea4] transition-all",
-											accent,
-										)}
-										style={{ height: `${value}%` }}
-									/>
+									<div className="flex flex-1 items-end w-full justify-center">
+										<div
+											aria-hidden
+											className={cn(
+												"w-7 rounded-full bg-[#0a7ea4] transition-all",
+												accent,
+											)}
+											style={{
+												height: `${barHeightPx}px`,
+												minHeight: point.count > 0 ? "4px" : "0px",
+											}}
+										/>
+									</div>
 									<span className="text-xs text-[#9BA1A6]">{labelDate}</span>
 								</div>
 							);
