@@ -1,7 +1,7 @@
 /** biome-ignore-all lint/suspicious/useAwait: Required for server prefetching */
 /** biome-ignore-all lint/suspicious/noConsole: Logging failures aids debugging */
 
-'use memo';
+"use memo";
 import { dehydrate, HydrationBoundary } from "@tanstack/react-query";
 import { getQueryClient } from "@/app/get-query-client";
 import { GenericBoundaryWrapper } from "@/components/suspense-generics/general-wrapper";
@@ -20,6 +20,10 @@ import {
 	fetchEmployeesByWarehouseIdServer,
 } from "@/lib/server-functions/kits";
 import {
+	fetchWarehouseTransferByWarehouseIdServer,
+	fetchWarehouseTrasnferAll,
+} from "@/lib/server-functions/recepciones";
+import {
 	fetchReplenishmentOrdersByWarehouseServer,
 	fetchReplenishmentOrdersServer,
 } from "@/lib/server-functions/replenishment-orders";
@@ -28,10 +32,6 @@ import {
 	fetchAllStockLimitsServer,
 	fetchStockLimitsByWarehouseServer,
 } from "@/lib/server-functions/stock-limits";
-import {
-	fetchWarehouseTrasnferAll,
-	fetchWarehouseTransferByWarehouseIdServer,
-} from "@/lib/server-functions/recepciones";
 import DashboardPageClient from "./dashboard";
 import { DashboardLoadingSkeleton } from "./loading";
 
@@ -43,8 +43,11 @@ export default async function DashboardPage() {
 
 	const warehouseId = auth.user?.warehouseId ?? "";
 	const role = auth.user?.role ?? "";
-	const isEncargado = role === "encargado";
-	const scopeKey = isEncargado ? "all" : warehouseId || "unknown";
+	const normalizedRole = typeof role === "string" ? role.toLowerCase() : "";
+	const canManageAllWarehouses =
+		normalizedRole === "encargado" || normalizedRole === "admin";
+	const isEncargado = canManageAllWarehouses;
+	const scopeKey = canManageAllWarehouses ? "all" : warehouseId || "unknown";
 	const stockLimitsScope = scopeKey;
 	const employeeScope = scopeKey;
 	const currentDate = new Date().toISOString();
@@ -106,13 +109,13 @@ export default async function DashboardPage() {
 			queryFn: () => fetchAllWarehousesServer(),
 		});
 
-		const ordersPrefetchFn = isEncargado
+		const ordersPrefetchFn = canManageAllWarehouses
 			? () => fetchReplenishmentOrdersServer()
 			: warehouseId
 				? () => fetchReplenishmentOrdersByWarehouseServer(warehouseId)
 				: undefined;
 		if (ordersPrefetchFn) {
-			const ordersKey = isEncargado
+			const ordersKey = canManageAllWarehouses
 				? createQueryKey(queryKeys.replenishmentOrders, [scopeKey, "all"])
 				: createQueryKey(queryKeys.replenishmentOrders, [scopeKey]);
 			await queryClient.prefetchQuery({
