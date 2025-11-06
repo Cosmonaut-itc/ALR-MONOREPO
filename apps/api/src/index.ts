@@ -1094,7 +1094,11 @@ const route = app
 				page: number,
 				accumulated: DataItemArticulosType[],
 				metaAccumulated: unknown[],
-			): Promise<{ data: DataItemArticulosType[]; meta: unknown[]; success: boolean }> {
+			): Promise<{
+				data: DataItemArticulosType[];
+				meta: unknown[];
+				success: boolean;
+			}> {
 				const apiUrl = `https://api.alteg.io/api/v1/goods/${altegioId}?count=${PAGE_SIZE}&page=${page}`;
 
 				const response = await fetch(apiUrl, {
@@ -1519,6 +1523,219 @@ const route = app
 	)
 
 	/**
+	 * GET /api/auth/product-stock/by-cabinet - Retrieve product stock by cabinet ID
+	 *
+	 * This endpoint fetches product stock records from the database filtered by
+	 * the specified cabinet ID. It joins with the employee table to include
+	 * employee information for products that were last used by an employee.
+	 * Returns only non-deleted product stock records.
+	 *
+	 * @param {string} cabinetId - UUID of the cabinet to filter by (required query parameter)
+	 * @returns {ApiResponse} Success response with product stock data filtered by cabinet
+	 * @throws {400} If cabinetId is not provided or invalid
+	 * @throws {404} If cabinet not found
+	 * @throws {500} If an unexpected error occurs during data retrieval
+	 */
+	.get(
+		'/api/auth/product-stock/by-cabinet',
+		zValidator('query', z.object({ cabinetId: z.string().uuid('Invalid cabinet ID') })),
+		async (c) => {
+			try {
+				const { cabinetId } = c.req.valid('query');
+
+				// Query the cabinetWarehouse table to verify the cabinet exists
+				const cabinetInfo = await db
+					.select({
+						id: schemas.cabinetWarehouse.id,
+						name: schemas.cabinetWarehouse.name,
+						warehouseId: schemas.cabinetWarehouse.warehouseId,
+					})
+					.from(schemas.cabinetWarehouse)
+					.where(eq(schemas.cabinetWarehouse.id, cabinetId))
+					.limit(1);
+
+				// Check if cabinet exists
+				if (cabinetInfo.length === 0) {
+					return c.json(
+						{
+							success: false,
+							message: 'Cabinet not found',
+						} satisfies ApiResponse,
+						404,
+					);
+				}
+
+				// Query the productStock table for records with the specified cabinetId
+				// Join with employee table to get only id, name, and surname from employee data
+				const cabinetProductStock = await db
+					.select({
+						// Select all productStock fields
+						productStock: schemas.productStock,
+						// Select only specific employee fields
+						employee: {
+							id: schemas.employee.id,
+							name: schemas.employee.name,
+							surname: schemas.employee.surname,
+						},
+					})
+					.from(schemas.productStock)
+					.leftJoin(
+						schemas.employee,
+						eq(schemas.productStock.lastUsedBy, schemas.employee.id),
+					)
+					.where(
+						and(
+							eq(schemas.productStock.currentCabinet, cabinetId),
+							eq(schemas.productStock.isDeleted, false),
+							eq(schemas.productStock.isBeingUsed, false),
+						),
+					);
+
+				// Return structured data with cabinet product stock
+				return c.json(
+					{
+						success: true,
+						message: `Product stock for cabinet ${cabinetId} retrieved successfully`,
+						data: {
+							cabinet: cabinetProductStock,
+							cabinetId,
+							cabinetName: cabinetInfo[0].name,
+							warehouseId: cabinetInfo[0].warehouseId,
+							totalItems: cabinetProductStock.length,
+						},
+					} satisfies ApiResponse,
+					200,
+				);
+			} catch (error) {
+				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
+				console.error('Error fetching product stock by cabinet:', error);
+
+				return c.json(
+					{
+						success: false,
+						message: 'Failed to fetch product stock by cabinet',
+					} satisfies ApiResponse,
+					500,
+				);
+			}
+		},
+	)
+
+	/**
+	 * GET /api/auth/product-stock/by-cabinet/in-use - Retrieve product stock by cabinet ID that are currently being used
+	 *
+	 * This endpoint fetches product stock records from the database filtered by
+	 * the specified cabinet ID where products are currently in use (isBeingUsed = true).
+	 * It joins with the employee table to include employee information for products
+	 * that were last used by an employee. Returns only non-deleted product stock records
+	 * that are actively being used. Optionally filters by lastUsedBy employee ID.
+	 *
+	 * @param {string} cabinetId - UUID of the cabinet to filter by (required query parameter)
+	 * @param {string} [lastUsedBy] - Employee ID to filter by last used by (optional query parameter)
+	 * @returns {ApiResponse} Success response with product stock data filtered by cabinet and in-use status
+	 * @throws {400} If cabinetId is not provided or invalid
+	 * @throws {404} If cabinet not found
+	 * @throws {500} If an unexpected error occurs during data retrieval
+	 */
+	.get(
+		'/api/auth/product-stock/by-cabinet/in-use',
+		zValidator(
+			'query',
+			z.object({
+				cabinetId: z.string().uuid('Invalid cabinet ID'),
+				lastUsedBy: z.string(),
+			}),
+		),
+		async (c) => {
+			try {
+				const { cabinetId, lastUsedBy } = c.req.valid('query');
+
+				// Query the cabinetWarehouse table to verify the cabinet exists
+				const cabinetInfo = await db
+					.select({
+						id: schemas.cabinetWarehouse.id,
+						name: schemas.cabinetWarehouse.name,
+						warehouseId: schemas.cabinetWarehouse.warehouseId,
+					})
+					.from(schemas.cabinetWarehouse)
+					.where(eq(schemas.cabinetWarehouse.id, cabinetId))
+					.limit(1);
+
+				// Check if cabinet exists
+				if (cabinetInfo.length === 0) {
+					return c.json(
+						{
+							success: false,
+							message: 'Cabinet not found',
+						} satisfies ApiResponse,
+						404,
+					);
+				}
+
+				// Query the productStock table for records with the specified cabinetId
+				// that are currently being used (isBeingUsed = true)
+				// Join with employee table to get only id, name, and surname from employee data
+				// Build where conditions array
+				const whereConditions = [
+					eq(schemas.productStock.currentCabinet, cabinetId),
+					eq(schemas.productStock.isDeleted, false),
+					eq(schemas.productStock.isBeingUsed, true),
+				];
+
+				// Add lastUsedBy filter if provided
+				if (lastUsedBy) {
+					whereConditions.push(eq(schemas.productStock.lastUsedBy, lastUsedBy));
+				}
+
+				const cabinetProductStockInUse = await db
+					.select({
+						// Select all productStock fields
+						productStock: schemas.productStock,
+						// Select only specific employee fields
+						employee: {
+							id: schemas.employee.id,
+							name: schemas.employee.name,
+							surname: schemas.employee.surname,
+						},
+					})
+					.from(schemas.productStock)
+					.leftJoin(
+						schemas.employee,
+						eq(schemas.productStock.lastUsedBy, schemas.employee.id),
+					)
+					.where(and(...whereConditions));
+
+				// Return structured data with cabinet product stock that are in use
+				return c.json(
+					{
+						success: true,
+						message: `Product stock in use for cabinet ${cabinetId} retrieved successfully`,
+						data: {
+							cabinet: cabinetProductStockInUse,
+							cabinetId,
+							cabinetName: cabinetInfo[0].name,
+							warehouseId: cabinetInfo[0].warehouseId,
+							totalItems: cabinetProductStockInUse.length,
+						},
+					} satisfies ApiResponse,
+					200,
+				);
+			} catch (error) {
+				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
+				console.error('Error fetching product stock in use by cabinet:', error);
+
+				return c.json(
+					{
+						success: false,
+						message: 'Failed to fetch product stock in use by cabinet',
+					} satisfies ApiResponse,
+					500,
+				);
+			}
+		},
+	)
+
+	/**
 	 * POST /api/auth/product-stock/update-is-kit - Toggle isKit flag for a product stock
 	 *
 	 * Flips the isKit boolean for the specified product stock record.
@@ -1537,7 +1754,10 @@ const route = app
 				const { productStockId } = c.req.valid('json');
 
 				const existing = await db
-					.select({ id: schemas.productStock.id, isKit: schemas.productStock.isKit })
+					.select({
+						id: schemas.productStock.id,
+						isKit: schemas.productStock.isKit,
+					})
 					.from(schemas.productStock)
 					.where(eq(schemas.productStock.id, productStockId))
 					.limit(1);
@@ -3086,19 +3306,21 @@ const route = app
 		},
 	)
 	/**
-	 * POST /api/auth/withdraw-orders/create - Create a new withdraw order
+	 * POST /api/auth/withdraw-orders/create - Create a new withdraw order with details
 	 *
 	 * Creates a new withdraw order record in the database with the provided
-	 * details. The endpoint validates input data and returns the created record
-	 * upon successful insertion. This is used when employees initiate new
-	 * inventory withdrawal requests.
+	 * details and automatically creates withdraw order details for each product.
+	 * The endpoint validates input data, checks product availability, updates
+	 * product stock status, and creates usage history records. This is used when
+	 * employees initiate new inventory withdrawal requests.
 	 *
 	 * @param {string} dateWithdraw - ISO date string for when the withdrawal is scheduled
 	 * @param {string} employeeId - UUID of the employee creating the withdraw order
 	 * @param {number} numItems - Number of items to be withdrawn in this order
+	 * @param {string[]} products - Array of product stock UUIDs to withdraw
 	 * @param {boolean} isComplete - Whether the withdraw order is complete (defaults to false)
-	 * @returns {ApiResponse} Success response with created withdraw order data
-	 * @throws {400} Validation error if input data is invalid
+	 * @returns {ApiResponse} Success response with created withdraw order and details data
+	 * @throws {400} Validation error if input data is invalid or product is already in use
 	 * @throws {500} Database error if insertion fails
 	 */
 	.post(
@@ -3109,12 +3331,56 @@ const route = app
 				dateWithdraw: z.string().describe('ISO date string for withdrawal date'),
 				employeeId: z.string().uuid('Invalid employee ID').describe('Employee UUID'),
 				numItems: z.number().int().positive().describe('Number of items to withdraw'),
+				products: z
+					.array(z.string())
+					.min(1, 'At least one product is required')
+					.describe('Array of product stock UUIDs to withdraw'),
 				isComplete: z.boolean().optional().describe('Whether the order is complete'),
 			}),
 		),
 		async (c) => {
 			try {
-				const { dateWithdraw, employeeId, numItems, isComplete } = c.req.valid('json');
+				const { dateWithdraw, employeeId, numItems, products, isComplete } =
+					c.req.valid('json');
+
+				// Validate that numItems matches the number of products
+				if (numItems !== products.length) {
+					return c.json(
+						{
+							success: false,
+							message: `Number of items (${numItems}) must match the number of products (${products.length})`,
+						} satisfies ApiResponse,
+						400,
+					);
+				}
+
+				// Check all products before creating the order to avoid partial failures
+				for (const productId of products) {
+					const productStockCheck = await db
+						.select()
+						.from(schemas.productStock)
+						.where(eq(schemas.productStock.id, productId));
+
+					if (productStockCheck.length === 0) {
+						return c.json(
+							{
+								success: false,
+								message: `Product with ID ${productId} not found`,
+							} satisfies ApiResponse,
+							400,
+						);
+					}
+
+					if (productStockCheck[0].isBeingUsed === true) {
+						return c.json(
+							{
+								success: false,
+								message: `Product ${productId} is currently being used`,
+							} satisfies ApiResponse,
+							400,
+						);
+					}
+				}
 
 				// Insert the new withdraw order into the database
 				// Using .returning() to get the inserted record back from the database
@@ -3141,13 +3407,85 @@ const route = app
 					);
 				}
 
-				// Return successful response with the newly created withdraw order
-				// Take the first (and only) element from the returned array
+				const withdrawOrderId = insertedWithdrawOrder[0].id;
+				const createdDetails: (typeof schemas.withdrawOrderDetails.$inferSelect)[] = [];
+
+				// Create withdraw order details for each product
+				for (const productId of products) {
+					// Get product stock information for updates
+					const productStockCheck = await db
+						.select()
+						.from(schemas.productStock)
+						.where(eq(schemas.productStock.id, productId));
+
+					if (productStockCheck.length === 0) {
+						continue; // Skip if product not found (shouldn't happen after validation)
+					}
+
+					const productStock = productStockCheck[0];
+
+					// Insert withdraw order details
+					const insertedDetails = await db
+						.insert(schemas.withdrawOrderDetails)
+						.values({
+							productId,
+							withdrawOrderId,
+							dateWithdraw,
+						})
+						.returning();
+
+					if (insertedDetails.length > 0) {
+						createdDetails.push(insertedDetails[0]);
+
+						// Update product stock status
+						await db
+							.update(schemas.productStock)
+							.set({
+								isBeingUsed: true,
+								numberOfUses: sql`${schemas.productStock.numberOfUses} + 1`,
+								firstUsed: productStock.firstUsed ?? dateWithdraw,
+								lastUsed: dateWithdraw,
+								lastUsedBy: employeeId,
+							})
+							.where(eq(schemas.productStock.id, productId));
+
+						// Create usage history record for withdraw order
+						await db.insert(schemas.productStockUsageHistory).values({
+							productStockId: productId,
+							employeeId,
+							warehouseId: productStock.currentWarehouse,
+							movementType: 'withdraw',
+							action: 'checkout',
+							notes: `Product withdrawn via order ${withdrawOrderId}`,
+							usageDate: new Date(dateWithdraw),
+						});
+					}
+				}
+
+				// Check if all details were created successfully
+				if (createdDetails.length !== products.length) {
+					return c.json(
+						{
+							success: false,
+							message: `Failed to create all withdraw order details. Created ${createdDetails.length} of ${products.length}`,
+							data: {
+								withdrawOrder: insertedWithdrawOrder[0],
+								details: createdDetails,
+							},
+						} satisfies ApiResponse,
+						500,
+					);
+				}
+
+				// Return successful response with the newly created withdraw order and details
 				return c.json(
 					{
 						success: true,
 						message: 'Withdraw order created successfully',
-						data: insertedWithdrawOrder[0], // Return the single created record
+						data: {
+							withdrawOrder: insertedWithdrawOrder[0],
+							details: createdDetails,
+						},
 					} satisfies ApiResponse,
 					201, // 201 Created status for successful resource creation
 				);
@@ -3162,7 +3500,8 @@ const route = app
 						return c.json(
 							{
 								success: false,
-								message: 'Invalid employee ID - employee does not exist',
+								message:
+									'Invalid employee ID or product ID - referenced entity does not exist',
 							} satisfies ApiResponse,
 							400,
 						);
@@ -3256,122 +3595,6 @@ const route = app
 					{
 						success: false,
 						message: 'Failed to update withdraw order',
-					} satisfies ApiResponse,
-					500,
-				);
-			}
-		},
-	)
-	/**
-	 * POST /api/auth/withdraw-orders/details/create - Create a new withdraw order details
-	 *
-	 * Creates a new withdraw order details record in the database with the provided details.
-	 * The endpoint validates input data and returns the created record upon successful insertion.
-	 *
-	 * @param {string} productId - ID of the product to withdraw
-	 * @param {string} withdrawOrderId - ID of the withdraw order to which the details belong
-	 * @param {string} dateWithdraw - ISO date string for the withdrawal date
-	 * @param {string} employeeId - UUID of the employee withdrawing the product
-	 * @returns {ApiResponse} Success response with created withdraw order details data
-	 * @throws {400} Validation error if input data is invalid
-	 * @throws {500} Database error if insertion fails
-	 */
-	.post(
-		'/api/auth/withdraw-orders/details/create',
-		zValidator(
-			'json',
-			z.object({
-				productId: z.string(),
-				withdrawOrderId: z.string(),
-				dateWithdraw: z.string(),
-				employeeId: z.string().uuid('Invalid employee ID'),
-			}),
-		),
-		async (c) => {
-			try {
-				const { productId, withdrawOrderId, dateWithdraw, employeeId } =
-					c.req.valid('json');
-
-				// Insert the new withdraw order details into the database
-				const insertedWithdrawOrderDetails = await db
-					.insert(schemas.withdrawOrderDetails)
-					.values({
-						productId,
-						withdrawOrderId,
-						dateWithdraw,
-					})
-					.returning();
-
-				//get the product stock id from the productId to check if the first_used is null, and if it is currently being used
-				//if it is currently being used return and error
-				const productStockCheck = await db
-					.select()
-					.from(schemas.productStock)
-					.where(eq(schemas.productStock.id, productId));
-
-				if (productStockCheck[0].isBeingUsed === true) {
-					return c.json(
-						{
-							success: false,
-							message: 'Product is currently being used',
-						} satisfies ApiResponse,
-						400,
-					);
-				}
-
-				// Update the product in the database by changing the is_being_used to true, adding one to the
-				// number_of_uses, if first_used is null updated to the dateWithdraw, as well update the last_used
-				// to the dateWithdraw and the last_used_by to the employeeId
-				await db
-					.update(schemas.productStock)
-					.set({
-						isBeingUsed: true,
-						numberOfUses: sql`${schemas.productStock.numberOfUses} + 1`,
-						firstUsed: productStockCheck[0].firstUsed ?? dateWithdraw,
-						lastUsed: dateWithdraw,
-						lastUsedBy: employeeId,
-					})
-					.where(eq(schemas.productStock.id, productId));
-
-				// Create usage history record for withdraw order
-				await db.insert(schemas.productStockUsageHistory).values({
-					productStockId: productId,
-					employeeId,
-					warehouseId: productStockCheck[0].currentWarehouse,
-					movementType: 'withdraw',
-					action: 'checkout',
-					notes: `Product withdrawn via order ${withdrawOrderId}`,
-					usageDate: new Date(dateWithdraw),
-				});
-
-				if (insertedWithdrawOrderDetails.length === 0) {
-					return c.json(
-						{
-							success: false,
-							data: null,
-							message: 'Failed to create withdraw order details',
-						} satisfies ApiResponse,
-						500,
-					);
-				}
-
-				// Return the inserted withdraw order details
-				return c.json(
-					{
-						success: true,
-						message: 'Withdraw order details created successfully',
-						data: insertedWithdrawOrderDetails[0],
-					} satisfies ApiResponse,
-					201,
-				);
-			} catch (error) {
-				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
-				console.error('Error creating withdraw order details:', error);
-
-				return c.json(
-					{
-						success: false,
-						message: 'Failed to create withdraw order details',
 					} satisfies ApiResponse,
 					500,
 				);

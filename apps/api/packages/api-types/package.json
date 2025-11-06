@@ -1,6 +1,6 @@
 {
   "name": "ns-inventory-api-types",
-  "version": "1.0.60",
+  "version": "1.0.63",
   "description": "Types-only package that re-exports the Hono AppType for RPC clients.",
   "type": "module",
   "sideEffects": false,
