@@ -1,15 +1,16 @@
-import { create } from "zustand";
-import { Alert } from "react-native";
-import { type } from "arktype";
 import type {
-	PendingOrder,
-	SelectedProduct,
 	NumpadValueType,
+	PendingOrder,
 	ProductStockItem,
 	Product as ProductType,
+	SelectedProduct,
+	WithdrawOrderDetailsProduct,
 } from "@/types/types";
 import { devtools } from "@csark0812/zustand-expo-devtools";
+import { type } from "arktype";
 import type { useRouter } from "expo-router";
+import { Alert } from "react-native";
+import { create } from "zustand";
 
 /**
  * Product type definition using ArkType
@@ -62,20 +63,14 @@ interface BaseUserState {
 	 * @param stockItem - The product stock item to select
 	 * @param productInfo - The product information (name, brand, etc.)
 	 */
-	handleProductStockSelect: (
-		stockItem: ProductStockItem,
-		productInfo: ProductType,
-	) => void;
+	handleProductStockSelect: (stockItem: ProductStockItem, productInfo: ProductType) => void;
 
 	/**
 	 * Legacy method for backward compatibility - converts Product to stock selection
 	 * @param product - The product to add/update
 	 * @param quantity - Optional quantity to add (defaults to 1)
 	 */
-	handleProductSelect: (
-		product: typeof Product.infer,
-		quantity?: number,
-	) => void;
+	handleProductSelect: (product: typeof Product.infer, quantity?: number) => void;
 
 	/**
 	 * Processes a scanned barcode and finds the corresponding stock item
@@ -101,10 +96,7 @@ interface BaseUserState {
 	 * @param order - The selected order
 	 * @param router - The router instance for navigation
 	 */
-	handleOrderClick: (
-		order: PendingOrder,
-		router: ReturnType<typeof useRouter>,
-	) => void;
+	handleOrderClick: (order: PendingOrder, router: ReturnType<typeof useRouter>) => void;
 
 	/**
 	 * Clears all selected products and resets their isBeingUsed flags in productStock
@@ -135,18 +127,14 @@ interface BaseUserState {
 	 * Initializes the store with product stock
 	 * @param productStock - Array of product stock items
 	 */
-	initializeStore: (
-		productStock: ProductStockItem[],
-	) => void;
+	initializeStore: (productStock: ProductStockItem[]) => void;
 
 	/**
 	 * Syncs product stock from query while preserving local state (isBeingUsed flags for selected items)
 	 * This ensures the store stays in sync with server data while maintaining user selections
 	 * @param newProductStock - Array of product stock items from the query
 	 */
-	syncProductStock: (
-		newProductStock: ProductStockItem[],
-	) => void;
+	syncProductStock: (newProductStock: ProductStockItem[]) => void;
 
 	/**
 	 * Sets the current employee data after successful passcode authentication
@@ -178,9 +166,7 @@ export const useBaseUserStore = create<BaseUserState>()(
 				const { selectedProducts, productStock } = get();
 
 				// Check if this specific stock item is already selected
-				const existingIndex = selectedProducts.findIndex(
-					(p) => p.id === stockItem.id,
-				);
+				const existingIndex = selectedProducts.findIndex((p) => p.id === stockItem.id);
 
 				if (existingIndex >= 0) {
 					Alert.alert(
@@ -191,10 +177,15 @@ export const useBaseUserStore = create<BaseUserState>()(
 				}
 
 				// Mark the stock item as being used
-				const updatedStock = productStock.map(item =>
+				const updatedStock = productStock.map((item) =>
 					item.id === stockItem.id
-						? { ...item, isBeingUsed: true, lastUsed: new Date(), numberOfUses: item.numberOfUses + 1 }
-						: item
+						? {
+								...item,
+								isBeingUsed: true,
+								lastUsed: new Date(),
+								numberOfUses: item.numberOfUses + 1,
+							}
+						: item,
 				);
 
 				// Create a selected product entry
@@ -219,7 +210,10 @@ export const useBaseUserStore = create<BaseUserState>()(
 				// Find an available stock item for this product by barcode
 				// Compare ProductStockItem.barcode (number) with Product.barcode (string)
 				const availableStockItem = productStock.find(
-					item => (item.barcode.toString() === product.barcode || item.barcode === Number(product.barcode)) && !item.isBeingUsed
+					(item) =>
+						(item.barcode.toString() === product.barcode ||
+							item.barcode === Number(product.barcode)) &&
+						!item.isBeingUsed,
 				);
 
 				if (availableStockItem) {
@@ -238,22 +232,22 @@ export const useBaseUserStore = create<BaseUserState>()(
 
 				// First try to find stock item by UUID (stock item ID) - this is the primary search method
 				let stockItem = productStock.find(
-					(item) => item.id === barcode && !item.isBeingUsed
+					(item) => item.id === barcode && !item.isBeingUsed,
 				);
 
 				// If no stock item found by ID, try to find by barcode
 				if (!stockItem) {
 					stockItem = productStock.find(
-						(item) => item.barcode.toString() === barcode && !item.isBeingUsed
+						(item) => item.barcode.toString() === barcode && !item.isBeingUsed,
 					);
 				}
 
 				if (stockItem) {
 					// Extract product info from stock item description
-					const description = stockItem.description || `Producto ${stockItem.barcode}`
-					const nameParts = description.split(" - ")
-					const productName = nameParts[0] || description
-					const brand = nameParts[1] || "Sin marca"
+					const description = stockItem.description || `Producto ${stockItem.barcode}`;
+					const nameParts = description.split(" - ");
+					const productName = nameParts[0] || description;
+					const brand = nameParts[1] || "Sin marca";
 
 					// Create product info object from stock item
 					const productInfo: ProductType = {
@@ -264,7 +258,7 @@ export const useBaseUserStore = create<BaseUserState>()(
 						stock: 1, // Individual stock item
 						barcode: stockItem.barcode.toString(),
 						...(stockItem.description && { description: stockItem.description }),
-					}
+					};
 
 					get().handleProductStockSelect(stockItem, productInfo);
 					set({ showScanner: false });
@@ -284,14 +278,12 @@ export const useBaseUserStore = create<BaseUserState>()(
 				const { selectedProducts, productStock } = get();
 
 				// Find the selected product to get the stock item ID
-				const selectedProduct = selectedProducts.find(p => p.id === productId);
+				const selectedProduct = selectedProducts.find((p) => p.id === productId);
 
 				if (selectedProduct) {
 					// Mark the corresponding stock item as available again
-					const updatedStock = productStock.map(item =>
-						item.id === selectedProduct.id
-							? { ...item, isBeingUsed: false }
-							: item
+					const updatedStock = productStock.map((item) =>
+						item.id === selectedProduct.id ? { ...item, isBeingUsed: false } : item,
 					);
 
 					set({
@@ -305,11 +297,9 @@ export const useBaseUserStore = create<BaseUserState>()(
 				const { selectedProducts, productStock } = get();
 
 				// Reset isBeingUsed flags for all selected products
-				const productIds = new Set(selectedProducts.map(p => p.id));
-				const updatedStock = productStock.map(item =>
-					productIds.has(item.id)
-						? { ...item, isBeingUsed: false }
-						: item
+				const productIds = new Set(selectedProducts.map((p) => p.id));
+				const updatedStock = productStock.map((item) =>
+					productIds.has(item.id) ? { ...item, isBeingUsed: false } : item,
 				);
 
 				// Clear selected products
@@ -324,18 +314,17 @@ export const useBaseUserStore = create<BaseUserState>()(
 			getAvailableStockItems: (targetWarehouse?: string) => {
 				const { productStock } = get();
 
-
 				if (productStock.length === 0) {
-					console.log('⚠️ ProductStock is empty - store may not be initialized yet');
+					console.log("⚠️ ProductStock is empty - store may not be initialized yet");
 					return [];
 				}
 
 				// If no target warehouse specified, return all available items
 				if (!targetWarehouse) {
-					return productStock.filter(item => !item.isBeingUsed);
+					return productStock.filter((item) => !item.isBeingUsed);
 				}
 
-				const filtered = productStock.filter(item => {
+				const filtered = productStock.filter((item) => {
 					const isAvailable = !item.isBeingUsed;
 					const isCorrectWarehouse = item.currentWarehouse === targetWarehouse;
 					return isAvailable && isCorrectWarehouse;
@@ -354,14 +343,14 @@ export const useBaseUserStore = create<BaseUserState>()(
 				const { selectedProducts, productStock: currentProductStock } = get();
 
 				// Create a map of selected product IDs for quick lookup
-				const selectedProductIds = new Set(selectedProducts.map(p => p.id));
+				const selectedProductIds = new Set(selectedProducts.map((p) => p.id));
 
 				// Merge new data with existing state
 				// Preserve isBeingUsed flags for items that are still selected
-				const syncedStock: ProductStockItem[] = newProductStock.map(newItem => {
+				const syncedStock: ProductStockItem[] = newProductStock.map((newItem) => {
 					// Find corresponding item in current stock
-					const currentItem = currentProductStock.find(item => item.id === newItem.id);
-					
+					const currentItem = currentProductStock.find((item) => item.id === newItem.id);
+
 					// If item is selected, preserve its isBeingUsed state
 					if (selectedProductIds.has(newItem.id) && currentItem) {
 						return {
@@ -373,25 +362,29 @@ export const useBaseUserStore = create<BaseUserState>()(
 							...(currentItem.lastUsedBy && { lastUsedBy: currentItem.lastUsedBy }),
 						};
 					}
-					
+
 					// For non-selected items, use the fresh data from the API
 					return newItem;
 				});
 
 				// Only update if there are actual changes
 				// Compare by serializing the arrays to avoid unnecessary updates
-				const currentSerialized = JSON.stringify(currentProductStock.map(item => ({
-					id: item.id,
-					isBeingUsed: item.isBeingUsed,
-					numberOfUses: item.numberOfUses,
-					currentWarehouse: item.currentWarehouse,
-				})));
-				const syncedSerialized = JSON.stringify(syncedStock.map(item => ({
-					id: item.id,
-					isBeingUsed: item.isBeingUsed,
-					numberOfUses: item.numberOfUses,
-					currentWarehouse: item.currentWarehouse,
-				})));
+				const currentSerialized = JSON.stringify(
+					currentProductStock.map((item) => ({
+						id: item.id,
+						isBeingUsed: item.isBeingUsed,
+						numberOfUses: item.numberOfUses,
+						currentWarehouse: item.currentWarehouse,
+					})),
+				);
+				const syncedSerialized = JSON.stringify(
+					syncedStock.map((item) => ({
+						id: item.id,
+						isBeingUsed: item.isBeingUsed,
+						numberOfUses: item.numberOfUses,
+						currentWarehouse: item.currentWarehouse,
+					})),
+				);
 
 				if (currentSerialized !== syncedSerialized) {
 					set({
@@ -418,8 +411,7 @@ export const useNumpadStore = create<NumpadValueType>()(
 	devtools(
 		(set) => ({
 			value: "",
-			setValue: (newValue: string) =>
-				set((state) => ({ value: state.value + newValue })),
+			setValue: (newValue: string) => set((state) => ({ value: state.value + newValue })),
 			deleteValue: () => set((state) => ({ value: state.value.slice(0, -1) })),
 			clearValue: () => set({ value: "" }),
 		}),
@@ -435,28 +427,18 @@ export const useNumpadStore = create<NumpadValueType>()(
  */
 interface ReturnOrderState {
 	// State Properties
-	returnProducts: SelectedProduct[]; // Products selected for return
+	returnProducts: WithdrawOrderDetailsProduct[]; // Products selected for return
 	showScanner: boolean; // Controls visibility of barcode scanner
-
-	// Action Methods
-	/**
-	 * Adds or updates a product in the return products list
-	 * @param product - The product to add/update
-	 * @param maxReturn - Maximum quantity that can be returned
-	 */
-	handleProductSelect: (
-		product: typeof Product.infer,
-	) => void;
 
 	/**
 	 * Adds or updates a product in the return products list
 	 * @param stockItem - The stock item to add/update
-	 * @param productInfo - The product information
+	 * @param productInfo - The product information (WithdrawOrderDetailsProduct)
 	 * @param productStock - The product stock
 	 */
 	handleProductStockSelect: (
 		stockItem: ProductStockItem,
-		productInfo: ProductType,
+		productInfo: WithdrawOrderDetailsProduct,
 		productStock: ProductStockItem[],
 	) => void;
 
@@ -465,28 +447,13 @@ interface ReturnOrderState {
 	 * @param barcode - The scanned barcode string
 	 * @param orderProducts - Available products in the order
 	 */
-	handleBarcodeScanned: (
-		barcode: string,
-		orderProducts: Array<typeof Product.infer>,
-	) => void;
+	handleBarcodeScanned: (barcode: string, orderProducts: WithdrawOrderDetailsProduct[]) => void;
 
 	/**
 	 * Removes a product from the return products list
 	 * @param productId - ID of the product to remove
 	 */
 	handleRemoveProduct: (productId: string) => void;
-
-	/**
-	 * Updates the quantity of a selected product for return
-	 * @param productId - ID of the product to update
-	 * @param newQuantity - New quantity value
-	 * @param maxReturn - Maximum quantity that can be returned
-	 */
-	handleUpdateQuantity: (
-		productId: string,
-		newQuantity: number,
-		maxReturn: number,
-	) => void;
 
 	/**
 	 * Controls the visibility of the barcode scanner
@@ -512,96 +479,66 @@ export const useReturnOrderStore = create<ReturnOrderState>()(
 			showScanner: false,
 
 			// Action Implementations
-			handleProductSelect: (product) => {
-				const { returnProducts } = get();
-				const existingIndex = returnProducts.findIndex(
-					(p) => p.id === product.id,
-				);
-
-				if (existingIndex >= 0) {
-					// Update existing product quantity
-					const updated = [...returnProducts];
-					if (updated[existingIndex].quantity < product.stock) {
-						updated[existingIndex].quantity += 1;
-						set({ returnProducts: updated });
-					} else {
-						Alert.alert(
-							"Límite Alcanzado",
-							"No puedes devolver más de lo que se tomó",
-						);
-					}
-				} else {
-					// Add new product for return
-					set({
-						returnProducts: [
-							...returnProducts,
-							{
-								...product,
-								quantity: 1,
-								selectedAt: new Date(),
-							},
-						],
-					});
-				}
-			},
-
-			// Action Implementations
-			handleProductStockSelect: (stockItem: ProductStockItem, productInfo: ProductType, productStock: ProductStockItem[]) => {
+			handleProductStockSelect: (
+				_stockItem: ProductStockItem,
+				productInfo: WithdrawOrderDetailsProduct,
+				_productStock: ProductStockItem[],
+			) => {
 				const { returnProducts } = get();
 
-				// Check if this specific stock item is already selected
-				const existingIndex = returnProducts.findIndex(
-					(p) => p.id === stockItem.id,
-				);
+				// Check if this specific product is already selected by its id
+				const existingIndex = returnProducts.findIndex((p) => p.id === productInfo.id);
 
 				if (existingIndex >= 0) {
 					Alert.alert(
 						"Producto Ya Seleccionado",
-						"Este item específico ya está en la lista",
+						"Este producto ya está en la lista de devolución",
 					);
 					return;
 				}
 
-				// Mark the stock item as being used
-				const updatedStock = productStock.map(item =>
-					item.id === stockItem.id
-						? { ...item, isBeingUsed: true, lastUsed: new Date(), numberOfUses: item.numberOfUses + 1 }
-						: item
-				);
-
-				// Create a selected product entry
-				const selectedProduct: SelectedProduct = {
-					id: stockItem.id, // Use stock item ID
-					name: productInfo.name,
-					brand: productInfo.brand,
-					stock: 1, // Individual stock item
-					quantity: 1, // Always 1 for individual items
-					selectedAt: new Date(),
-				};
-
+				// Add the product directly to return products
 				set({
-					returnProducts: [...returnProducts, selectedProduct],
+					returnProducts: [...returnProducts, productInfo],
 				});
 			},
 
+			handleBarcodeScanned: (barcode, orderProducts: WithdrawOrderDetailsProduct[]) => {
+				// Try to find product by productStockId (barcode might be the stock item ID)
+				let product = orderProducts.find((p) => p.productStockId === barcode);
 
-			handleBarcodeScanned: (barcode, orderProducts) => {
-				// First try to find product by exact barcode match
-				let product = orderProducts.find(
-					(product) => product.barcode === barcode,
-				);
-
-				// If no exact match, try to find by product ID (in case QR contains product ID)
+				// If no match, try to find by productId
 				if (!product) {
-					product = orderProducts.find((product) => product.id === barcode);
+					product = orderProducts.find((p) => p.productId === barcode);
+				}
+
+				// If still no match, try to find by id
+				if (!product) {
+					product = orderProducts.find((p) => p.id === barcode);
 				}
 
 				if (product) {
-					get().handleProductSelect(product);
+					// Find the corresponding stock item to add it properly
+					const { productStock } = useBaseUserStore.getState();
+					const stockItem = productStock.find(
+						(item) => item.id === product.productStockId,
+					);
+
+					if (stockItem) {
+						get().handleProductStockSelect(stockItem, product, productStock);
+					} else {
+						// If stock item not found, just add the product directly
+						const { returnProducts } = get();
+						const existingIndex = returnProducts.findIndex((p) => p.id === product.id);
+						if (existingIndex < 0) {
+							set({ returnProducts: [...returnProducts, product] });
+						}
+					}
+
 					set({ showScanner: false });
 					Alert.alert(
 						"Producto Encontrado",
-						`${product.name} agregado para devolución`,
+						`${product.description || "Producto"} agregado para devolución`,
 					);
 				} else {
 					Alert.alert(
@@ -618,25 +555,9 @@ export const useReturnOrderStore = create<ReturnOrderState>()(
 				});
 			},
 
-			handleUpdateQuantity: (productId, newQuantity, maxReturn) => {
-				if (newQuantity <= 0) {
-					get().handleRemoveProduct(productId);
-					return;
-				}
-
-				const clampedQuantity = Math.min(newQuantity, maxReturn);
-				const { returnProducts } = get();
-				set({
-					returnProducts: returnProducts.map((p) =>
-						p.id === productId ? { ...p, quantity: clampedQuantity } : p,
-					),
-				});
-			},
-
 			setShowScanner: (show) => set({ showScanner: show }),
 
-			clearReturnProducts: () =>
-				set({ returnProducts: [], showScanner: false }),
+			clearReturnProducts: () => set({ returnProducts: [], showScanner: false }),
 		}),
 		{
 			name: "return-order-store",

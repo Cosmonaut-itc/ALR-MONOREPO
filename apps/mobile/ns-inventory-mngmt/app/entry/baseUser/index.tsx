@@ -1,25 +1,25 @@
 "use client"
 
-import { useEffect, useMemo, useRef } from "react"
-import { StyleSheet, Platform, ScrollView } from "react-native"
-import { StatusBar } from "expo-status-bar"
-import { router } from "expo-router"
+import { useBaseUserStore } from "@/app/stores/baseUserStores"
+import { ThemedButton } from "@/components/ThemedButton"
+import { ThemedHeader } from "@/components/ThemedHeader"
 import { ThemedText } from "@/components/ThemedText"
 import { ThemedView } from "@/components/ThemedView"
-import { ThemedButton } from "@/components/ThemedButton"
 import { BarcodeScanner } from "@/components/ui/BarcodeScanner"
 import { ProductCard } from "@/components/ui/ProductCard"
-import { useColorScheme } from "@/hooks/useColorScheme"
-import type { ProductStockItem, SelectedProduct, Product, CabinetWarehouseMapEntry } from "@/types/types"
-import { useBaseUserStore } from "@/app/stores/baseUserStores"
-import { ThemedHeader } from "@/components/ThemedHeader"
 import { ScannerComboboxSection } from "@/components/ui/ScannerComboboxSection"
-import { getProductStock, getCabinetWarehouses } from "@/lib/fetch-functions"
-import { QUERY_KEYS } from "@/lib/query-keys"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { toast } from "sonner-native"
-import { useCreateWithdrawOrderMutation } from "@/lib/mutations"
+import { useColorScheme } from "@/hooks/useColorScheme"
+import { getCabinetWarehouses, getProductStock } from "@/lib/fetch-functions"
 import type { CreateWithdrawOrderPayload } from "@/lib/mutations"
+import { useCreateWithdrawOrderMutation } from "@/lib/mutations"
+import { QUERY_KEYS } from "@/lib/query-keys"
+import type { CabinetWarehouseMapEntry, Product, ProductStockItem, SelectedProduct } from "@/types/types"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { router } from "expo-router"
+import { StatusBar } from "expo-status-bar"
+import { useEffect, useMemo, useRef } from "react"
+import { Platform, ScrollView, StyleSheet } from "react-native"
+import { toast } from "sonner-native"
 
 /**
  * Custom hook to fetch and manage cabinet warehouse map
@@ -109,7 +109,7 @@ const useProductStockQuery = (cabinetId: string | undefined): UseProductStockQue
     // Handle response structure: { cabinet: [{ employee: {...}, productStock: {...} }, ...], cabinetId, cabinetName, totalItems, warehouseId }
     const productStock: ProductStockItem[] = (() => {
         if (!data) return [];
-        
+
         // Check if data has cabinet property with array
         if (data.cabinet && Array.isArray(data.cabinet)) {
             return data.cabinet.map((item: {
@@ -134,7 +134,7 @@ const useProductStockQuery = (cabinetId: string | undefined): UseProductStockQue
                     currentWarehouse: stock.currentWarehouse,
                     isBeingUsed: stock.isBeingUsed,
                 };
-                
+
                 if (stock.description !== undefined && stock.description !== null) {
                     transformed.description = stock.description;
                 }
@@ -147,11 +147,11 @@ const useProductStockQuery = (cabinetId: string | undefined): UseProductStockQue
                 if (stock.firstUsed) {
                     transformed.firstUsed = new Date(stock.firstUsed);
                 }
-                
+
                 return transformed;
             });
         }
-        
+
         return [];
     })();
 
@@ -173,7 +173,7 @@ export default function InventoryScannerScreen() {
     const {
         selectedProducts,
         showScanner,
-        productStock: storeProductStock,
+
         handleProductStockSelect,
         handleBarcodeScanned,
         handleRemoveProduct,
@@ -194,14 +194,14 @@ export default function InventoryScannerScreen() {
 
     // Fetch cabinet warehouse map to find matching cabinet
     const { warehouses } = useCabinetWarehousesQuery()
-    
+
     // Find the cabinet entry that matches the employee's warehouse ID
     const matchedCabinet = useMemo(() => {
         if (!employeeWarehouseId || !warehouses.length) return undefined
         return warehouses.find(entry => entry.warehouseId === employeeWarehouseId)
     }, [employeeWarehouseId, warehouses])
 
-    
+
     // Get cabinet ID and warehouse name from matched cabinet
     const cabinetId = matchedCabinet?.cabinetId
     const warehouseName = matchedCabinet?.cabinetName
@@ -231,7 +231,7 @@ export default function InventoryScannerScreen() {
             // Check if data actually changed by comparing IDs
             const currentIds = productStock.map(item => item.id).sort().join(',')
             const lastSyncedIds = lastSyncedProductStock.current.map(item => item.id).sort().join(',')
-            
+
             // Only sync if the data actually changed
             if (currentIds !== lastSyncedIds) {
                 const store = useBaseUserStore.getState()
@@ -299,7 +299,7 @@ export default function InventoryScannerScreen() {
     const handleStockItemSelect = (stockItem: ProductStockItem) => {
         // Extract product info from stock item
         const productInfo = extractProductInfoFromStock(stockItem)
-        
+
         // Create a basic product object from stock item data
         const basicProduct: Product = {
             id: stockItem.id,
@@ -310,7 +310,7 @@ export default function InventoryScannerScreen() {
             barcode: stockItem.barcode.toString(),
             ...(stockItem.description && { description: stockItem.description }),
         }
-        
+
         handleProductStockSelect(stockItem, basicProduct)
     }
 
@@ -358,8 +358,8 @@ export default function InventoryScannerScreen() {
                     return data.message || "Retiro procesado correctamente"
                 },
                 error: (error) => {
-                    return error instanceof Error 
-                        ? error.message 
+                    return error instanceof Error
+                        ? error.message
                         : "Error al procesar el retiro"
                 },
             }
@@ -435,9 +435,7 @@ export default function InventoryScannerScreen() {
                 {/* Warehouse Inventory Section */}
                 {/* Uses warehouse ID from current employee state */}
                 <ScannerComboboxSection
-                    products={[]}
                     productStock={availableStock}
-                    {...(warehouseId !== undefined && { targetWarehouse: warehouseId })}
                     {...(warehouseName !== undefined && { warehouseName })}
                     onStockItemSelect={handleStockItemSelect}
                     onScanPress={() => setShowScanner(true)}

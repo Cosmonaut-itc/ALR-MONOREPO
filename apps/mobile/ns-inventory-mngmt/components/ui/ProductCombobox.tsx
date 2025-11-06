@@ -1,61 +1,47 @@
 "use client"
 
-import React, { useCallback, useEffect, useMemo, useState } from "react"
-import { StyleSheet, TouchableOpacity, Modal, ScrollView } from "react-native"
+import { Collapsible } from "@/components/Collapsible"
 import { ThemedText } from "@/components/ThemedText"
-import { ThemedView } from "@/components/ThemedView"
 import { TextInput } from "@/components/ThemedTextInput"
+import { ThemedView } from "@/components/ThemedView"
 import { Colors } from "@/constants/Colors"
 import { useColorScheme } from "@/hooks/useColorScheme"
+import { getShortId } from "@/lib/functions"
 import type {
-    Product,
     ProductComboboxProps,
     ProductStockItem,
     WarehouseStockGroup
 } from "@/types/types"
-import { Collapsible } from "@/components/Collapsible"
-import { getShortId } from "@/lib/functions"
 import { useFocusEffect } from "expo-router"
+import React, { useCallback, useEffect, useMemo, useState } from "react"
+import { Modal, ScrollView, StyleSheet, TouchableOpacity } from "react-native"
 
 /**
- * Groups ProductStockItems by barcode, enriching with product information
+ * Groups ProductStockItems by barcode, using description from stock items
  * Creates groups for warehouse inventory display
  */
 const groupProductStock = (
     productStock: ProductStockItem[],
-    products: Product[],
-    targetWarehouse?: string
 ): WarehouseStockGroup[] => {
-    // Filter stock by warehouse and availability
-    // If targetWarehouse is not provided, show all available items
-    const availableStock = productStock.filter(
-        stock => (!targetWarehouse || stock.currentWarehouse === targetWarehouse) && !stock.isBeingUsed
-    )
-
     // Group by barcode
     const groups = new Map<number, ProductStockItem[]>()
 
-    for (const item of availableStock) {
+    for (const item of productStock) {
         const existing = groups.get(item.barcode) || []
         existing.push(item)
         groups.set(item.barcode, existing)
     }
 
-    // Convert to WarehouseStockGroup objects with product information
+    // Convert to WarehouseStockGroup objects using description from stock items
     return Array.from(groups.entries()).map(([barcode, items]) => {
-        // Find matching product by barcode for metadata
-        // Compare Product.barcode (string) with ProductStockItem.barcode (number)
-        const product = products.find(p => p.barcode === barcode.toString() || Number(p.barcode) === barcode)
-        
-        // Use description from productStock item if available, otherwise use product name or barcode fallback
-        // Prefer description from the first item in the group (all items should have same description)
+        // Use description from the first item in the group (all items should have same description)
         const itemDescription = items[0]?.description
-        const productName = itemDescription || product?.name || `Producto ${barcode}`
+        const productName = itemDescription || `Producto ${barcode}`
 
         return {
             barcode,
             productName,
-            brand: product?.brand || "Sin marca",
+            brand: "Sin marca", // Default brand since we don't have product metadata
             items,
             totalCount: items.length,
         }
@@ -90,9 +76,7 @@ const filterStockGroups = (
 
 // Warehouse-only ProductCombobox Component
 export function ProductCombobox({
-    products,
     productStock = [],
-    targetWarehouse,
     warehouseName,
     onStockItemSelect,
     placeholder = "Buscar en inventario...",
@@ -105,13 +89,9 @@ export function ProductCombobox({
     const [isOpen, setIsOpen] = useState<boolean>(false)
 
     // Group and filter warehouse stock
-    // Ensure products is always an array to prevent undefined errors
     const stockGroups = useMemo(() => {
-        if (!products || !Array.isArray(products)) {
-            return []
-        }
-        return groupProductStock(productStock, products, targetWarehouse)
-    }, [productStock, products, targetWarehouse])
+        return groupProductStock(productStock)
+    }, [productStock])
 
     const filteredStockGroups = useMemo(() => {
         return filterStockGroups(stockGroups, searchText)
@@ -119,7 +99,7 @@ export function ProductCombobox({
 
     useEffect(() => {
         setSearchText("")
-    }, [productStock, products, targetWarehouse])
+    }, [])
 
     useFocusEffect(
         useCallback(() => {
@@ -267,7 +247,7 @@ export function ProductCombobox({
                         ]}
                     >
                         <ThemedText type="title" style={styles.modalTitle}>
-                            Productos en {warehouseName || targetWarehouse || "Almacén"}
+                            Productos en {warehouseName || "Almacén"}
                         </ThemedText>
                         <TouchableOpacity onPress={handleCloseModal} style={styles.closeButton}>
                             <ThemedText style={{ color: isDark ? Colors.dark.tint : Colors.light.tint }}>✕</ThemedText>
@@ -293,7 +273,7 @@ export function ProductCombobox({
                         {filteredStockGroups.length === 0 && searchText && (
                             <ThemedView style={styles.noResultsContainer}>
                                 <ThemedText style={styles.noResultsText}>
-                                    No se encontraron elementos en {warehouseName || targetWarehouse || "el almacén"}
+                                    No se encontraron elementos en {warehouseName || "el almacén"}
                                 </ThemedText>
                             </ThemedView>
                         )}
@@ -301,7 +281,7 @@ export function ProductCombobox({
                         {filteredStockGroups.length === 0 && !searchText && stockGroups.length === 0 && (
                             <ThemedView style={styles.noResultsContainer}>
                                 <ThemedText style={styles.noResultsText}>
-                                    No hay elementos disponibles en {warehouseName || targetWarehouse || "el almacén"}
+                                    No hay elementos disponibles en {warehouseName || "el almacén"}
                                 </ThemedText>
                             </ThemedView>
                         )}

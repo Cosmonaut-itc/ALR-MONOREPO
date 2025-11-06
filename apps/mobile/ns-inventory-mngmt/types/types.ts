@@ -16,11 +16,7 @@ export type LoginForm = typeof LoginFormSchema.infer;
 //Components types and its location in the project
 //Form Components
 //Error Message Component
-export const ThemedFormErrorSeverityArk = t.enumerated(
-	"error",
-	"warning",
-	"info",
-);
+export const ThemedFormErrorSeverityArk = t.enumerated("error", "warning", "info");
 export type ThemedFormErrorSeverity = typeof ThemedFormErrorSeverityArk.infer;
 
 export const ThemedFormErrorPropsArk = t({
@@ -97,16 +93,13 @@ export type QRCodeData = typeof QRCodeData.infer;
 
 // Enhanced BarcodeScanner props with QR data
 export const EnhancedBarcodeScannerPropsArk = t({
-	onQRCodeScanned: "string?" as t.cast<
-		(qrData: typeof QRCodeData.infer) => void
-	>,
+	onQRCodeScanned: "string?" as t.cast<(qrData: typeof QRCodeData.infer) => void>,
 	onBarcodeScanned: "string?" as t.cast<(data: string) => void>,
 	onClose: "string?" as t.cast<() => void>,
 	focusOnQRCodes: "boolean?", // Whether to prioritize QR code scanning
 });
 
-export type EnhancedBarcodeScannerProps =
-	typeof EnhancedBarcodeScannerPropsArk.infer;
+export type EnhancedBarcodeScannerProps = typeof EnhancedBarcodeScannerPropsArk.infer;
 
 // Product Card Component and its types
 export const SelectedProductCardArk = t({
@@ -179,21 +172,16 @@ export const returnOrderModalPropsArk = t({
 	visible: "boolean",
 	onClose: "string?" as t.cast<() => void>,
 	onSubmit: "string?" as t.cast<
-		(
-			order: typeof PendingOrder.infer,
-			returnedItems: (typeof OrderItem.infer)[],
-		) => void
+		(order: typeof PendingOrder.infer, returnedItems: (typeof OrderItem.infer)[]) => void
 	>,
 });
 
 export type ReturnOrderModalProps = typeof returnOrderModalPropsArk.infer;
 
-
 /**
  * API Types for Hono RPC Client using ArkType
  * Generated from the API server for type-safe client-server communication
  */
-
 
 // ===== API Response Schemas =====
 
@@ -246,15 +234,30 @@ export const withdrawOrderDetailsSchema = t({
 	dateReturn: "string.date.iso.parse?", // Nullable date field
 });
 
-// Generic API Response Schema Factory
-// This function creates a response schema for any data type
-export const createApiResponseSchema = (dataSchema: any) => t({
-	success: "boolean",
-	data: dataSchema.optional(),
-	message: "string?",
-	meta: t("unknown", "[]").optional(),
+/**
+ * Schema for withdraw order details products returned by the API
+ * This represents products from withdraw orders with additional metadata
+ */
+export const withdrawOrderDetailsProductSchema = t({
+	id: "string", // UUID of the withdraw order detail
+	productId: "string", // UUID referencing the product
+	withdrawOrderId: "string | null", // UUID referencing withdrawOrder.id (nullable)
+	dateWithdraw: "string", // Date string when product was withdrawn
+	dateReturn: "string | null", // Date string when product was returned (nullable)
+	productStockId: "string", // UUID referencing productStock.id
+	description: "string | null", // Optional product description (nullable)
+	barcode: "number", // Barcode of the product
 });
 
+// Generic API Response Schema Factory
+// This function creates a response schema for any data type
+export const createApiResponseSchema = (dataSchema: any) =>
+	t({
+		success: "boolean",
+		data: dataSchema.optional(),
+		message: "string?",
+		meta: t("unknown", "[]").optional(),
+	});
 
 // Product Stock Schemas
 export const productStockItemSchema = t({
@@ -290,7 +293,9 @@ export const withdrawOrderArraySchema = t(withdrawOrderSchema, "[]");
 export const withdrawOrderResponseSchema = createApiResponseSchema(withdrawOrderArraySchema);
 
 export const withdrawOrderDetailsArraySchema = t(withdrawOrderDetailsSchema, "[]");
-export const withdrawOrderDetailsResponseSchema = createApiResponseSchema(withdrawOrderDetailsArraySchema);
+export const withdrawOrderDetailsResponseSchema = createApiResponseSchema(
+	withdrawOrderDetailsArraySchema,
+);
 
 // ===== Enhanced Schemas with Relations (Optional) =====
 
@@ -313,12 +318,14 @@ export type CabinetWarehouseMapEntry = typeof cabinetWarehouseMapSchema.infer;
 // Withdraw Orders Types
 export type WithdrawOrder = typeof withdrawOrderSchema.infer;
 export type WithdrawOrderDetails = typeof withdrawOrderDetailsSchema.infer;
+export type WithdrawOrderDetailsProduct = typeof withdrawOrderDetailsProductSchema.infer;
 export type WithdrawOrderResponse = typeof withdrawOrderResponseSchema.infer;
 export type WithdrawOrderDetailsResponse = typeof withdrawOrderDetailsResponseSchema.infer;
 
 // Enhanced types with relations
 export type WithdrawOrderWithDetails = typeof withdrawOrderWithDetailsSchema.infer;
-export type WithdrawOrderDetailsWithRelations = typeof withdrawOrderDetailsWithRelationsSchema.infer;
+export type WithdrawOrderDetailsWithRelations =
+	typeof withdrawOrderDetailsWithRelationsSchema.infer;
 
 // ===== Warehouse Inventory Types =====
 
@@ -335,7 +342,6 @@ export type WarehouseStockGroup = typeof WarehouseStockGroup.infer;
 
 // Updated ProductCombobox props - warehouse only
 export const productComboboxPropsArk = t({
-	products: t(Product, "[]"), // For product metadata lookup
 	productStock: t(productStockItemSchema, "[]"), // Stock items to display
 	targetWarehouse: "string?", // Warehouse UUID to filter by
 	warehouseName: "string?", // Warehouse name for display

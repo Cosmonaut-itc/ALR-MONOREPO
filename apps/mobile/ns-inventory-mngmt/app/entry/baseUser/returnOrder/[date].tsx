@@ -1,135 +1,91 @@
 "use client"
 
-import { StyleSheet, ScrollView, Alert } from "react-native"
+import { router } from "expo-router"
 import { StatusBar } from "expo-status-bar"
-import { router, useLocalSearchParams } from "expo-router"
+import { Alert, ScrollView, StyleSheet } from "react-native"
 
-import { ThemedText } from "@/components/ThemedText"
-import { ThemedView } from "@/components/ThemedView"
-import { ThemedButton } from "@/components/ThemedButton"
-import { BarcodeScanner } from "@/components/ui/BarcodeScanner"
-import { ProductCard } from "@/components/ui/ProductCard"
-import { Colors } from "@/constants/Colors"
-import { useColorScheme } from "@/hooks/useColorScheme"
-import type { Product, SelectedProduct, WithdrawOrderDetails, ProductStockItem, DataItemArticulosType } from "@/types/types"
-import { ThemedHeader } from "@/components/ThemedHeader"
-import { ScannerComboboxSection } from "@/components/ui/ScannerComboboxSection"
 import { useBaseUserStore, useReturnOrderStore } from "@/app/stores/baseUserStores"
 import { Collapsible } from "@/components/Collapsible"
-import { useQuery } from "@tanstack/react-query"
+import { ThemedButton } from "@/components/ThemedButton"
+import { ThemedHeader } from "@/components/ThemedHeader"
+import { ThemedText } from "@/components/ThemedText"
+import { ThemedView } from "@/components/ThemedView"
+import { BarcodeScanner } from "@/components/ui/BarcodeScanner"
+import { ProductCard } from "@/components/ui/ProductCard"
+import { ScannerComboboxSection } from "@/components/ui/ScannerComboboxSection"
+import { Colors } from "@/constants/Colors"
+import { useColorScheme } from "@/hooks/useColorScheme"
+import { getWithdrawOrderDetailsProducts } from "@/lib/fetch-functions"
 import { QUERY_KEYS } from "@/lib/query-keys"
-import { getWithdrawalOrdersDetails, getProducts } from "@/lib/fetch-functions"
+import type { ProductStockItem, WithdrawOrderDetailsProduct } from "@/types/types"
+import { useQuery } from "@tanstack/react-query"
 import { useMemo } from "react"
 
 
-/**
- * Custom hook to manage product data from a withrawal order with proper error handling and loading states 
- * Follows TanStack Query best practices for data fetching and state management
- * @returns Object containing products data, loading state, error state, and utility functions
- */
-interface UseWithdrawOrderDetailsQueryResult {
-    /** Array of transformed products ready for UI consumption */
-    products: WithdrawOrderDetails[]
-    /** Boolean indicating if the initial data fetch is in progress */
-    isLoading: boolean
-    /** Boolean indicating if there's an error in the query */
-    isError: boolean
-    /** Error object containing details about any query failures */
-    error: Error | null
-    /** Boolean indicating if a background refetch is in progress */
-    isFetching: boolean
-    /** Function to manually trigger a refetch of products */
-    refetch: () => void
-}
-
-const useWithdrawalOrderDetailsQuery = (date: string): UseWithdrawOrderDetailsQueryResult => {
-    const {
-        data: apiProducts,
-        isLoading,
-        isError,
-        error,
-        isFetching,
-        refetch,
-    } = useQuery({
-        queryKey: [QUERY_KEYS.WITHDRAW_ORDER_DETAILS, date],
-        queryFn: () => getWithdrawalOrdersDetails(date),
-        staleTime: 5 * 60 * 1000, // 5 minutes - data considered fresh for this duration
-        gcTime: 10 * 60 * 1000, // 10 minutes - cache garbage collection time
-        retry: 3, // Retry failed requests up to 3 times
-        retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // Exponential backoff
-    })
-
-    // Transform API response to match expected types (convert string dates to Date objects)
-    const transformedProducts = useMemo(() => {
-        if (!apiProducts) return []
-        return apiProducts.map((orderDetail: { id: string; productId: string; withdrawOrderId: string | null; dateWithdraw: string; dateReturn: string | null }): WithdrawOrderDetails => ({
-            id: orderDetail.id,
-            productId: orderDetail.productId,
-            dateWithdraw: new Date(orderDetail.dateWithdraw),
-            ...(orderDetail.withdrawOrderId && { withdrawOrderId: orderDetail.withdrawOrderId }),
-            ...(orderDetail.dateReturn && { dateReturn: new Date(orderDetail.dateReturn) }),
-        }))
-    }, [apiProducts])
-
-    return {
-        products: transformedProducts,
-        isLoading,
-        isError,
-        error,
-        isFetching,
-        refetch,
-    }
-}
-
-
-
 export default function OrderDetailsScreen() {
-    const { date } = useLocalSearchParams<{ date: string }>()
     const colorScheme = useColorScheme()
     const isDark = colorScheme === "dark"
 
-    console.log("date", date)
+    const { selectedProducts, currentEmployee } = useBaseUserStore()
 
-    const { productStock, selectedProducts, handleProductStockSelect } = useBaseUserStore()
+    // Get employee ID from store
+    const employeeId = currentEmployee?.employee.id
 
-    // Fetch products for metadata lookup and transform to Product type
+    // Fetch products from withdraw order details endpoint filtered by employee ID
+    // The endpoint returns product data directly (inferred from Hono client types)
     const {
         data: apiProductsData = [],
-        isLoading: isLoadingProducts,
-    } = useQuery<DataItemArticulosType[]>({
-        queryKey: [QUERY_KEYS.PRODUCTS],
-        queryFn: getProducts,
+        isFetching,
+        refetch: refetchProducts,
+    } = useQuery({
+        queryKey: [QUERY_KEYS.WITHDRAW_ORDER_DETAILS_PRODUCTS, employeeId],
+        queryFn: () => {
+            if (!employeeId) {
+                throw new Error("Employee ID is not available");
+            }
+            return getWithdrawOrderDetailsProducts(employeeId);
+        },
+        enabled: !!employeeId, // Only fetch when employeeId is available
         staleTime: 10 * 60 * 1000, // 10 minutes - products don't change frequently
         gcTime: 30 * 60 * 1000, // 30 minutes - cache garbage collection time
     })
 
-    // Transform API products (DataItemArticulosType) to Product type
-    const availableProducts = useMemo<Product[]>(() => {
-        if (!apiProductsData || !Array.isArray(apiProductsData)) return []
-        return apiProductsData.map((item: DataItemArticulosType): Product => {
-            const product: Product = {
-                id: item.good_id.toString(), // Convert good_id to string for id
-                name: item.title || item.label || `Producto ${item.good_id}`, // Use title or label as name
-                brand: item.label || "Sin marca", // Use label as brand
-                price: item.cost || 0, // Use cost as price
-                stock: item.actual_amounts.reduce((sum, amt) => sum + amt.amount, 0), // Sum actual amounts for stock
-            }
+    // Use API products directly - they match the WithdrawOrderDetailsProduct type
+    const availableProducts: WithdrawOrderDetailsProduct[] = apiProductsData || []
+
+    /**
+     * Transform WithdrawOrderDetailsProduct[] to ProductStockItem[] for use in ScannerComboboxSection
+     * Maps API response data to the ProductStockItem structure required by the component
+     */
+    const transformedProductStock = useMemo<ProductStockItem[]>(() => {
+        return availableProducts.map((product: WithdrawOrderDetailsProduct): ProductStockItem => {
+            const stockItem: ProductStockItem = {
+                id: product.productStockId, // Use productStockId as the stock item ID
+                barcode: product.barcode, // Use barcode directly from API response
+                numberOfUses: 1, // Default to 1 since we don't have this data
+                currentWarehouse: "", // Not available in API response, use empty string
+                isBeingUsed: false, // Default to false - these are available for return
+            };
+
             // Conditionally add optional properties only if they have values
-            if (item.barcode) {
-                product.barcode = item.barcode
+            if (product.description) {
+                stockItem.description = product.description;
             }
-            if (item.description) {
-                product.description = item.description
+            if (product.dateReturn) {
+                stockItem.lastUsed = new Date(product.dateReturn);
             }
-            return product
-        })
-    }, [apiProductsData])
+            if (product.dateWithdraw) {
+                stockItem.firstUsed = new Date(product.dateWithdraw);
+            }
+
+            return stockItem;
+        });
+    }, [availableProducts])
 
     // Get return order state and actions
     const {
         returnProducts,
         showScanner,
-        handleProductSelect,
         handleProductStockSelect: handleProductStockSelectReturn,
         handleBarcodeScanned,
         handleRemoveProduct,
@@ -137,32 +93,8 @@ export default function OrderDetailsScreen() {
         clearReturnProducts,
     } = useReturnOrderStore()
 
-    const { products, isLoading, isError, error, isFetching, refetch } = useWithdrawalOrderDetailsQuery(date)
-
-    // Filter withdrawal order details that have corresponding products in availableProducts and transform to Product type
-    const renderedProducts = useMemo(() => {
-        return products
-            .filter((orderDetail: WithdrawOrderDetails) =>
-                availableProducts.some((p: Product) => p.id === orderDetail.productId)
-            )
-            .map((orderDetail: WithdrawOrderDetails) => {
-                // Find the corresponding product information using productId
-                const productInfo = availableProducts.find((p: Product) => p.id === orderDetail.productId);
-
-                if (!productInfo) {
-                    // This shouldn't happen due to the filter above, but TypeScript safety
-                    throw new Error(`Product not found for ID: ${orderDetail.productId}`);
-                }
-
-                return {
-                    id: orderDetail.productId,
-                    name: productInfo.name,
-                    brand: productInfo.brand,
-                    price: productInfo.price,
-                    stock: productInfo.stock, // Use available stock from product info
-                };
-            });
-    }, [products, availableProducts])
+    // Use availableProducts directly as renderedProducts since we're fetching products by employeeId
+    const renderedProducts = availableProducts
 
 
     const handleSubmitReturn = () => {
@@ -171,7 +103,7 @@ export default function OrderDetailsScreen() {
             return
         }
 
-        const totalReturning = returnProducts.reduce((total: number, product: SelectedProduct) => total + product.quantity, 0)
+        const totalReturning = returnProducts.length
 
         Alert.alert("Confirmar Devolución", `¿Deseas procesar la devolución de ${totalReturning} producto(s)?`, [
             { text: "Cancelar", style: "cancel" },
@@ -188,33 +120,26 @@ export default function OrderDetailsScreen() {
     }
 
     const getTotalReturning = () => {
-        return returnProducts.reduce((total: number, product: SelectedProduct) => total + product.quantity, 0)
+        return returnProducts.length
     }
 
     /**
- * Handler for warehouse stock item selection
- * Uses the new stock-based selection system that tracks individual items
- * @param stockItem - The selected warehouse stock item
- */
+     * Handler for warehouse stock item selection
+     * Uses the new stock-based selection system that tracks individual items
+     * @param stockItem - The selected warehouse stock item
+     */
     const handleStockItemSelect = (stockItem: ProductStockItem) => {
-        // Find the full product information by barcode
-        // Compare Product.barcode (string) with ProductStockItem.barcode (number)
-        const fullProduct = availableProducts.find((p: Product) => p.barcode === stockItem.barcode.toString() || Number(p.barcode) === stockItem.barcode)
+        // Find the corresponding product from availableProducts by productStockId
+        const matchingProduct = availableProducts.find((p: WithdrawOrderDetailsProduct) => p.productStockId === stockItem.id)
 
-        if (fullProduct) {
+        if (matchingProduct) {
             // Use the new stock-based selection method
-            handleProductStockSelectReturn(stockItem, fullProduct, productStock)
+            handleProductStockSelectReturn(stockItem, matchingProduct, transformedProductStock)
         } else {
-            // Create a basic product object if full product not found
-            const basicProduct: Product = {
-                id: `product-${stockItem.barcode}`, // Use product prefix + barcode as product ID
-                name: `Producto ${stockItem.barcode}`, // Fallback name
-                brand: "Sin marca", // Default brand
-                price: 0, // Default price since we don't have it in stock data
-                stock: 1, // Set to 1 since we know this specific item exists
-                barcode: stockItem.barcode.toString(),
-            }
-            handleProductStockSelectReturn(stockItem, basicProduct, productStock)
+            Alert.alert(
+                "Producto No Encontrado",
+                "Este producto no está disponible en la orden actual"
+            )
         }
     }
 
@@ -239,7 +164,7 @@ export default function OrderDetailsScreen() {
                             showsHorizontalScrollIndicator={false}
                             contentContainerStyle={styles.orderItemsGrid}
                         >
-                            {renderedProducts.map((item: Product) => {
+                            {renderedProducts.map((item: WithdrawOrderDetailsProduct) => {
                                 return (
                                     <ThemedView
                                         key={item.id}
@@ -256,7 +181,7 @@ export default function OrderDetailsScreen() {
                                             lightColor={Colors.light.surface}
                                             darkColor={Colors.dark.surface}
                                         >
-                                            <ThemedText style={styles.itemName}>{item.name}</ThemedText>
+                                            <ThemedText style={styles.itemName}>{item.description || `Producto ${item.productId}`}</ThemedText>
                                             <ThemedView
                                                 style={[
                                                     styles.badge,
@@ -266,7 +191,7 @@ export default function OrderDetailsScreen() {
                                                 ]}
                                             >
                                             </ThemedView>
-                                            <ThemedText style={styles.itemBrand}>{item.brand}</ThemedText>
+                                            <ThemedText style={styles.itemBrand}>ID: {item.productStockId.slice(0, 8)}</ThemedText>
                                         </ThemedView>
                                     </ThemedView>
                                 )
@@ -277,10 +202,10 @@ export default function OrderDetailsScreen() {
 
                 {/* Scanner and Combobox Section */}
                 <ScannerComboboxSection
-                    products={availableProducts}
-                    productStock={productStock}
+                    productStock={transformedProductStock}
                     onStockItemSelect={handleStockItemSelect}
                     onScanPress={() => setShowScanner(true)}
+                    onRefreshPress={() => refetchProducts()}
                     isLoading={isFetching}
                     itemCount={selectedProducts.length}
                 />
@@ -302,10 +227,17 @@ export default function OrderDetailsScreen() {
                             <ThemedText style={styles.totalLabel}>Total a devolver:</ThemedText>
                             <ThemedText style={styles.totalValue}>{getTotalReturning()}</ThemedText>
                         </ThemedView>
-                        {returnProducts.map((product: SelectedProduct) => (
+                        {returnProducts.map((product: WithdrawOrderDetailsProduct) => (
                             <ProductCard
                                 key={product.id}
-                                product={product}
+                                product={{
+                                    id: product.id,
+                                    name: product.description || `Producto ${product.productId}`,
+                                    brand: "N/A",
+                                    stock: 1,
+                                    quantity: 1,
+                                    selectedAt: new Date(product.dateWithdraw),
+                                }}
                                 onRemove={handleRemoveProduct}
                                 style={styles.productCard}
                             />

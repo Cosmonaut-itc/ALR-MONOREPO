@@ -92,6 +92,37 @@ export const getWithdrawalOrdersDetails = async (date: string) => {
 }
 
 /**
+ * Fetches product data from withdraw order details endpoint filtered by employee ID
+ * Uses the Hono RPC client to infer return types automatically
+ * @param employeeId - The employee UUID to filter products by
+ * @returns Promise containing the product data or throws an error
+ */
+export const getWithdrawOrderDetailsProducts = async (employeeId: string) => {
+	try {
+		const response = await client.api.auth["withdraw-orders"].details.$get({
+			query: { employeeId },
+		});
+		
+		if (!response.ok) {
+			throw new Error(`API request failed with status: ${response.status}`);
+		}
+		
+		// Infer the return type from the Hono client response
+		const data = (await response.json()) as Awaited<ReturnType<typeof response.json>>;
+		
+		// Return the data array (following ApiResponse<T> pattern)
+		return data.data || [];
+	} catch (error) {
+		console.error('Error fetching withdraw order details products:', error);
+		throw new Error(
+			error instanceof Error
+				? `Failed to fetch withdraw order details products: ${error.message}`
+				: 'Failed to fetch withdraw order details products: Unknown error'
+		);
+	}
+}
+
+/**
  * Fetches employee data by user ID from the API
  * @param userId - The user ID to fetch employee data for
  * @returns Promise containing the employee data or throws an error

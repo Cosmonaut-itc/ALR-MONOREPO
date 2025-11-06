@@ -1,19 +1,17 @@
-import { StyleSheet, TouchableOpacity } from "react-native"
-import { ThemedView } from "@/components/ThemedView"
 import { ThemedText } from "@/components/ThemedText"
+import { ThemedView } from "@/components/ThemedView"
 import { ProductCombobox } from "@/components/ui/ProductCombobox"
 import { Colors } from "@/constants/Colors"
 import { useColorScheme } from "@/hooks/useColorScheme"
+import type { ProductStockItem } from "@/types/types"
 import { Camera, RefreshCw } from "lucide-react-native"
-import type { Product, ProductStockItem } from "@/types/types"
+import { StyleSheet, TouchableOpacity } from "react-native"
 
 /**
  * Props interface for the ScannerComboboxSection component
  * Simplified for warehouse-only mode
  */
 interface ScannerComboboxSectionProps {
-    /** Array of available products for metadata lookup */
-    products: Product[]
     /** Array of product stock items to display */
     productStock: ProductStockItem[]
     /** Target warehouse UUID to filter inventory by */
@@ -53,9 +51,7 @@ interface ScannerComboboxSectionProps {
  * @returns JSX.Element representing the warehouse scanner and combobox section
  */
 export function ScannerComboboxSection({
-    products,
     productStock,
-    targetWarehouse,
     warehouseName,
     onStockItemSelect,
     onScanPress,
@@ -96,7 +92,7 @@ export function ScannerComboboxSection({
      */
     const getHelperText = (): string | undefined => {
         if (productStock.length === 0 && !isLoading) {
-            const warehouseDisplay = warehouseName 
+            const warehouseDisplay = warehouseName
             return `No se encontraron elementos en ${warehouseDisplay}`
         }
 
@@ -110,9 +106,7 @@ export function ScannerComboboxSection({
                 {/* Product Combobox Container */}
                 <ThemedView style={styles.comboboxContainer}>
                     <ProductCombobox
-                        products={products}
                         productStock={productStock}
-                        {...(targetWarehouse !== undefined && { targetWarehouse })}
                         {...(warehouseName !== undefined && { warehouseName })}
                         onStockItemSelect={onStockItemSelect}
                         placeholder={getPlaceholderText()}
