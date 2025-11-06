@@ -22,7 +22,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
-import { productStockData, withdrawOrderData, withdrawOrderDetailsData } from './constants';
+import { productStockData, withdrawOrderData } from './constants';
 import { db } from './db/index';
 import * as schemas from './db/schema';
 import { auth } from './lib/auth';
@@ -3248,35 +3248,54 @@ const route = app
 	/**
 	 * GET /api/withdraw-orders/details - Retrieve withdraw orders details data
 	 *
-	 * This endpoint fetches all withdraw orders details records from the database.
-	 * If the database table is empty (e.g., in development or test environments),
-	 * it returns mock withdraw orders details data instead. This ensures the frontend
-	 * always receives a valid response structure for development and testing.
+	 * This endpoint fetches withdraw orders details records filtered by employeeId.
+	 * It joins with the productStock table to include product descriptions and productStockId.
+	 * If no records are found for the specified employee, returns an empty array with a message.
 	 *
-	 * @returns {ApiResponse} Success response with withdraw orders details data (from DB or mock)
+	 * @param {string} employeeId - UUID of the employee to filter withdraw orders by
+	 * @returns {ApiResponse} Success response with withdraw orders details data or empty array
 	 * @throws {500} If an unexpected error occurs during data retrieval
 	 */
 	.get(
 		'/api/auth/withdraw-orders/details',
-		zValidator('query', z.object({ dateWithdraw: z.string() })),
+		zValidator(
+			'query',
+			z.object({ employeeId: z.string().uuid('Invalid employee ID format') }),
+		),
 		async (c) => {
 			try {
-				const { dateWithdraw } = c.req.valid('query');
-				// Query the withdrawOrderDetails table for all records
+				const { employeeId } = c.req.valid('query');
+				// Query the withdrawOrderDetails table with joins to productStock and withdrawOrder
 				const withdrawOrderDetails = await db
-					.select()
+					.select({
+						// Select all withdrawOrderDetails fields
+						id: schemas.withdrawOrderDetails.id,
+						productId: schemas.withdrawOrderDetails.productId,
+						withdrawOrderId: schemas.withdrawOrderDetails.withdrawOrderId,
+						dateWithdraw: schemas.withdrawOrderDetails.dateWithdraw,
+						dateReturn: schemas.withdrawOrderDetails.dateReturn,
+						// Select productStock fields
+						productStockId: schemas.productStock.id,
+						description: schemas.productStock.description,
+					})
 					.from(schemas.withdrawOrderDetails)
-					.where(eq(schemas.withdrawOrderDetails.dateWithdraw, dateWithdraw));
+					.innerJoin(
+						schemas.withdrawOrder,
+						eq(schemas.withdrawOrderDetails.withdrawOrderId, schemas.withdrawOrder.id),
+					)
+					.innerJoin(
+						schemas.productStock,
+						eq(schemas.withdrawOrderDetails.productId, schemas.productStock.id),
+					)
+					.where(eq(schemas.withdrawOrder.userId, employeeId));
 
-				// If no records exist, return mock data for development/testing
+				// If no records exist, return empty array with message
 				if (withdrawOrderDetails.length === 0) {
 					return c.json(
 						{
 							success: true,
-							message: 'Fetching test data',
-							data: withdrawOrderDetailsData.filter(
-								(item) => item.dateWithdraw.toISOString() === dateWithdraw,
-							),
+							message: 'No se encontraron productos retirados por ese usuario',
+							data: [],
 						} satisfies ApiResponse,
 						200,
 					);
@@ -3286,7 +3305,7 @@ const route = app
 				return c.json(
 					{
 						success: true,
-						message: 'Fetching db data',
+						message: 'Datos obtenidos correctamente',
 						data: withdrawOrderDetails,
 					} satisfies ApiResponse,
 					200,
