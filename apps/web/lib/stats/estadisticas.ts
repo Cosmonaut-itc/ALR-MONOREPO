@@ -114,6 +114,7 @@ export type NormalizedInventoryItem = {
 	barcode: number | null;
 	warehouseId: string | null;
 	cabinetId: string | null;
+	description: string | null;
 	isBeingUsed: boolean;
 	numberOfUses: number;
 	lastUsed: string | null;
@@ -223,10 +224,16 @@ export const normalizeInventoryItems = (
 			if (!warehouseId && cabinetId && cabinets?.has(cabinetId)) {
 				warehouseId = cabinets.get(cabinetId)?.warehouseId ?? null;
 			}
+			const descriptionCandidate =
+				toStringSafe((stock as { description?: unknown })?.description) ||
+				toStringSafe((stock as { productDescription?: unknown })?.productDescription) ||
+				toStringSafe(
+					(stock as { productInfo?: { name?: unknown } })?.productInfo?.name,
+				);
 			const isBeingUsed = Boolean(
 				(stock as { isBeingUsed?: unknown })?.isBeingUsed ||
-					(stock as { is_in_use?: unknown })?.is_in_use ||
-					(stock as { inUse?: unknown })?.inUse,
+				(stock as { is_in_use?: unknown })?.is_in_use ||
+				(stock as { inUse?: unknown })?.inUse,
 			);
 			const numberOfUses =
 				readNumber((stock as { numberOfUses?: unknown })?.numberOfUses) ?? 0;
@@ -249,6 +256,10 @@ export const normalizeInventoryItems = (
 				barcode: barcodeCandidate ?? null,
 				warehouseId,
 				cabinetId: cabinetId || null,
+				description:
+					descriptionCandidate && descriptionCandidate.trim().length > 0
+						? descriptionCandidate.trim()
+						: null,
 				isBeingUsed,
 				numberOfUses,
 				lastUsed,
@@ -547,6 +558,8 @@ export type LowStockItem = {
 	current: number;
 	min: number;
 	delta: number;
+	description: string | null;
+	productId: string | null;
 };
 
 export const computeLowStock = (
@@ -559,12 +572,16 @@ export const computeLowStock = (
 	stockByKey: Map<string, number>;
 } => {
 	const stockByKey = new Map<string, number>();
+	const sampleByKey = new Map<string, NormalizedInventoryItem>();
 	for (const item of inventory) {
 		if (!item.warehouseId || item.barcode == null) {
 			continue;
 		}
 		const key = `${item.warehouseId}::${item.barcode}`;
 		stockByKey.set(key, (stockByKey.get(key) ?? 0) + 1);
+		if (!sampleByKey.has(key)) {
+			sampleByKey.set(key, item);
+		}
 	}
 	const lowItems: LowStockItem[] = [];
 	for (const limit of limits) {
@@ -579,14 +596,18 @@ export const computeLowStock = (
 		if (!matchesWarehouse(warehouse, warehouseId)) {
 			continue;
 		}
-		const current = stockByKey.get(`${warehouse}::${barcode}`) ?? 0;
+		const mapKey = `${warehouse}::${barcode}`;
+		const current = stockByKey.get(mapKey) ?? 0;
 		if (current < limit.minQuantity) {
+			const sample = sampleByKey.get(mapKey) ?? null;
 			lowItems.push({
 				barcode,
 				warehouseId: warehouse,
 				current,
 				min: limit.minQuantity,
 				delta: limit.minQuantity - current,
+				description: sample?.description ?? null,
+				productId: sample?.id ?? null,
 			});
 		}
 	}
@@ -806,7 +827,8 @@ export const computeTransferTrend = (
 		}
 		buckets.set(keySource, (buckets.get(keySource) ?? 0) + 1);
 	}
-	return Array.from(buckets.entries())
+	const results = Array.from(buckets.entries()).filter(([, count]) => count > 0);
+	return results
 		.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
 		.map(([date, count]) => ({ date, count }));
 };
@@ -833,7 +855,8 @@ export const computeProductUseTrend = (
 		}
 		buckets.set(key, (buckets.get(key) ?? 0) + 1);
 	}
-	return Array.from(buckets.entries())
+	const results = Array.from(buckets.entries()).filter(([, count]) => count > 0);
+	return results
 		.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
 		.map(([date, count]) => ({ date, count }));
 };

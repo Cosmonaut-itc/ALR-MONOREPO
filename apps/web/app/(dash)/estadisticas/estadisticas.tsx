@@ -2,7 +2,7 @@
 "use memo";
 
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { format, subDays } from "date-fns";
+import { format, parseISO, subDays } from "date-fns";
 import { es } from "date-fns/locale";
 import { useEffect, useMemo, useState } from "react";
 import { RoleGuard } from "@/components/auth-guard";
@@ -96,8 +96,6 @@ type DashboardMetricShape = Parameters<typeof DashboardMetricCard>[0]["metric"];
 
 const formatDateVerbose = (date: Date) =>
 	format(date, "dd 'de' MMMM yyyy", { locale: es });
-
-const formatDateShort = (date: Date) => format(date, "dd/MM", { locale: es });
 
 const toStockLimits = (response: StockLimitsResponse): StockLimit[] => {
 	if (
@@ -206,12 +204,38 @@ const TrendChart = ({
 	points: TrendPoint[];
 	accent?: string;
 }) => {
+	const hasData = useMemo(
+		() => points.some((point) => point.count > 0),
+		[points],
+	);
 	const max = useMemo(() => {
+		if (!hasData) {
+			return 0;
+		}
 		return points.reduce(
 			(peak, point) => (point.count > peak ? point.count : peak),
 			0,
 		);
-	}, [points]);
+	}, [points, hasData]);
+
+	if (!hasData) {
+		return (
+			<Card className="card-transition">
+				<CardHeader>
+					<CardTitle className="text-base font-semibold text-[#11181C] dark:text-[#ECEDEE]">
+						{title}
+					</CardTitle>
+				</CardHeader>
+				<CardContent>
+					<div className="rounded-lg border border-dashed border-[#E5E7EB] bg-[#F9FAFB] p-6 text-center text-sm text-[#687076] dark:border-[#2D3033] dark:bg-[#1E1F20] dark:text-[#9BA1A6]">
+						No hay datos relevantes en el rango seleccionado.
+					</div>
+				</CardContent>
+			</Card>
+		);
+	}
+
+	const minWidth = Math.max(points.length * 40, 320);
 
 	return (
 		<Card className="card-transition">
@@ -221,30 +245,40 @@ const TrendChart = ({
 				</CardTitle>
 			</CardHeader>
 			<CardContent>
-				<div className="flex h-48 items-end gap-3">
-					{points.map((point) => {
-						const value = max > 0 ? Math.max((point.count / max) * 100, 6) : 4;
-						const labelDate = formatDateShort(new Date(point.date));
-						return (
-							<div
-								className="flex flex-1 flex-col items-center gap-2"
-								key={point.date}
-							>
-								<span className="text-xs font-medium text-[#687076] dark:text-[#9BA1A6]">
-									{point.count}
-								</span>
+				<div className="overflow-x-auto">
+					<div
+						className="flex h-48 items-end gap-3"
+						style={{ minWidth: `${minWidth}px` }}
+					>
+						{points.map((point) => {
+							const value =
+								max > 0 ? Math.max((point.count / max) * 100, 8) : 8;
+							const isoString =
+								point.date.length > 10 ? point.date : `${point.date}T00:00:00Z`;
+							const labelDate = format(parseISO(isoString), "dd/MM", {
+								locale: es,
+							});
+							return (
 								<div
-									aria-hidden
-									className={cn(
-										"w-7 rounded-full bg-[#0a7ea4] transition-all",
-										accent,
-									)}
-									style={{ height: `${value}%` }}
-								/>
-								<span className="text-xs text-[#9BA1A6]">{labelDate}</span>
-							</div>
-						);
-					})}
+									className="flex flex-1 flex-col items-center gap-2"
+									key={`${point.date}-${point.count}`}
+								>
+									<span className="text-xs font-medium text-[#687076] dark:text-[#9BA1A6]">
+										{point.count}
+									</span>
+									<div
+										aria-hidden
+										className={cn(
+											"w-7 rounded-full bg-[#0a7ea4] transition-all",
+											accent,
+										)}
+										style={{ height: `${value}%` }}
+									/>
+									<span className="text-xs text-[#9BA1A6]">{labelDate}</span>
+								</div>
+							);
+						})}
+					</div>
 				</div>
 			</CardContent>
 		</Card>
@@ -291,36 +325,48 @@ const DateSelector = ({
 	label: string;
 	date: Date;
 	onChange: (date: Date) => void;
-}) => (
-	<div className="flex flex-col gap-2">
-		<Label className="text-xs uppercase tracking-wide text-[#687076] dark:text-[#9BA1A6]">
-			{label}
-		</Label>
-		<Popover>
-			<PopoverTrigger asChild>
-				<Button
-					className="justify-start px-3 py-2 text-left text-sm font-medium text-[#11181C] dark:text-[#ECEDEE]"
-					variant="outline"
-				>
-					{formatDateVerbose(date)}
-				</Button>
-			</PopoverTrigger>
-			<PopoverContent align="start" className="p-0" side="bottom">
-				<Calendar
-					mode="single"
-					selected={date}
-					onSelect={(next) => {
-						if (!next) {
-							return;
-						}
-						onChange(next);
-					}}
-					initialFocus
-				/>
-			</PopoverContent>
-		</Popover>
-	</div>
-);
+}) => {
+	const [isMounted, setIsMounted] = useState(false);
+
+	useEffect(() => {
+		setIsMounted(true);
+	}, []);
+
+	return (
+		<div className="flex flex-col gap-2">
+			<Label className="text-xs uppercase tracking-wide text-[#687076] dark:text-[#9BA1A6]">
+				{label}
+			</Label>
+			<div suppressHydrationWarning>
+				<Popover>
+					<PopoverTrigger asChild>
+						<Button
+							className="justify-start px-3 py-2 text-left text-sm font-medium text-[#11181C] dark:text-[#ECEDEE]"
+							variant="outline"
+						>
+							{formatDateVerbose(date)}
+						</Button>
+					</PopoverTrigger>
+					{isMounted && (
+						<PopoverContent align="start" className="p-0" side="bottom">
+							<Calendar
+								mode="single"
+								selected={date}
+								onSelect={(next) => {
+									if (!next) {
+										return;
+									}
+									onChange(next);
+								}}
+								initialFocus
+							/>
+						</PopoverContent>
+					)}
+				</Popover>
+			</div>
+		</div>
+	);
+};
 
 const MetricsGrid = ({ metrics }: { metrics: DashboardMetricShape[] }) => (
 	<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -334,10 +380,18 @@ const LowStockTable = ({
 	items,
 	resolveProductName,
 	resolveWarehouseName,
+	resolveProductId,
 }: {
 	items: LowStockItem[];
-	resolveProductName: (barcode: number) => string;
+	resolveProductName: (
+		barcode: number,
+		fallbackDescription?: string | null,
+	) => string;
 	resolveWarehouseName: (id: string) => string;
+	resolveProductId: (
+		barcode: number,
+		fallbackId?: string | null,
+	) => string | null;
 }) => (
 	<Card className="card-transition">
 		<CardHeader>
@@ -362,29 +416,40 @@ const LowStockTable = ({
 						</TableRow>
 					</TableHeader>
 					<TableBody>
-						{items.slice(0, 6).map((item) => (
-							<TableRow key={`${item.warehouseId}-${item.barcode}`}>
-								<TableCell>
-									<div className="flex flex-col">
-										<span className="font-medium text-[#11181C] dark:text-[#ECEDEE]">
-											{resolveProductName(item.barcode)}
-										</span>
-										<span className="text-xs text-[#9BA1A6]">
-											#{item.barcode}
-										</span>
-									</div>
-								</TableCell>
-								<TableCell className="text-center text-sm text-[#687076] dark:text-[#9BA1A6]">
-									{resolveWarehouseName(item.warehouseId)}
-								</TableCell>
-								<TableCell className="text-center font-semibold text-[#E85D04]">
-									{item.current}
-								</TableCell>
-								<TableCell className="text-center text-sm text-[#687076] dark:text-[#9BA1A6]">
-									{item.min}
-								</TableCell>
-							</TableRow>
-						))}
+						{items.slice(0, 6).map((item) => {
+							const productName = resolveProductName(
+								item.barcode,
+								item.description,
+							);
+							const productIdSuffix = resolveProductId(
+								item.barcode,
+								item.productId,
+							);
+							return (
+								<TableRow key={`${item.warehouseId}-${item.barcode}`}>
+									<TableCell>
+										<div className="flex flex-col">
+											<span className="font-medium text-[#11181C] dark:text-[#ECEDEE]">
+												{productName}
+											</span>
+											<span className="text-xs text-[#9BA1A6]">
+												{productIdSuffix ? `ID ${productIdSuffix}` : "ID —"} • #
+												{item.barcode}
+											</span>
+										</div>
+									</TableCell>
+									<TableCell className="text-center text-sm text-[#687076] dark:text-[#9BA1A6]">
+										{resolveWarehouseName(item.warehouseId)}
+									</TableCell>
+									<TableCell className="text-center font-semibold text-[#E85D04]">
+										{item.current}
+									</TableCell>
+									<TableCell className="text-center text-sm text-[#687076] dark:text-[#9BA1A6]">
+										{item.min}
+									</TableCell>
+								</TableRow>
+							);
+						})}
 					</TableBody>
 				</Table>
 			)}
@@ -396,10 +461,18 @@ const TopList = ({
 	title,
 	topItems,
 	resolveProductName,
+	resolveProductId,
 }: {
 	title: string;
 	topItems: Array<{ barcode: number; uses: number }>;
-	resolveProductName: (barcode: number) => string;
+	resolveProductName: (
+		barcode: number,
+		fallbackDescription?: string | null,
+	) => string;
+	resolveProductId: (
+		barcode: number,
+		fallbackId?: string | null,
+	) => string | null;
 }) => (
 	<Card className="card-transition">
 		<CardHeader>
@@ -414,19 +487,28 @@ const TopList = ({
 				</div>
 			) : (
 				<ol className="space-y-3">
-					{topItems.map((item) => (
-						<li
-							className="flex items-center justify-between rounded-lg border border-[#E5E7EB] bg-white px-4 py-3 text-sm dark:border-[#2D3033] dark:bg-[#151718]"
-							key={item.barcode}
-						>
-							<span className="font-medium text-[#11181C] dark:text-[#ECEDEE]">
-								{resolveProductName(item.barcode)}
-							</span>
-							<span className="rounded-full bg-[#0a7ea4]/10 px-3 py-1 text-xs font-semibold text-[#0a7ea4]">
-								{item.uses} usos
-							</span>
-						</li>
-					))}
+					{topItems.map((item) => {
+						const productIdSuffix = resolveProductId(item.barcode);
+						return (
+							<li
+								className="flex items-center justify-between rounded-lg border border-[#E5E7EB] bg-white px-4 py-3 text-sm dark:border-[#2D3033] dark:bg-[#151718]"
+								key={item.barcode}
+							>
+								<div className="flex flex-col">
+									<span className="font-medium text-[#11181C] dark:text-[#ECEDEE]">
+										{resolveProductName(item.barcode)}
+									</span>
+									<span className="text-xs text-[#9BA1A6]">
+										{productIdSuffix ? `ID ${productIdSuffix}` : "ID —"} • #
+										{item.barcode}
+									</span>
+								</div>
+								<span className="rounded-full bg-[#0a7ea4]/10 px-3 py-1 text-xs font-semibold text-[#0a7ea4]">
+									{item.uses} usos
+								</span>
+							</li>
+						);
+					})}
 				</ol>
 			)}
 		</CardContent>
@@ -438,16 +520,28 @@ export function EstadisticasPage({
 	warehouseId,
 	isEncargado,
 }: EstadisticasPageProps) {
-	const today = useMemo(() => new Date(), []);
+	const [isMounted, setIsMounted] = useState(false);
 	const [scope, setScope] = useState<ScopeOption>(
 		isEncargado ? "global" : "warehouse",
 	);
 	const [selectedWarehouse, setSelectedWarehouse] = useState<string | null>(
 		scope === "warehouse" ? (warehouseId ?? null) : null,
 	);
-	const [dateRange, setDateRange] = useState<DateRange>(
-		clampDateRange({ start: subDays(today, 30), end: today }),
-	);
+	const [dateRange, setDateRange] = useState<DateRange>(() => {
+		// Initialize with epoch date to ensure consistent SSR/client rendering
+		// Will be updated after mount with actual date
+		const epochDate = new Date(0);
+		return clampDateRange({ start: epochDate, end: epochDate });
+	});
+
+	useEffect(() => {
+		setIsMounted(true);
+		// Update date range after mount to use actual current date
+		const actualToday = new Date();
+		setDateRange(
+			clampDateRange({ start: subDays(actualToday, 30), end: actualToday }),
+		);
+	}, []);
 
 	const normalizedRole = useMemo<UserRole["role"]>(() => {
 		if (
@@ -584,10 +678,62 @@ export function EstadisticasPage({
 		}
 	}, [scope, selectedWarehouse, warehouseId, warehouseOptions]);
 
-	const productNameMap = useMemo(
+	const productCatalogNameMap = useMemo(
 		() => buildProductNameMap(productCatalogResponse),
 		[productCatalogResponse],
 	);
+
+	const productDetailsByBarcode = useMemo(() => {
+		const map = new Map<number, { name: string; productId: string | null }>();
+		for (const item of inventoryItems) {
+			if (item.barcode == null) {
+				continue;
+			}
+			const existing = map.get(item.barcode);
+			const description = item.description?.trim();
+			if (!existing) {
+				map.set(item.barcode, {
+					name:
+						description && description.length > 0
+							? description
+							: (productCatalogNameMap.get(item.barcode) ??
+								`Producto ${item.barcode}`),
+					productId: item.id ?? null,
+				});
+				continue;
+			}
+			const shouldReplaceName =
+				description &&
+				description.length > 0 &&
+				(existing.name.trim().length === 0 ||
+					existing.name.startsWith("Producto "));
+			if (shouldReplaceName) {
+				map.set(item.barcode, {
+					name: description,
+					productId: item.id ?? existing.productId,
+				});
+				continue;
+			}
+			if (!existing.productId && item.id) {
+				map.set(item.barcode, {
+					name: existing.name,
+					productId: item.id,
+				});
+			}
+		}
+		return map;
+	}, [inventoryItems, productCatalogNameMap]);
+
+	const normalizeIdSuffix = (value?: string | null) => {
+		if (!value) {
+			return null;
+		}
+		const cleaned = value.replace(/[^a-zA-Z0-9]/g, "");
+		if (!cleaned) {
+			return null;
+		}
+		return cleaned.slice(-6).toUpperCase();
+	};
 
 	const effectiveWarehouseId =
 		scope === "warehouse" ? (selectedWarehouse ?? null) : null;
@@ -644,8 +790,25 @@ export function EstadisticasPage({
 		[inventoryItems, effectiveWarehouseId],
 	);
 
-	const resolveProductName = (barcode: number) =>
-		productNameMap.get(barcode) ?? `Producto ${barcode}`;
+	const resolveProductName = (
+		barcode: number,
+		fallbackDescription?: string | null,
+	) => {
+		if (fallbackDescription && fallbackDescription.trim().length > 0) {
+			return fallbackDescription.trim();
+		}
+		const fromDetails = productDetailsByBarcode.get(barcode)?.name;
+		if (fromDetails && fromDetails.trim().length > 0) {
+			return fromDetails;
+		}
+		return productCatalogNameMap.get(barcode) ?? `Producto ${barcode}`;
+	};
+
+	const resolveProductId = (barcode: number, fallbackId?: string | null) => {
+		const candidate =
+			fallbackId ?? productDetailsByBarcode.get(barcode)?.productId ?? null;
+		return normalizeIdSuffix(candidate);
+	};
 	const resolveWarehouseName = (id: string) =>
 		warehouseNameMap.get(id) ?? `Almacén ${id.slice(0, 6)}`;
 
@@ -685,7 +848,10 @@ export function EstadisticasPage({
 					<h1 className="text-2xl font-semibold text-[#11181C] dark:text-[#ECEDEE]">
 						Estadísticas operativas
 					</h1>
-					<p className="text-sm text-[#687076] dark:text-[#9BA1A6]">
+					<p
+						className="text-sm text-[#687076] dark:text-[#9BA1A6]"
+						suppressHydrationWarning
+					>
 						Resumen global de movimientos, inventario y actividad para el
 						periodo {formattedRange}.
 					</p>
@@ -759,6 +925,7 @@ export function EstadisticasPage({
 						items={lowStockItems}
 						resolveProductName={resolveProductName}
 						resolveWarehouseName={resolveWarehouseName}
+						resolveProductId={resolveProductId}
 					/>
 					<Card className="card-transition">
 						<CardHeader>
@@ -789,6 +956,7 @@ export function EstadisticasPage({
 								title="Productos con más usos"
 								topItems={usageBreakdown.topProducts}
 								resolveProductName={resolveProductName}
+								resolveProductId={resolveProductId}
 							/>
 						</CardContent>
 					</Card>
