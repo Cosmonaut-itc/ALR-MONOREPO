@@ -3355,11 +3355,19 @@ const route = app
 				}
 
 				// Check all products before creating the order to avoid partial failures
-				for (const productId of products) {
-					const productStockCheck = await db
-						.select()
-						.from(schemas.productStock)
-						.where(eq(schemas.productStock.id, productId));
+				const productStockChecks = await Promise.all(
+					products.map((productId) =>
+						db
+							.select()
+							.from(schemas.productStock)
+							.where(eq(schemas.productStock.id, productId)),
+					),
+				);
+
+				// Validate all products
+				for (let i = 0; i < products.length; i++) {
+					const productId = products[i];
+					const productStockCheck = productStockChecks[i];
 
 					if (productStockCheck.length === 0) {
 						return c.json(
@@ -3410,57 +3418,81 @@ const route = app
 				const withdrawOrderId = insertedWithdrawOrder[0].id;
 				const createdDetails: (typeof schemas.withdrawOrderDetails.$inferSelect)[] = [];
 
-				// Create withdraw order details for each product
-				for (const productId of products) {
-					// Get product stock information for updates
-					const productStockCheck = await db
-						.select()
-						.from(schemas.productStock)
-						.where(eq(schemas.productStock.id, productId));
+				// Get all product stock information in parallel
+				const productStockDataForDetails = await Promise.all(
+					products.map((productId) =>
+						db
+							.select()
+							.from(schemas.productStock)
+							.where(eq(schemas.productStock.id, productId)),
+					),
+				);
 
-					if (productStockCheck.length === 0) {
-						continue; // Skip if product not found (shouldn't happen after validation)
-					}
+				// Prepare data for parallel processing
+				const productDataWithStock = products
+					.map((productId, i) => ({
+						productId,
+						productStock: productStockDataForDetails[i]?.[0],
+					}))
+					.filter((item) => item.productStock !== undefined);
 
-					const productStock = productStockCheck[0];
-
-					// Insert withdraw order details
-					const insertedDetails = await db
-						.insert(schemas.withdrawOrderDetails)
-						.values({
-							productId,
-							withdrawOrderId,
-							dateWithdraw,
-						})
-						.returning();
-
-					if (insertedDetails.length > 0) {
-						createdDetails.push(insertedDetails[0]);
-
-						// Update product stock status
-						await db
-							.update(schemas.productStock)
-							.set({
-								isBeingUsed: true,
-								numberOfUses: sql`${schemas.productStock.numberOfUses} + 1`,
-								firstUsed: productStock.firstUsed ?? dateWithdraw,
-								lastUsed: dateWithdraw,
-								lastUsedBy: employeeId,
+				// Insert all withdraw order details in parallel
+				const insertedDetailsResults = await Promise.all(
+					productDataWithStock.map(({ productId }) =>
+						db
+							.insert(schemas.withdrawOrderDetails)
+							.values({
+								productId,
+								withdrawOrderId,
+								dateWithdraw,
 							})
-							.where(eq(schemas.productStock.id, productId));
+							.returning(),
+					),
+				);
 
-						// Create usage history record for withdraw order
-						await db.insert(schemas.productStockUsageHistory).values({
-							productStockId: productId,
-							employeeId,
-							warehouseId: productStock.currentWarehouse,
-							movementType: 'withdraw',
-							action: 'checkout',
-							notes: `Product withdrawn via order ${withdrawOrderId}`,
-							usageDate: new Date(dateWithdraw),
-						});
-					}
+				// Filter successful inserts and collect details
+				const successfulInserts = insertedDetailsResults
+					.map((result, index) => ({
+						detail: result[0],
+						productData: productDataWithStock[index],
+					}))
+					.filter((item) => item.detail !== undefined);
+
+				for (const { detail } of successfulInserts) {
+					createdDetails.push(detail);
 				}
+
+				// Update product stock status and create usage history in parallel
+				await Promise.all(
+					successfulInserts.map(({ productData }) => {
+						const { productId, productStock } = productData;
+						return Promise.all([
+							// Update product stock status
+							db
+								.update(schemas.productStock)
+								.set({
+									isBeingUsed: true,
+									numberOfUses: sql`${schemas.productStock.numberOfUses} + 1`,
+									firstUsed: productStock.firstUsed ?? dateWithdraw,
+									lastUsed: dateWithdraw,
+									lastUsedBy: employeeId,
+								})
+								.where(eq(schemas.productStock.id, productId)),
+							// Create usage history record for withdraw order
+							db
+								.insert(schemas.productStockUsageHistory)
+								.values({
+									productStockId: productId,
+									employeeId,
+									warehouseId: productStock.currentWarehouse,
+									movementType: 'withdraw',
+									action: 'checkout',
+									notes: `Product withdrawn via order ${withdrawOrderId}`,
+									usageDate: new Date(dateWithdraw),
+								}),
+						]);
+					}),
+				);
 
 				// Check if all details were created successfully
 				if (createdDetails.length !== products.length) {
