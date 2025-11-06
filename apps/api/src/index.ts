@@ -5625,22 +5625,39 @@ const route = app
 		'/api/auth/replenishment-orders',
 		zValidator('query', replenishmentOrderStatusQuerySchema),
 		async (c) => {
-			const { status } = c.req.valid('query');
-			const user = c.get('user') as SessionUser | null;
+			try {
+				const { status } = c.req.valid('query');
+				const user = c.get('user') as SessionUser | null;
 
-			const orders = await listReplenishmentOrders({
-				status,
-				user,
-			});
+				const orders = await listReplenishmentOrders({
+					status,
+					user,
+				});
 
-			return c.json(
-				{
-					success: true,
-					message: 'Replenishment orders retrieved successfully',
-					data: orders,
-				} satisfies ApiResponse,
-				200,
-			);
+				return c.json(
+					{
+						success: true,
+						message: 'Replenishment orders retrieved successfully',
+						data: orders,
+					} satisfies ApiResponse,
+					200,
+				);
+			} catch (error) {
+				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
+				console.error('Error fetching replenishment orders:', error);
+				logErrorDetails(error, 'GET', '/api/auth/replenishment-orders');
+
+				return c.json(
+					{
+						success: false,
+						message: 'Failed to fetch replenishment orders',
+						...(process.env.NODE_ENV === 'development' && {
+							error: error instanceof Error ? error.message : 'Unknown error',
+						}),
+					} satisfies ApiResponse,
+					500,
+				);
+			}
 		},
 	)
 	.get(
