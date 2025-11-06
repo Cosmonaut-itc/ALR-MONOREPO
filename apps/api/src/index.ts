@@ -3277,6 +3277,7 @@ const route = app
 						// Select productStock fields
 						productStockId: schemas.productStock.id,
 						description: schemas.productStock.description,
+						barcode: schemas.productStock.barcode,
 					})
 					.from(schemas.withdrawOrderDetails)
 					.innerJoin(
