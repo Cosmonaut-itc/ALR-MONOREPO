@@ -16,6 +16,7 @@ type WarehouseOption = {
 	id: string;
 	name: string;
 	detail?: string;
+	isDistributionCenter?: boolean;
 };
 
 type WarehouseMappingEntry = {
@@ -60,10 +61,12 @@ const toWarehouseOption = (entry: UnknownRecord): WarehouseOption | null => {
 	const warehouseName =
 		toStringIfString(entry.warehouseName) ||
 		`Almacén ${warehouseId.slice(0, 6)}`;
+	const cabinetId = toStringIfString(entry.cabinetId);
 	return {
 		id: warehouseId,
 		name: warehouseName,
 		detail: `ID: ${warehouseId}`,
+		isDistributionCenter: !cabinetId,
 	};
 };
 

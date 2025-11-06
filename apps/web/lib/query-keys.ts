@@ -6,5 +6,8 @@ export const queryKeys = {
 	kits: ["kits"],
 	cabinetWarehouse: ["cabinetWarehouse"],
 	warehouses: ["warehouses"],
-	users: ['users'],
+	users: ["users"],
+	replenishmentOrders: ["replenishmentOrders"],
+	replenishmentOrderDetail: ["replenishmentOrderDetail"],
+	stockLimits: ["stockLimits"],
 };

@@ -1,4 +1,5 @@
 /** biome-ignore-all lint/complexity/noExcessiveCognitiveComplexity: Needed to render all of the details*/
+"use memo";
 "use client";
 
 import type { FilterFn } from "@tanstack/react-table";
@@ -36,6 +37,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -53,18 +62,25 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
 import {
 	Tooltip,
 	TooltipContent,
 	TooltipProvider,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useToggleInventoryKit } from "@/lib/mutations/inventory";
+import {
+	useCreateStockLimit,
+	useUpdateStockLimit,
+} from "@/lib/mutations/stock-limits";
 import { useDisposalStore } from "@/stores/disposal-store";
 import type { StockItemWithEmployee } from "@/stores/inventory-store";
 import { type StockItem, useInventoryStore } from "@/stores/inventory-store";
 import type {
 	ProductCatalogItem,
 	ProductCatalogResponse,
+	StockLimit,
 	WarehouseMap,
 } from "@/types";
 import { DisposeItemDialog } from "./DisposeItemDialog";
@@ -77,6 +93,7 @@ type ProductWithInventory = {
 	description: string;
 	stockCount: number;
 	inventoryItems: StockItemWithEmployee[];
+	hasKitItems: boolean;
 };
 
 // Type for individual inventory item display
@@ -93,6 +110,7 @@ type InventoryItemDisplay = {
 	currentCabinet?: string;
 	homeWarehouseId?: string;
 	locationType?: "warehouse" | "cabinet" | "unassigned";
+	isKit?: boolean;
 };
 
 interface ProductCatalogTableProps {
@@ -119,6 +137,14 @@ interface ProductCatalogTableProps {
 	disabledUUIDs?: Set<string>;
 	/** Optional warehouse map response for resolving warehouse names */
 	warehouseMap?: WarehouseMap | null;
+	/** Optional lookup for distribution center warehouse IDs */
+	distributionCenterIds?: Set<string>;
+	/** Optional limits map keyed by `${warehouseId}:${barcode}` */
+	stockLimitsMap?: Map<string, StockLimit>;
+	/** Whether the current user can edit stock limits (enables subtle UI affordances) */
+	canEditLimits?: boolean;
+	/** Whether the current user can toggle kit state for inventory items */
+	canManageKits?: boolean;
 }
 
 type WarehouseMappingEntry = {
@@ -127,6 +153,25 @@ type WarehouseMappingEntry = {
 	warehouseId: string;
 	warehouseName: string;
 };
+
+type LimitDialogContext = {
+	product: ProductWithInventory;
+	warehouseId: string;
+	groupLabel: string;
+	limit: StockLimit | null;
+};
+
+type LimitFormState = {
+	minQuantity: string;
+	maxQuantity: string;
+	notes: string;
+};
+
+const createEmptyLimitFormState = (): LimitFormState => ({
+	minQuantity: "",
+	maxQuantity: "",
+	notes: "",
+});
 
 /**
  * Type guard that checks whether a warehouse map response indicates success and contains mapping entries.
@@ -165,9 +210,10 @@ function extractInventoryItemData(
 ): InventoryItemDisplay {
 	if (item && typeof item === "object" && "productStock" in item) {
 		const itemStock = (item as { productStock: StockItem }).productStock;
-		const employee = (
-			item as { employee?: { name?: string; surname?: string } }
-		).employee;
+	const employee = (
+		item as { employee?: { name?: string; surname?: string } }
+	).employee;
+	const isKitFlag = (itemStock as { isKit?: boolean | null }).isKit ?? false;
 		const locationId = getItemWarehouse(itemStock);
 		const rawCabinet = (itemStock as { currentCabinet?: unknown })
 			.currentCabinet;
@@ -201,8 +247,9 @@ function extractInventoryItemData(
 			currentWarehouse: locationId,
 			currentCabinet: cabinetId,
 			homeWarehouseId: warehouseId,
-			locationType,
-		};
+		locationType,
+		isKit: Boolean(isKitFlag),
+	};
 
 		return result;
 	}
@@ -218,6 +265,7 @@ function extractInventoryItemData(
 		currentCabinet: undefined,
 		homeWarehouseId: undefined,
 		locationType: "unassigned",
+		isKit: false,
 	};
 }
 
@@ -247,6 +295,32 @@ function getItemWarehouse(item: StockItem): string {
 	}
 
 	return "1"; // Default to general warehouse
+}
+
+/**
+ * Determines the location key used for grouping an inventory item in the UI.
+ *
+ * Prefers the current warehouse (which may already resolve cabinets), then the cabinet identifier,
+ * then the home warehouse identifier. Falls back to the sentinel `"unassigned"` when no identifier
+ * is available.
+ *
+ * @param item - Normalized inventory item display object.
+ * @returns A non-empty string identifier representing the item's location grouping key.
+ */
+function getInventoryLocationKey(item: InventoryItemDisplay): string {
+	const candidates = [
+		item.currentWarehouse,
+		item.currentCabinet,
+		item.homeWarehouseId,
+	];
+
+	for (const candidate of candidates) {
+		if (candidate && typeof candidate === "string" && candidate.trim() !== "") {
+			return candidate.trim();
+		}
+	}
+
+	return "unassigned";
 }
 
 /**
@@ -314,6 +388,10 @@ export function ProductCatalogTable({
 	disabledUUIDs = new Set(),
 	enableDispose = false,
 	warehouseMap = null,
+	distributionCenterIds = new Set(),
+	stockLimitsMap,
+	canEditLimits = false,
+	canManageKits = false,
 }: ProductCatalogTableProps) {
 	// Disposal store for dispose dialog
 	const { show: showDisposeDialog } = useDisposalStore();
@@ -326,6 +404,8 @@ export function ProductCatalogTable({
 		productCatalog: storedProductCatalog,
 		inventoryData: storedInventoryData,
 	} = useInventoryStore();
+	const { mutateAsync: toggleKitAsync, isPending: isTogglingKit } =
+		useToggleInventoryKit();
 
 	const warehouseEntries = useMemo<WarehouseMappingEntry[]>(() => {
 		if (isWarehouseMapSuccess(warehouseMap)) {
@@ -349,6 +429,44 @@ export function ProductCatalogTable({
 		return lookup;
 	}, [warehouseEntries]);
 
+	const warehouseIdSet = useMemo(() => {
+		const ids = new Set<string>();
+		for (const entry of warehouseEntries) {
+			if (entry?.warehouseId) {
+				ids.add(entry.warehouseId);
+			}
+		}
+		return ids;
+	}, [warehouseEntries]);
+
+	const cabinetToWarehouseMap = useMemo(() => {
+		const lookup = new Map<string, string>();
+		for (const entry of warehouseEntries) {
+			if (entry?.cabinetId && entry?.warehouseId) {
+				lookup.set(entry.cabinetId, entry.warehouseId);
+			}
+		}
+		return lookup;
+	}, [warehouseEntries]);
+
+	const resolveWarehouseIdForLimit = useCallback(
+		(locationId?: string | null) => {
+			const id = locationId?.toString().trim() ?? "";
+			if (!id || id === "unassigned") {
+				return null;
+			}
+			if (warehouseIdSet.has(id)) {
+				return id;
+			}
+			const mappedWarehouseId = cabinetToWarehouseMap.get(id);
+			if (mappedWarehouseId) {
+				return mappedWarehouseId;
+			}
+			return id;
+		},
+		[cabinetToWarehouseMap, warehouseIdSet],
+	);
+
 	const resolveWarehouseName = useCallback(
 		(warehouseId?: string | null) => {
 			const id = warehouseId?.toString().trim() ?? "";
@@ -357,12 +475,134 @@ export function ProductCatalogTable({
 			}
 			const mappedName = warehouseNameLookup.get(id);
 			if (mappedName) {
-				return mappedName;
+				return distributionCenterIds.has(id)
+					? `${mappedName} (Centro de distribución)`
+					: mappedName;
 			}
-			return id.length > 8 ? `Almacén ${id.slice(0, 8)}...` : `Almacén ${id}`;
+			const baseName =
+				id.length > 8 ? `Almacén ${id.slice(0, 8)}...` : `Almacén ${id}`;
+			return distributionCenterIds.has(id)
+				? `${baseName} (Centro de distribución)`
+				: baseName;
 		},
-		[warehouseNameLookup],
+		[distributionCenterIds, warehouseNameLookup],
 	);
+
+	const { mutateAsync: createStockLimit, isPending: isCreatingStockLimit } =
+		useCreateStockLimit();
+	const { mutateAsync: updateStockLimit, isPending: isUpdatingStockLimit } =
+		useUpdateStockLimit();
+	const isSavingStockLimit = isCreatingStockLimit || isUpdatingStockLimit;
+	const [isLimitDialogOpen, setIsLimitDialogOpen] = useState(false);
+	const [limitDialogContext, setLimitDialogContext] =
+		useState<LimitDialogContext | null>(null);
+	const [limitFormState, setLimitFormState] = useState<LimitFormState>(
+		createEmptyLimitFormState,
+	);
+	const [limitFormError, setLimitFormError] = useState<string | null>(null);
+
+	const handleOpenLimitDialog = useCallback((context: LimitDialogContext) => {
+		setLimitDialogContext(context);
+		setLimitFormState({
+			minQuantity:
+				context.limit && Number.isFinite(context.limit.minQuantity)
+					? context.limit.minQuantity.toString()
+					: "",
+			maxQuantity:
+				context.limit && Number.isFinite(context.limit.maxQuantity)
+					? context.limit.maxQuantity.toString()
+					: "",
+			notes: context.limit?.notes ?? "",
+		});
+		setLimitFormError(null);
+		setIsLimitDialogOpen(true);
+	}, []);
+
+	const handleLimitDialogOpenChange = useCallback((open: boolean) => {
+		setIsLimitDialogOpen(open);
+		if (!open) {
+			setLimitDialogContext(null);
+			setLimitFormState(createEmptyLimitFormState());
+			setLimitFormError(null);
+		}
+	}, []);
+
+	const handleLimitFormChange = useCallback(
+		(field: keyof LimitFormState, value: string) => {
+			setLimitFormState((prev) => ({
+				...prev,
+				[field]: value,
+			}));
+			setLimitFormError(null);
+		},
+		[],
+	);
+
+	const handleSubmitStockLimit = useCallback(async () => {
+		if (!limitDialogContext) {
+			return;
+		}
+		const { product, warehouseId, limit } = limitDialogContext;
+		if (!warehouseId) {
+			setLimitFormError("No se pudo determinar el almacén para este límite.");
+			return;
+		}
+		const rawMin = limitFormState.minQuantity.trim();
+		const rawMax = limitFormState.maxQuantity.trim();
+		if (!rawMin || !rawMax) {
+			setLimitFormError("Completa los campos de mínimo y máximo.");
+			return;
+		}
+		const min = Number.parseInt(rawMin, 10);
+		const max = Number.parseInt(rawMax, 10);
+		if (Number.isNaN(min) || Number.isNaN(max)) {
+			setLimitFormError("Ingresa cantidades numéricas válidas.");
+			return;
+		}
+		if (min < 0 || max < 0) {
+			setLimitFormError("Las cantidades no pueden ser negativas.");
+			return;
+		}
+		if (min > max) {
+			setLimitFormError("El mínimo no puede ser mayor al máximo.");
+			return;
+		}
+		const notesValue = limitFormState.notes.trim();
+		try {
+			if (limit) {
+				await updateStockLimit({
+					warehouseId,
+					barcode: product.barcode,
+					minQuantity: min,
+					maxQuantity: max,
+					notes: notesValue.length > 0 ? notesValue : undefined,
+				});
+			} else {
+				await createStockLimit({
+					warehouseId,
+					barcode: product.barcode,
+					minQuantity: min,
+					maxQuantity: max,
+					notes: notesValue.length > 0 ? notesValue : undefined,
+				});
+			}
+			handleLimitDialogOpenChange(false);
+		} catch (error) {
+			if (error instanceof Error && error.message) {
+				setLimitFormError(error.message);
+			} else {
+				setLimitFormError("No se pudo guardar el límite.");
+			}
+		}
+	}, [
+		createStockLimit,
+		handleLimitDialogOpenChange,
+		limitDialogContext,
+		limitFormState.maxQuantity,
+		limitFormState.minQuantity,
+		limitFormState.notes,
+		updateStockLimit,
+	]);
 
 	// Set inventory data in store
 	useEffect(() => {
@@ -411,18 +651,19 @@ export function ProductCatalogTable({
 			normalizedWarehouse && normalizedWarehouse !== "all",
 		);
 
-		return storedProductCatalog.map((product) => {
-			// Get all inventory items for this product in the specified warehouse
-			if (!storedInventoryData) {
-				return {
-					...product,
-					inventoryItems: [],
-					stockCount: 0,
-				};
-			}
+	return storedProductCatalog.map((product) => {
+		// Get all inventory items for this product in the specified warehouse
+		if (!storedInventoryData) {
+			return {
+				...product,
+				inventoryItems: [],
+				stockCount: 0,
+				hasKitItems: false,
+			};
+		}
 
-			const inventoryItems: StockItemWithEmployee[] =
-				storedInventoryData?.filter((item) => {
+		const inventoryItems: StockItemWithEmployee[] =
+			storedInventoryData?.filter((item) => {
 					const itemStock = (item as { productStock: StockItem }).productStock;
 					if (getItemBarcode(itemStock) !== product.barcode) {
 						return false;
@@ -433,12 +674,16 @@ export function ProductCatalogTable({
 					return getItemWarehouse(itemStock) === normalizedWarehouse;
 				});
 
-			return {
-				...product,
-				inventoryItems,
-				stockCount: inventoryItems.length,
-			};
-		});
+		return {
+			...product,
+			inventoryItems,
+			stockCount: inventoryItems.length,
+			hasKitItems: inventoryItems.some((entry) => {
+				const stock = (entry as { productStock?: StockItem }).productStock;
+				return Boolean(stock?.isKit);
+			}),
+		};
+	});
 	}, [storedProductCatalog, storedInventoryData, warehouse]);
 
 	// State for table features
@@ -446,6 +691,7 @@ export function ProductCatalogTable({
 	const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
 	const [globalFilter, setGlobalFilter] = useState("");
 	const [categoryFilter, setCategoryFilter] = useState<string>("all");
+	const [warehouseFilter, setWarehouseFilter] = useState<string>("all");
 	const [expanded, setExpanded] = useState<ExpandedState>({});
 	const [pagination, setPagination] = useState<PaginationState>({
 		pageIndex: 0,
@@ -456,12 +702,141 @@ export function ProductCatalogTable({
 	const [selectedByBarcode, setSelectedByBarcode] = useState<
 		Record<number, Set<string>>
 	>({});
+	/**
+	 * Tracks expanded warehouse groups per product barcode for nested collapsible sections.
+	 */
+	const [expandedGroupsByBarcode, setExpandedGroupsByBarcode] = useState<
+		Record<number, Set<string>>
+	>({});
 
 	// Extract unique categories from products
 	const uniqueCategories = useMemo(() => {
 		const categories = products.map((product) => product.category);
 		return Array.from(new Set(categories)).sort();
 	}, [products]);
+
+	const warehouseFilterOptions = useMemo(() => {
+		const options = new Map<string, string>();
+		let hasUnassigned = false;
+
+		const addOption = (identifier?: string | null) => {
+			const id = typeof identifier === "string" ? identifier.trim() : "";
+			if (!id) {
+				return;
+			}
+			if (id === "unassigned") {
+				hasUnassigned = true;
+				return;
+			}
+			if (!options.has(id)) {
+				options.set(id, resolveWarehouseName(id));
+			}
+		};
+
+		for (const entry of warehouseEntries) {
+			if (entry?.warehouseId) {
+				addOption(entry.warehouseId);
+			}
+		}
+
+		for (const product of products) {
+			for (const item of product.inventoryItems) {
+				const data = extractInventoryItemData(item);
+				const locationKey = getInventoryLocationKey(data);
+				if (locationKey === "unassigned") {
+					hasUnassigned = true;
+				}
+				addOption(locationKey);
+				addOption(data.currentWarehouse ?? null);
+				addOption(data.currentCabinet ?? null);
+				addOption(data.homeWarehouseId ?? null);
+				const resolvedCandidates = [
+					resolveWarehouseIdForLimit(locationKey),
+					resolveWarehouseIdForLimit(data.currentWarehouse),
+					resolveWarehouseIdForLimit(data.currentCabinet),
+					resolveWarehouseIdForLimit(data.homeWarehouseId),
+				];
+				for (const candidate of resolvedCandidates) {
+					addOption(candidate ?? null);
+				}
+			}
+		}
+
+		const optionArray = Array.from(options.entries()).map(([value, label]) => ({
+			value,
+			label,
+		}));
+		optionArray.sort((a, b) => a.label.localeCompare(b.label, "es"));
+
+		if (hasUnassigned) {
+			optionArray.push({
+				value: "unassigned",
+				label: resolveWarehouseName("unassigned"),
+			});
+		}
+
+		return optionArray;
+	}, [
+		warehouseEntries,
+		products,
+		resolveWarehouseIdForLimit,
+		resolveWarehouseName,
+	]);
+
+	const filteredProducts = useMemo(() => {
+		if (warehouseFilter === "all") {
+			return products;
+		}
+
+		return products.filter((product) =>
+			product.inventoryItems.some((item) => {
+				const data = extractInventoryItemData(item);
+				const candidates = new Set<string>();
+
+				const addCandidate = (identifier?: string | null) => {
+					const id = typeof identifier === "string" ? identifier.trim() : "";
+					if (id) {
+						candidates.add(id);
+					}
+				};
+
+				const locationKey = getInventoryLocationKey(data);
+				addCandidate(locationKey);
+				addCandidate(data.currentWarehouse ?? null);
+				addCandidate(data.currentCabinet ?? null);
+				addCandidate(data.homeWarehouseId ?? null);
+
+				const resolvedCandidates = [
+					resolveWarehouseIdForLimit(locationKey),
+					resolveWarehouseIdForLimit(data.currentWarehouse),
+					resolveWarehouseIdForLimit(data.currentCabinet),
+					resolveWarehouseIdForLimit(data.homeWarehouseId),
+				];
+
+				for (const candidate of resolvedCandidates) {
+					addCandidate(candidate ?? null);
+				}
+
+				if (warehouseFilter === "unassigned") {
+					return candidates.has("unassigned");
+				}
+
+				return candidates.has(warehouseFilter);
+			}),
+		);
+	}, [products, warehouseFilter, resolveWarehouseIdForLimit]);
+
+	useEffect(() => {
+		if (warehouseFilter === "all") {
+			return;
+		}
+		const hasSelection = warehouseFilterOptions.some(
+			(option) => option.value === warehouseFilter,
+		);
+		if (!hasSelection) {
+			setWarehouseFilter("all");
+		}
+	}, [warehouseFilter, warehouseFilterOptions]);
 
 	// Custom global filter function - split into smaller functions to reduce complexity
 	const searchInProduct = useMemo(
@@ -583,11 +958,7 @@ export function ProductCatalogTable({
 					(item) => {
 						const data = extractInventoryItemData(item);
 						const key = data.uuid || data.id || "";
-						const warehouseKey =
-							data.currentWarehouse ??
-							data.currentCabinet ??
-							data.homeWarehouseId ??
-							"unassigned";
+						const warehouseKey = getInventoryLocationKey(data);
 						return { data, key, warehouseKey };
 					},
 				);
@@ -595,6 +966,27 @@ export function ProductCatalogTable({
 				const selectedCount = displayItems.reduce((acc, item) => {
 					return item.key && productSelection.has(item.key) ? acc + 1 : acc;
 				}, 0);
+				const toggleCandidates = displayItems.filter((item) => {
+					const id = item.data.id ?? "";
+					return Boolean(id) && !id.startsWith("uuid-");
+				});
+				const isToggleDisabled = toggleCandidates.length === 0 || isTogglingKit;
+
+				const isGroupExpanded = (barcode: number, key: string) =>
+					Boolean(expandedGroupsByBarcode[barcode]?.has(key));
+
+				const toggleGroupExpanded = (barcode: number, key: string) => {
+					setExpandedGroupsByBarcode((prev) => {
+						const current = prev[barcode] ?? new Set<string>();
+						const next = new Set(current);
+						if (next.has(key)) {
+							next.delete(key);
+						} else {
+							next.add(key);
+						}
+						return { ...prev, [barcode]: next };
+					});
+				};
 
 				const toggleUUID = (identifier: string, enabled: boolean) => {
 					if (!identifier) {
@@ -632,6 +1024,60 @@ export function ProductCatalogTable({
 					}
 				};
 
+				const handleToggleKitSelection = async () => {
+					if (!canManageKits) {
+						return;
+					}
+					if (toggleCandidates.length === 0) {
+						toast.error("No hay artículos válidos para actualizar.");
+						return;
+					}
+					const updates = toggleCandidates.map((item) => {
+						const productStockId = item.data.id ?? "";
+						const contexts = new Set<string>();
+						if (warehouse && warehouse.trim().length > 0) {
+							contexts.add(warehouse.trim());
+						}
+						const locationCandidates = [
+							item.data.currentWarehouse,
+							item.data.currentCabinet,
+							item.data.homeWarehouseId,
+							getInventoryLocationKey(item.data),
+						];
+						for (const candidate of locationCandidates) {
+							if (candidate && candidate.trim() !== "") {
+								contexts.add(candidate.trim());
+							}
+						}
+						const resolvedCandidates = [
+							resolveWarehouseIdForLimit(item.data.currentWarehouse),
+							resolveWarehouseIdForLimit(item.data.currentCabinet),
+							resolveWarehouseIdForLimit(item.data.homeWarehouseId),
+							resolveWarehouseIdForLimit(item.warehouseKey),
+						];
+						for (const resolved of resolvedCandidates) {
+							if (resolved && resolved.trim() !== "") {
+								contexts.add(resolved.trim());
+							}
+						}
+						return {
+							productStockId,
+							contexts: Array.from(contexts),
+						};
+					});
+					try {
+						for (const update of updates) {
+							await toggleKitAsync({
+								productStockId: update.productStockId,
+								invalidateContexts: update.contexts,
+							});
+						}
+					} catch (error) {
+						// biome-ignore lint/suspicious/noConsole: diagnostics for failed updates
+						console.error(error);
+					}
+				};
+
 				if (displayItems.length === 0) {
 					return (
 						<div className="border-[#E5E7EB] border-b bg-[#F8FAFC] p-4 text-center dark:border-[#374151] dark:bg-[#1A1B1C]">
@@ -642,44 +1088,195 @@ export function ProductCatalogTable({
 					);
 				}
 
-				const groupedByWarehouse = displayItems.reduce((acc, item) => {
-					const locationKey = item.warehouseKey || "unassigned";
-					const bucket = acc.get(locationKey);
-					if (bucket) {
-						bucket.items.push(item);
-					} else {
-						const labelSource =
-							item.data.currentWarehouse ??
-							item.data.currentCabinet ??
-							item.data.homeWarehouseId ??
-							undefined;
-						acc.set(locationKey, {
-							label: resolveWarehouseName(labelSource),
-							items: [item],
-						});
-					}
-					return acc;
-				}, new Map<string, { label: string; items: DisplayItem[] }>());
+				const groupedByWarehouse = displayItems.reduce(
+					(acc, item) => {
+						const locationKey = item.warehouseKey || "unassigned";
+						const bucket = acc.get(locationKey);
+						if (bucket) {
+							bucket.items.push(item);
+						} else {
+							const labelSource =
+								item.data.currentWarehouse ??
+								item.data.currentCabinet ??
+								item.data.homeWarehouseId ??
+								undefined;
+							const isDistributionCenter = labelSource
+								? distributionCenterIds.has(labelSource)
+								: false;
+							const effectiveWarehouseId =
+								resolveWarehouseIdForLimit(labelSource);
+							acc.set(locationKey, {
+								label: resolveWarehouseName(labelSource),
+								items: [item],
+								isDistributionCenter,
+								effectiveWarehouseId,
+							});
+						}
+						return acc;
+					},
+					new Map<
+						string,
+						{
+							label: string;
+							items: DisplayItem[];
+							isDistributionCenter: boolean;
+							effectiveWarehouseId: string | null;
+						}
+					>(),
+				);
 
 				const warehouseGroups = Array.from(groupedByWarehouse.entries());
 
+				type EnrichedWarehouseGroup = {
+					key: string;
+					label: string;
+					items: DisplayItem[];
+					isDistributionCenter: boolean;
+					effectiveWarehouseId: string | null;
+					limit: StockLimit | null;
+					belowMinimum: boolean;
+					aboveMaximum: boolean;
+					limitText: string;
+					limitBadgeLabel: string;
+					limitBadgeClassName: string;
+					limitRangeText: string;
+					currentCount: number;
+				};
+
+				const enrichedWarehouseGroups: EnrichedWarehouseGroup[] =
+					warehouseGroups.map(([groupKey, group]) => {
+						const effectiveWarehouseId = group.effectiveWarehouseId;
+						const limitKey =
+							effectiveWarehouseId && stockLimitsMap
+								? `${effectiveWarehouseId}:${product.barcode}`
+								: null;
+						const limit =
+							limitKey && stockLimitsMap
+								? (stockLimitsMap.get(limitKey) ?? null)
+								: null;
+						const currentCount = group.items.length;
+						const belowMinimum = limit
+							? currentCount < limit.minQuantity
+							: false;
+						const aboveMaximum = limit
+							? currentCount > limit.maxQuantity
+							: false;
+						const limitText = limit
+							? `Límite: ${limit.minQuantity}–${limit.maxQuantity}`
+							: "Sin límite";
+						const limitRangeText = limit
+							? `${limit.minQuantity}–${limit.maxQuantity}`
+							: "Sin límite";
+						let limitBadgeLabel = "Sin límite configurado";
+						let limitBadgeClassName =
+							"bg-[#F3F4F6] text-[#374151] dark:bg-[#374151] dark:text-[#D1D5DB]";
+						if (limit) {
+							if (belowMinimum) {
+								limitBadgeLabel = "Bajo límite";
+								limitBadgeClassName =
+									"bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-100";
+							} else if (aboveMaximum) {
+								limitBadgeLabel = "Sobre límite";
+								limitBadgeClassName =
+									"bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100";
+							} else {
+								limitBadgeLabel = "Dentro del límite";
+								limitBadgeClassName =
+									"bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-100";
+							}
+						}
+						return {
+							key: groupKey,
+							label: group.label,
+							items: group.items,
+							isDistributionCenter: group.isDistributionCenter,
+							effectiveWarehouseId,
+							limit,
+							belowMinimum,
+							aboveMaximum,
+							limitText,
+							limitBadgeLabel,
+							limitBadgeClassName,
+							limitRangeText,
+							currentCount,
+						};
+					});
 				return (
 					<div className="border-[#E5E7EB] border-b bg-[#F8FAFC] p-4 dark:border-[#374151] dark:bg-[#1A1B1C]">
-						<div className="mb-3 flex items-center justify-between">
+						<div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 							<h4 className="font-medium text-[#11181C] text-sm dark:text-[#ECEDEE]">
 								Inventario detallado ({displayItems.length} items)
 							</h4>
-							{selectionEnabledRef && (
-								<Button
-									className="h-8 px-3"
-									disabled={selectedCount === 0}
-									onClick={handleAddToTransfer}
-									size="sm"
-								>
-									Agregar a transferencia ({selectedCount})
-								</Button>
-							)}
+							<div className="flex flex-wrap items-center gap-2">
+								{canManageKits && (
+									<Tooltip>
+										<TooltipTrigger asChild>
+											<Button
+												className="h-8 px-3"
+												disabled={isToggleDisabled}
+												onClick={handleToggleKitSelection}
+												size="sm"
+												type="button"
+												variant="outline"
+											>
+												Actualizar kit
+											</Button>
+										</TooltipTrigger>
+										<TooltipContent side="top">
+											Al hacer click agregaras o quitaras este producto del
+											grupo que se usa en kits
+										</TooltipContent>
+									</Tooltip>
+								)}
+								{selectionEnabledRef && (
+									<Button
+										className="h-8 px-3"
+										disabled={selectedCount === 0}
+										onClick={handleAddToTransfer}
+										size="sm"
+									>
+										Agregar a transferencia ({selectedCount})
+									</Button>
+								)}
+							</div>
 						</div>
+						{enrichedWarehouseGroups.length > 0 && (
+							<div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+								{enrichedWarehouseGroups.map((group) => (
+									<div
+										className="theme-transition rounded-md border border-[#E5E7EB] bg-white p-3 dark:border-[#2D3033] dark:bg-[#151718]"
+										key={`${group.key}-summary`}
+									>
+										<div className="flex items-center justify-between">
+											<span className="font-medium text-[#11181C] text-sm dark:text-[#ECEDEE]">
+												{group.label}
+											</span>
+											<Badge
+												className={group.limitBadgeClassName}
+												variant="secondary"
+											>
+												{group.limitBadgeLabel}
+											</Badge>
+										</div>
+										<div className="mt-3 flex flex-wrap gap-4 text-[#687076] text-xs dark:text-[#9BA1A6]">
+											<div>
+												<p className="uppercase tracking-wide">Inventario</p>
+												<p className="mt-1 font-semibold text-[#11181C] text-sm dark:text-[#ECEDEE]">
+													{group.currentCount} unidad
+													{group.currentCount === 1 ? "" : "es"}
+												</p>
+											</div>
+											<div>
+												<p className="uppercase tracking-wide">Límite</p>
+												<p className="mt-1 font-semibold text-[#11181C] text-sm dark:text-[#ECEDEE]">
+													{group.limit ? group.limitRangeText : "Sin límite"}
+												</p>
+											</div>
+										</div>
+									</div>
+								))}
+							</div>
+						)}
 						<div className="overflow-x-auto">
 							<Table>
 								<TableHeader>
@@ -710,154 +1307,270 @@ export function ProductCatalogTable({
 									</TableRow>
 								</TableHeader>
 								<TableBody>
-									{warehouseGroups.map(([groupKey, group]) => (
-										<React.Fragment key={groupKey}>
-											<TableRow className="bg-[#EAEDF0] text-left text-[#11181C] text-xs uppercase tracking-wide dark:bg-[#252729] dark:text-[#ECEDEE]">
-												<TableCell
-													className="font-semibold"
-													colSpan={detailColumnCount}
-												>
-													<div className="flex items-center justify-between">
-														<span>{group.label}</span>
-														<span className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-															{group.items.length} item(s)
-														</span>
-													</div>
-												</TableCell>
-											</TableRow>
-											{group.items.map((item) => {
-												const { data, key: selectionKey } = item;
-												const isSelected = selectionKey
-													? productSelection.has(selectionKey)
-													: false;
-												const isDisabled =
-													data.isBeingUsed ||
-													(selectionKey
-														? disabledUUIDs.has(selectionKey)
-														: false);
-
-												return (
-													<TableRow
-														className="border-[#E5E7EB] border-b last:border-b-0 dark:border-[#374151]"
-														key={selectionKey || data.id}
-													>
-														<TableCell className="font-mono text-[#687076] text-xs dark:text-[#9BA1A6]">
-															<div className="flex items-center gap-2">
-																{selectionEnabledRef && (
-																	<Checkbox
-																		checked={isSelected}
-																		disabled={isDisabled}
-																		onCheckedChange={(checked) =>
-																			toggleUUID(selectionKey, Boolean(checked))
-																		}
-																	/>
-																)}
-																<span className="truncate">
-																	{(data.id || "").slice(0, 8)}...
-																</span>
-																<Tooltip>
-																	<TooltipTrigger asChild>
-																		<Button
-																			className="h-4 w-4 p-0 hover:bg-[#E5E7EB] dark:hover:bg-[#2D3033]"
-																			onClick={() => {
-																				copyToClipboard(
-																					data.uuid || data.id || "",
-																				);
-																			}}
-																			size="sm"
-																			variant="ghost"
-																		>
-																			<Copy className="h-3 w-3" />
-																		</Button>
-																	</TooltipTrigger>
-																	<TooltipContent side="top">
-																		Copiar UUID
-																	</TooltipContent>
-																</Tooltip>
-																<Tooltip>
-																	<TooltipTrigger asChild>
-																		<Button
-																			aria-label="Reimprimir código QR"
-																			className="h-4 w-4 p-0 hover:bg-[#E5E7EB] dark:hover:bg-[#2D3033]"
-																			disabled={
-																				!onReprintQr || !(data.uuid || data.id)
-																			}
-																			onClick={() => {
-																				if (
-																					!onReprintQr ||
-																					!(data.uuid || data.id)
-																				) {
-																					return;
-																				}
-																				onReprintQr({ product, item: data });
-																			}}
-																			size="sm"
-																			variant="ghost"
-																		>
-																			<QrCode className="h-3 w-3" />
-																		</Button>
-																	</TooltipTrigger>
-																	<TooltipContent side="top">
-																		Generar nuevamente el código QR
-																	</TooltipContent>
-																</Tooltip>
-															</div>
-														</TableCell>
-														<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-															{formatDate(data.lastUsed)}
-														</TableCell>
-														<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-															{data.lastUsedBy || "N/A"}
-														</TableCell>
-														<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-															{data.numberOfUses}
-														</TableCell>
-														<TableCell>
-															<Badge
-																className={
-																	data.isBeingUsed
-																		? "bg-[#EF4444] text-white text-xs"
-																		: "bg-[#10B981] text-white text-xs"
-																}
-																variant={
-																	data.isBeingUsed ? "destructive" : "default"
-																}
-															>
-																{data.isBeingUsed ? "En Uso" : "Disponible"}
-															</Badge>
-														</TableCell>
-														<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-															{formatDate(data.firstUsed)}
-														</TableCell>
-														<TableCell>
-															{enableDispose && (
+									{enrichedWarehouseGroups.map((group) => {
+										const isExpanded = isGroupExpanded(
+											product.barcode,
+											group.key,
+										);
+										const limitTextClassName = group.belowMinimum
+											? "font-semibold text-[#B54708] dark:text-[#F7B84B]"
+											: group.aboveMaximum
+												? "font-semibold text-[#B42318] dark:text-[#F87171]"
+												: "";
+										const canShowAction =
+											canEditLimits && Boolean(group.effectiveWarehouseId);
+										const editActionLabel = group.limit ? "Editar" : "Definir";
+										return (
+											<React.Fragment key={group.key}>
+												<TableRow className="bg-[#EAEDF0] text-left text-[#11181C] text-xs uppercase tracking-wide dark:bg-[#252729] dark:text-[#ECEDEE]">
+													<TableCell colSpan={detailColumnCount}>
+														<div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+															<div className="flex flex-wrap items-center gap-2">
 																<Button
-																	className="h-6 w-6 p-0 text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950 dark:hover:text-red-300"
-																	onClick={() => {
-																		showDisposeDialog({
-																			id: data.id || "",
-																			uuid: data.id || "",
-																			barcode: product.barcode,
-																			productInfo: {
-																				name: product.name,
-																				category: product.category,
-																				description: product.description,
-																			},
-																		});
-																	}}
+																	aria-controls={`wg-${product.barcode}-${group.key}`}
+																	aria-expanded={isExpanded}
+																	className="h-6 w-6 p-0"
+																	onClick={() =>
+																		toggleGroupExpanded(
+																			product.barcode,
+																			group.key,
+																		)
+																	}
 																	size="sm"
-																	title="Dar de baja artículo"
+																	type="button"
 																	variant="ghost"
 																>
-																	<Trash2 className="h-4 w-4" />
+																	{isExpanded ? (
+																		<ChevronUp className="h-4 w-4" />
+																	) : (
+																		<ChevronDown className="h-4 w-4" />
+																	)}
 																</Button>
-															)}
-														</TableCell>
-													</TableRow>
-												);
-											})}
-										</React.Fragment>
-									))}
+																<span className="font-semibold text-[#11181C] dark:text-[#ECEDEE]">
+																	{group.label}
+																</span>
+																{group.isDistributionCenter && (
+																	<Badge
+																		className="bg-[#6B7280] text-white"
+																		variant="secondary"
+																	>
+																		Centro de distribución
+																	</Badge>
+																)}
+																{group.belowMinimum && (
+																	<Badge
+																		className="bg-amber-100 text-amber-800 hover:bg-amber-100 dark:bg-amber-900 dark:text-amber-100"
+																		variant="secondary"
+																	>
+																		Bajo mínimo
+																	</Badge>
+																)}
+																{group.aboveMaximum && (
+																	<Badge
+																		className="bg-red-100 text-red-800 hover:bg-red-100 dark:bg-red-900 dark:text-red-100"
+																		variant="secondary"
+																	>
+																		Sobre límite
+																	</Badge>
+																)}
+															</div>
+															<div className="flex flex-wrap items-center gap-3 text-[#687076] text-xs dark:text-[#9BA1A6]">
+																<span>{group.items.length} item(s)</span>
+																<span className={limitTextClassName}>
+																	{group.limitText}
+																</span>
+																{canShowAction && (
+																	<Button
+																		className="h-7 px-2 text-xs"
+																		disabled={isSavingStockLimit}
+																		onClick={() => {
+																			if (!group.effectiveWarehouseId) {
+																				return;
+																			}
+																			handleOpenLimitDialog({
+																				product,
+																				warehouseId: group.effectiveWarehouseId,
+																				groupLabel: group.label,
+																				limit: group.limit,
+																			});
+																		}}
+																		size="sm"
+																		variant="ghost"
+																	>
+																		{editActionLabel}
+																	</Button>
+																)}
+															</div>
+														</div>
+													</TableCell>
+												</TableRow>
+												<TableRow>
+													<TableCell
+														className="p-0"
+														colSpan={detailColumnCount}
+													>
+														<div id={`wg-${product.barcode}-${group.key}`} />
+													</TableCell>
+												</TableRow>
+												{isExpanded && (
+													<React.Fragment>
+														{group.items.map((item) => {
+															const { data, key: selectionKey } = item;
+															const isSelected = selectionKey
+																? productSelection.has(selectionKey)
+																: false;
+															const isDisabled =
+																data.isBeingUsed ||
+																group.isDistributionCenter ||
+																(selectionKey
+																	? disabledUUIDs.has(selectionKey)
+																	: false);
+															const hasLimit = Boolean(group.limit);
+															return (
+																<TableRow
+																	className="border-[#E5E7EB] border-b last:border-b-0 dark:border-[#374151]"
+																	data-has-limit={hasLimit ? "true" : undefined}
+																	key={selectionKey || data.id}
+																>
+																	<TableCell className="font-mono text-[#687076] text-xs dark:text-[#9BA1A6]">
+																		<div className="flex flex-col gap-1">
+																			{selectionEnabledRef && (
+																				<Checkbox
+																					checked={isSelected}
+																					disabled={isDisabled}
+																					onCheckedChange={(checked) =>
+																						toggleUUID(
+																							selectionKey,
+																							Boolean(checked),
+																						)
+																					}
+																				/>
+																			)}
+									<span className="truncate">
+										{(data.id || "").slice(0, 8)}...
+									</span>
+									{data.isKit && (
+										<Badge
+											className="bg-[#EDE9FE] text-[#4C1D95] dark:bg-[#312763] dark:text-[#EDE9FE]"
+											variant="secondary"
+										>
+											Kit
+										</Badge>
+									)}
+									<Tooltip>
+																				<TooltipTrigger asChild>
+																					<Button
+																						className="h-4 w-4 p-0 hover:bg-[#E5E7EB] dark:hover:bg-[#2D3033]"
+																						onClick={() => {
+																							copyToClipboard(
+																								data.uuid || data.id || "",
+																							);
+																						}}
+																						size="sm"
+																						variant="ghost"
+																					>
+																						<Copy className="h-3 w-3" />
+																					</Button>
+																				</TooltipTrigger>
+																				<TooltipContent side="top">
+																					Copiar UUID
+																				</TooltipContent>
+																			</Tooltip>
+																			<Tooltip>
+																				<TooltipTrigger asChild>
+																					<Button
+																						aria-label="Reimprimir código QR"
+																						className="h-4 w-4 p-0 hover:bg-[#E5E7EB] dark:hover:bg-[#2D3033]"
+																						disabled={
+																							!onReprintQr ||
+																							!(data.uuid || data.id)
+																						}
+																						onClick={() => {
+																							if (
+																								!onReprintQr ||
+																								!(data.uuid || data.id)
+																							) {
+																								return;
+																							}
+																							onReprintQr({
+																								product,
+																								item: data,
+																							});
+																						}}
+																						size="sm"
+																						variant="ghost"
+																					>
+																						<QrCode className="h-3 w-3" />
+																					</Button>
+																				</TooltipTrigger>
+																				<TooltipContent side="top">
+																					Generar nuevamente el código QR
+																				</TooltipContent>
+																			</Tooltip>
+																		</div>
+																	</TableCell>
+																	<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+																		{formatDate(data.lastUsed)}
+																	</TableCell>
+																	<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+																		{data.lastUsedBy || "N/A"}
+																	</TableCell>
+																	<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+																		{data.numberOfUses}
+																	</TableCell>
+																	<TableCell>
+																		<Badge
+																			className={
+																				data.isBeingUsed
+																					? "bg-[#EF4444] text-white text-xs"
+																					: "bg-[#10B981] text-white text-xs"
+																			}
+																			variant={
+																				data.isBeingUsed
+																					? "destructive"
+																					: "default"
+																			}
+																		>
+																			{data.isBeingUsed
+																				? "En Uso"
+																				: "Disponible"}
+																		</Badge>
+																	</TableCell>
+																	<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+																		{formatDate(data.firstUsed)}
+																	</TableCell>
+																	<TableCell>
+																		{enableDispose && (
+																			<Button
+																				className="h-6 w-6 p-0 text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950 dark:hover:text-red-300"
+																				onClick={() => {
+																					showDisposeDialog({
+																						id: data.id || "",
+																						uuid: data.id || "",
+																						barcode: product.barcode,
+																						productInfo: {
+																							name: product.name,
+																							category: product.category,
+																							description: product.description,
+																						},
+																					});
+																				}}
+																				size="sm"
+																				title="Dar de baja artículo"
+																				variant="ghost"
+																			>
+																				<Trash2 className="h-4 w-4" />
+																			</Button>
+																		)}
+																	</TableCell>
+																</TableRow>
+															);
+														})}
+													</React.Fragment>
+												)}
+											</React.Fragment>
+										);
+									})}
 								</TableBody>
 							</Table>
 						</div>
@@ -870,10 +1583,21 @@ export function ProductCatalogTable({
 			onAddToTransfer,
 			onReprintQr,
 			selectedByBarcode,
+			expandedGroupsByBarcode,
 			disabledUUIDs,
 			showDisposeDialog,
 			enableDispose,
 			resolveWarehouseName,
+			resolveWarehouseIdForLimit,
+			distributionCenterIds,
+			stockLimitsMap,
+			canEditLimits,
+			canManageKits,
+			handleOpenLimitDialog,
+			isSavingStockLimit,
+			toggleKitAsync,
+			isTogglingKit,
+			warehouse,
 		],
 	);
 
@@ -906,9 +1630,31 @@ export function ProductCatalogTable({
 				header: "Producto",
 				cell: ({ row }) => {
 					const product = row.original;
+					const hasLimit = Boolean(
+						stockLimitsMap?.get(`${warehouse}:${product.barcode}`),
+					);
 					return (
 						<div className="font-medium text-[#11181C] dark:text-[#ECEDEE]">
-							<div>{product.name}</div>
+							<div className="flex items-center gap-2">
+								<div>{product.name}</div>
+								{product.hasKitItems && (
+									<Badge
+										className="bg-[#EDE9FE] text-[#4C1D95] dark:bg-[#312763] dark:text-[#EDE9FE]"
+										variant="secondary"
+									>
+										Kit
+									</Badge>
+								)}
+								{hasLimit && (
+									<Badge
+										className="bg-[#F3F4F6] text-[#374151] dark:bg-[#374151] dark:text-[#D1D5DB]"
+										title={canEditLimits ? "Límite configurado" : undefined}
+										variant="secondary"
+									>
+										Límite configurado
+									</Badge>
+								)}
+							</div>
 						</div>
 					);
 				},
@@ -963,7 +1709,7 @@ export function ProductCatalogTable({
 
 	// Initialize the table
 	const table = useReactTable({
-		data: products,
+		data: filteredProducts,
 		columns,
 		getCoreRowModel: getCoreRowModel(),
 		getPaginationRowModel: getPaginationRowModel(),
@@ -1005,7 +1751,7 @@ export function ProductCatalogTable({
 		stockColumn.setFilterValue(showOnlyWithStock ? "with-stock" : undefined);
 	}, [showOnlyWithStock, table]);
 
-	if (products.length === 0) {
+	if (filteredProducts.length === 0) {
 		return (
 			<Card className="theme-transition border-[#E5E7EB] bg-white dark:border-[#374151] dark:bg-[#1E1F20]">
 				<CardContent className="flex flex-col items-center justify-center py-12">
@@ -1026,6 +1772,94 @@ export function ProductCatalogTable({
 			<div className="space-y-4">
 				{/* Dispose Item Dialog */}
 				<DisposeItemDialog />
+				{canEditLimits && (
+					<Dialog
+						open={isLimitDialogOpen}
+						onOpenChange={handleLimitDialogOpenChange}
+					>
+						<DialogContent className="sm:max-w-md">
+							<DialogHeader>
+								<DialogTitle>
+									{limitDialogContext?.limit
+										? "Editar límite de stock"
+										: "Definir límite de stock"}
+								</DialogTitle>
+								<DialogDescription>
+									{limitDialogContext
+										? `Producto: ${limitDialogContext.product.name} · Ubicación: ${limitDialogContext.groupLabel}`
+										: "Configura los límites mínimos y máximos para el producto seleccionado."}
+								</DialogDescription>
+							</DialogHeader>
+							<div className="grid gap-4 py-2">
+								<div className="grid gap-2">
+									<Label htmlFor="stock-limit-min">Cantidad mínima</Label>
+									<Input
+										id="stock-limit-min"
+										inputMode="numeric"
+										min={0}
+										onChange={(event) =>
+											handleLimitFormChange("minQuantity", event.target.value)
+										}
+										placeholder="Ej. 5"
+										type="number"
+										value={limitFormState.minQuantity}
+									/>
+								</div>
+								<div className="grid gap-2">
+									<Label htmlFor="stock-limit-max">Cantidad máxima</Label>
+									<Input
+										id="stock-limit-max"
+										inputMode="numeric"
+										min={0}
+										onChange={(event) =>
+											handleLimitFormChange("maxQuantity", event.target.value)
+										}
+										placeholder="Ej. 20"
+										type="number"
+										value={limitFormState.maxQuantity}
+									/>
+								</div>
+								<div className="grid gap-2">
+									<Label htmlFor="stock-limit-notes">Notas</Label>
+									<Textarea
+										id="stock-limit-notes"
+										maxLength={1000}
+										onChange={(event) =>
+											handleLimitFormChange("notes", event.target.value)
+										}
+										placeholder="Detalles adicionales (opcional)"
+										value={limitFormState.notes}
+									/>
+									<span className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+										Hasta 1000 caracteres.
+									</span>
+								</div>
+								{limitFormError && (
+									<p className="text-[#B54708] text-sm dark:text-[#F7B84B]">
+										{limitFormError}
+									</p>
+								)}
+							</div>
+							<DialogFooter>
+								<Button
+									onClick={() => handleLimitDialogOpenChange(false)}
+									type="button"
+									variant="ghost"
+									disabled={isSavingStockLimit}
+								>
+									Cancelar
+								</Button>
+								<Button
+									onClick={handleSubmitStockLimit}
+									type="button"
+									disabled={isSavingStockLimit}
+								>
+									{isSavingStockLimit ? "Guardando..." : "Guardar"}
+								</Button>
+							</DialogFooter>
+						</DialogContent>
+					</Dialog>
+				)}
 
 				{/* Filters */}
 				<div className="flex flex-wrap items-center gap-4">
@@ -1079,6 +1913,37 @@ export function ProductCatalogTable({
 						</Select>
 					</div>
 
+					{/* Warehouse Filter */}
+					{warehouseFilterOptions.length > 0 && (
+						<div className="min-w-[200px]">
+							<Select
+								onValueChange={setWarehouseFilter}
+								value={warehouseFilter}
+							>
+								<SelectTrigger className="border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]">
+									<SelectValue placeholder="Todos los almacenes" />
+								</SelectTrigger>
+								<SelectContent className="border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
+									<SelectItem
+										className="text-[#11181C] hover:bg-[#F9FAFB] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
+										value="all"
+									>
+										Todos los almacenes
+									</SelectItem>
+									{warehouseFilterOptions.map((option) => (
+										<SelectItem
+											className="text-[#11181C] hover:bg-[#F9FAFB] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
+											key={option.value}
+											value={option.value}
+										>
+											{option.label}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</div>
+					)}
+
 					{/* Stock Filter */}
 					<div className="flex items-center space-x-2">
 						<Checkbox
@@ -1097,13 +1962,17 @@ export function ProductCatalogTable({
 					</div>
 
 					{/* Clear All Filters */}
-					{(globalFilter || categoryFilter !== "all" || showOnlyWithStock) && (
+					{(globalFilter ||
+						categoryFilter !== "all" ||
+						showOnlyWithStock ||
+						warehouseFilter !== "all") && (
 						<Button
 							className="text-[#687076] hover:text-[#11181C] dark:text-[#9BA1A6] dark:hover:text-[#ECEDEE]"
 							onClick={() => {
 								setGlobalFilter("");
 								setCategoryFilter("all");
 								setShowOnlyWithStock(false);
+								setWarehouseFilter("all");
 							}}
 							size="sm"
 							variant="ghost"
@@ -1114,8 +1983,8 @@ export function ProductCatalogTable({
 
 					{/* Results Counter */}
 					<div className="whitespace-nowrap text-[#687076] text-sm dark:text-[#9BA1A6]">
-						{table.getFilteredRowModel().rows.length} de {products.length}{" "}
-						productos
+						{table.getFilteredRowModel().rows.length} de{" "}
+						{filteredProducts.length} productos
 					</div>
 				</div>
 

@@ -1,3 +1,5 @@
+'use memo';
+
 import { Card, CardContent } from "@/components/ui/card"
 import { Package, Archive, Clock, AlertTriangle, type LucideIcon } from 'lucide-react'
 import type { DashboardMetric } from "@/lib/schemas"

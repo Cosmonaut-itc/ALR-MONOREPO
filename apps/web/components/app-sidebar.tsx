@@ -1,7 +1,9 @@
+"use memo";
 "use client";
 
 import {
 	BarChart3,
+	Box,
 	Home,
 	LogOut,
 	Package,
@@ -49,6 +51,11 @@ const navigationItems = [
 		title: "Inventario",
 		url: "/inventario",
 		icon: Package,
+	},
+	{
+		title: "Pedidos",
+		url: "/pedidos",
+		icon: Box,
 	},
 
 	{

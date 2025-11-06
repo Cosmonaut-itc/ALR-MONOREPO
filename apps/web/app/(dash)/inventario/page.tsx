@@ -1,6 +1,7 @@
 /** biome-ignore-all lint/suspicious/useAwait: Needed for hydration */
 /** biome-ignore-all lint/suspicious/noConsole: Needed for error logging */
 
+'use memo';
 import { dehydrate, HydrationBoundary } from "@tanstack/react-query";
 import { getQueryClient } from "@/app/get-query-client";
 import { GenericBoundaryWrapper } from "@/components/suspense-generics/general-wrapper";
@@ -13,6 +14,10 @@ import {
 	fetchStockByWarehouseServer,
 } from "@/lib/server-functions/inventory";
 import { getServerAuth } from "@/lib/server-functions/server-auth";
+import {
+	fetchAllStockLimitsServer,
+	fetchStockLimitsByWarehouseServer,
+} from "@/lib/server-functions/stock-limits";
 import { SkeletonInventoryTable } from "@/ui/skeletons/Skeleton.InventoryTable";
 import { InventarioPage } from "./inventory";
 
@@ -35,6 +40,10 @@ export default async function AbastecimientoPage() {
 	const inventoryPrefetchFn = isEncargado
 		? fetchAllProductStockServer
 		: () => fetchStockByWarehouseServer(warehouseId);
+	const stockLimitsScope = isEncargado ? "all" : warehouseId;
+	const stockLimitsPrefetchFn = isEncargado
+		? fetchAllStockLimitsServer
+		: () => fetchStockLimitsByWarehouseServer(warehouseId);
 
 	try {
 		// Prefetch inventory data so the client query hydrates
@@ -53,6 +62,12 @@ export default async function AbastecimientoPage() {
 		queryClient.prefetchQuery({
 			queryKey: queryKeys.cabinetWarehouse,
 			queryFn: () => fetchCabinetWarehouseServer(),
+		});
+
+		// Prefetch stock limits
+		queryClient.prefetchQuery({
+			queryKey: createQueryKey(queryKeys.stockLimits, [stockLimitsScope]),
+			queryFn: stockLimitsPrefetchFn,
 		});
 		return (
 			<HydrationBoundary state={dehydrate(queryClient)}>

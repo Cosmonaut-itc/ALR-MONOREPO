@@ -1,3 +1,5 @@
+'use memo';
+
 import { Skeleton } from "@/components/ui/skeleton"
 
 export function SidebarSkeleton() {

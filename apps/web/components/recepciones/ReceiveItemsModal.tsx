@@ -1,3 +1,4 @@
+'use memo';
 'use client';
 
 import { Plus, Trash2 } from 'lucide-react';

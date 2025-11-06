@@ -1,4 +1,5 @@
 /** biome-ignore-all lint/correctness/noChildrenProp: Needed for form usage */
+"use memo";
 "use client";
 
 import { useForm } from "@tanstack/react-form";

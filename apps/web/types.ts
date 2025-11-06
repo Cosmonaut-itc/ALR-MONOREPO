@@ -6,7 +6,7 @@ export const loginSchema = t({
 });
 
 export const userRoleSchema = t({
-	role: "'encargado' | 'admin'",
+	role: "'employee' | 'encargado' | 'admin'",
 });
 
 export type LoginType = typeof loginSchema.infer;
@@ -49,6 +49,26 @@ export type WarehouseTransfer = Awaited<
 export type WarehouseTransferDetails = Awaited<
 	ReturnType<
 		typeof import("./lib/fetch-functions/recepciones").getTransferDetailsById
+	>
+>;
+
+/**
+ * Type inference for replenishment orders list response
+ * Extracted from the API response of client.api['replenishment-orders'].$get()
+ */
+export type ReplenishmentOrdersResponse = Awaited<
+	ReturnType<
+		typeof import("./lib/fetch-functions/replenishment-orders").getReplenishmentOrders
+	>
+>;
+
+/**
+ * Type inference for replenishment order detail response
+ * Extracted from the API response of client.api['replenishment-orders'][id].$get()
+ */
+export type ReplenishmentOrderDetail = Awaited<
+	ReturnType<
+		typeof import("./lib/fetch-functions/replenishment-orders").getReplenishmentOrderById
 	>
 >;
 
@@ -108,6 +128,26 @@ export type ProductCatalogItem = ProductCatalogData extends { data: infer T }
 		? U
 		: never
 	: never;
+
+export type StockLimit = {
+	warehouseId: string;
+	barcode: number;
+	minQuantity: number;
+	maxQuantity: number;
+	notes?: string | null;
+};
+
+export type StockLimitResponse = {
+	success: boolean;
+	message?: string;
+	data?: StockLimit;
+};
+
+export type StockLimitListResponse = {
+	success: boolean;
+	message?: string;
+	data?: StockLimit[];
+};
 
 /**
  * Type for creating a transfer order (matches API endpoint expectations)

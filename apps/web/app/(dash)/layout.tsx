@@ -1,3 +1,5 @@
+'use memo';
+
 import { AppSidebar } from '@/components/app-sidebar';
 import { ThemeToggle } from '@/components/theme-toggle';
 import {

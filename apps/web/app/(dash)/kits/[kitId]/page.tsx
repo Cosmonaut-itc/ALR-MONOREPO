@@ -1,6 +1,7 @@
 /** biome-ignore-all lint/suspicious/useAwait: Needed for hydration */
 /** biome-ignore-all lint/suspicious/noConsole: Needed for error logging */
 
+'use memo';
 import { dehydrate, HydrationBoundary } from "@tanstack/react-query";
 import { getQueryClient } from "@/app/get-query-client";
 import { GenericBoundaryWrapper } from "@/components/suspense-generics/general-wrapper";
@@ -12,14 +13,22 @@ import { KitInspectionPage } from "./kits-details";
 
 export const dynamic = "force-dynamic";
 
-export default async function Page({ params }: { params: { kitId: string } }) {
+type KitsRouteParams = {
+	kitId: string;
+};
+
+export default async function Page({
+	params,
+}: {
+	params: Promise<KitsRouteParams>;
+}) {
 	const queryClient = getQueryClient();
 	const { kitId } = await params;
 
 	try {
 		queryClient.prefetchQuery({
-			queryKey: createQueryKey(queryKeys.kits, [kitId as string]),
-			queryFn: () => fetchKitDetailsServer(kitId as string),
+			queryKey: createQueryKey(queryKeys.kits, [kitId]),
+			queryFn: () => fetchKitDetailsServer(kitId),
 		});
 
 		return (

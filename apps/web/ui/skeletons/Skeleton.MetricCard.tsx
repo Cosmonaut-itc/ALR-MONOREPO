@@ -1,3 +1,5 @@
+'use memo';
+
 import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 

@@ -1,4 +1,5 @@
 // components/generic-boundary-wrapper.tsx
+'use memo';
 'use client';
 
 import { Suspense } from 'react';

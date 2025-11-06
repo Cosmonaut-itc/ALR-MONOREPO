@@ -108,3 +108,101 @@ export const useDeleteInventoryItem = () =>
 			console.error(error);
 		},
 	});
+
+export const useSyncInventory = () =>
+	useMutation({
+		mutationKey: ["sync-inventory"],
+		mutationFn: async () => {
+			const response = await client.api.auth.inventory.sync.$post({
+				json: {
+					dryRun: false, // Set to true to only simulate the sync
+				},
+			});
+			const result = await response.json();
+			if (!result?.success) {
+				throw new Error(
+					result?.message ||
+						"La API devolvió éxito=false al sincronizar el inventario",
+				);
+			}
+			return result;
+		},
+		onMutate: () => {
+			toast.loading("Sincronizando inventario...", {
+				id: "sync-inventory",
+			});
+		},
+		onSuccess: () => {
+			toast.success("Inventario sincronizado correctamente", {
+				id: "sync-inventory",
+			});
+			const queryClient = getQueryClient();
+			queryClient.invalidateQueries({
+				queryKey: createQueryKey(queryKeys.inventory, ["all"]),
+			});
+		},
+		onError: (error) => {
+			toast.error("Error al sincronizar inventario", {
+				id: "sync-inventory",
+			});
+			// biome-ignore lint/suspicious/noConsole: Needed for debugging
+			console.error(error);
+		},
+	});
+
+export const useToggleInventoryKit = () =>
+	useMutation({
+		mutationKey: ["toggle-inventory-kit"],
+		mutationFn: async (data: {
+			productStockId: string;
+			invalidateContexts?: Array<string | null | undefined>;
+		}) => {
+			if (!data?.productStockId) {
+				throw new Error("El identificador del stock es obligatorio");
+			}
+			const response =
+				await client.api.auth["product-stock"]["update-is-kit"].$post({
+					json: { productStockId: data.productStockId },
+				});
+			const result = await response.json();
+			if (!result?.success) {
+				throw new Error(
+					result?.message ||
+						"La API devolvió éxito=false al actualizar el estado de kit",
+				);
+			}
+			return result;
+		},
+		onMutate: () => {
+			toast.loading("Actualizando estado de kit...", {
+				id: "toggle-inventory-kit",
+			});
+		},
+		onSuccess: (_data, variables) => {
+			toast.success("Estado de kit actualizado", {
+				id: "toggle-inventory-kit",
+			});
+			const queryClient = getQueryClient();
+			const contexts = new Set<string>(["all"]);
+			if (Array.isArray(variables.invalidateContexts)) {
+				for (const context of variables.invalidateContexts) {
+					const trimmed = typeof context === "string" ? context.trim() : "";
+					if (trimmed) {
+						contexts.add(trimmed);
+					}
+				}
+			}
+			for (const context of contexts) {
+				queryClient.invalidateQueries({
+					queryKey: createQueryKey(queryKeys.inventory, [context]),
+				});
+			}
+		},
+		onError: (error) => {
+			toast.error("Error al actualizar el estado de kit", {
+				id: "toggle-inventory-kit",
+			});
+			// biome-ignore lint/suspicious/noConsole: Needed para depuración
+			console.error(error);
+		},
+	});

@@ -1,3 +1,4 @@
+"use memo";
 "use client";
 
 import { useSuspenseQuery } from "@tanstack/react-query";
@@ -92,6 +93,10 @@ import {
 	getWarehouseTransferAll,
 	getWarehouseTransferAllByWarehouseId,
 } from "@/lib/fetch-functions/recepciones";
+import {
+	getReplenishmentOrders,
+	getReplenishmentOrdersByWarehouse,
+} from "@/lib/fetch-functions/replenishment-orders";
 import { createQueryKey } from "@/lib/helpers";
 import { useCreateTransferOrder } from "@/lib/mutations/transfers";
 import { queryKeys } from "@/lib/query-keys";
@@ -105,8 +110,10 @@ import {
 import { useAuthStore } from "@/stores/auth-store";
 import { useReceptionStore } from "@/stores/reception-store";
 import type {
+	ProductCatalogItem,
 	ProductCatalogResponse,
 	ProductStockWithEmployee,
+	ReplenishmentOrdersResponse,
 	WarehouseMap,
 	WarehouseTransfer,
 } from "@/types";
@@ -730,6 +737,21 @@ export function RecepcionesPage({
 		queryFn: getCabinetWarehouse,
 	});
 
+	// Fetch replenishment orders to check if transfers are linked to pedidos
+	const replenishmentOrdersQueryFn = isEncargado
+		? () => getReplenishmentOrders()
+		: () => getReplenishmentOrdersByWarehouse(warehouseId);
+	const { data: replenishmentOrdersResponse } = useSuspenseQuery<
+		ReplenishmentOrdersResponse | null,
+		Error,
+		ReplenishmentOrdersResponse | null
+	>({
+		queryKey: createQueryKey(queryKeys.replenishmentOrders, [
+			isEncargado ? "all" : warehouseId,
+		]),
+		queryFn: replenishmentOrdersQueryFn,
+	});
+
 	const currentUser = useAuthStore((state) => state.user);
 	const {
 		transferDraft,
@@ -949,10 +971,10 @@ export function RecepcionesPage({
 					goodId: item.barcode,
 					costPerUnit:
 						productCatalog?.data?.find(
-							(product) => product.good_id === item.barcode,
+							(product: ProductCatalogItem) => product.good_id === item.barcode,
 						)?.cost ?? 0,
 				})),
-				transferNotes: transferDraft.transferNotes || undefined,
+				transferNotes: transferDraft.transferNotes || "",
 				priority: transferDraft.priority,
 				scheduledDate,
 				isCabinetToWarehouse: false,
@@ -964,6 +986,40 @@ export function RecepcionesPage({
 			// Los mensajes de error se gestionan en la mutación.
 		}
 	};
+
+	// Create map of transfer ID to replenishment order
+	const transferToOrderMap = useMemo(() => {
+		const map = new Map<string, { orderId: string; orderNumber: string }>();
+		if (
+			!replenishmentOrdersResponse ||
+			typeof replenishmentOrdersResponse !== "object" ||
+			!("success" in replenishmentOrdersResponse) ||
+			!replenishmentOrdersResponse.success ||
+			!Array.isArray(replenishmentOrdersResponse.data)
+		) {
+			return map;
+		}
+
+		for (const order of replenishmentOrdersResponse.data) {
+			if (!order || typeof order !== "object") {
+				continue;
+			}
+			const record = order as Record<string, unknown>;
+			const orderId = typeof record.id === "string" ? record.id : "";
+			const orderNumber =
+				typeof record.orderNumber === "string" ? record.orderNumber : orderId;
+			const warehouseTransferId =
+				typeof record.warehouseTransferId === "string"
+					? record.warehouseTransferId
+					: null;
+
+			if (orderId && warehouseTransferId) {
+				map.set(warehouseTransferId, { orderId, orderNumber });
+			}
+		}
+
+		return map;
+	}, [replenishmentOrdersResponse]);
 
 	// Derive receptions list from transfers response
 	type DerivedReception = {
@@ -978,6 +1034,8 @@ export function RecepcionesPage({
 		isCancelled: boolean;
 		transferType: "internal" | "external";
 		updatedAt: string;
+		relatedOrderId: string | null;
+		relatedOrderNumber: string | null;
 	};
 
 	const receptions: DerivedReception[] = useMemo(() => {
@@ -1044,8 +1102,11 @@ export function RecepcionesPage({
 				return arrivalDate;
 			})();
 
+			const transferId = item.id ?? "";
+			const relatedOrder = transferToOrderMap.get(transferId);
+
 			return {
-				transferId: item.id ?? "",
+				transferId,
 				shipmentId,
 				sourceWarehouseName,
 				destinationWarehouseName,
@@ -1056,9 +1117,11 @@ export function RecepcionesPage({
 				isCancelled,
 				transferType: normalizedTransferType,
 				updatedAt,
+				relatedOrderId: relatedOrder?.orderId ?? null,
+				relatedOrderNumber: relatedOrder?.orderNumber ?? null,
 			};
 		});
-	}, [transfers, warehouseOptions]);
+	}, [transfers, warehouseOptions, transferToOrderMap]);
 
 	const parseDateValue = useCallback((value: string | undefined | null) => {
 		if (!value) {
@@ -1243,14 +1306,25 @@ export function RecepcionesPage({
 				cell: ({ getValue, row }) => {
 					const isCompleted = getValue<boolean>();
 					const isPending = row.original.isPending;
+					const relatedOrderNumber = row.original.relatedOrderNumber;
 					if (!isPending && !isCompleted) {
 						return (
-							<Badge
-								className="theme-transition bg-gray-100 text-gray-800 hover:bg-gray-200 dark:bg-gray-900/20 dark:text-gray-400"
-								variant="secondary"
-							>
-								Sin recibir
-							</Badge>
+							<div className="flex items-center gap-2">
+								<Badge
+									className="theme-transition bg-gray-100 text-gray-800 hover:bg-gray-200 dark:bg-gray-900/20 dark:text-gray-400"
+									variant="secondary"
+								>
+									Sin recibir
+								</Badge>
+								{relatedOrderNumber && (
+									<Badge
+										className="theme-transition bg-purple-100 text-purple-800 hover:bg-purple-200 dark:bg-purple-900/20 dark:text-purple-400"
+										variant="secondary"
+									>
+										Pedido {relatedOrderNumber}
+									</Badge>
+								)}
+							</div>
 						);
 					}
 					const badgeClass =
@@ -1259,9 +1333,19 @@ export function RecepcionesPage({
 							: "theme-transition bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900/20 dark:text-green-400";
 					const variant = isPending && !isCompleted ? "secondary" : "default";
 					return (
-						<Badge className={badgeClass} variant={variant}>
-							{isPending && !isCompleted ? "Pendiente" : "Completada"}
-						</Badge>
+						<div className="flex items-center gap-2">
+							<Badge className={badgeClass} variant={variant}>
+								{isPending && !isCompleted ? "Pendiente" : "Completada"}
+							</Badge>
+							{relatedOrderNumber && (
+								<Badge
+									className="theme-transition bg-purple-100 text-purple-800 hover:bg-purple-200 dark:bg-purple-900/20 dark:text-purple-400"
+									variant="secondary"
+								>
+									Pedido {relatedOrderNumber}
+								</Badge>
+							)}
+						</div>
 					);
 				},
 			},

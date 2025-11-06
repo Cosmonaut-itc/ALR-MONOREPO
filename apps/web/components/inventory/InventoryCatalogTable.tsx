@@ -1,3 +1,5 @@
+'use memo';
+
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { ChevronRight, Eye, Trash2 } from 'lucide-react';

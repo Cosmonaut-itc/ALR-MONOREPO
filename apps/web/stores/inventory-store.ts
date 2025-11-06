@@ -20,6 +20,7 @@ export type StockItem = {
 	currentCabinet?: string | null;
 	isBeingUsed?: boolean | null;
 	firstUsed?: string | null;
+	isKit?: boolean | null;
 };
 
 export type StockItemWithEmployee = {

@@ -1,3 +1,5 @@
+'use memo';
+
 import { SkeletonRecepcionesPage } from '@/ui/skeletons/Skeleton.RecepcionesPage';
 
 export default function Loading() {

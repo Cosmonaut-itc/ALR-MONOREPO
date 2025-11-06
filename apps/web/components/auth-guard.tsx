@@ -1,12 +1,17 @@
-import type { ReactNode } from 'react';
-import type { UserRole } from '@/types';
+"use client";
+
+import type { ReactNode } from "react";
+import { useAuthStore } from "@/stores/auth-store";
+import type { UserRole } from "@/types";
+
+type RoleName = UserRole["role"];
 
 interface RoleGuardProps {
-	/** The current user's role */
-	userRole: UserRole | null;
+	/** Explicit role override; if omitted, derives from auth store */
+	userRole?: RoleName | null;
 
 	/** The roles that are allowed to access the content */
-	allowedRoles: UserRole[];
+	allowedRoles: RoleName[];
 
 	/** The content to render if the user has permission */
 	children: ReactNode;
@@ -24,19 +29,25 @@ export const RoleGuard: React.FC<RoleGuardProps> = ({
 	children,
 	fallback = null,
 }) => {
-	// If no role is provided, don't render the protected content
-	if (!userRole) {
+	const storeUser = useAuthStore((s) => s.user);
+	const isRoleName = (value: unknown): value is RoleName =>
+		value === "employee" || value === "encargado" || value === "admin";
+
+	const derivedRole: RoleName | null = isRoleName(storeUser?.role)
+		? storeUser!.role
+		: null;
+
+	const effectiveRole: RoleName | null = userRole ?? derivedRole ?? null;
+
+	if (!effectiveRole) {
 		return <>{fallback}</>;
 	}
 
-	// Admin role has access to everything
-	if (userRole.role === 'admin') {
+	if (effectiveRole === "admin") {
 		return <>{children}</>;
 	}
 
-	// Check if the user's role is in the list of allowed roles
-	const hasPermission = allowedRoles.some((role) => role.role === userRole.role);
+	const hasPermission = allowedRoles.includes(effectiveRole);
 
-	// Render children or fallback based on permission
 	return <>{hasPermission ? children : fallback}</>;
 };
