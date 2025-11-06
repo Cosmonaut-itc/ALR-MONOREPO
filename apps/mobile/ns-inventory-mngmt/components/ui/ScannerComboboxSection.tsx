@@ -32,6 +32,8 @@ interface ScannerComboboxSectionProps {
     isLoading?: boolean
     /** Total count of available stock items for display purposes */
     itemCount?: number
+    /** Array of selected item IDs to exclude from the combobox options */
+    selectedItemIds?: string[]
 }
 
 /**
@@ -58,6 +60,7 @@ export function ScannerComboboxSection({
     onRefreshPress,
     placeholder = "Buscar en inventario...",
     isLoading = false,
+    selectedItemIds = [],
 }: ScannerComboboxSectionProps) {
     const colorScheme = useColorScheme()
     const isDark = colorScheme === "dark"
@@ -111,6 +114,7 @@ export function ScannerComboboxSection({
                         onStockItemSelect={onStockItemSelect}
                         placeholder={getPlaceholderText()}
                         disabled={isLoading || productStock.length === 0}
+                        selectedItemIds={selectedItemIds}
                     />
                 </ThemedView>
 

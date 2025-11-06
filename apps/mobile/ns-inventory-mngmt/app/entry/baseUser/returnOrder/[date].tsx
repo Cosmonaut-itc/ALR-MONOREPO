@@ -208,6 +208,7 @@ export default function OrderDetailsScreen() {
                     onRefreshPress={() => refetchProducts()}
                     isLoading={isFetching}
                     itemCount={selectedProducts.length}
+                    selectedItemIds={returnProducts.map((product) => product.productStockId)}
                 />
 
                 {/* Return Products Section */}

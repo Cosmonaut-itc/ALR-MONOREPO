@@ -348,6 +348,7 @@ export const productComboboxPropsArk = t({
 	onStockItemSelect: "string?" as t.cast<(item: typeof productStockItemSchema.infer) => void>, // Select ProductStockItem directly
 	placeholder: "string?",
 	disabled: "boolean?",
+	selectedItemIds: t("string", "[]").optional(), // Array of selected item IDs to exclude from display
 });
 
 export type ProductComboboxProps = typeof productComboboxPropsArk.infer;

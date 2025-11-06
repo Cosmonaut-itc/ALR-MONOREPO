@@ -81,6 +81,7 @@ export function ProductCombobox({
     onStockItemSelect,
     placeholder = "Buscar en inventario...",
     disabled = false,
+    selectedItemIds = [],
 }: ProductComboboxProps) {
     const colorScheme = useColorScheme()
     const isDark = colorScheme === "dark"
@@ -88,10 +89,22 @@ export function ProductCombobox({
     const [searchText, setSearchText] = useState<string>("")
     const [isOpen, setIsOpen] = useState<boolean>(false)
 
+    /**
+     * Filters out selected items from the product stock
+     * Returns only items that are not in the selectedItemIds array
+     */
+    const availableProductStock = useMemo<ProductStockItem[]>(() => {
+        if (!selectedItemIds || selectedItemIds.length === 0) {
+            return productStock
+        }
+        const selectedIdsSet = new Set(selectedItemIds)
+        return productStock.filter((item) => !selectedIdsSet.has(item.id))
+    }, [productStock, selectedItemIds])
+
     // Group and filter warehouse stock
     const stockGroups = useMemo(() => {
-        return groupProductStock(productStock)
-    }, [productStock])
+        return groupProductStock(availableProductStock)
+    }, [availableProductStock])
 
     const filteredStockGroups = useMemo(() => {
         return filterStockGroups(stockGroups, searchText)
