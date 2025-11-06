@@ -1,5 +1,5 @@
-"use client";
 "use memo";
+"use client";
 
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { useCallback, useMemo, useState } from "react";

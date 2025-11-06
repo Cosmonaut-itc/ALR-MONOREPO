@@ -1,6 +1,6 @@
 // components/generic-boundary-wrapper.tsx
-'use client';
 'use memo';
+'use client';
 
 import { Suspense } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';

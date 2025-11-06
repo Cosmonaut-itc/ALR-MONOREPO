@@ -1,5 +1,5 @@
-"use client";
 "use memo";
+"use client";
 
 import { useSuspenseQuery } from "@tanstack/react-query";
 import type { ColumnDef, ColumnFiltersState } from "@tanstack/react-table";

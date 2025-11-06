@@ -1,5 +1,5 @@
-"use client";
 "use memo";
+"use client";
 
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { format, parseISO, subDays } from "date-fns";

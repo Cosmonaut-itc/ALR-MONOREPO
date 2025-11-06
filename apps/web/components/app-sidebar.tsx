@@ -1,5 +1,5 @@
-"use client";
 "use memo";
+"use client";
 
 import {
 	BarChart3,

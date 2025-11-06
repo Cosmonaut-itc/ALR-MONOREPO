@@ -1,6 +1,6 @@
 /** biome-ignore-all lint/correctness/noChildrenProp: Needed for form usage */
-'use client';
 'use memo';
+'use client';
 
 import { useForm } from '@tanstack/react-form';
 import { Eye, EyeOff, UserPlus } from 'lucide-react';

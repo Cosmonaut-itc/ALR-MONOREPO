@@ -1,5 +1,5 @@
-'use client';
 'use memo';
+'use client';
 
 import { Check, ChevronsUpDown, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';

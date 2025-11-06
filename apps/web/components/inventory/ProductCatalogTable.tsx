@@ -1,6 +1,6 @@
 /** biome-ignore-all lint/complexity/noExcessiveCognitiveComplexity: Needed to render all of the details*/
-"use client";
 "use memo";
+"use client";
 
 import type { FilterFn } from "@tanstack/react-table";
 import {
