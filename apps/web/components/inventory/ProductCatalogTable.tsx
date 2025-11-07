@@ -25,6 +25,7 @@ import {
 	ChevronRight,
 	ChevronUp,
 	Copy,
+	Download,
 	Package,
 	QrCode,
 	Search,
@@ -69,7 +70,10 @@ import {
 	TooltipProvider,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { useToggleInventoryKit } from "@/lib/mutations/inventory";
+import {
+	useToggleInventoryKit,
+	useUpdateInventoryIsEmpty,
+} from "@/lib/mutations/inventory";
 import {
 	useCreateStockLimit,
 	useUpdateStockLimit,
@@ -111,6 +115,7 @@ type InventoryItemDisplay = {
 	homeWarehouseId?: string;
 	locationType?: "warehouse" | "cabinet" | "unassigned";
 	isKit?: boolean;
+	isEmpty?: boolean;
 };
 
 interface ProductCatalogTableProps {
@@ -214,6 +219,7 @@ function extractInventoryItemData(
 		item as { employee?: { name?: string; surname?: string } }
 	).employee;
 	const isKitFlag = (itemStock as { isKit?: boolean | null }).isKit ?? false;
+	const isEmptyFlag = (itemStock as { isEmpty?: boolean | null }).isEmpty ?? false;
 		const locationId = getItemWarehouse(itemStock);
 		const rawCabinet = (itemStock as { currentCabinet?: unknown })
 			.currentCabinet;
@@ -249,6 +255,7 @@ function extractInventoryItemData(
 			homeWarehouseId: warehouseId,
 		locationType,
 		isKit: Boolean(isKitFlag),
+		isEmpty: Boolean(isEmptyFlag),
 	};
 
 		return result;
@@ -266,6 +273,7 @@ function extractInventoryItemData(
 		homeWarehouseId: undefined,
 		locationType: "unassigned",
 		isKit: false,
+		isEmpty: false,
 	};
 }
 
@@ -359,6 +367,66 @@ function formatDate(dateString: string | undefined): string {
 }
 
 /**
+ * Escapes a CSV field value by wrapping it in quotes if it contains commas, quotes, or newlines.
+ *
+ * @param field - The field value to escape.
+ * @returns The escaped CSV field value.
+ */
+function escapeCsvField(field: string | number | null | undefined): string {
+	if (field == null) {
+		return "";
+	}
+	const str = String(field);
+	if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+		return `"${str.replace(/"/g, '""')}"`;
+	}
+	return str;
+}
+
+/**
+ * Converts an array of objects to CSV format and triggers a download.
+ *
+ * @param data - Array of objects to convert to CSV.
+ * @param headers - Array of header objects with `label` and `key` properties.
+ * @param filename - The filename for the downloaded CSV file (without extension).
+ * @returns True if the download was successful, false otherwise.
+ */
+function downloadCsv(
+	data: Record<string, string | number | null | undefined>[],
+	headers: Array<{ label: string; key: string }>,
+	filename: string,
+): boolean {
+	if (data.length === 0) {
+		return false;
+	}
+
+	// Create CSV header row
+	const headerRow = headers.map((h) => escapeCsvField(h.label)).join(",");
+
+	// Create CSV data rows
+	const dataRows = data.map((row) =>
+		headers.map((h) => escapeCsvField(row[h.key])).join(","),
+	);
+
+	// Combine header and data rows
+	const csvContent = [headerRow, ...dataRows].join("\n");
+
+	// Create blob and download
+	const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+	const link = document.createElement("a");
+	const url = URL.createObjectURL(blob);
+
+	link.setAttribute("href", url);
+	link.setAttribute("download", `${filename}.csv`);
+	link.style.visibility = "hidden";
+	document.body.appendChild(link);
+	link.click();
+	document.body.removeChild(link);
+	URL.revokeObjectURL(url);
+	return true;
+}
+
+/**
  * Renders a product catalog table with per-product expandable inventory details.
  *
  * The table shows products derived from `productCatalog` and inventory items from `inventory`,
@@ -406,6 +474,8 @@ export function ProductCatalogTable({
 	} = useInventoryStore();
 	const { mutateAsync: toggleKitAsync, isPending: isTogglingKit } =
 		useToggleInventoryKit();
+	const { mutateAsync: updateIsEmptyAsync, isPending: isUpdatingIsEmpty } =
+		useUpdateInventoryIsEmpty();
 
 	const warehouseEntries = useMemo<WarehouseMappingEntry[]>(() => {
 		if (isWarehouseMapSuccess(warehouseMap)) {
@@ -698,6 +768,8 @@ export function ProductCatalogTable({
 		pageSize: 10,
 	});
 	const [showOnlyWithStock, setShowOnlyWithStock] = useState(false);
+	const [stockLimitFilter, setStockLimitFilter] = useState<string>("all");
+	const [isEmptyFilter, setIsEmptyFilter] = useState<string>("all");
 	// Per-product selection state for expanded rows (barcode -> Set of UUIDs)
 	const [selectedByBarcode, setSelectedByBarcode] = useState<
 		Record<number, Set<string>>
@@ -783,48 +855,170 @@ export function ProductCatalogTable({
 		resolveWarehouseName,
 	]);
 
+	/**
+	 * Checks if a product has stock limit violations in any warehouse.
+	 *
+	 * @param product - The product to check for stock limit violations.
+	 * @param filterType - The type of violation to check: "below-minimum" or "above-maximum".
+	 * @returns True if the product has the specified violation type in any warehouse.
+	 */
+	const hasStockLimitViolation = useCallback(
+		(product: ProductWithInventory, filterType: "below-minimum" | "above-maximum"): boolean => {
+			if (!stockLimitsMap || stockLimitsMap.size === 0) {
+				return false;
+			}
+
+			// Group inventory items by warehouse (similar to renderSubComponent logic)
+			const displayItems = product.inventoryItems.map((item) => {
+				const data = extractInventoryItemData(item);
+				const warehouseKey = getInventoryLocationKey(data);
+				return { data, warehouseKey };
+			});
+
+			const groupedByWarehouse = displayItems.reduce(
+				(acc, item) => {
+					const locationKey = item.warehouseKey || "unassigned";
+					const bucket = acc.get(locationKey);
+					if (bucket) {
+						bucket.items.push(item);
+					} else {
+						const labelSource =
+							item.data.currentWarehouse ??
+							item.data.currentCabinet ??
+							item.data.homeWarehouseId ??
+							undefined;
+						const effectiveWarehouseId =
+							resolveWarehouseIdForLimit(labelSource);
+						acc.set(locationKey, {
+							effectiveWarehouseId,
+							items: [item],
+						});
+					}
+					return acc;
+				},
+				new Map<
+					string,
+					{
+						effectiveWarehouseId: string | null;
+						items: Array<{ data: InventoryItemDisplay; warehouseKey: string }>;
+					}
+				>(),
+			);
+
+			// Check each warehouse group for stock limit violations
+			for (const [, group] of groupedByWarehouse.entries()) {
+				const effectiveWarehouseId = group.effectiveWarehouseId;
+				if (!effectiveWarehouseId) {
+					continue;
+				}
+
+				const limitKey = `${effectiveWarehouseId}:${product.barcode}`;
+				const limit = stockLimitsMap.get(limitKey);
+				if (!limit) {
+					continue;
+				}
+
+				const currentCount = group.items.length;
+				const belowMinimum = currentCount < limit.minQuantity;
+				const aboveMaximum = currentCount > limit.maxQuantity;
+
+				if (filterType === "below-minimum" && belowMinimum) {
+					return true;
+				}
+				if (filterType === "above-maximum" && aboveMaximum) {
+					return true;
+				}
+			}
+
+			return false;
+		},
+		[stockLimitsMap, resolveWarehouseIdForLimit],
+	);
+
 	const filteredProducts = useMemo(() => {
-		if (warehouseFilter === "all") {
-			return products;
+		let result = products;
+
+		// Apply warehouse filter
+		if (warehouseFilter !== "all") {
+			result = result.filter((product) =>
+				product.inventoryItems.some((item) => {
+					const data = extractInventoryItemData(item);
+					const candidates = new Set<string>();
+
+					const addCandidate = (identifier?: string | null) => {
+						const id = typeof identifier === "string" ? identifier.trim() : "";
+						if (id) {
+							candidates.add(id);
+						}
+					};
+
+					const locationKey = getInventoryLocationKey(data);
+					addCandidate(locationKey);
+					addCandidate(data.currentWarehouse ?? null);
+					addCandidate(data.currentCabinet ?? null);
+					addCandidate(data.homeWarehouseId ?? null);
+
+					const resolvedCandidates = [
+						resolveWarehouseIdForLimit(locationKey),
+						resolveWarehouseIdForLimit(data.currentWarehouse),
+						resolveWarehouseIdForLimit(data.currentCabinet),
+						resolveWarehouseIdForLimit(data.homeWarehouseId),
+					];
+
+					for (const candidate of resolvedCandidates) {
+						addCandidate(candidate ?? null);
+					}
+
+					if (warehouseFilter === "unassigned") {
+						return candidates.has("unassigned");
+					}
+
+					return candidates.has(warehouseFilter);
+				}),
+			);
 		}
 
-		return products.filter((product) =>
-			product.inventoryItems.some((item) => {
-				const data = extractInventoryItemData(item);
-				const candidates = new Set<string>();
+		// Apply stock limit filter
+		if (stockLimitFilter !== "all") {
+			if (stockLimitFilter === "below-minimum") {
+				result = result.filter((product) =>
+					hasStockLimitViolation(product, "below-minimum"),
+				);
+			} else if (stockLimitFilter === "above-maximum") {
+				result = result.filter((product) =>
+					hasStockLimitViolation(product, "above-maximum"),
+				);
+			}
+		}
 
-				const addCandidate = (identifier?: string | null) => {
-					const id = typeof identifier === "string" ? identifier.trim() : "";
-					if (id) {
-						candidates.add(id);
-					}
-				};
+		// Apply isEmpty filter
+		if (isEmptyFilter !== "all") {
+			if (isEmptyFilter === "yes") {
+				result = result.filter((product) =>
+					product.inventoryItems.some((item) => {
+						const data = extractInventoryItemData(item);
+						return data.isEmpty === true;
+					}),
+				);
+			} else if (isEmptyFilter === "no") {
+				result = result.filter((product) =>
+					product.inventoryItems.some((item) => {
+						const data = extractInventoryItemData(item);
+						return data.isEmpty === false;
+					}),
+				);
+			}
+		}
 
-				const locationKey = getInventoryLocationKey(data);
-				addCandidate(locationKey);
-				addCandidate(data.currentWarehouse ?? null);
-				addCandidate(data.currentCabinet ?? null);
-				addCandidate(data.homeWarehouseId ?? null);
-
-				const resolvedCandidates = [
-					resolveWarehouseIdForLimit(locationKey),
-					resolveWarehouseIdForLimit(data.currentWarehouse),
-					resolveWarehouseIdForLimit(data.currentCabinet),
-					resolveWarehouseIdForLimit(data.homeWarehouseId),
-				];
-
-				for (const candidate of resolvedCandidates) {
-					addCandidate(candidate ?? null);
-				}
-
-				if (warehouseFilter === "unassigned") {
-					return candidates.has("unassigned");
-				}
-
-				return candidates.has(warehouseFilter);
-			}),
-		);
-	}, [products, warehouseFilter, resolveWarehouseIdForLimit]);
+		return result;
+	}, [
+		products,
+		warehouseFilter,
+		stockLimitFilter,
+		isEmptyFilter,
+		resolveWarehouseIdForLimit,
+		hasStockLimitViolation,
+	]);
 
 	useEffect(() => {
 		if (warehouseFilter === "all") {
@@ -946,7 +1140,7 @@ export function ProductCatalogTable({
 				const selectionEnabledRef = enableSelection === true;
 				const productSelection =
 					selectedByBarcode[product.barcode] || new Set<string>();
-				const detailColumnCount = enableDispose ? 7 : 6;
+				const detailColumnCount = enableDispose ? 8 : 7;
 
 				type DisplayItem = {
 					key: string;
@@ -971,6 +1165,14 @@ export function ProductCatalogTable({
 					return Boolean(id) && !id.startsWith("uuid-");
 				});
 				const isToggleDisabled = toggleCandidates.length === 0 || isTogglingKit;
+				const selectedItemsForIsEmpty = displayItems.filter(
+					(item) => item.key && productSelection.has(item.key),
+				);
+				const validSelectedIds = selectedItemsForIsEmpty
+					.map((item) => item.data.id ?? "")
+					.filter((id) => Boolean(id) && !id.startsWith("uuid-"));
+				const isUpdateIsEmptyDisabled =
+					validSelectedIds.length === 0 || isUpdatingIsEmpty;
 
 				const isGroupExpanded = (barcode: number, key: string) =>
 					Boolean(expandedGroupsByBarcode[barcode]?.has(key));
@@ -1072,6 +1274,71 @@ export function ProductCatalogTable({
 								invalidateContexts: update.contexts,
 							});
 						}
+					} catch (error) {
+						// biome-ignore lint/suspicious/noConsole: diagnostics for failed updates
+						console.error(error);
+					}
+				};
+
+				const handleUpdateIsEmpty = async () => {
+					if (!canManageKits) {
+						return;
+					}
+					// Get only the selected items (from checkboxes)
+					const selectedItems = displayItems.filter(
+						(item) => item.key && productSelection.has(item.key),
+					);
+					if (selectedItems.length === 0) {
+						toast.error("No hay artículos seleccionados para actualizar.");
+						return;
+					}
+					// Extract valid product IDs from selected items
+					const productIds = selectedItems
+						.map((item) => item.data.id ?? "")
+						.filter((id) => Boolean(id) && !id.startsWith("uuid-"));
+					if (productIds.length === 0) {
+						toast.error("No hay artículos válidos para actualizar.");
+						return;
+					}
+					const contexts = new Set<string>();
+					if (warehouse && warehouse.trim().length > 0) {
+						contexts.add(warehouse.trim());
+					}
+					// Collect contexts from selected items only
+					for (const item of selectedItems) {
+						const locationCandidates = [
+							item.data.currentWarehouse,
+							item.data.currentCabinet,
+							item.data.homeWarehouseId,
+							getInventoryLocationKey(item.data),
+						];
+						for (const candidate of locationCandidates) {
+							if (candidate && candidate.trim() !== "") {
+								contexts.add(candidate.trim());
+							}
+						}
+						const resolvedCandidates = [
+							resolveWarehouseIdForLimit(item.data.currentWarehouse),
+							resolveWarehouseIdForLimit(item.data.currentCabinet),
+							resolveWarehouseIdForLimit(item.data.homeWarehouseId),
+							resolveWarehouseIdForLimit(item.warehouseKey),
+						];
+						for (const resolved of resolvedCandidates) {
+							if (resolved && resolved.trim() !== "") {
+								contexts.add(resolved.trim());
+							}
+						}
+					}
+					try {
+						await updateIsEmptyAsync({
+							productIds,
+							invalidateContexts: Array.from(contexts),
+						});
+						// Clear selection after successful update
+						setSelectedByBarcode((prev) => ({
+							...prev,
+							[product.barcode]: new Set<string>(),
+						}));
 					} catch (error) {
 						// biome-ignore lint/suspicious/noConsole: diagnostics for failed updates
 						console.error(error);
@@ -1209,24 +1476,44 @@ export function ProductCatalogTable({
 							</h4>
 							<div className="flex flex-wrap items-center gap-2">
 								{canManageKits && (
-									<Tooltip>
-										<TooltipTrigger asChild>
-											<Button
-												className="h-8 px-3"
-												disabled={isToggleDisabled}
-												onClick={handleToggleKitSelection}
-												size="sm"
-												type="button"
-												variant="outline"
-											>
-												Actualizar kit
-											</Button>
-										</TooltipTrigger>
-										<TooltipContent side="top">
-											Al hacer click agregaras o quitaras este producto del
-											grupo que se usa en kits
-										</TooltipContent>
-									</Tooltip>
+									<>
+										<Tooltip>
+											<TooltipTrigger asChild>
+												<Button
+													className="h-8 px-3"
+													disabled={isToggleDisabled}
+													onClick={handleToggleKitSelection}
+													size="sm"
+													type="button"
+													variant="outline"
+												>
+													Actualizar kit
+												</Button>
+											</TooltipTrigger>
+											<TooltipContent side="top">
+												Al hacer click agregaras o quitaras este producto del
+												grupo que se usa en kits
+											</TooltipContent>
+										</Tooltip>
+										<Tooltip>
+											<TooltipTrigger asChild>
+												<Button
+													className="h-8 px-3"
+													disabled={isUpdateIsEmptyDisabled}
+													onClick={handleUpdateIsEmpty}
+													size="sm"
+													type="button"
+													variant="outline"
+												>
+													Marcar como vacío ({validSelectedIds.length})
+												</Button>
+											</TooltipTrigger>
+											<TooltipContent side="top">
+												Al hacer click marcarás los artículos seleccionados (con
+												checkbox) como vacíos
+											</TooltipContent>
+										</Tooltip>
+									</>
 								)}
 								{selectionEnabledRef && (
 									<Button
@@ -1298,6 +1585,9 @@ export function ProductCatalogTable({
 										</TableHead>
 										<TableHead className="font-medium text-[#687076] text-xs dark:text-[#9BA1A6]">
 											Primer Uso
+										</TableHead>
+										<TableHead className="font-medium text-[#687076] text-xs dark:text-[#9BA1A6]">
+											Vacío
 										</TableHead>
 										{enableDispose && (
 											<TableHead className="font-medium text-[#687076] text-xs dark:text-[#9BA1A6]">
@@ -1414,7 +1704,20 @@ export function ProductCatalogTable({
 												</TableRow>
 												{isExpanded && (
 													<React.Fragment>
-														{group.items.map((item) => {
+														{group.items
+															.filter((item) => {
+																if (isEmptyFilter === "all") {
+																	return true;
+																}
+																if (isEmptyFilter === "yes") {
+																	return item.data.isEmpty === true;
+																}
+																if (isEmptyFilter === "no") {
+																	return item.data.isEmpty === false;
+																}
+																return true;
+															})
+															.map((item) => {
 															const { data, key: selectionKey } = item;
 															const isSelected = selectionKey
 																? productSelection.has(selectionKey)
@@ -1434,7 +1737,7 @@ export function ProductCatalogTable({
 																>
 																	<TableCell className="font-mono text-[#687076] text-xs dark:text-[#9BA1A6]">
 																		<div className="flex flex-col gap-1">
-																			{selectionEnabledRef && (
+																			{(selectionEnabledRef || canManageKits) && (
 																				<Checkbox
 																					checked={isSelected}
 																					disabled={isDisabled}
@@ -1540,6 +1843,18 @@ export function ProductCatalogTable({
 																		{formatDate(data.firstUsed)}
 																	</TableCell>
 																	<TableCell>
+																		<Badge
+																			className={
+																				data.isEmpty
+																					? "bg-amber-100 text-amber-800 text-xs dark:bg-amber-900 dark:text-amber-100"
+																					: "bg-blue-100 text-blue-800 text-xs dark:bg-blue-900 dark:text-blue-100"
+																			}
+																			variant="secondary"
+																		>
+																			{data.isEmpty ? "Sí" : "No"}
+																		</Badge>
+																	</TableCell>
+																	<TableCell>
 																		{enableDispose && (
 																			<Button
 																				className="h-6 w-6 p-0 text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950 dark:hover:text-red-300"
@@ -1597,7 +1912,10 @@ export function ProductCatalogTable({
 			isSavingStockLimit,
 			toggleKitAsync,
 			isTogglingKit,
+			updateIsEmptyAsync,
+			isUpdatingIsEmpty,
 			warehouse,
+			isEmptyFilter,
 		],
 	);
 
@@ -1751,21 +2069,156 @@ export function ProductCatalogTable({
 		stockColumn.setFilterValue(showOnlyWithStock ? "with-stock" : undefined);
 	}, [showOnlyWithStock, table]);
 
-	if (filteredProducts.length === 0) {
-		return (
-			<Card className="theme-transition border-[#E5E7EB] bg-white dark:border-[#374151] dark:bg-[#1E1F20]">
-				<CardContent className="flex flex-col items-center justify-center py-12">
-					<Package className="h-12 w-12 text-[#9CA3AF] dark:text-[#6B7280]" />
-					<h3 className="mt-4 font-semibold text-[#11181C] dark:text-[#ECEDEE]">
-						No hay productos
-					</h3>
-					<p className="mt-2 text-center text-[#687076] text-sm dark:text-[#9BA1A6]">
-						No se encontraron productos que coincidan con los filtros aplicados.
-					</p>
-				</CardContent>
-			</Card>
-		);
-	}
+	/**
+	 * Handles CSV export of the currently filtered table rows.
+	 *
+	 * Extracts data from filtered rows, grouping inventory items by warehouse,
+	 * and downloads a CSV file with product and warehouse-level stock data.
+	 */
+	const handleExportCsv = useCallback(() => {
+		const filteredRows = table.getFilteredRowModel().rows;
+
+		if (filteredRows.length === 0) {
+			toast.error("No hay productos para exportar.");
+			return;
+		}
+
+		// Define CSV headers including warehouse information
+		const csvHeaders = [
+			{ label: "Producto", key: "name" },
+			{ label: "Código de Barras", key: "barcode" },
+			{ label: "Categoría", key: "category" },
+			{ label: "Almacén", key: "warehouse" },
+			{ label: "Stock en Almacén", key: "warehouseStock" },
+			{ label: "Artículos Vacíos", key: "emptyItems" },
+			{ label: "Límite Mínimo", key: "minLimit" },
+			{ label: "Límite Máximo", key: "maxLimit" },
+			{ label: "Stock Total", key: "totalStock" },
+		];
+
+		// Extract data from filtered rows, creating one row per product-warehouse combination
+		const csvData: Array<{
+			name: string;
+			barcode: number;
+			category: string;
+			warehouse: string;
+			warehouseStock: number;
+			emptyItems: number;
+			minLimit: number | string;
+			maxLimit: number | string;
+			totalStock: number;
+		}> = [];
+
+		for (const row of filteredRows) {
+			const product = row.original;
+
+			// Group inventory items by warehouse (similar to renderSubComponent logic)
+			const displayItems = product.inventoryItems.map((item) => {
+				const data = extractInventoryItemData(item);
+				const warehouseKey = getInventoryLocationKey(data);
+				return { data, warehouseKey };
+			});
+
+			const groupedByWarehouse = displayItems.reduce(
+				(acc, item) => {
+					const locationKey = item.warehouseKey || "unassigned";
+					const bucket = acc.get(locationKey);
+					if (bucket) {
+						bucket.items.push(item);
+					} else {
+						const labelSource =
+							item.data.currentWarehouse ??
+							item.data.currentCabinet ??
+							item.data.homeWarehouseId ??
+							undefined;
+						acc.set(locationKey, {
+							label: resolveWarehouseName(labelSource),
+							items: [item],
+						});
+					}
+					return acc;
+				},
+				new Map<
+					string,
+					{
+						label: string;
+						items: Array<{ data: InventoryItemDisplay; warehouseKey: string }>;
+					}
+				>(),
+			);
+
+			const warehouseGroups = Array.from(groupedByWarehouse.entries());
+
+			// If product has no inventory items, still add one row with zero stock
+			if (warehouseGroups.length === 0) {
+				csvData.push({
+					name: product.name,
+					barcode: product.barcode,
+					category: product.category,
+					warehouse: "Sin almacén asignado",
+					warehouseStock: 0,
+					emptyItems: 0,
+					minLimit: "Sin límite",
+					maxLimit: "Sin límite",
+					totalStock: product.stockCount,
+				});
+			} else {
+				// Create one CSV row per warehouse group
+				for (const [, group] of warehouseGroups) {
+					// Count empty items in this warehouse group
+					const emptyItemsCount = group.items.filter(
+						(item) => item.data.isEmpty === true,
+					).length;
+
+					// Get effective warehouse ID for limit lookup
+					const labelSource =
+						group.items[0]?.data.currentWarehouse ??
+						group.items[0]?.data.currentCabinet ??
+						group.items[0]?.data.homeWarehouseId ??
+						undefined;
+					const effectiveWarehouseId = resolveWarehouseIdForLimit(labelSource);
+
+					// Get stock limits for this warehouse-product combination
+					const limitKey =
+						effectiveWarehouseId && stockLimitsMap
+							? `${effectiveWarehouseId}:${product.barcode}`
+							: null;
+					const limit =
+						limitKey && stockLimitsMap
+							? stockLimitsMap.get(limitKey) ?? null
+							: null;
+
+					csvData.push({
+						name: product.name,
+						barcode: product.barcode,
+						category: product.category,
+						warehouse: group.label,
+						warehouseStock: group.items.length,
+						emptyItems: emptyItemsCount,
+						minLimit: limit?.minQuantity ?? "Sin límite",
+						maxLimit: limit?.maxQuantity ?? "Sin límite",
+						totalStock: product.stockCount,
+					});
+				}
+			}
+		}
+
+		// Generate filename with timestamp
+		const timestamp = format(new Date(), "yyyy-MM-dd_HH-mm-ss", { locale: es });
+		const filename = `inventario_${timestamp}`;
+
+		const success = downloadCsv(csvData, csvHeaders, filename);
+		if (success) {
+			const uniqueProducts = new Set(filteredRows.map((r) => r.original.barcode))
+				.size;
+			toast.success("CSV exportado exitosamente", {
+				description: `Se exportaron ${uniqueProducts} producto(s) con detalles por almacén`,
+				duration: 2000,
+			});
+		} else {
+			toast.error("No se pudo exportar el CSV.");
+		}
+	}, [table, resolveWarehouseName, resolveWarehouseIdForLimit, stockLimitsMap]);
 
 	return (
 		<TooltipProvider>
@@ -1944,6 +2397,72 @@ export function ProductCatalogTable({
 						</div>
 					)}
 
+					{/* Stock Limit Filter */}
+					{stockLimitsMap && stockLimitsMap.size > 0 && (
+						<div className="min-w-[200px]">
+							<Select
+								onValueChange={setStockLimitFilter}
+								value={stockLimitFilter}
+							>
+								<SelectTrigger className="border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]">
+									<SelectValue placeholder="Todos los límites" />
+								</SelectTrigger>
+								<SelectContent className="border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
+									<SelectItem
+										className="text-[#11181C] hover:bg-[#F9FAFB] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
+										value="all"
+									>
+										Todos los límites
+									</SelectItem>
+									<SelectItem
+										className="text-[#11181C] hover:bg-[#F9FAFB] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
+										value="below-minimum"
+									>
+										Bajo el límite mínimo
+									</SelectItem>
+									<SelectItem
+										className="text-[#11181C] hover:bg-[#F9FAFB] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
+										value="above-maximum"
+									>
+										Sobre el límite máximo
+									</SelectItem>
+								</SelectContent>
+							</Select>
+						</div>
+					)}
+
+					{/* IsEmpty Filter */}
+					<div className="min-w-[180px]">
+						<Select
+							onValueChange={setIsEmptyFilter}
+							value={isEmptyFilter}
+						>
+							<SelectTrigger className="border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]">
+								<SelectValue placeholder="Todos los estados" />
+							</SelectTrigger>
+							<SelectContent className="border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
+								<SelectItem
+									className="text-[#11181C] hover:bg-[#F9FAFB] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
+									value="all"
+								>
+									Todos los estados
+								</SelectItem>
+								<SelectItem
+									className="text-[#11181C] hover:bg-[#F9FAFB] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
+									value="yes"
+								>
+									Vacío (Sí)
+								</SelectItem>
+								<SelectItem
+									className="text-[#11181C] hover:bg-[#F9FAFB] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
+									value="no"
+								>
+									No vacío (No)
+								</SelectItem>
+							</SelectContent>
+						</Select>
+					</div>
+
 					{/* Stock Filter */}
 					<div className="flex items-center space-x-2">
 						<Checkbox
@@ -1965,7 +2484,9 @@ export function ProductCatalogTable({
 					{(globalFilter ||
 						categoryFilter !== "all" ||
 						showOnlyWithStock ||
-						warehouseFilter !== "all") && (
+						warehouseFilter !== "all" ||
+						stockLimitFilter !== "all" ||
+						isEmptyFilter !== "all") && (
 						<Button
 							className="text-[#687076] hover:text-[#11181C] dark:text-[#9BA1A6] dark:hover:text-[#ECEDEE]"
 							onClick={() => {
@@ -1973,6 +2494,8 @@ export function ProductCatalogTable({
 								setCategoryFilter("all");
 								setShowOnlyWithStock(false);
 								setWarehouseFilter("all");
+								setStockLimitFilter("all");
+								setIsEmptyFilter("all");
 							}}
 							size="sm"
 							variant="ghost"
@@ -1981,140 +2504,167 @@ export function ProductCatalogTable({
 						</Button>
 					)}
 
-					{/* Results Counter */}
-					<div className="whitespace-nowrap text-[#687076] text-sm dark:text-[#9BA1A6]">
-						{table.getFilteredRowModel().rows.length} de{" "}
-						{filteredProducts.length} productos
-					</div>
+					{/* CSV Export Button */}
+					<Button
+						className="whitespace-nowrap text-[#687076] hover:text-[#11181C] dark:text-[#9BA1A6] dark:hover:text-[#ECEDEE]"
+						onClick={handleExportCsv}
+						size="sm"
+						type="button"
+						variant="ghost"
+					>
+						<Download className="mr-2 h-4 w-4" />
+						Exportar CSV
+					</Button>
 				</div>
 
-				{/* Table */}
-				<div className="theme-transition rounded-md border border-[#E5E7EB] dark:border-[#2D3033]">
-					<Table>
-						<TableHeader>
-							{table.getHeaderGroups().map((headerGroup) => (
-								<TableRow
-									className="border-[#E5E7EB] border-b hover:bg-[#F9FAFB] dark:border-[#2D3033] dark:hover:bg-[#2D3033]"
-									key={headerGroup.id}
-								>
-									{headerGroup.headers.map((header) => (
-										<TableHead
-											className="font-medium text-[#11181C] dark:text-[#ECEDEE]"
-											key={header.id}
-										>
-											{header.isPlaceholder
-												? null
-												: flexRender(
-														header.column.columnDef.header,
-														header.getContext(),
-													)}
-										</TableHead>
-									))}
-								</TableRow>
-							))}
-						</TableHeader>
-						<TableBody>
-							{table.getRowModel().rows?.length ? (
-								table.getRowModel().rows.map((row) => (
-									<React.Fragment key={row.id}>
-										{/* Main row */}
-										<TableRow
-											className="theme-transition border-[#E5E7EB] border-b hover:bg-[#F9FAFB] data-[state=selected]:bg-[#F9FAFB] dark:border-[#2D3033] dark:data-[state=selected]:bg-[#2D3033] dark:hover:bg-[#2D3033]"
-											data-state={row.getIsSelected() && "selected"}
-										>
-											{row.getVisibleCells().map((cell) => (
-												<TableCell key={cell.id}>
-													{flexRender(
-														cell.column.columnDef.cell,
-														cell.getContext(),
-													)}
-												</TableCell>
-											))}
-										</TableRow>
-										{/* Expanded row */}
-										{row.getIsExpanded() && (
-											<TableRow key={`${row.id}-expanded`}>
-												<TableCell className="p-0" colSpan={columns.length}>
-													{renderSubComponent({ row })}
-												</TableCell>
-											</TableRow>
-										)}
-									</React.Fragment>
-								))
-							) : (
-								<TableRow>
-									<TableCell
-										className="h-24 text-center"
-										colSpan={columns.length}
+				{/* Table or Empty State */}
+				{filteredProducts.length === 0 ? (
+					<Card className="theme-transition border-[#E5E7EB] bg-white dark:border-[#374151] dark:bg-[#1E1F20]">
+						<CardContent className="flex flex-col items-center justify-center py-12">
+							<Package className="h-12 w-12 text-[#9CA3AF] dark:text-[#6B7280]" />
+							<h3 className="mt-4 font-semibold text-[#11181C] dark:text-[#ECEDEE]">
+								No hay productos
+							</h3>
+							<p className="mt-2 text-center text-[#687076] text-sm dark:text-[#9BA1A6]">
+								No se encontraron productos que coincidan con los filtros aplicados.
+							</p>
+						</CardContent>
+					</Card>
+				) : (
+					<div className="theme-transition rounded-md border border-[#E5E7EB] dark:border-[#2D3033]">
+						<Table>
+							<TableHeader>
+								{table.getHeaderGroups().map((headerGroup) => (
+									<TableRow
+										className="border-[#E5E7EB] border-b hover:bg-[#F9FAFB] dark:border-[#2D3033] dark:hover:bg-[#2D3033]"
+										key={headerGroup.id}
 									>
-										No se encontraron productos.
-									</TableCell>
-								</TableRow>
-							)}
-						</TableBody>
-					</Table>
-				</div>
+										{headerGroup.headers.map((header) => (
+											<TableHead
+												className="font-medium text-[#11181C] dark:text-[#ECEDEE]"
+												key={header.id}
+											>
+												{header.isPlaceholder
+													? null
+													: flexRender(
+															header.column.columnDef.header,
+															header.getContext(),
+														)}
+											</TableHead>
+										))}
+									</TableRow>
+								))}
+							</TableHeader>
+							<TableBody>
+								{table.getRowModel().rows?.length ? (
+									table.getRowModel().rows.map((row) => (
+										<React.Fragment key={row.id}>
+											{/* Main row */}
+											<TableRow
+												className="theme-transition border-[#E5E7EB] border-b hover:bg-[#F9FAFB] data-[state=selected]:bg-[#F9FAFB] dark:border-[#2D3033] dark:data-[state=selected]:bg-[#2D3033] dark:hover:bg-[#2D3033]"
+												data-state={row.getIsSelected() && "selected"}
+											>
+												{row.getVisibleCells().map((cell) => (
+													<TableCell key={cell.id}>
+														{flexRender(
+															cell.column.columnDef.cell,
+															cell.getContext(),
+														)}
+													</TableCell>
+												))}
+											</TableRow>
+											{/* Expanded row */}
+											{row.getIsExpanded() && (
+												<TableRow key={`${row.id}-expanded`}>
+													<TableCell className="p-0" colSpan={columns.length}>
+														{renderSubComponent({ row })}
+													</TableCell>
+												</TableRow>
+											)}
+										</React.Fragment>
+									))
+								) : (
+									<TableRow>
+										<TableCell
+											className="h-24 text-center"
+											colSpan={columns.length}
+										>
+											No se encontraron productos.
+										</TableCell>
+									</TableRow>
+								)}
+							</TableBody>
+						</Table>
+					</div>
+				)}
 
 				{/* Pagination Controls */}
-				<div className="flex items-center justify-between px-2">
-					<div className="flex items-center space-x-2">
-						<p className="text-[#687076] text-sm dark:text-[#9BA1A6]">
-							Filas por página
-						</p>
-						<Select
-							onValueChange={(value) => {
-								table.setPageSize(Number(value));
-							}}
-							value={`${table.getState().pagination.pageSize}`}
-						>
-							<SelectTrigger className="h-8 w-[70px] border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]">
-								<SelectValue
-									placeholder={table.getState().pagination.pageSize}
-								/>
-							</SelectTrigger>
-							<SelectContent
-								className="theme-transition border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]"
-								side="top"
-							>
-								{[5, 10, 20, 30, 40, 50].map((pageSize) => (
-									<SelectItem
-										className="theme-transition text-[#11181C] hover:bg-[#F9FAFB] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
-										key={pageSize}
-										value={`${pageSize}`}
-									>
-										{pageSize}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-					</div>
-					<div className="flex items-center space-x-6 lg:space-x-8">
-						<div className="theme-transition flex w-[100px] items-center justify-center font-medium text-[#687076] text-sm dark:text-[#9BA1A6]">
-							Página {table.getState().pagination.pageIndex + 1} de{" "}
-							{table.getPageCount()}
-						</div>
+				{filteredProducts.length > 0 && (
+					<div className="flex items-center justify-between px-2">
 						<div className="flex items-center space-x-2">
-							<Button
-								className="theme-transition h-8 w-8 border-[#E5E7EB] p-0 text-[#687076] hover:bg-[#F9FAFB] dark:border-[#2D3033] dark:text-[#9BA1A6] dark:hover:bg-[#2D3033]"
-								disabled={!table.getCanPreviousPage()}
-								onClick={() => table.previousPage()}
-								variant="outline"
+							<p className="text-[#687076] text-sm dark:text-[#9BA1A6]">
+								Filas por página
+							</p>
+							<Select
+								onValueChange={(value) => {
+									table.setPageSize(Number(value));
+								}}
+								value={`${table.getState().pagination.pageSize}`}
 							>
-								<span className="sr-only">Ir a la página anterior</span>
-								<ChevronLeft className="h-4 w-4" />
-							</Button>
-							<Button
-								className="theme-transition h-8 w-8 border-[#E5E7EB] p-0 text-[#687076] hover:bg-[#F9FAFB] dark:border-[#2D3033] dark:text-[#9BA1A6] dark:hover:bg-[#2D3033]"
-								disabled={!table.getCanNextPage()}
-								onClick={() => table.nextPage()}
-								variant="outline"
-							>
-								<span className="sr-only">Ir a la página siguiente</span>
-								<ChevronRight className="h-4 w-4" />
-							</Button>
+								<SelectTrigger className="h-8 w-[70px] border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]">
+									<SelectValue
+										placeholder={table.getState().pagination.pageSize}
+									/>
+								</SelectTrigger>
+								<SelectContent
+									className="theme-transition border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]"
+									side="top"
+								>
+									{[5, 10, 20, 30, 40, 50].map((pageSize) => (
+										<SelectItem
+											className="theme-transition text-[#11181C] hover:bg-[#F9FAFB] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
+											key={pageSize}
+											value={`${pageSize}`}
+										>
+											{pageSize}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</div>
+						{/* Results Counter */}
+						<div className="whitespace-nowrap text-[#687076] text-sm dark:text-[#9BA1A6]">
+							{table.getFilteredRowModel().rows.length} de{" "}
+							{filteredProducts.length} productos
+						</div>
+						<div className="flex items-center space-x-6 lg:space-x-8">
+							<div className="theme-transition flex w-[100px] items-center justify-center font-medium text-[#687076] text-sm dark:text-[#9BA1A6]">
+								Página {table.getState().pagination.pageIndex + 1} de{" "}
+								{table.getPageCount()}
+							</div>
+							<div className="flex items-center space-x-2">
+								<Button
+									className="theme-transition h-8 w-8 border-[#E5E7EB] p-0 text-[#687076] hover:bg-[#F9FAFB] dark:border-[#2D3033] dark:text-[#9BA1A6] dark:hover:bg-[#2D3033]"
+									disabled={!table.getCanPreviousPage()}
+									onClick={() => table.previousPage()}
+									variant="outline"
+								>
+									<span className="sr-only">Ir a la página anterior</span>
+									<ChevronLeft className="h-4 w-4" />
+								</Button>
+								<Button
+									className="theme-transition h-8 w-8 border-[#E5E7EB] p-0 text-[#687076] hover:bg-[#F9FAFB] dark:border-[#2D3033] dark:text-[#9BA1A6] dark:hover:bg-[#2D3033]"
+									disabled={!table.getCanNextPage()}
+									onClick={() => table.nextPage()}
+									variant="outline"
+								>
+									<span className="sr-only">Ir a la página siguiente</span>
+									<ChevronRight className="h-4 w-4" />
+								</Button>
+							</div>
 						</div>
 					</div>
-				</div>
+				)}
 			</div>
 		</TooltipProvider>
 	);
