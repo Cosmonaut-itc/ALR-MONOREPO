@@ -1815,8 +1815,8 @@ export function ProductCatalogTable({
 	/**
 	 * Handles CSV export of the currently filtered table rows.
 	 *
-	 * Extracts data from filtered rows, excluding the expander column, and downloads
-	 * a CSV file with the visible product data.
+	 * Extracts data from filtered rows, grouping inventory items by warehouse,
+	 * and downloads a CSV file with product and warehouse-level stock data.
 	 */
 	const handleExportCsv = useCallback(() => {
 		const filteredRows = table.getFilteredRowModel().rows;
@@ -1826,24 +1826,90 @@ export function ProductCatalogTable({
 			return;
 		}
 
-		// Define CSV headers (excluding the expander column)
+		// Define CSV headers including warehouse information
 		const csvHeaders = [
 			{ label: "Producto", key: "name" },
 			{ label: "Código de Barras", key: "barcode" },
 			{ label: "Categoría", key: "category" },
-			{ label: "Stock", key: "stockCount" },
+			{ label: "Almacén", key: "warehouse" },
+			{ label: "Stock en Almacén", key: "warehouseStock" },
+			{ label: "Stock Total", key: "totalStock" },
 		];
 
-		// Extract data from filtered rows
-		const csvData = filteredRows.map((row) => {
+		// Extract data from filtered rows, creating one row per product-warehouse combination
+		const csvData: Array<{
+			name: string;
+			barcode: number;
+			category: string;
+			warehouse: string;
+			warehouseStock: number;
+			totalStock: number;
+		}> = [];
+
+		for (const row of filteredRows) {
 			const product = row.original;
-			return {
-				name: product.name,
-				barcode: product.barcode,
-				category: product.category,
-				stockCount: product.stockCount,
-			};
-		});
+
+			// Group inventory items by warehouse (similar to renderSubComponent logic)
+			const displayItems = product.inventoryItems.map((item) => {
+				const data = extractInventoryItemData(item);
+				const warehouseKey = getInventoryLocationKey(data);
+				return { data, warehouseKey };
+			});
+
+			const groupedByWarehouse = displayItems.reduce(
+				(acc, item) => {
+					const locationKey = item.warehouseKey || "unassigned";
+					const bucket = acc.get(locationKey);
+					if (bucket) {
+						bucket.items.push(item);
+					} else {
+						const labelSource =
+							item.data.currentWarehouse ??
+							item.data.currentCabinet ??
+							item.data.homeWarehouseId ??
+							undefined;
+						acc.set(locationKey, {
+							label: resolveWarehouseName(labelSource),
+							items: [item],
+						});
+					}
+					return acc;
+				},
+				new Map<
+					string,
+					{
+						label: string;
+						items: Array<{ data: InventoryItemDisplay; warehouseKey: string }>;
+					}
+				>(),
+			);
+
+			const warehouseGroups = Array.from(groupedByWarehouse.entries());
+
+			// If product has no inventory items, still add one row with zero stock
+			if (warehouseGroups.length === 0) {
+				csvData.push({
+					name: product.name,
+					barcode: product.barcode,
+					category: product.category,
+					warehouse: "Sin almacén asignado",
+					warehouseStock: 0,
+					totalStock: product.stockCount,
+				});
+			} else {
+				// Create one CSV row per warehouse group
+				for (const [, group] of warehouseGroups) {
+					csvData.push({
+						name: product.name,
+						barcode: product.barcode,
+						category: product.category,
+						warehouse: group.label,
+						warehouseStock: group.items.length,
+						totalStock: product.stockCount,
+					});
+				}
+			}
+		}
 
 		// Generate filename with timestamp
 		const timestamp = format(new Date(), "yyyy-MM-dd_HH-mm-ss", { locale: es });
@@ -1851,14 +1917,16 @@ export function ProductCatalogTable({
 
 		const success = downloadCsv(csvData, csvHeaders, filename);
 		if (success) {
+			const uniqueProducts = new Set(filteredRows.map((r) => r.original.barcode))
+				.size;
 			toast.success("CSV exportado exitosamente", {
-				description: `Se exportaron ${csvData.length} producto(s)`,
+				description: `Se exportaron ${uniqueProducts} producto(s) con detalles por almacén`,
 				duration: 2000,
 			});
 		} else {
 			toast.error("No se pudo exportar el CSV.");
 		}
-	}, [table]);
+	}, [table, resolveWarehouseName]);
 
 	if (filteredProducts.length === 0) {
 		return (
