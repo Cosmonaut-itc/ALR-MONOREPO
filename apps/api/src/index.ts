@@ -5679,10 +5679,12 @@ const route = app
 						.where(eq(schemas.kitsDetails.id, kitItemId))
 						.returning();
 
-					const updatedItem = updatedRows[0];
+				const updatedItem = updatedRows[0];
 					if (!updatedItem) {
 						return { type: 'not_found' as const };
 					}
+
+				const currentDate = new Date().toISOString().split('T')[0];
 
 					// Update the product stock status based on return status
 					if (isReturned !== undefined) {
@@ -5690,7 +5692,8 @@ const route = app
 							.update(schemas.productStock)
 							.set({
 								isBeingUsed: !isReturned,
-								lastUsed: new Date().toISOString().split('T')[0],
+							lastUsed: currentDate,
+							isEmpty: true,
 							})
 							.where(eq(schemas.productStock.id, updatedItem.productId))
 							.returning();
@@ -5708,6 +5711,13 @@ const route = app
 								usageDate: new Date(),
 							});
 						}
+				} else {
+					await tx
+						.update(schemas.productStock)
+						.set({
+							isEmpty: true,
+						})
+						.where(eq(schemas.productStock.id, updatedItem.productId));
 					}
 
 					return { type: 'ok' as const, updatedItem };
@@ -5739,6 +5749,87 @@ const route = app
 					{
 						success: false,
 						message: 'Failed to update kit item status',
+					} satisfies ApiResponse,
+					500,
+				);
+			}
+		},
+	)
+
+	/**
+	 * POST /api/auth/product-stock/update-is-empty - Update isEmpty field for multiple product stock items
+	 *
+	 * Updates the isEmpty field to true for multiple product stock items in a single request.
+	 * This endpoint allows bulk marking of products as empty, which is useful for inventory
+	 * management and tracking purposes.
+	 *
+	 * @param {string[]} productIds - Array of product stock UUIDs to mark as empty (required)
+	 * @returns {ApiResponse} Success response with count of updated products
+	 * @throws {400} Validation error if input data is invalid or productIds array is empty
+	 * @throws {500} Database error if update fails
+	 *
+	 * @example
+	 * // Request body
+	 * {
+	 *   "productIds": [
+	 *     "123e4567-e89b-12d3-a456-426614174000",
+	 *     "223e4567-e89b-12d3-a456-426614174001"
+	 *   ]
+	 * }
+	 */
+	.post(
+		'/api/auth/product-stock/update-is-empty',
+		zValidator(
+			'json',
+			z.object({
+				productIds: z
+					.array(z.string().uuid('Invalid product stock ID'))
+					.min(1, 'At least one product ID is required')
+					.describe('Array of product stock UUIDs to mark as empty'),
+			}),
+		),
+		async (c) => {
+			try {
+				const { productIds } = c.req.valid('json');
+
+				// Update isEmpty field to true for all specified product IDs
+				const updatedProducts = await db
+					.update(schemas.productStock)
+					.set({
+						isEmpty: true,
+					})
+					.where(inArray(schemas.productStock.id, productIds))
+					.returning();
+
+				if (updatedProducts.length === 0) {
+					return c.json(
+						{
+							success: false,
+							message: 'No products found with the provided IDs',
+						} satisfies ApiResponse,
+						404,
+					);
+				}
+
+				return c.json(
+					{
+						success: true,
+						message: `Successfully marked ${updatedProducts.length} product(s) as empty`,
+						data: {
+							updatedCount: updatedProducts.length,
+							productIds: updatedProducts.map((p) => p.id),
+						},
+					} satisfies ApiResponse,
+					200,
+				);
+			} catch (error) {
+				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
+				console.error('Error updating product stock isEmpty field:', error);
+
+				return c.json(
+					{
+						success: false,
+						message: 'Failed to update product stock isEmpty field',
 					} satisfies ApiResponse,
 					500,
 				);

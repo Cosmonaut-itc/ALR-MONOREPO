@@ -218,6 +218,13 @@
       "when": 1761075242116,
       "tag": "0030_amazing_wonder_man",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1762556265451,
+      "tag": "0031_illegal_black_queen",
+      "breakpoints": true
     }
   ]
 }
