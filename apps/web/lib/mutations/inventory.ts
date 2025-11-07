@@ -160,10 +160,11 @@ export const useToggleInventoryKit = () =>
 			if (!data?.productStockId) {
 				throw new Error("El identificador del stock es obligatorio");
 			}
-			const response =
-				await client.api.auth["product-stock"]["update-is-kit"].$post({
-					json: { productStockId: data.productStockId },
-				});
+			const response = await client.api.auth["product-stock"][
+				"update-is-kit"
+			].$post({
+				json: { productStockId: data.productStockId },
+			});
 			const result = await response.json();
 			if (!result?.success) {
 				throw new Error(

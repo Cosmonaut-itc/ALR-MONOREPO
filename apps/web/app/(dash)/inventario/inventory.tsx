@@ -967,6 +967,7 @@ export function InventarioPage({
 			sourceWarehouseId,
 			cabinetId,
 			isCabinetToWarehouse: !isWarehouseToCabinet,
+			productCatalog,
 		});
 		await createTransferOrder(transferData);
 	};
@@ -1039,11 +1040,13 @@ export function InventarioPage({
 								<Button
 									className="whitespace-nowrap"
 									disabled={
-										!canManageKits && distributionCenterIds.has(selectedWarehouseId)
+										!canManageKits &&
+										distributionCenterIds.has(selectedWarehouseId)
 									}
 									variant="default"
 								>
-									{!canManageKits && distributionCenterIds.has(selectedWarehouseId)
+									{!canManageKits &&
+									distributionCenterIds.has(selectedWarehouseId)
 										? "Centro de distribución (solo consulta)"
 										: "Agregar producto"}
 								</Button>

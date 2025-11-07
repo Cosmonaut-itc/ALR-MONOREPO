@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
-import type { TransferOrderType } from "@/types";
+import type { TransferOrderType, ProductCatalogResponse } from "@/types";
 import { useAuthStore } from "./auth-store";
 
 interface TransferItem {
@@ -55,11 +55,13 @@ interface TransferState {
 		sourceWarehouseId,
 		cabinetId,
 		isCabinetToWarehouse,
+		productCatalog,
 	}: {
 		destinationWarehouseId: string;
 		sourceWarehouseId: string;
 		cabinetId: string;
 		isCabinetToWarehouse: boolean;
+		productCatalog?: ProductCatalogResponse | null;
 	}) => TransferOrderType;
 }
 
@@ -120,11 +122,13 @@ export const useTransferStore = create<TransferState>()(
 			sourceWarehouseId,
 			cabinetId,
 			isCabinetToWarehouse,
+			productCatalog,
 		}: {
 			destinationWarehouseId: string;
 			sourceWarehouseId: string;
 			cabinetId: string;
 			isCabinetToWarehouse: boolean;
+			productCatalog?: ProductCatalogResponse | null;
 		}) => {
 			const transferList = get().transferList;
 			const currentUser = useAuthStore.getState().user;
@@ -143,6 +147,41 @@ export const useTransferStore = create<TransferState>()(
 			// Generate unique transfer number using timestamp
 			const transferNumber = `TR-${Date.now()}`;
 
+			// Helper function to get cost from product catalog by barcode
+			const getCostFromCatalog = (barcode: number): number => {
+				if (
+					!productCatalog ||
+					typeof productCatalog !== "object" ||
+					!("success" in productCatalog) ||
+					!productCatalog.success ||
+					!Array.isArray(productCatalog.data)
+				) {
+					return 0;
+				}
+
+				const product = productCatalog.data.find(
+					(p) => {
+						if (typeof p !== "object" || p === null) {
+							return false;
+						}
+						const productRecord = p as Record<string, unknown>;
+						const productGoodId = productRecord.good_id;
+						const productCost = productRecord.cost;
+						return (
+							typeof productGoodId === "number" &&
+							productGoodId === barcode &&
+							typeof productCost === "number"
+						);
+					},
+				);
+
+				return (
+					(product && typeof product === "object" && "cost" in product
+						? (product.cost as number | undefined)
+						: undefined) ?? 0
+				);
+			};
+
 			// Transform the transfer list to the expected API format
 			const transformedData: TransferOrderType = {
 				transferNumber,
@@ -155,8 +194,10 @@ export const useTransferStore = create<TransferState>()(
 					productStockId: item.uuid,
 					quantityTransferred: 1, // Default quantity (not specified in TransferCandidate)
 					itemCondition: "good" as const, // Default to good condition
+					goodId: item.barcode, // Required: product barcode
+					costPerUnit: getCostFromCatalog(item.barcode), // Look up cost from product catalog
 				})),
-				transferNotes: `Transfer from ${isCabinetToWarehouse ? "Gabinete" : "AG"} to ${isCabinetToWarehouse ? "AG" : "Gabinete"} - ${transferList.length} items`,
+				notes: `Transfer from ${isCabinetToWarehouse ? "Gabinete" : "AG"} to ${isCabinetToWarehouse ? "AG" : "Gabinete"} - ${transferList.length} items`,
 				priority: "normal" as const,
 				isCabinetToWarehouse,
 			};

@@ -167,7 +167,8 @@ export type TransferOrderType = {
 		goodId: number;
 		costPerUnit: number;
 	}>;
-	transferNotes?: string;
+	notes?: string;
+	transferReason?: string;
 	priority?: "high" | "normal" | "urgent";
 	scheduledDate?: string;
 	isCabinetToWarehouse: boolean;
