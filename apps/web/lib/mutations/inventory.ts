@@ -207,3 +207,61 @@ export const useToggleInventoryKit = () =>
 			console.error(error);
 		},
 	});
+
+export const useUpdateInventoryIsEmpty = () =>
+	useMutation({
+		mutationKey: ["update-inventory-is-empty"],
+		mutationFn: async (data: {
+			productIds: string[];
+			invalidateContexts?: Array<string | null | undefined>;
+		}) => {
+			if (!data?.productIds || !Array.isArray(data.productIds) || data.productIds.length === 0) {
+				throw new Error("Los identificadores de producto son obligatorios");
+			}
+			const response = await client.api.auth["product-stock"][
+				"update-is-empty"
+			].$post({
+				json: { productIds: data.productIds },
+			});
+			const result = await response.json();
+			if (!result?.success) {
+				throw new Error(
+					result?.message ||
+						"La API devolvió éxito=false al actualizar el estado vacío",
+				);
+			}
+			return result;
+		},
+		onMutate: () => {
+			toast.loading("Actualizando estado vacío...", {
+				id: "update-inventory-is-empty",
+			});
+		},
+		onSuccess: (_data, variables) => {
+			toast.success("Estado vacío actualizado", {
+				id: "update-inventory-is-empty",
+			});
+			const queryClient = getQueryClient();
+			const contexts = new Set<string>(["all"]);
+			if (Array.isArray(variables.invalidateContexts)) {
+				for (const context of variables.invalidateContexts) {
+					const trimmed = typeof context === "string" ? context.trim() : "";
+					if (trimmed) {
+						contexts.add(trimmed);
+					}
+				}
+			}
+			for (const context of contexts) {
+				queryClient.invalidateQueries({
+					queryKey: createQueryKey(queryKeys.inventory, [context]),
+				});
+			}
+		},
+		onError: (error) => {
+			toast.error("Error al actualizar el estado vacío", {
+				id: "update-inventory-is-empty",
+			});
+			// biome-ignore lint/suspicious/noConsole: Needed para depuración
+			console.error(error);
+		},
+	});

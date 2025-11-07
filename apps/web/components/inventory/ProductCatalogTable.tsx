@@ -70,7 +70,10 @@ import {
 	TooltipProvider,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { useToggleInventoryKit } from "@/lib/mutations/inventory";
+import {
+	useToggleInventoryKit,
+	useUpdateInventoryIsEmpty,
+} from "@/lib/mutations/inventory";
 import {
 	useCreateStockLimit,
 	useUpdateStockLimit,
@@ -112,6 +115,7 @@ type InventoryItemDisplay = {
 	homeWarehouseId?: string;
 	locationType?: "warehouse" | "cabinet" | "unassigned";
 	isKit?: boolean;
+	isEmpty?: boolean;
 };
 
 interface ProductCatalogTableProps {
@@ -215,6 +219,7 @@ function extractInventoryItemData(
 		item as { employee?: { name?: string; surname?: string } }
 	).employee;
 	const isKitFlag = (itemStock as { isKit?: boolean | null }).isKit ?? false;
+	const isEmptyFlag = (itemStock as { isEmpty?: boolean | null }).isEmpty ?? false;
 		const locationId = getItemWarehouse(itemStock);
 		const rawCabinet = (itemStock as { currentCabinet?: unknown })
 			.currentCabinet;
@@ -250,6 +255,7 @@ function extractInventoryItemData(
 			homeWarehouseId: warehouseId,
 		locationType,
 		isKit: Boolean(isKitFlag),
+		isEmpty: Boolean(isEmptyFlag),
 	};
 
 		return result;
@@ -267,6 +273,7 @@ function extractInventoryItemData(
 		homeWarehouseId: undefined,
 		locationType: "unassigned",
 		isKit: false,
+		isEmpty: false,
 	};
 }
 
@@ -467,6 +474,8 @@ export function ProductCatalogTable({
 	} = useInventoryStore();
 	const { mutateAsync: toggleKitAsync, isPending: isTogglingKit } =
 		useToggleInventoryKit();
+	const { mutateAsync: updateIsEmptyAsync, isPending: isUpdatingIsEmpty } =
+		useUpdateInventoryIsEmpty();
 
 	const warehouseEntries = useMemo<WarehouseMappingEntry[]>(() => {
 		if (isWarehouseMapSuccess(warehouseMap)) {
@@ -760,6 +769,7 @@ export function ProductCatalogTable({
 	});
 	const [showOnlyWithStock, setShowOnlyWithStock] = useState(false);
 	const [stockLimitFilter, setStockLimitFilter] = useState<string>("all");
+	const [isEmptyFilter, setIsEmptyFilter] = useState<string>("all");
 	// Per-product selection state for expanded rows (barcode -> Set of UUIDs)
 	const [selectedByBarcode, setSelectedByBarcode] = useState<
 		Record<number, Set<string>>
@@ -981,11 +991,31 @@ export function ProductCatalogTable({
 			}
 		}
 
+		// Apply isEmpty filter
+		if (isEmptyFilter !== "all") {
+			if (isEmptyFilter === "yes") {
+				result = result.filter((product) =>
+					product.inventoryItems.some((item) => {
+						const data = extractInventoryItemData(item);
+						return data.isEmpty === true;
+					}),
+				);
+			} else if (isEmptyFilter === "no") {
+				result = result.filter((product) =>
+					product.inventoryItems.some((item) => {
+						const data = extractInventoryItemData(item);
+						return data.isEmpty === false;
+					}),
+				);
+			}
+		}
+
 		return result;
 	}, [
 		products,
 		warehouseFilter,
 		stockLimitFilter,
+		isEmptyFilter,
 		resolveWarehouseIdForLimit,
 		hasStockLimitViolation,
 	]);
@@ -1110,7 +1140,7 @@ export function ProductCatalogTable({
 				const selectionEnabledRef = enableSelection === true;
 				const productSelection =
 					selectedByBarcode[product.barcode] || new Set<string>();
-				const detailColumnCount = enableDispose ? 7 : 6;
+				const detailColumnCount = enableDispose ? 8 : 7;
 
 				type DisplayItem = {
 					key: string;
@@ -1135,6 +1165,14 @@ export function ProductCatalogTable({
 					return Boolean(id) && !id.startsWith("uuid-");
 				});
 				const isToggleDisabled = toggleCandidates.length === 0 || isTogglingKit;
+				const selectedItemsForIsEmpty = displayItems.filter(
+					(item) => item.key && productSelection.has(item.key),
+				);
+				const validSelectedIds = selectedItemsForIsEmpty
+					.map((item) => item.data.id ?? "")
+					.filter((id) => Boolean(id) && !id.startsWith("uuid-"));
+				const isUpdateIsEmptyDisabled =
+					validSelectedIds.length === 0 || isUpdatingIsEmpty;
 
 				const isGroupExpanded = (barcode: number, key: string) =>
 					Boolean(expandedGroupsByBarcode[barcode]?.has(key));
@@ -1236,6 +1274,71 @@ export function ProductCatalogTable({
 								invalidateContexts: update.contexts,
 							});
 						}
+					} catch (error) {
+						// biome-ignore lint/suspicious/noConsole: diagnostics for failed updates
+						console.error(error);
+					}
+				};
+
+				const handleUpdateIsEmpty = async () => {
+					if (!canManageKits) {
+						return;
+					}
+					// Get only the selected items (from checkboxes)
+					const selectedItems = displayItems.filter(
+						(item) => item.key && productSelection.has(item.key),
+					);
+					if (selectedItems.length === 0) {
+						toast.error("No hay artículos seleccionados para actualizar.");
+						return;
+					}
+					// Extract valid product IDs from selected items
+					const productIds = selectedItems
+						.map((item) => item.data.id ?? "")
+						.filter((id) => Boolean(id) && !id.startsWith("uuid-"));
+					if (productIds.length === 0) {
+						toast.error("No hay artículos válidos para actualizar.");
+						return;
+					}
+					const contexts = new Set<string>();
+					if (warehouse && warehouse.trim().length > 0) {
+						contexts.add(warehouse.trim());
+					}
+					// Collect contexts from selected items only
+					for (const item of selectedItems) {
+						const locationCandidates = [
+							item.data.currentWarehouse,
+							item.data.currentCabinet,
+							item.data.homeWarehouseId,
+							getInventoryLocationKey(item.data),
+						];
+						for (const candidate of locationCandidates) {
+							if (candidate && candidate.trim() !== "") {
+								contexts.add(candidate.trim());
+							}
+						}
+						const resolvedCandidates = [
+							resolveWarehouseIdForLimit(item.data.currentWarehouse),
+							resolveWarehouseIdForLimit(item.data.currentCabinet),
+							resolveWarehouseIdForLimit(item.data.homeWarehouseId),
+							resolveWarehouseIdForLimit(item.warehouseKey),
+						];
+						for (const resolved of resolvedCandidates) {
+							if (resolved && resolved.trim() !== "") {
+								contexts.add(resolved.trim());
+							}
+						}
+					}
+					try {
+						await updateIsEmptyAsync({
+							productIds,
+							invalidateContexts: Array.from(contexts),
+						});
+						// Clear selection after successful update
+						setSelectedByBarcode((prev) => ({
+							...prev,
+							[product.barcode]: new Set<string>(),
+						}));
 					} catch (error) {
 						// biome-ignore lint/suspicious/noConsole: diagnostics for failed updates
 						console.error(error);
@@ -1373,24 +1476,44 @@ export function ProductCatalogTable({
 							</h4>
 							<div className="flex flex-wrap items-center gap-2">
 								{canManageKits && (
-									<Tooltip>
-										<TooltipTrigger asChild>
-											<Button
-												className="h-8 px-3"
-												disabled={isToggleDisabled}
-												onClick={handleToggleKitSelection}
-												size="sm"
-												type="button"
-												variant="outline"
-											>
-												Actualizar kit
-											</Button>
-										</TooltipTrigger>
-										<TooltipContent side="top">
-											Al hacer click agregaras o quitaras este producto del
-											grupo que se usa en kits
-										</TooltipContent>
-									</Tooltip>
+									<>
+										<Tooltip>
+											<TooltipTrigger asChild>
+												<Button
+													className="h-8 px-3"
+													disabled={isToggleDisabled}
+													onClick={handleToggleKitSelection}
+													size="sm"
+													type="button"
+													variant="outline"
+												>
+													Actualizar kit
+												</Button>
+											</TooltipTrigger>
+											<TooltipContent side="top">
+												Al hacer click agregaras o quitaras este producto del
+												grupo que se usa en kits
+											</TooltipContent>
+										</Tooltip>
+										<Tooltip>
+											<TooltipTrigger asChild>
+												<Button
+													className="h-8 px-3"
+													disabled={isUpdateIsEmptyDisabled}
+													onClick={handleUpdateIsEmpty}
+													size="sm"
+													type="button"
+													variant="outline"
+												>
+													Marcar como vacío ({validSelectedIds.length})
+												</Button>
+											</TooltipTrigger>
+											<TooltipContent side="top">
+												Al hacer click marcarás los artículos seleccionados (con
+												checkbox) como vacíos
+											</TooltipContent>
+										</Tooltip>
+									</>
 								)}
 								{selectionEnabledRef && (
 									<Button
@@ -1462,6 +1585,9 @@ export function ProductCatalogTable({
 										</TableHead>
 										<TableHead className="font-medium text-[#687076] text-xs dark:text-[#9BA1A6]">
 											Primer Uso
+										</TableHead>
+										<TableHead className="font-medium text-[#687076] text-xs dark:text-[#9BA1A6]">
+											Vacío
 										</TableHead>
 										{enableDispose && (
 											<TableHead className="font-medium text-[#687076] text-xs dark:text-[#9BA1A6]">
@@ -1598,7 +1724,7 @@ export function ProductCatalogTable({
 																>
 																	<TableCell className="font-mono text-[#687076] text-xs dark:text-[#9BA1A6]">
 																		<div className="flex flex-col gap-1">
-																			{selectionEnabledRef && (
+																			{(selectionEnabledRef || canManageKits) && (
 																				<Checkbox
 																					checked={isSelected}
 																					disabled={isDisabled}
@@ -1704,6 +1830,18 @@ export function ProductCatalogTable({
 																		{formatDate(data.firstUsed)}
 																	</TableCell>
 																	<TableCell>
+																		<Badge
+																			className={
+																				data.isEmpty
+																					? "bg-amber-100 text-amber-800 text-xs dark:bg-amber-900 dark:text-amber-100"
+																					: "bg-blue-100 text-blue-800 text-xs dark:bg-blue-900 dark:text-blue-100"
+																			}
+																			variant="secondary"
+																		>
+																			{data.isEmpty ? "Sí" : "No"}
+																		</Badge>
+																	</TableCell>
+																	<TableCell>
 																		{enableDispose && (
 																			<Button
 																				className="h-6 w-6 p-0 text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950 dark:hover:text-red-300"
@@ -1761,6 +1899,8 @@ export function ProductCatalogTable({
 			isSavingStockLimit,
 			toggleKitAsync,
 			isTogglingKit,
+			updateIsEmptyAsync,
+			isUpdatingIsEmpty,
 			warehouse,
 		],
 	);
@@ -2242,6 +2382,38 @@ export function ProductCatalogTable({
 						</div>
 					)}
 
+					{/* IsEmpty Filter */}
+					<div className="min-w-[180px]">
+						<Select
+							onValueChange={setIsEmptyFilter}
+							value={isEmptyFilter}
+						>
+							<SelectTrigger className="border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]">
+								<SelectValue placeholder="Todos los estados" />
+							</SelectTrigger>
+							<SelectContent className="border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
+								<SelectItem
+									className="text-[#11181C] hover:bg-[#F9FAFB] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
+									value="all"
+								>
+									Todos los estados
+								</SelectItem>
+								<SelectItem
+									className="text-[#11181C] hover:bg-[#F9FAFB] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
+									value="yes"
+								>
+									Vacío (Sí)
+								</SelectItem>
+								<SelectItem
+									className="text-[#11181C] hover:bg-[#F9FAFB] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
+									value="no"
+								>
+									No vacío (No)
+								</SelectItem>
+							</SelectContent>
+						</Select>
+					</div>
+
 					{/* Stock Filter */}
 					<div className="flex items-center space-x-2">
 						<Checkbox
@@ -2264,7 +2436,8 @@ export function ProductCatalogTable({
 						categoryFilter !== "all" ||
 						showOnlyWithStock ||
 						warehouseFilter !== "all" ||
-						stockLimitFilter !== "all") && (
+						stockLimitFilter !== "all" ||
+						isEmptyFilter !== "all") && (
 						<Button
 							className="text-[#687076] hover:text-[#11181C] dark:text-[#9BA1A6] dark:hover:text-[#ECEDEE]"
 							onClick={() => {
@@ -2273,6 +2446,7 @@ export function ProductCatalogTable({
 								setShowOnlyWithStock(false);
 								setWarehouseFilter("all");
 								setStockLimitFilter("all");
+								setIsEmptyFilter("all");
 							}}
 							size="sm"
 							variant="ghost"
