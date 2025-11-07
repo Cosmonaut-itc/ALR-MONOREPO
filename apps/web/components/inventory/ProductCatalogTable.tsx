@@ -1704,7 +1704,20 @@ export function ProductCatalogTable({
 												</TableRow>
 												{isExpanded && (
 													<React.Fragment>
-														{group.items.map((item) => {
+														{group.items
+															.filter((item) => {
+																if (isEmptyFilter === "all") {
+																	return true;
+																}
+																if (isEmptyFilter === "yes") {
+																	return item.data.isEmpty === true;
+																}
+																if (isEmptyFilter === "no") {
+																	return item.data.isEmpty === false;
+																}
+																return true;
+															})
+															.map((item) => {
 															const { data, key: selectionKey } = item;
 															const isSelected = selectionKey
 																? productSelection.has(selectionKey)
@@ -1902,6 +1915,7 @@ export function ProductCatalogTable({
 			updateIsEmptyAsync,
 			isUpdatingIsEmpty,
 			warehouse,
+			isEmptyFilter,
 		],
 	);
 
@@ -2076,6 +2090,9 @@ export function ProductCatalogTable({
 			{ label: "Categoría", key: "category" },
 			{ label: "Almacén", key: "warehouse" },
 			{ label: "Stock en Almacén", key: "warehouseStock" },
+			{ label: "Artículos Vacíos", key: "emptyItems" },
+			{ label: "Límite Mínimo", key: "minLimit" },
+			{ label: "Límite Máximo", key: "maxLimit" },
 			{ label: "Stock Total", key: "totalStock" },
 		];
 
@@ -2086,6 +2103,9 @@ export function ProductCatalogTable({
 			category: string;
 			warehouse: string;
 			warehouseStock: number;
+			emptyItems: number;
+			minLimit: number | string;
+			maxLimit: number | string;
 			totalStock: number;
 		}> = [];
 
@@ -2137,17 +2157,46 @@ export function ProductCatalogTable({
 					category: product.category,
 					warehouse: "Sin almacén asignado",
 					warehouseStock: 0,
+					emptyItems: 0,
+					minLimit: "Sin límite",
+					maxLimit: "Sin límite",
 					totalStock: product.stockCount,
 				});
 			} else {
 				// Create one CSV row per warehouse group
 				for (const [, group] of warehouseGroups) {
+					// Count empty items in this warehouse group
+					const emptyItemsCount = group.items.filter(
+						(item) => item.data.isEmpty === true,
+					).length;
+
+					// Get effective warehouse ID for limit lookup
+					const labelSource =
+						group.items[0]?.data.currentWarehouse ??
+						group.items[0]?.data.currentCabinet ??
+						group.items[0]?.data.homeWarehouseId ??
+						undefined;
+					const effectiveWarehouseId = resolveWarehouseIdForLimit(labelSource);
+
+					// Get stock limits for this warehouse-product combination
+					const limitKey =
+						effectiveWarehouseId && stockLimitsMap
+							? `${effectiveWarehouseId}:${product.barcode}`
+							: null;
+					const limit =
+						limitKey && stockLimitsMap
+							? stockLimitsMap.get(limitKey) ?? null
+							: null;
+
 					csvData.push({
 						name: product.name,
 						barcode: product.barcode,
 						category: product.category,
 						warehouse: group.label,
 						warehouseStock: group.items.length,
+						emptyItems: emptyItemsCount,
+						minLimit: limit?.minQuantity ?? "Sin límite",
+						maxLimit: limit?.maxQuantity ?? "Sin límite",
 						totalStock: product.stockCount,
 					});
 				}
@@ -2169,7 +2218,7 @@ export function ProductCatalogTable({
 		} else {
 			toast.error("No se pudo exportar el CSV.");
 		}
-	}, [table, resolveWarehouseName]);
+	}, [table, resolveWarehouseName, resolveWarehouseIdForLimit, stockLimitsMap]);
 
 	return (
 		<TooltipProvider>
