@@ -759,6 +759,7 @@ export function ProductCatalogTable({
 		pageSize: 10,
 	});
 	const [showOnlyWithStock, setShowOnlyWithStock] = useState(false);
+	const [stockLimitFilter, setStockLimitFilter] = useState<string>("all");
 	// Per-product selection state for expanded rows (barcode -> Set of UUIDs)
 	const [selectedByBarcode, setSelectedByBarcode] = useState<
 		Record<number, Set<string>>
@@ -844,48 +845,150 @@ export function ProductCatalogTable({
 		resolveWarehouseName,
 	]);
 
+	/**
+	 * Checks if a product has stock limit violations in any warehouse.
+	 *
+	 * @param product - The product to check for stock limit violations.
+	 * @param filterType - The type of violation to check: "below-minimum" or "above-maximum".
+	 * @returns True if the product has the specified violation type in any warehouse.
+	 */
+	const hasStockLimitViolation = useCallback(
+		(product: ProductWithInventory, filterType: "below-minimum" | "above-maximum"): boolean => {
+			if (!stockLimitsMap || stockLimitsMap.size === 0) {
+				return false;
+			}
+
+			// Group inventory items by warehouse (similar to renderSubComponent logic)
+			const displayItems = product.inventoryItems.map((item) => {
+				const data = extractInventoryItemData(item);
+				const warehouseKey = getInventoryLocationKey(data);
+				return { data, warehouseKey };
+			});
+
+			const groupedByWarehouse = displayItems.reduce(
+				(acc, item) => {
+					const locationKey = item.warehouseKey || "unassigned";
+					const bucket = acc.get(locationKey);
+					if (bucket) {
+						bucket.items.push(item);
+					} else {
+						const labelSource =
+							item.data.currentWarehouse ??
+							item.data.currentCabinet ??
+							item.data.homeWarehouseId ??
+							undefined;
+						const effectiveWarehouseId =
+							resolveWarehouseIdForLimit(labelSource);
+						acc.set(locationKey, {
+							effectiveWarehouseId,
+							items: [item],
+						});
+					}
+					return acc;
+				},
+				new Map<
+					string,
+					{
+						effectiveWarehouseId: string | null;
+						items: Array<{ data: InventoryItemDisplay; warehouseKey: string }>;
+					}
+				>(),
+			);
+
+			// Check each warehouse group for stock limit violations
+			for (const [, group] of groupedByWarehouse.entries()) {
+				const effectiveWarehouseId = group.effectiveWarehouseId;
+				if (!effectiveWarehouseId) {
+					continue;
+				}
+
+				const limitKey = `${effectiveWarehouseId}:${product.barcode}`;
+				const limit = stockLimitsMap.get(limitKey);
+				if (!limit) {
+					continue;
+				}
+
+				const currentCount = group.items.length;
+				const belowMinimum = currentCount < limit.minQuantity;
+				const aboveMaximum = currentCount > limit.maxQuantity;
+
+				if (filterType === "below-minimum" && belowMinimum) {
+					return true;
+				}
+				if (filterType === "above-maximum" && aboveMaximum) {
+					return true;
+				}
+			}
+
+			return false;
+		},
+		[stockLimitsMap, resolveWarehouseIdForLimit],
+	);
+
 	const filteredProducts = useMemo(() => {
-		if (warehouseFilter === "all") {
-			return products;
+		let result = products;
+
+		// Apply warehouse filter
+		if (warehouseFilter !== "all") {
+			result = result.filter((product) =>
+				product.inventoryItems.some((item) => {
+					const data = extractInventoryItemData(item);
+					const candidates = new Set<string>();
+
+					const addCandidate = (identifier?: string | null) => {
+						const id = typeof identifier === "string" ? identifier.trim() : "";
+						if (id) {
+							candidates.add(id);
+						}
+					};
+
+					const locationKey = getInventoryLocationKey(data);
+					addCandidate(locationKey);
+					addCandidate(data.currentWarehouse ?? null);
+					addCandidate(data.currentCabinet ?? null);
+					addCandidate(data.homeWarehouseId ?? null);
+
+					const resolvedCandidates = [
+						resolveWarehouseIdForLimit(locationKey),
+						resolveWarehouseIdForLimit(data.currentWarehouse),
+						resolveWarehouseIdForLimit(data.currentCabinet),
+						resolveWarehouseIdForLimit(data.homeWarehouseId),
+					];
+
+					for (const candidate of resolvedCandidates) {
+						addCandidate(candidate ?? null);
+					}
+
+					if (warehouseFilter === "unassigned") {
+						return candidates.has("unassigned");
+					}
+
+					return candidates.has(warehouseFilter);
+				}),
+			);
 		}
 
-		return products.filter((product) =>
-			product.inventoryItems.some((item) => {
-				const data = extractInventoryItemData(item);
-				const candidates = new Set<string>();
+		// Apply stock limit filter
+		if (stockLimitFilter !== "all") {
+			if (stockLimitFilter === "below-minimum") {
+				result = result.filter((product) =>
+					hasStockLimitViolation(product, "below-minimum"),
+				);
+			} else if (stockLimitFilter === "above-maximum") {
+				result = result.filter((product) =>
+					hasStockLimitViolation(product, "above-maximum"),
+				);
+			}
+		}
 
-				const addCandidate = (identifier?: string | null) => {
-					const id = typeof identifier === "string" ? identifier.trim() : "";
-					if (id) {
-						candidates.add(id);
-					}
-				};
-
-				const locationKey = getInventoryLocationKey(data);
-				addCandidate(locationKey);
-				addCandidate(data.currentWarehouse ?? null);
-				addCandidate(data.currentCabinet ?? null);
-				addCandidate(data.homeWarehouseId ?? null);
-
-				const resolvedCandidates = [
-					resolveWarehouseIdForLimit(locationKey),
-					resolveWarehouseIdForLimit(data.currentWarehouse),
-					resolveWarehouseIdForLimit(data.currentCabinet),
-					resolveWarehouseIdForLimit(data.homeWarehouseId),
-				];
-
-				for (const candidate of resolvedCandidates) {
-					addCandidate(candidate ?? null);
-				}
-
-				if (warehouseFilter === "unassigned") {
-					return candidates.has("unassigned");
-				}
-
-				return candidates.has(warehouseFilter);
-			}),
-		);
-	}, [products, warehouseFilter, resolveWarehouseIdForLimit]);
+		return result;
+	}, [
+		products,
+		warehouseFilter,
+		stockLimitFilter,
+		resolveWarehouseIdForLimit,
+		hasStockLimitViolation,
+	]);
 
 	useEffect(() => {
 		if (warehouseFilter === "all") {
@@ -1928,22 +2031,6 @@ export function ProductCatalogTable({
 		}
 	}, [table, resolveWarehouseName]);
 
-	if (filteredProducts.length === 0) {
-		return (
-			<Card className="theme-transition border-[#E5E7EB] bg-white dark:border-[#374151] dark:bg-[#1E1F20]">
-				<CardContent className="flex flex-col items-center justify-center py-12">
-					<Package className="h-12 w-12 text-[#9CA3AF] dark:text-[#6B7280]" />
-					<h3 className="mt-4 font-semibold text-[#11181C] dark:text-[#ECEDEE]">
-						No hay productos
-					</h3>
-					<p className="mt-2 text-center text-[#687076] text-sm dark:text-[#9BA1A6]">
-						No se encontraron productos que coincidan con los filtros aplicados.
-					</p>
-				</CardContent>
-			</Card>
-		);
-	}
-
 	return (
 		<TooltipProvider>
 			<div className="space-y-4">
@@ -2121,6 +2208,40 @@ export function ProductCatalogTable({
 						</div>
 					)}
 
+					{/* Stock Limit Filter */}
+					{stockLimitsMap && stockLimitsMap.size > 0 && (
+						<div className="min-w-[200px]">
+							<Select
+								onValueChange={setStockLimitFilter}
+								value={stockLimitFilter}
+							>
+								<SelectTrigger className="border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]">
+									<SelectValue placeholder="Todos los límites" />
+								</SelectTrigger>
+								<SelectContent className="border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
+									<SelectItem
+										className="text-[#11181C] hover:bg-[#F9FAFB] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
+										value="all"
+									>
+										Todos los límites
+									</SelectItem>
+									<SelectItem
+										className="text-[#11181C] hover:bg-[#F9FAFB] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
+										value="below-minimum"
+									>
+										Bajo el límite mínimo
+									</SelectItem>
+									<SelectItem
+										className="text-[#11181C] hover:bg-[#F9FAFB] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
+										value="above-maximum"
+									>
+										Sobre el límite máximo
+									</SelectItem>
+								</SelectContent>
+							</Select>
+						</div>
+					)}
+
 					{/* Stock Filter */}
 					<div className="flex items-center space-x-2">
 						<Checkbox
@@ -2142,7 +2263,8 @@ export function ProductCatalogTable({
 					{(globalFilter ||
 						categoryFilter !== "all" ||
 						showOnlyWithStock ||
-						warehouseFilter !== "all") && (
+						warehouseFilter !== "all" ||
+						stockLimitFilter !== "all") && (
 						<Button
 							className="text-[#687076] hover:text-[#11181C] dark:text-[#9BA1A6] dark:hover:text-[#ECEDEE]"
 							onClick={() => {
@@ -2150,6 +2272,7 @@ export function ProductCatalogTable({
 								setCategoryFilter("all");
 								setShowOnlyWithStock(false);
 								setWarehouseFilter("all");
+								setStockLimitFilter("all");
 							}}
 							size="sm"
 							variant="ghost"
@@ -2157,12 +2280,6 @@ export function ProductCatalogTable({
 							Limpiar filtros
 						</Button>
 					)}
-
-					{/* Results Counter */}
-					<div className="whitespace-nowrap text-[#687076] text-sm dark:text-[#9BA1A6]">
-						{table.getFilteredRowModel().rows.length} de{" "}
-						{filteredProducts.length} productos
-					</div>
 
 					{/* CSV Export Button */}
 					<Button
@@ -2177,133 +2294,154 @@ export function ProductCatalogTable({
 					</Button>
 				</div>
 
-				{/* Table */}
-				<div className="theme-transition rounded-md border border-[#E5E7EB] dark:border-[#2D3033]">
-					<Table>
-						<TableHeader>
-							{table.getHeaderGroups().map((headerGroup) => (
-								<TableRow
-									className="border-[#E5E7EB] border-b hover:bg-[#F9FAFB] dark:border-[#2D3033] dark:hover:bg-[#2D3033]"
-									key={headerGroup.id}
-								>
-									{headerGroup.headers.map((header) => (
-										<TableHead
-											className="font-medium text-[#11181C] dark:text-[#ECEDEE]"
-											key={header.id}
-										>
-											{header.isPlaceholder
-												? null
-												: flexRender(
-														header.column.columnDef.header,
-														header.getContext(),
-													)}
-										</TableHead>
-									))}
-								</TableRow>
-							))}
-						</TableHeader>
-						<TableBody>
-							{table.getRowModel().rows?.length ? (
-								table.getRowModel().rows.map((row) => (
-									<React.Fragment key={row.id}>
-										{/* Main row */}
-										<TableRow
-											className="theme-transition border-[#E5E7EB] border-b hover:bg-[#F9FAFB] data-[state=selected]:bg-[#F9FAFB] dark:border-[#2D3033] dark:data-[state=selected]:bg-[#2D3033] dark:hover:bg-[#2D3033]"
-											data-state={row.getIsSelected() && "selected"}
-										>
-											{row.getVisibleCells().map((cell) => (
-												<TableCell key={cell.id}>
-													{flexRender(
-														cell.column.columnDef.cell,
-														cell.getContext(),
-													)}
-												</TableCell>
-											))}
-										</TableRow>
-										{/* Expanded row */}
-										{row.getIsExpanded() && (
-											<TableRow key={`${row.id}-expanded`}>
-												<TableCell className="p-0" colSpan={columns.length}>
-													{renderSubComponent({ row })}
-												</TableCell>
-											</TableRow>
-										)}
-									</React.Fragment>
-								))
-							) : (
-								<TableRow>
-									<TableCell
-										className="h-24 text-center"
-										colSpan={columns.length}
+				{/* Table or Empty State */}
+				{filteredProducts.length === 0 ? (
+					<Card className="theme-transition border-[#E5E7EB] bg-white dark:border-[#374151] dark:bg-[#1E1F20]">
+						<CardContent className="flex flex-col items-center justify-center py-12">
+							<Package className="h-12 w-12 text-[#9CA3AF] dark:text-[#6B7280]" />
+							<h3 className="mt-4 font-semibold text-[#11181C] dark:text-[#ECEDEE]">
+								No hay productos
+							</h3>
+							<p className="mt-2 text-center text-[#687076] text-sm dark:text-[#9BA1A6]">
+								No se encontraron productos que coincidan con los filtros aplicados.
+							</p>
+						</CardContent>
+					</Card>
+				) : (
+					<div className="theme-transition rounded-md border border-[#E5E7EB] dark:border-[#2D3033]">
+						<Table>
+							<TableHeader>
+								{table.getHeaderGroups().map((headerGroup) => (
+									<TableRow
+										className="border-[#E5E7EB] border-b hover:bg-[#F9FAFB] dark:border-[#2D3033] dark:hover:bg-[#2D3033]"
+										key={headerGroup.id}
 									>
-										No se encontraron productos.
-									</TableCell>
-								</TableRow>
-							)}
-						</TableBody>
-					</Table>
-				</div>
+										{headerGroup.headers.map((header) => (
+											<TableHead
+												className="font-medium text-[#11181C] dark:text-[#ECEDEE]"
+												key={header.id}
+											>
+												{header.isPlaceholder
+													? null
+													: flexRender(
+															header.column.columnDef.header,
+															header.getContext(),
+														)}
+											</TableHead>
+										))}
+									</TableRow>
+								))}
+							</TableHeader>
+							<TableBody>
+								{table.getRowModel().rows?.length ? (
+									table.getRowModel().rows.map((row) => (
+										<React.Fragment key={row.id}>
+											{/* Main row */}
+											<TableRow
+												className="theme-transition border-[#E5E7EB] border-b hover:bg-[#F9FAFB] data-[state=selected]:bg-[#F9FAFB] dark:border-[#2D3033] dark:data-[state=selected]:bg-[#2D3033] dark:hover:bg-[#2D3033]"
+												data-state={row.getIsSelected() && "selected"}
+											>
+												{row.getVisibleCells().map((cell) => (
+													<TableCell key={cell.id}>
+														{flexRender(
+															cell.column.columnDef.cell,
+															cell.getContext(),
+														)}
+													</TableCell>
+												))}
+											</TableRow>
+											{/* Expanded row */}
+											{row.getIsExpanded() && (
+												<TableRow key={`${row.id}-expanded`}>
+													<TableCell className="p-0" colSpan={columns.length}>
+														{renderSubComponent({ row })}
+													</TableCell>
+												</TableRow>
+											)}
+										</React.Fragment>
+									))
+								) : (
+									<TableRow>
+										<TableCell
+											className="h-24 text-center"
+											colSpan={columns.length}
+										>
+											No se encontraron productos.
+										</TableCell>
+									</TableRow>
+								)}
+							</TableBody>
+						</Table>
+					</div>
+				)}
 
 				{/* Pagination Controls */}
-				<div className="flex items-center justify-between px-2">
-					<div className="flex items-center space-x-2">
-						<p className="text-[#687076] text-sm dark:text-[#9BA1A6]">
-							Filas por página
-						</p>
-						<Select
-							onValueChange={(value) => {
-								table.setPageSize(Number(value));
-							}}
-							value={`${table.getState().pagination.pageSize}`}
-						>
-							<SelectTrigger className="h-8 w-[70px] border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]">
-								<SelectValue
-									placeholder={table.getState().pagination.pageSize}
-								/>
-							</SelectTrigger>
-							<SelectContent
-								className="theme-transition border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]"
-								side="top"
-							>
-								{[5, 10, 20, 30, 40, 50].map((pageSize) => (
-									<SelectItem
-										className="theme-transition text-[#11181C] hover:bg-[#F9FAFB] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
-										key={pageSize}
-										value={`${pageSize}`}
-									>
-										{pageSize}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-					</div>
-					<div className="flex items-center space-x-6 lg:space-x-8">
-						<div className="theme-transition flex w-[100px] items-center justify-center font-medium text-[#687076] text-sm dark:text-[#9BA1A6]">
-							Página {table.getState().pagination.pageIndex + 1} de{" "}
-							{table.getPageCount()}
-						</div>
+				{filteredProducts.length > 0 && (
+					<div className="flex items-center justify-between px-2">
 						<div className="flex items-center space-x-2">
-							<Button
-								className="theme-transition h-8 w-8 border-[#E5E7EB] p-0 text-[#687076] hover:bg-[#F9FAFB] dark:border-[#2D3033] dark:text-[#9BA1A6] dark:hover:bg-[#2D3033]"
-								disabled={!table.getCanPreviousPage()}
-								onClick={() => table.previousPage()}
-								variant="outline"
+							<p className="text-[#687076] text-sm dark:text-[#9BA1A6]">
+								Filas por página
+							</p>
+							<Select
+								onValueChange={(value) => {
+									table.setPageSize(Number(value));
+								}}
+								value={`${table.getState().pagination.pageSize}`}
 							>
-								<span className="sr-only">Ir a la página anterior</span>
-								<ChevronLeft className="h-4 w-4" />
-							</Button>
-							<Button
-								className="theme-transition h-8 w-8 border-[#E5E7EB] p-0 text-[#687076] hover:bg-[#F9FAFB] dark:border-[#2D3033] dark:text-[#9BA1A6] dark:hover:bg-[#2D3033]"
-								disabled={!table.getCanNextPage()}
-								onClick={() => table.nextPage()}
-								variant="outline"
-							>
-								<span className="sr-only">Ir a la página siguiente</span>
-								<ChevronRight className="h-4 w-4" />
-							</Button>
+								<SelectTrigger className="h-8 w-[70px] border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]">
+									<SelectValue
+										placeholder={table.getState().pagination.pageSize}
+									/>
+								</SelectTrigger>
+								<SelectContent
+									className="theme-transition border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]"
+									side="top"
+								>
+									{[5, 10, 20, 30, 40, 50].map((pageSize) => (
+										<SelectItem
+											className="theme-transition text-[#11181C] hover:bg-[#F9FAFB] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
+											key={pageSize}
+											value={`${pageSize}`}
+										>
+											{pageSize}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</div>
+						{/* Results Counter */}
+						<div className="whitespace-nowrap text-[#687076] text-sm dark:text-[#9BA1A6]">
+							{table.getFilteredRowModel().rows.length} de{" "}
+							{filteredProducts.length} productos
+						</div>
+						<div className="flex items-center space-x-6 lg:space-x-8">
+							<div className="theme-transition flex w-[100px] items-center justify-center font-medium text-[#687076] text-sm dark:text-[#9BA1A6]">
+								Página {table.getState().pagination.pageIndex + 1} de{" "}
+								{table.getPageCount()}
+							</div>
+							<div className="flex items-center space-x-2">
+								<Button
+									className="theme-transition h-8 w-8 border-[#E5E7EB] p-0 text-[#687076] hover:bg-[#F9FAFB] dark:border-[#2D3033] dark:text-[#9BA1A6] dark:hover:bg-[#2D3033]"
+									disabled={!table.getCanPreviousPage()}
+									onClick={() => table.previousPage()}
+									variant="outline"
+								>
+									<span className="sr-only">Ir a la página anterior</span>
+									<ChevronLeft className="h-4 w-4" />
+								</Button>
+								<Button
+									className="theme-transition h-8 w-8 border-[#E5E7EB] p-0 text-[#687076] hover:bg-[#F9FAFB] dark:border-[#2D3033] dark:text-[#9BA1A6] dark:hover:bg-[#2D3033]"
+									disabled={!table.getCanNextPage()}
+									onClick={() => table.nextPage()}
+									variant="outline"
+								>
+									<span className="sr-only">Ir a la página siguiente</span>
+									<ChevronRight className="h-4 w-4" />
+								</Button>
+							</div>
 						</div>
 					</div>
-				</div>
+				)}
 			</div>
 		</TooltipProvider>
 	);
