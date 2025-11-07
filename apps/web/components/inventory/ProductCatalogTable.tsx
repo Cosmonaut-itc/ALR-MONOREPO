@@ -25,6 +25,7 @@ import {
 	ChevronRight,
 	ChevronUp,
 	Copy,
+	Download,
 	Package,
 	QrCode,
 	Search,
@@ -356,6 +357,66 @@ function formatDate(dateString: string | undefined): string {
 	} catch {
 		return "N/A";
 	}
+}
+
+/**
+ * Escapes a CSV field value by wrapping it in quotes if it contains commas, quotes, or newlines.
+ *
+ * @param field - The field value to escape.
+ * @returns The escaped CSV field value.
+ */
+function escapeCsvField(field: string | number | null | undefined): string {
+	if (field == null) {
+		return "";
+	}
+	const str = String(field);
+	if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+		return `"${str.replace(/"/g, '""')}"`;
+	}
+	return str;
+}
+
+/**
+ * Converts an array of objects to CSV format and triggers a download.
+ *
+ * @param data - Array of objects to convert to CSV.
+ * @param headers - Array of header objects with `label` and `key` properties.
+ * @param filename - The filename for the downloaded CSV file (without extension).
+ * @returns True if the download was successful, false otherwise.
+ */
+function downloadCsv(
+	data: Record<string, string | number | null | undefined>[],
+	headers: Array<{ label: string; key: string }>,
+	filename: string,
+): boolean {
+	if (data.length === 0) {
+		return false;
+	}
+
+	// Create CSV header row
+	const headerRow = headers.map((h) => escapeCsvField(h.label)).join(",");
+
+	// Create CSV data rows
+	const dataRows = data.map((row) =>
+		headers.map((h) => escapeCsvField(row[h.key])).join(","),
+	);
+
+	// Combine header and data rows
+	const csvContent = [headerRow, ...dataRows].join("\n");
+
+	// Create blob and download
+	const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+	const link = document.createElement("a");
+	const url = URL.createObjectURL(blob);
+
+	link.setAttribute("href", url);
+	link.setAttribute("download", `${filename}.csv`);
+	link.style.visibility = "hidden";
+	document.body.appendChild(link);
+	link.click();
+	document.body.removeChild(link);
+	URL.revokeObjectURL(url);
+	return true;
 }
 
 /**
@@ -1751,6 +1812,54 @@ export function ProductCatalogTable({
 		stockColumn.setFilterValue(showOnlyWithStock ? "with-stock" : undefined);
 	}, [showOnlyWithStock, table]);
 
+	/**
+	 * Handles CSV export of the currently filtered table rows.
+	 *
+	 * Extracts data from filtered rows, excluding the expander column, and downloads
+	 * a CSV file with the visible product data.
+	 */
+	const handleExportCsv = useCallback(() => {
+		const filteredRows = table.getFilteredRowModel().rows;
+
+		if (filteredRows.length === 0) {
+			toast.error("No hay productos para exportar.");
+			return;
+		}
+
+		// Define CSV headers (excluding the expander column)
+		const csvHeaders = [
+			{ label: "Producto", key: "name" },
+			{ label: "Código de Barras", key: "barcode" },
+			{ label: "Categoría", key: "category" },
+			{ label: "Stock", key: "stockCount" },
+		];
+
+		// Extract data from filtered rows
+		const csvData = filteredRows.map((row) => {
+			const product = row.original;
+			return {
+				name: product.name,
+				barcode: product.barcode,
+				category: product.category,
+				stockCount: product.stockCount,
+			};
+		});
+
+		// Generate filename with timestamp
+		const timestamp = format(new Date(), "yyyy-MM-dd_HH-mm-ss", { locale: es });
+		const filename = `inventario_${timestamp}`;
+
+		const success = downloadCsv(csvData, csvHeaders, filename);
+		if (success) {
+			toast.success("CSV exportado exitosamente", {
+				description: `Se exportaron ${csvData.length} producto(s)`,
+				duration: 2000,
+			});
+		} else {
+			toast.error("No se pudo exportar el CSV.");
+		}
+	}, [table]);
+
 	if (filteredProducts.length === 0) {
 		return (
 			<Card className="theme-transition border-[#E5E7EB] bg-white dark:border-[#374151] dark:bg-[#1E1F20]">
@@ -1986,6 +2095,18 @@ export function ProductCatalogTable({
 						{table.getFilteredRowModel().rows.length} de{" "}
 						{filteredProducts.length} productos
 					</div>
+
+					{/* CSV Export Button */}
+					<Button
+						className="whitespace-nowrap text-[#687076] hover:text-[#11181C] dark:text-[#9BA1A6] dark:hover:text-[#ECEDEE]"
+						onClick={handleExportCsv}
+						size="sm"
+						type="button"
+						variant="ghost"
+					>
+						<Download className="mr-2 h-4 w-4" />
+						Exportar CSV
+					</Button>
 				</div>
 
 				{/* Table */}
