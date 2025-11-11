@@ -86,3 +86,33 @@ export const fetchReplenishmentOrderByIdServer = async (id: string) => {
 
 	return res.json();
 };
+
+/**
+ * Fetches unfulfilled products from replenishment orders endpoint.
+ * This endpoint returns products that need to be ordered for replenishment orders.
+ *
+ * @returns Promise resolving to the API response containing unfulfilled products
+ * @throws Error if the fetch fails
+ */
+export const fetchUnfulfilledProductsServer = async () => {
+	const origin = resolveTrustedOrigin();
+	const url = new URL(
+		"/api/auth/replenishment-orders/unfulfilled-products",
+		origin,
+	);
+	const headers = await buildCookieHeader(origin);
+
+	const res = await fetch(url.toString(), {
+		headers,
+		cache: "no-store",
+	});
+
+	if (!res.ok) {
+		const text = await res.text().catch(() => "");
+		throw new Error(
+			`Unfulfilled products fetch failed: ${res.status} ${res.statusText} ${text}`,
+		);
+	}
+
+	return res.json();
+};

@@ -9,10 +9,61 @@ type CreateReplenishmentOrderPostOptions = Parameters<
 	(typeof client.api.auth)["replenishment-orders"]["$post"]
 >[0];
 
-export type CreateReplenishmentOrderPayload =
+/**
+ * Type inference for the JSON payload expected by the API
+ */
+type InferredPayload =
 	CreateReplenishmentOrderPostOptions extends { json: infer J }
 		? J
 		: never;
+
+/**
+ * Explicit type definition for replenishment order detail items.
+ * Only includes fields that should be sent when creating a new order.
+ * Note: sent_quantity and buy_order_generated should NOT be included
+ * as they don't exist in the database schema.
+ */
+export type ReplenishmentOrderDetailItem = {
+	barcode: number;
+	quantity: number;
+};
+
+/**
+ * Explicit type definition for creating a replenishment order.
+ * This ensures type safety and prevents sending invalid fields.
+ */
+export type CreateReplenishmentOrderPayload = {
+	sourceWarehouseId: string;
+	cedisWarehouseId: string;
+	items: ReplenishmentOrderDetailItem[];
+	notes?: string;
+};
+
+/**
+ * Runtime validation function to ensure payload only contains valid fields.
+ * This prevents accidentally sending fields that don't exist in the database.
+ *
+ * @param payload - The payload to validate
+ * @returns The validated payload with only allowed fields
+ */
+function validateCreatePayload(
+	payload: CreateReplenishmentOrderPayload,
+): CreateReplenishmentOrderPayload {
+	// Ensure items only contain barcode and quantity
+	const validatedItems: ReplenishmentOrderDetailItem[] = payload.items.map(
+		(item) => ({
+			barcode: Number(item.barcode),
+			quantity: Number(item.quantity),
+		}),
+	);
+
+	return {
+		sourceWarehouseId: String(payload.sourceWarehouseId),
+		cedisWarehouseId: String(payload.cedisWarehouseId),
+		items: validatedItems,
+		...(payload.notes && { notes: String(payload.notes) }),
+	};
+}
 
 type UpdateReplenishmentOrderPutOptions = Parameters<
 	(typeof client.api.auth)["replenishment-orders"][":id"]["$put"]
@@ -38,12 +89,22 @@ const invalidateReplenishmentQueries = (orderId?: string | null) => {
 	}
 };
 
+/**
+ * Hook for creating a new replenishment order.
+ * Includes runtime validation to ensure only valid fields are sent.
+ *
+ * @returns Mutation hook for creating replenishment orders
+ */
 export const useCreateReplenishmentOrder = () =>
 	useMutation({
 		mutationKey: ["create-replenishment-order"],
 		mutationFn: async (data: CreateReplenishmentOrderPayload) => {
+			// Validate and sanitize the payload to ensure only valid fields are sent
+			const validatedData = validateCreatePayload(data);
+
+			// Type assertion to satisfy the API client type, but we've validated the structure
 			const response = await client.api.auth["replenishment-orders"].$post({
-				json: data,
+				json: validatedData as InferredPayload,
 			});
 			const result = await response.json();
 			if (!result?.success) {

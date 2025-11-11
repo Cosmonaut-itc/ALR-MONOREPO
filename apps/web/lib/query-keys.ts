@@ -9,5 +9,6 @@ export const queryKeys = {
 	users: ["users"],
 	replenishmentOrders: ["replenishmentOrders"],
 	replenishmentOrderDetail: ["replenishmentOrderDetail"],
+	unfulfilledProducts: ["unfulfilledProducts"],
 	stockLimits: ["stockLimits"],
 };

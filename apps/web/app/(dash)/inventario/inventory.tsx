@@ -654,8 +654,8 @@ export function InventarioPage({
 	//Transfer functionality handlers
 	// Local type compatible with ProductCatalogTable's callback
 	type AddToTransferArgs = {
-		product: { name: string; barcode: number; category: string };
-		items: { uuid?: string; id?: string }[];
+		product: { name: string; barcode: number | string; category: string };
+		items: { uuid?: string; id?: string; barcode: number | string }[];
 	};
 
 	// Handler: add selected expanded-row items to transfer list
@@ -666,6 +666,17 @@ export function InventarioPage({
 
 		const source: "warehouse" | "cabinet" =
 			currentTab === "general" ? "warehouse" : "cabinet";
+
+		// Normalize barcode to number
+		const productBarcode =
+			typeof product.barcode === "number"
+				? product.barcode
+				: Number.parseInt(String(product.barcode), 10);
+
+		if (Number.isNaN(productBarcode)) {
+			toast.error("El código de barras del producto no es válido.");
+			return;
+		}
 
 		const candidates = items.flatMap((it) => {
 			const uuid = it.uuid ?? it.id;
@@ -693,7 +704,7 @@ export function InventarioPage({
 			return [
 				{
 					uuid,
-					barcode: product.barcode,
+					barcode: productBarcode,
 					productName: product.name,
 					category: product.category,
 					warehouse: warehouseId,
@@ -1379,10 +1390,27 @@ export function InventarioPage({
 								toast.error("No se encontró el identificador del artículo.");
 								return;
 							}
-							const barcode =
-								item?.barcode && item.barcode > 0
+							// Normalize barcode to number
+							const itemBarcode =
+								typeof item?.barcode === "number" && item.barcode > 0
 									? item.barcode
-									: product.barcode;
+									: typeof item?.barcode === "string"
+										? Number.parseInt(item.barcode, 10)
+										: null;
+							const productBarcode =
+								typeof product.barcode === "number"
+									? product.barcode
+									: Number.parseInt(String(product.barcode), 10);
+							const barcode =
+								itemBarcode && !Number.isNaN(itemBarcode)
+									? itemBarcode
+									: !Number.isNaN(productBarcode)
+										? productBarcode
+										: 0;
+							if (barcode === 0 || Number.isNaN(barcode)) {
+								toast.error("El código de barras no es válido.");
+								return;
+							}
 							handleReprintItemQr({
 								barcode,
 								productName: product.name,
@@ -1413,10 +1441,27 @@ export function InventarioPage({
 								toast.error("No se encontró el identificador del artículo.");
 								return;
 							}
-							const barcode =
-								item?.barcode && item.barcode > 0
+							// Normalize barcode to number
+							const itemBarcode =
+								typeof item?.barcode === "number" && item.barcode > 0
 									? item.barcode
-									: product.barcode;
+									: typeof item?.barcode === "string"
+										? Number.parseInt(item.barcode, 10)
+										: null;
+							const productBarcode =
+								typeof product.barcode === "number"
+									? product.barcode
+									: Number.parseInt(String(product.barcode), 10);
+							const barcode =
+								itemBarcode && !Number.isNaN(itemBarcode)
+									? itemBarcode
+									: !Number.isNaN(productBarcode)
+										? productBarcode
+										: 0;
+							if (barcode === 0 || Number.isNaN(barcode)) {
+								toast.error("El código de barras no es válido.");
+								return;
+							}
 							handleReprintItemQr({
 								barcode,
 								productName: product.name,

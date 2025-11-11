@@ -45,3 +45,20 @@ export const getReplenishmentOrderById = async (id: string) => {
 		return null;
 	}
 };
+
+/**
+ * Fetches unfulfilled products from replenishment orders endpoint.
+ * This endpoint returns products that need to be ordered for replenishment orders.
+ *
+ * @returns Promise resolving to the API response containing unfulfilled products, or null on error
+ */
+export const getUnfulfilledProducts = async () => {
+	try {
+		const response =
+			await client.api.auth["replenishment-orders"]["unfulfilled-products"].$get();
+		return response.json();
+	} catch (error) {
+		console.error(error);
+		return null;
+	}
+};

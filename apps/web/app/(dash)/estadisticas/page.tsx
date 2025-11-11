@@ -12,7 +12,10 @@ import {
 } from "@/lib/server-functions/inventory";
 import { fetchAllKitsServer } from "@/lib/server-functions/kits";
 import { fetchWarehouseTrasnferAll } from "@/lib/server-functions/recepciones";
-import { fetchReplenishmentOrdersServer } from "@/lib/server-functions/replenishment-orders";
+import {
+	fetchReplenishmentOrdersServer,
+	fetchUnfulfilledProductsServer,
+} from "@/lib/server-functions/replenishment-orders";
 import { getServerAuth } from "@/lib/server-functions/server-auth";
 import { fetchAllStockLimitsServer } from "@/lib/server-functions/stock-limits";
 import { SkeletonEstadisticasPage } from "@/ui/skeletons/Skeleton.EstadisticasPage";
@@ -71,6 +74,11 @@ export default async function Page() {
 		queryClient.prefetchQuery({
 			queryKey: createQueryKey(queryKeys.kits, ["all"]),
 			queryFn: fetchAllKitsServer,
+		});
+
+		queryClient.prefetchQuery({
+			queryKey: createQueryKey(queryKeys.unfulfilledProducts, ["all"]),
+			queryFn: fetchUnfulfilledProductsServer,
 		});
 	} catch (error) {
 		console.error(error);

@@ -48,7 +48,10 @@ import {
 } from "@/lib/fetch-functions/inventory";
 import { getAllKits } from "@/lib/fetch-functions/kits";
 import { getWarehouseTransferAll } from "@/lib/fetch-functions/recepciones";
-import { getReplenishmentOrders } from "@/lib/fetch-functions/replenishment-orders";
+import {
+	getReplenishmentOrders,
+	getUnfulfilledProducts,
+} from "@/lib/fetch-functions/replenishment-orders";
 import { getAllStockLimits } from "@/lib/fetch-functions/stock-limits";
 import { createQueryKey } from "@/lib/helpers";
 import { queryKeys } from "@/lib/query-keys";
@@ -83,6 +86,9 @@ type TransfersResponse = Awaited<
 	ReturnType<typeof getWarehouseTransferAll>
 > | null;
 type OrdersResponse = Awaited<ReturnType<typeof getReplenishmentOrders>> | null;
+type UnfulfilledProductsResponse = Awaited<
+	ReturnType<typeof getUnfulfilledProducts>
+> | null;
 type KitsResponse = Awaited<ReturnType<typeof getAllKits>> | null;
 type StockLimitsResponse = Awaited<ReturnType<typeof getAllStockLimits>> | null;
 
@@ -102,6 +108,141 @@ type WarehouseOption = {
 type ProductNameMap = Map<number, string>;
 
 type DashboardMetricShape = Parameters<typeof DashboardMetricCard>[0]["metric"];
+
+/**
+ * Represents an unfulfilled product from a replenishment order.
+ */
+type UnfulfilledProduct = {
+	barcode: number;
+	productName?: string;
+	productId?: string | null;
+	warehouseId?: string;
+	warehouseName?: string;
+	quantityNeeded?: number;
+	orderNumber?: string;
+	orderId?: string;
+};
+
+/**
+ * Normalizes unfulfilled products from the API response.
+ * Handles various response shapes and extracts product information.
+ *
+ * @param response - The API response containing unfulfilled products
+ * @returns Array of normalized unfulfilled products
+ */
+const normalizeUnfulfilledProducts = (
+	response: UnfulfilledProductsResponse,
+): UnfulfilledProduct[] => {
+	if (!response || typeof response !== "object") {
+		return [];
+	}
+
+	const root = response as Record<string, unknown>;
+	let items: unknown[] = [];
+
+	// Handle different response structures
+	if (Array.isArray(root)) {
+		items = root;
+	} else if (Array.isArray(root.data)) {
+		items = root.data;
+	} else if (
+		root.data &&
+		typeof root.data === "object" &&
+		Array.isArray((root.data as { products?: unknown }).products)
+	) {
+		items = ((root.data as { products?: unknown }).products ?? []) as unknown[];
+	} else if (Array.isArray(root.products)) {
+		items = root.products;
+	}
+
+	return items
+		.map((raw) => {
+			if (!raw || typeof raw !== "object") {
+				return null;
+			}
+			const record = raw as Record<string, unknown>;
+
+			// Extract barcode (can be number or string)
+			const barcodeRaw = record.barcode ?? record.goodId ?? record.productBarcode;
+			const barcode =
+				typeof barcodeRaw === "number"
+					? barcodeRaw
+					: typeof barcodeRaw === "string"
+						? Number.parseInt(barcodeRaw, 10)
+						: Number.NaN;
+
+			if (!Number.isFinite(barcode)) {
+				return null;
+			}
+
+			const productName =
+				typeof record.productName === "string"
+					? record.productName
+					: typeof record.name === "string"
+						? record.name
+						: typeof record.title === "string"
+							? record.title
+							: undefined;
+
+			const productId =
+				typeof record.productId === "string"
+					? record.productId
+					: typeof record.goodId === "string"
+						? record.goodId
+						: typeof record.id === "string"
+							? record.id
+							: null;
+
+			const warehouseId =
+				typeof record.warehouseId === "string"
+					? record.warehouseId
+					: typeof record.warehouse_id === "string"
+						? record.warehouse_id
+						: undefined;
+
+			const warehouseName =
+				typeof record.warehouseName === "string"
+					? record.warehouseName
+					: undefined;
+
+			const quantityNeeded =
+				typeof record.quantityNeeded === "number"
+					? record.quantityNeeded
+					: typeof record.quantity === "number"
+						? record.quantity
+						: typeof record.qty === "number"
+							? record.qty
+							: undefined;
+
+			const orderNumber =
+				typeof record.orderNumber === "string"
+					? record.orderNumber
+					: typeof record.order_number === "string"
+						? record.order_number
+						: undefined;
+
+			const orderId =
+				typeof record.orderId === "string"
+					? record.orderId
+					: typeof record.order_id === "string"
+						? record.order_id
+						: typeof record.replenishmentOrderId === "string"
+							? record.replenishmentOrderId
+							: undefined;
+
+			return {
+				barcode,
+				productName,
+				productId,
+				warehouseId,
+				warehouseName,
+				quantityNeeded,
+				orderNumber,
+				orderId,
+			} satisfies UnfulfilledProduct;
+		})
+		.filter((item): item is UnfulfilledProduct => Boolean(item));
+};
 
 const formatDateVerbose = (date: Date) =>
 	format(date, "dd 'de' MMMM yyyy", { locale: es });
@@ -1019,13 +1160,25 @@ const MetricsGrid = ({
 	</div>
 );
 
+/**
+ * Component that displays both low stock items and unfulfilled products from replenishment orders.
+ * Shows products that need to be ordered for creating buy orders.
+ *
+ * @param items - Low stock items to display
+ * @param unfulfilledProducts - Unfulfilled products from replenishment orders
+ * @param resolveProductName - Function to resolve product name from barcode
+ * @param resolveWarehouseName - Function to resolve warehouse name from ID
+ * @param resolveProductId - Function to resolve product ID from barcode
+ */
 const LowStockTable = ({
 	items,
+	unfulfilledProducts,
 	resolveProductName,
 	resolveWarehouseName,
 	resolveProductId,
 }: {
 	items: LowStockItem[];
+	unfulfilledProducts: UnfulfilledProduct[];
 	resolveProductName: (
 		barcode: number,
 		fallbackDescription?: string | null,
@@ -1035,70 +1188,148 @@ const LowStockTable = ({
 		barcode: number,
 		fallbackId?: string | null,
 	) => string | null;
-}) => (
-	<Card className="card-transition">
-		<CardHeader>
-			<CardTitle className="text-base font-semibold text-[#11181C] dark:text-[#ECEDEE]">
-				Productos por debajo del mínimo
-			</CardTitle>
-		</CardHeader>
-		<CardContent>
-			{items.length === 0 ? (
-				<div className="rounded-lg border border-dashed border-[#E5E7EB] bg-[#F9FAFB] p-6 text-center text-sm text-[#687076] dark:border-[#2D3033] dark:bg-[#1E1F20] dark:text-[#9BA1A6]">
-					No se detectaron productos con stock bajo en el rango y alcance
-					seleccionados.
-				</div>
-			) : (
-				<Table>
-					<TableHeader>
-						<TableRow>
-							<TableHead>Producto</TableHead>
-							<TableHead className="text-center">Almacén</TableHead>
-							<TableHead className="text-center">Actual</TableHead>
-							<TableHead className="text-center">Mínimo</TableHead>
-						</TableRow>
-					</TableHeader>
-					<TableBody>
-						{items.slice(0, 6).map((item) => {
-							const productName = resolveProductName(
-								item.barcode,
-								item.description,
-							);
-							const productIdSuffix = resolveProductId(
-								item.barcode,
-								item.productId,
-							);
-							return (
-								<TableRow key={`${item.warehouseId}-${item.barcode}`}>
-									<TableCell>
-										<div className="flex flex-col">
-											<span className="font-medium text-[#11181C] dark:text-[#ECEDEE]">
-												{productName}
-											</span>
-											<span className="text-xs text-[#9BA1A6]">
-												{productIdSuffix ? `ID ${productIdSuffix}` : "ID —"} • #
-												{item.barcode}
-											</span>
-										</div>
-									</TableCell>
-									<TableCell className="text-center text-sm text-[#687076] dark:text-[#9BA1A6]">
-										{resolveWarehouseName(item.warehouseId)}
-									</TableCell>
-									<TableCell className="text-center font-semibold text-[#E85D04]">
-										{item.current}
-									</TableCell>
-									<TableCell className="text-center text-sm text-[#687076] dark:text-[#9BA1A6]">
-										{item.min}
-									</TableCell>
-								</TableRow>
-							);
-						})}
-					</TableBody>
-				</Table>
-			)}
-		</CardContent>
-	</Card>
-);
+}) => {
+	const hasLowStock = items.length > 0;
+	const hasUnfulfilled = unfulfilledProducts.length > 0;
+	const hasAnyData = hasLowStock || hasUnfulfilled;
+
+	return (
+		<Card className="card-transition xl:col-span-2">
+			<CardHeader>
+				<CardTitle className="text-base font-semibold text-[#11181C] dark:text-[#ECEDEE]">
+					Productos para crear pedidos de compra
+				</CardTitle>
+			</CardHeader>
+			<CardContent className="flex flex-col gap-6">
+				{!hasAnyData ? (
+					<div className="rounded-lg border border-dashed border-[#E5E7EB] bg-[#F9FAFB] p-6 text-center text-sm text-[#687076] dark:border-[#2D3033] dark:bg-[#1E1F20] dark:text-[#9BA1A6]">
+						No se detectaron productos con stock bajo ni productos sin cumplir en
+						pedidos de reabastecimiento en el rango y alcance seleccionados.
+					</div>
+				) : (
+					<>
+						{hasLowStock && (
+							<div className="flex flex-col gap-3">
+								<h3 className="text-sm font-semibold text-[#11181C] dark:text-[#ECEDEE]">
+									Productos por debajo del mínimo
+								</h3>
+								<Table>
+									<TableHeader>
+										<TableRow>
+											<TableHead>Producto</TableHead>
+											<TableHead className="text-center">Almacén</TableHead>
+											<TableHead className="text-center">Actual</TableHead>
+											<TableHead className="text-center">Mínimo</TableHead>
+										</TableRow>
+									</TableHeader>
+									<TableBody>
+										{items.slice(0, 6).map((item) => {
+											const productName = resolveProductName(
+												item.barcode,
+												item.description,
+											);
+											const productIdSuffix = resolveProductId(
+												item.barcode,
+												item.productId,
+											);
+											return (
+												<TableRow key={`low-stock-${item.warehouseId}-${item.barcode}`}>
+													<TableCell>
+														<div className="flex flex-col">
+															<span className="font-medium text-[#11181C] dark:text-[#ECEDEE]">
+																{productName}
+															</span>
+															<span className="text-xs text-[#9BA1A6]">
+																{productIdSuffix ? `ID ${productIdSuffix}` : "ID —"} • #
+																{item.barcode}
+															</span>
+														</div>
+													</TableCell>
+													<TableCell className="text-center text-sm text-[#687076] dark:text-[#9BA1A6]">
+														{resolveWarehouseName(item.warehouseId)}
+													</TableCell>
+													<TableCell className="text-center font-semibold text-[#E85D04]">
+														{item.current}
+													</TableCell>
+													<TableCell className="text-center text-sm text-[#687076] dark:text-[#9BA1A6]">
+														{item.min}
+													</TableCell>
+												</TableRow>
+											);
+										})}
+									</TableBody>
+								</Table>
+							</div>
+						)}
+
+						{hasUnfulfilled && (
+							<div className="flex flex-col gap-3">
+								{hasLowStock && (
+									<div className="border-t border-[#E5E7EB] dark:border-[#2D3033]" />
+								)}
+								<h3 className="text-sm font-semibold text-[#11181C] dark:text-[#ECEDEE]">
+									Productos sin cumplir en pedidos de reabastecimiento
+								</h3>
+								<Table>
+									<TableHeader>
+										<TableRow>
+											<TableHead>Producto</TableHead>
+											<TableHead className="text-center">Almacén</TableHead>
+											<TableHead className="text-center">Cantidad</TableHead>
+											<TableHead className="text-center">Pedido</TableHead>
+										</TableRow>
+									</TableHeader>
+									<TableBody>
+										{unfulfilledProducts.slice(0, 6).map((product, index) => {
+											const productName = product.productName
+												? product.productName
+												: resolveProductName(product.barcode);
+											const productIdSuffix = resolveProductId(
+												product.barcode,
+												product.productId,
+											);
+											const warehouseName = product.warehouseName
+												? product.warehouseName
+												: product.warehouseId
+													? resolveWarehouseName(product.warehouseId)
+													: "N/A";
+											return (
+												<TableRow
+													key={`unfulfilled-${product.orderId ?? index}-${product.barcode}`}
+												>
+													<TableCell>
+														<div className="flex flex-col">
+															<span className="font-medium text-[#11181C] dark:text-[#ECEDEE]">
+																{productName}
+															</span>
+															<span className="text-xs text-[#9BA1A6]">
+																{productIdSuffix ? `ID ${productIdSuffix}` : "ID —"} • #
+																{product.barcode}
+															</span>
+														</div>
+													</TableCell>
+													<TableCell className="text-center text-sm text-[#687076] dark:text-[#9BA1A6]">
+														{warehouseName}
+													</TableCell>
+													<TableCell className="text-center font-semibold text-[#0a7ea4]">
+														{product.quantityNeeded ?? "—"}
+													</TableCell>
+													<TableCell className="text-center text-sm text-[#687076] dark:text-[#9BA1A6]">
+														{product.orderNumber ?? product.orderId ?? "—"}
+													</TableCell>
+												</TableRow>
+											);
+										})}
+									</TableBody>
+								</Table>
+							</div>
+						)}
+					</>
+				)}
+			</CardContent>
+		</Card>
+	);
+};
 
 const TopList = ({
 	title,
@@ -1254,6 +1485,15 @@ export function EstadisticasPage({
 		queryFn: () => getReplenishmentOrders(),
 	});
 
+	const { data: unfulfilledProductsResponse } = useSuspenseQuery<
+		UnfulfilledProductsResponse,
+		Error,
+		UnfulfilledProductsResponse
+	>({
+		queryKey: createQueryKey(queryKeys.unfulfilledProducts, ["all"]),
+		queryFn: getUnfulfilledProducts,
+	});
+
 	const { data: kitsResponse } = useSuspenseQuery<
 		KitsResponse,
 		Error,
@@ -1297,6 +1537,11 @@ export function EstadisticasPage({
 	const stockLimits = useMemo(
 		() => toStockLimits(stockLimitsResponse),
 		[stockLimitsResponse],
+	);
+
+	const unfulfilledProducts = useMemo(
+		() => normalizeUnfulfilledProducts(unfulfilledProductsResponse),
+		[unfulfilledProductsResponse],
 	);
 
 	const warehouseOptions = useMemo(
@@ -1611,6 +1856,7 @@ export function EstadisticasPage({
 				<section className="grid gap-4 xl:grid-cols-2">
 					<LowStockTable
 						items={lowStockItems}
+						unfulfilledProducts={unfulfilledProducts}
 						resolveProductName={resolveProductName}
 						resolveWarehouseName={resolveWarehouseName}
 						resolveProductId={resolveProductId}
