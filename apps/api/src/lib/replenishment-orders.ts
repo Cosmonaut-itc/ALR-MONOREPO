@@ -31,7 +31,7 @@ type OrderDetailRow = typeof schemas.replenishmentOrderDetails.$inferSelect;
 
 export type ReplenishmentOrderDetail = Pick<
 	OrderDetailRow,
-	'id' | 'barcode' | 'quantity' | 'notes'
+	'id' | 'barcode' | 'quantity' | 'notes' | 'sentQuantity'
 >;
 
 export type ReplenishmentOrderFull = OrderRow & {
@@ -139,6 +139,7 @@ async function fetchOrderWithDetails(
 			barcode: schemas.replenishmentOrderDetails.barcode,
 			quantity: schemas.replenishmentOrderDetails.quantity,
 			notes: schemas.replenishmentOrderDetails.notes,
+			sentQuantity: schemas.replenishmentOrderDetails.sentQuantity,
 		})
 		.from(schemas.replenishmentOrderDetails)
 		.where(eq(schemas.replenishmentOrderDetails.replenishmentOrderId, id))
@@ -200,6 +201,7 @@ export async function createReplenishmentOrder({
 				replenishmentOrderId: inserted[0].id,
 				barcode: item.barcode,
 				quantity: item.quantity,
+				sentQuantity: 0, // Initialize sent quantity to 0 for new orders
 			})),
 		);
 
@@ -284,17 +286,24 @@ export async function updateReplenishmentOrder({
 			.where(eq(schemas.replenishmentOrder.id, id));
 
 		if (input.items) {
-			await tx
-				.delete(schemas.replenishmentOrderDetails)
-				.where(eq(schemas.replenishmentOrderDetails.replenishmentOrderId, id));
-
-			await tx.insert(schemas.replenishmentOrderDetails).values(
-				input.items.map((item) => ({
-					replenishmentOrderId: id,
-					barcode: item.barcode,
-					quantity: item.quantity,
-				})),
-			);
+			/**
+			 * Update sentQuantity for existing detail items based on barcode.
+			 * This preserves the original quantity and notes while tracking how many were actually sent.
+			 * The quantity passed in input.items represents the amount that was sent.
+			 */
+			for (const item of input.items) {
+				await tx
+					.update(schemas.replenishmentOrderDetails)
+					.set({
+						sentQuantity: item.quantity,
+					})
+					.where(
+						and(
+							eq(schemas.replenishmentOrderDetails.replenishmentOrderId, id),
+							eq(schemas.replenishmentOrderDetails.barcode, item.barcode),
+						),
+					);
+			}
 		}
 
 		return fetchOrderWithDetails(tx, id);
