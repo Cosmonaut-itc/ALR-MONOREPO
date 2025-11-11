@@ -404,6 +404,7 @@ export const replenishmentOrderDetails = pgTable(
 		barcode: integer('barcode').notNull(),
 		quantity: integer('quantity').notNull(),
 		notes: text('notes'),
+		isSent: boolean('is_sent').default(false).notNull(),
 	},
 	(table) => ({
 		orderBarcodeUnique: uniqueIndex('replenishment_order_details_order_barcode_key').on(

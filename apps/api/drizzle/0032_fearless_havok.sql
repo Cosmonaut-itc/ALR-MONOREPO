@@ -1,0 +1,1 @@
+ALTER TABLE "replenishment_order_details" ADD COLUMN "is_sent" boolean DEFAULT false NOT NULL;

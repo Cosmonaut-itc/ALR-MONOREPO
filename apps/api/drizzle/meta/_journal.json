@@ -225,6 +225,13 @@
       "when": 1762556265451,
       "tag": "0031_illegal_black_queen",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1762887767313,
+      "tag": "0032_fearless_havok",
+      "breakpoints": true
     }
   ]
 }
