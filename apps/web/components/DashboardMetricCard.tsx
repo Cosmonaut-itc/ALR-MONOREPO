@@ -13,13 +13,25 @@ const iconMap: Record<string, LucideIcon> = {
 
 interface DashboardMetricCardProps {
   metric: DashboardMetric
+  onClick?: () => void
 }
 
-export function DashboardMetricCard({ metric }: DashboardMetricCardProps) {
+export function DashboardMetricCard({ metric, onClick }: DashboardMetricCardProps) {
   const IconComponent = iconMap[metric.icon] || Package
 
   return (
-    <Card className="border-[#E5E7EB] dark:border-[#2D3033] bg-[#F9FAFB] dark:bg-[#1E1F20] card-transition">
+    <Card 
+      className={onClick ? "border-[#E5E7EB] dark:border-[#2D3033] bg-[#F9FAFB] dark:bg-[#1E1F20] card-transition cursor-pointer hover:shadow-md transition-shadow" : "border-[#E5E7EB] dark:border-[#2D3033] bg-[#F9FAFB] dark:bg-[#1E1F20] card-transition"}
+      onClick={onClick}
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault()
+          onClick()
+        }
+      } : undefined}
+    >
       <CardContent className="p-6">
         <div className="flex items-center space-x-4">
           <div className="p-2 bg-[#0a7ea4]/10 rounded-lg">

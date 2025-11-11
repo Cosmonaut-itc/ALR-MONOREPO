@@ -2,14 +2,23 @@
 "use client";
 
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { format, parseISO, subDays } from "date-fns";
+import { endOfDay, format, parseISO, startOfDay, subDays } from "date-fns";
 import { es } from "date-fns/locale";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { RoleGuard } from "@/components/auth-guard";
 import { DashboardMetricCard } from "@/components/DashboardMetricCard";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogHeader,
+	DialogTitle,
+} from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import {
 	Popover,
@@ -385,11 +394,628 @@ const DateSelector = ({
 	);
 };
 
-const MetricsGrid = ({ metrics }: { metrics: DashboardMetricShape[] }) => (
+type TransferListItem = {
+	id: string;
+	transferNumber?: string;
+	shipmentId?: string;
+	isPending?: boolean;
+	isCompleted?: boolean;
+	isCancelled?: boolean;
+	totalItems?: number;
+	createdAt?: string;
+	scheduledDate?: string;
+	receivedAt?: string;
+	sourceWarehouseId?: string;
+	destinationWarehouseId?: string;
+};
+
+/**
+ * Extracts transfer items from the raw API response.
+ * Handles various response shapes similar to recepciones.tsx
+ */
+const extractTransferItems = (response: TransfersResponse): TransferListItem[] => {
+	if (!response || typeof response !== "object") {
+		return [];
+	}
+	const root = response as Record<string, unknown>;
+	const items: unknown[] = [];
+
+	if (Array.isArray(root)) {
+		items.push(...(root as unknown[]));
+	} else if (Array.isArray(root.data)) {
+		items.push(...(root.data as unknown[]));
+	} else if (
+		root.data &&
+		typeof root.data === "object" &&
+		Array.isArray((root.data as { transfers?: unknown }).transfers)
+	) {
+		items.push(
+			...(((root.data as { transfers?: unknown }).transfers ?? []) as unknown[]),
+		);
+	} else if (Array.isArray(root.transfers)) {
+		items.push(...(root.transfers as unknown[]));
+	}
+
+	return items
+		.map((raw) => {
+			if (!raw || typeof raw !== "object") {
+				return null;
+			}
+			const record = raw as Record<string, unknown>;
+			const id =
+				typeof record.id === "string"
+					? record.id
+					: typeof record.id === "number"
+						? String(record.id)
+						: "";
+			if (!id) {
+				return null;
+			}
+			const transferNumber =
+				typeof record.transferNumber === "string"
+					? record.transferNumber
+					: undefined;
+			const shipmentId =
+				typeof record.shipmentId === "string" ? record.shipmentId : undefined;
+			const statusRaw =
+				typeof record.status === "string"
+					? record.status
+					: typeof record.transferStatus === "string"
+						? record.transferStatus
+						: "";
+			const status = statusRaw.toLowerCase();
+			const isCompleted =
+				Boolean(record.isCompleted) ||
+				["completed", "complete", "done", "received"].includes(status);
+			const isCancelled =
+				Boolean(record.isCancelled) ||
+				["cancelled", "canceled", "cancelado"].includes(status);
+			const isPending =
+				Boolean(record.isPending) ||
+				(!isCompleted &&
+					!isCancelled &&
+					["pending", "in_transit", "sent", "en_camino"].includes(status));
+			const totalItems =
+				typeof record.totalItems === "number" ? record.totalItems : undefined;
+			const createdAt =
+				typeof record.createdAt === "string" ? record.createdAt : undefined;
+			const scheduledDate =
+				typeof record.scheduledDate === "string"
+					? record.scheduledDate
+					: undefined;
+			const receivedAt =
+				typeof record.receivedAt === "string" ? record.receivedAt : undefined;
+			const sourceWarehouseId =
+				typeof record.sourceWarehouseId === "string"
+					? record.sourceWarehouseId
+					: undefined;
+			const destinationWarehouseId =
+				typeof record.destinationWarehouseId === "string"
+					? record.destinationWarehouseId
+					: undefined;
+
+			return {
+				id,
+				transferNumber,
+				shipmentId,
+				isPending,
+				isCompleted,
+				isCancelled,
+				totalItems,
+				createdAt,
+				scheduledDate,
+				receivedAt,
+				sourceWarehouseId,
+				destinationWarehouseId,
+			} satisfies TransferListItem;
+		})
+		.filter(
+			(item): item is TransferListItem =>
+				Boolean(item && !item.isCancelled),
+		);
+};
+
+const PendingReceptionsDialog = ({
+	open,
+	onOpenChange,
+	transfers,
+	warehouseNameMap,
+	effectiveRange,
+	effectiveWarehouseId,
+}: {
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+	transfers: TransferListItem[];
+	warehouseNameMap: Map<string, string>;
+	effectiveRange: DateRange;
+	effectiveWarehouseId: string | null;
+}) => {
+	const router = useRouter();
+
+	const matchesWarehouse = (
+		sourceId: string | undefined,
+		destId: string | undefined,
+		selected: string | null,
+	): boolean => {
+		if (!selected) {
+			return true;
+		}
+		return sourceId === selected || destId === selected;
+	};
+
+	const isWithinRange = (value: string | undefined, range: DateRange): boolean => {
+		if (!value) {
+			return false;
+		}
+		const parsed = parseISO(value);
+		if (Number.isNaN(parsed.getTime())) {
+			return false;
+		}
+		const start = startOfDay(range.start);
+		const end = endOfDay(range.end);
+		return parsed >= start && parsed <= end;
+	};
+
+	const pendingTransfers = useMemo(() => {
+		return transfers
+			.filter((transfer) => {
+				if (!transfer.isPending) {
+					return false;
+				}
+				if (
+					!matchesWarehouse(
+						transfer.sourceWarehouseId,
+						transfer.destinationWarehouseId,
+						effectiveWarehouseId,
+					)
+				) {
+					return false;
+				}
+				const referenceDate =
+					transfer.createdAt ?? transfer.scheduledDate ?? transfer.receivedAt;
+				return isWithinRange(referenceDate, effectiveRange);
+			})
+			.slice(0, 7);
+	}, [transfers, effectiveRange, effectiveWarehouseId]);
+
+	const formatTransferDate = (dateStr: string | undefined): string => {
+		if (!dateStr) {
+			return "N/A";
+		}
+		try {
+			const parsed = parseISO(dateStr);
+			if (Number.isNaN(parsed.getTime())) {
+				return "N/A";
+			}
+			return format(parsed, "dd/MM/yyyy", { locale: es });
+		} catch {
+			return "N/A";
+		}
+	};
+
+	const getShipmentId = (transfer: TransferListItem): string => {
+		return transfer.transferNumber ?? transfer.shipmentId ?? transfer.id;
+	};
+
+	return (
+		<Dialog open={open} onOpenChange={onOpenChange}>
+			<DialogContent className="max-w-2xl">
+				<DialogHeader>
+					<DialogTitle>Recepciones pendientes</DialogTitle>
+					<DialogDescription>
+						Primeras 7 recepciones pendientes en el rango seleccionado
+					</DialogDescription>
+				</DialogHeader>
+				<div className="max-h-[60vh] overflow-y-auto">
+					{pendingTransfers.length === 0 ? (
+						<div className="rounded-lg border border-dashed border-[#E5E7EB] bg-[#F9FAFB] p-6 text-center text-sm text-[#687076] dark:border-[#2D3033] dark:bg-[#1E1F20] dark:text-[#9BA1A6]">
+							No hay recepciones pendientes en el rango seleccionado.
+						</div>
+					) : (
+						<ul className="space-y-3">
+							{pendingTransfers.map((transfer) => {
+								const shipmentId = getShipmentId(transfer);
+								const sourceName =
+									transfer.sourceWarehouseId
+										? warehouseNameMap.get(transfer.sourceWarehouseId) ??
+											`Almacén ${transfer.sourceWarehouseId.slice(0, 6)}`
+										: "N/A";
+								const destName =
+									transfer.destinationWarehouseId
+										? warehouseNameMap.get(transfer.destinationWarehouseId) ??
+											`Almacén ${transfer.destinationWarehouseId.slice(0, 6)}`
+										: "N/A";
+								return (
+									<li
+										key={transfer.id}
+										className="flex items-center justify-between rounded-lg border border-[#E5E7EB] bg-white px-4 py-3 text-sm dark:border-[#2D3033] dark:bg-[#151718]"
+									>
+										<div className="flex flex-col gap-1">
+											<Link
+												href={`/recepciones/${transfer.id}`}
+												className="font-medium text-[#0a7ea4] hover:underline"
+											>
+												{shipmentId}
+											</Link>
+											<div className="text-xs text-[#9BA1A6]">
+												{sourceName} → {destName}
+											</div>
+											<div className="text-xs text-[#9BA1A6]">
+												{transfer.totalItems ?? 0} items •{" "}
+												{formatTransferDate(
+													transfer.createdAt ?? transfer.scheduledDate,
+												)}
+											</div>
+										</div>
+									</li>
+								);
+							})}
+						</ul>
+					)}
+				</div>
+				<div className="flex justify-end gap-2 pt-4">
+					<Button
+						variant="outline"
+						onClick={() => onOpenChange(false)}
+						type="button"
+					>
+						Cerrar
+					</Button>
+					<Button
+						onClick={() => {
+							router.push("/recepciones");
+							onOpenChange(false);
+						}}
+						type="button"
+					>
+						Ver todas las recepciones
+					</Button>
+				</div>
+			</DialogContent>
+		</Dialog>
+	);
+};
+
+const CompletedReceptionsDialog = ({
+	open,
+	onOpenChange,
+	transfers,
+	warehouseNameMap,
+	effectiveRange,
+	effectiveWarehouseId,
+}: {
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+	transfers: TransferListItem[];
+	warehouseNameMap: Map<string, string>;
+	effectiveRange: DateRange;
+	effectiveWarehouseId: string | null;
+}) => {
+	const router = useRouter();
+
+	const matchesWarehouse = (
+		sourceId: string | undefined,
+		destId: string | undefined,
+		selected: string | null,
+	): boolean => {
+		if (!selected) {
+			return true;
+		}
+		return sourceId === selected || destId === selected;
+	};
+
+	const isWithinRange = (value: string | undefined, range: DateRange): boolean => {
+		if (!value) {
+			return false;
+		}
+		const parsed = parseISO(value);
+		if (Number.isNaN(parsed.getTime())) {
+			return false;
+		}
+		const start = startOfDay(range.start);
+		const end = endOfDay(range.end);
+		return parsed >= start && parsed <= end;
+	};
+
+	const completedTransfers = useMemo(() => {
+		return transfers
+			.filter((transfer) => {
+				if (!transfer.isCompleted) {
+					return false;
+				}
+				if (
+					!matchesWarehouse(
+						transfer.sourceWarehouseId,
+						transfer.destinationWarehouseId,
+						effectiveWarehouseId,
+					)
+				) {
+					return false;
+				}
+				const referenceDate =
+					transfer.createdAt ?? transfer.scheduledDate ?? transfer.receivedAt;
+				return isWithinRange(referenceDate, effectiveRange);
+			})
+			.slice(0, 7);
+	}, [transfers, effectiveRange, effectiveWarehouseId]);
+
+	const formatTransferDate = (dateStr: string | undefined): string => {
+		if (!dateStr) {
+			return "N/A";
+		}
+		try {
+			const parsed = parseISO(dateStr);
+			if (Number.isNaN(parsed.getTime())) {
+				return "N/A";
+			}
+			return format(parsed, "dd/MM/yyyy", { locale: es });
+		} catch {
+			return "N/A";
+		}
+	};
+
+	const getShipmentId = (transfer: TransferListItem): string => {
+		return transfer.transferNumber ?? transfer.shipmentId ?? transfer.id;
+	};
+
+	return (
+		<Dialog open={open} onOpenChange={onOpenChange}>
+			<DialogContent className="max-w-2xl">
+				<DialogHeader>
+					<DialogTitle>Recepciones completadas</DialogTitle>
+					<DialogDescription>
+						Primeras 7 recepciones completadas en el rango seleccionado
+					</DialogDescription>
+				</DialogHeader>
+				<div className="max-h-[60vh] overflow-y-auto">
+					{completedTransfers.length === 0 ? (
+						<div className="rounded-lg border border-dashed border-[#E5E7EB] bg-[#F9FAFB] p-6 text-center text-sm text-[#687076] dark:border-[#2D3033] dark:bg-[#1E1F20] dark:text-[#9BA1A6]">
+							No hay recepciones completadas en el rango seleccionado.
+						</div>
+					) : (
+						<ul className="space-y-3">
+							{completedTransfers.map((transfer) => {
+								const shipmentId = getShipmentId(transfer);
+								const sourceName =
+									transfer.sourceWarehouseId
+										? warehouseNameMap.get(transfer.sourceWarehouseId) ??
+											`Almacén ${transfer.sourceWarehouseId.slice(0, 6)}`
+										: "N/A";
+								const destName =
+									transfer.destinationWarehouseId
+										? warehouseNameMap.get(transfer.destinationWarehouseId) ??
+											`Almacén ${transfer.destinationWarehouseId.slice(0, 6)}`
+										: "N/A";
+								return (
+									<li
+										key={transfer.id}
+										className="flex items-center justify-between rounded-lg border border-[#E5E7EB] bg-white px-4 py-3 text-sm dark:border-[#2D3033] dark:bg-[#151718]"
+									>
+										<div className="flex flex-col gap-1">
+											<Link
+												href={`/recepciones/${transfer.id}`}
+												className="font-medium text-[#0a7ea4] hover:underline"
+											>
+												{shipmentId}
+											</Link>
+											<div className="text-xs text-[#9BA1A6]">
+												{sourceName} → {destName}
+											</div>
+											<div className="text-xs text-[#9BA1A6]">
+												{transfer.totalItems ?? 0} items •{" "}
+												{formatTransferDate(
+													transfer.createdAt ?? transfer.scheduledDate,
+												)}
+											</div>
+										</div>
+									</li>
+								);
+							})}
+						</ul>
+					)}
+				</div>
+				<div className="flex justify-end gap-2 pt-4">
+					<Button
+						variant="outline"
+						onClick={() => onOpenChange(false)}
+						type="button"
+					>
+						Cerrar
+					</Button>
+					<Button
+						onClick={() => {
+							router.push("/recepciones");
+							onOpenChange(false);
+						}}
+						type="button"
+					>
+						Ver todas las recepciones
+					</Button>
+				</div>
+			</DialogContent>
+		</Dialog>
+	);
+};
+
+const TodayReceptionsDialog = ({
+	open,
+	onOpenChange,
+	transfers,
+	warehouseNameMap,
+	effectiveRange,
+	effectiveWarehouseId,
+}: {
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+	transfers: TransferListItem[];
+	warehouseNameMap: Map<string, string>;
+	effectiveRange: DateRange;
+	effectiveWarehouseId: string | null;
+}) => {
+	const router = useRouter();
+
+	const matchesWarehouse = (
+		sourceId: string | undefined,
+		destId: string | undefined,
+		selected: string | null,
+	): boolean => {
+		if (!selected) {
+			return true;
+		}
+		return sourceId === selected || destId === selected;
+	};
+
+	const isToday = (value: string | undefined): boolean => {
+		if (!value) {
+			return false;
+		}
+		const parsed = parseISO(value);
+		if (Number.isNaN(parsed.getTime())) {
+			return false;
+		}
+		const today = startOfDay(new Date());
+		const valueDay = startOfDay(parsed);
+		return valueDay.getTime() === today.getTime();
+	};
+
+	const todayTransfers = useMemo(() => {
+		return transfers
+			.filter((transfer) => {
+				if (
+					!matchesWarehouse(
+						transfer.sourceWarehouseId,
+						transfer.destinationWarehouseId,
+						effectiveWarehouseId,
+					)
+				) {
+					return false;
+				}
+				const referenceDate =
+					transfer.createdAt ?? transfer.scheduledDate ?? transfer.receivedAt;
+				return isToday(referenceDate);
+			})
+			.slice(0, 7);
+	}, [transfers, effectiveWarehouseId]);
+
+	const formatTransferDate = (dateStr: string | undefined): string => {
+		if (!dateStr) {
+			return "N/A";
+		}
+		try {
+			const parsed = parseISO(dateStr);
+			if (Number.isNaN(parsed.getTime())) {
+				return "N/A";
+			}
+			return format(parsed, "dd/MM/yyyy", { locale: es });
+		} catch {
+			return "N/A";
+		}
+	};
+
+	const getShipmentId = (transfer: TransferListItem): string => {
+		return transfer.transferNumber ?? transfer.shipmentId ?? transfer.id;
+	};
+
+	return (
+		<Dialog open={open} onOpenChange={onOpenChange}>
+			<DialogContent className="max-w-2xl">
+				<DialogHeader>
+					<DialogTitle>Recepciones de hoy</DialogTitle>
+					<DialogDescription>
+						Primeras 7 recepciones de hoy en el alcance seleccionado
+					</DialogDescription>
+				</DialogHeader>
+				<div className="max-h-[60vh] overflow-y-auto">
+					{todayTransfers.length === 0 ? (
+						<div className="rounded-lg border border-dashed border-[#E5E7EB] bg-[#F9FAFB] p-6 text-center text-sm text-[#687076] dark:border-[#2D3033] dark:bg-[#1E1F20] dark:text-[#9BA1A6]">
+							No hay recepciones de hoy en el alcance seleccionado.
+						</div>
+					) : (
+						<ul className="space-y-3">
+							{todayTransfers.map((transfer) => {
+								const shipmentId = getShipmentId(transfer);
+								const sourceName =
+									transfer.sourceWarehouseId
+										? warehouseNameMap.get(transfer.sourceWarehouseId) ??
+											`Almacén ${transfer.sourceWarehouseId.slice(0, 6)}`
+										: "N/A";
+								const destName =
+									transfer.destinationWarehouseId
+										? warehouseNameMap.get(transfer.destinationWarehouseId) ??
+											`Almacén ${transfer.destinationWarehouseId.slice(0, 6)}`
+										: "N/A";
+								return (
+									<li
+										key={transfer.id}
+										className="flex items-center justify-between rounded-lg border border-[#E5E7EB] bg-white px-4 py-3 text-sm dark:border-[#2D3033] dark:bg-[#151718]"
+									>
+										<div className="flex flex-col gap-1">
+											<Link
+												href={`/recepciones/${transfer.id}`}
+												className="font-medium text-[#0a7ea4] hover:underline"
+											>
+												{shipmentId}
+											</Link>
+											<div className="text-xs text-[#9BA1A6]">
+												{sourceName} → {destName}
+											</div>
+											<div className="text-xs text-[#9BA1A6]">
+												{transfer.totalItems ?? 0} items •{" "}
+												{formatTransferDate(
+													transfer.createdAt ?? transfer.scheduledDate,
+												)}
+											</div>
+										</div>
+									</li>
+								);
+							})}
+						</ul>
+					)}
+				</div>
+				<div className="flex justify-end gap-2 pt-4">
+					<Button
+						variant="outline"
+						onClick={() => onOpenChange(false)}
+						type="button"
+					>
+						Cerrar
+					</Button>
+					<Button
+						onClick={() => {
+							router.push("/recepciones");
+							onOpenChange(false);
+						}}
+						type="button"
+					>
+						Ver todas las recepciones
+					</Button>
+				</div>
+			</DialogContent>
+		</Dialog>
+	);
+};
+
+const MetricsGrid = ({
+	metrics,
+	onMetricClick,
+}: {
+	metrics: DashboardMetricShape[];
+	onMetricClick: (label: string) => void;
+}) => (
 	<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-		{metrics.map((metric) => (
-			<DashboardMetricCard key={metric.label} metric={metric} />
-		))}
+		{metrics.map((metric) => {
+			const isClickable =
+				metric.label === "Recepciones pendientes" ||
+				metric.label === "Recepciones completadas" ||
+				metric.label === "Recepciones de hoy";
+			return (
+				<DashboardMetricCard
+					key={metric.label}
+					metric={metric}
+					onClick={isClickable ? () => onMetricClick(metric.label) : undefined}
+				/>
+			);
+		})}
 	</div>
 );
 
@@ -550,6 +1176,9 @@ export function EstadisticasPage({
 		const epochDate = new Date(0);
 		return clampDateRange({ start: epochDate, end: epochDate });
 	});
+	const [dialogType, setDialogType] = useState<
+		"pending" | "completed" | "today" | null
+	>(null);
 
 	useEffect(() => {
 		setIsMounted(true);
@@ -858,6 +1487,21 @@ export function EstadisticasPage({
 	);
 	const formattedRange = `${formatDateVerbose(effectiveRange.start)} — ${formatDateVerbose(effectiveRange.end)}`;
 
+	const transferItems = useMemo(
+		() => extractTransferItems(transfersResponse),
+		[transfersResponse],
+	);
+
+	const handleMetricClick = (label: string) => {
+		if (label === "Recepciones pendientes") {
+			setDialogType("pending");
+		} else if (label === "Recepciones completadas") {
+			setDialogType("completed");
+		} else if (label === "Recepciones de hoy") {
+			setDialogType("today");
+		}
+	};
+
 	return (
 		<RoleGuard allowedRoles={["admin", "encargado"]} userRole={normalizedRole}>
 			<div className="flex flex-1 flex-col gap-6 p-4 md:p-6">
@@ -935,7 +1579,34 @@ export function EstadisticasPage({
 					</div>
 				</section>
 
-				<MetricsGrid metrics={metrics} />
+				<MetricsGrid metrics={metrics} onMetricClick={handleMetricClick} />
+
+				<PendingReceptionsDialog
+					open={dialogType === "pending"}
+					onOpenChange={(open) => setDialogType(open ? "pending" : null)}
+					transfers={transferItems}
+					warehouseNameMap={warehouseNameMap}
+					effectiveRange={effectiveRange}
+					effectiveWarehouseId={effectiveWarehouseId}
+				/>
+
+				<CompletedReceptionsDialog
+					open={dialogType === "completed"}
+					onOpenChange={(open) => setDialogType(open ? "completed" : null)}
+					transfers={transferItems}
+					warehouseNameMap={warehouseNameMap}
+					effectiveRange={effectiveRange}
+					effectiveWarehouseId={effectiveWarehouseId}
+				/>
+
+				<TodayReceptionsDialog
+					open={dialogType === "today"}
+					onOpenChange={(open) => setDialogType(open ? "today" : null)}
+					transfers={transferItems}
+					warehouseNameMap={warehouseNameMap}
+					effectiveRange={effectiveRange}
+					effectiveWarehouseId={effectiveWarehouseId}
+				/>
 
 				<section className="grid gap-4 xl:grid-cols-2">
 					<LowStockTable
