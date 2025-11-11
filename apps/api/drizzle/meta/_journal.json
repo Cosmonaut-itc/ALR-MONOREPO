@@ -232,6 +232,13 @@
       "when": 1762887767313,
       "tag": "0032_fearless_havok",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1762898968198,
+      "tag": "0033_fair_zarda",
+      "breakpoints": true
     }
   ]
 }

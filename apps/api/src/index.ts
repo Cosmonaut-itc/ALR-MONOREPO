@@ -6208,53 +6208,6 @@ const route = app
 		},
 	)
 	.get(
-		'/api/auth/replenishment-orders/:id',
-		zValidator('param', z.object({ id: z.string().uuid('Invalid order ID') })),
-		async (c) => {
-			const { id } = c.req.valid('param');
-			const user = c.get('user') as SessionUser | null;
-
-			const order = await getReplenishmentOrder({
-				id,
-				user,
-			});
-
-			return c.json(
-				{
-					success: true,
-					message: 'Replenishment order retrieved successfully',
-					data: order,
-				} satisfies ApiResponse,
-				200,
-			);
-		},
-	)
-	.patch(
-		'/api/auth/replenishment-orders/:id/link-transfer',
-		zValidator('param', z.object({ id: z.string().uuid('Invalid order ID') })),
-		zValidator('json', replenishmentOrderLinkTransferSchema),
-		async (c) => {
-			const { id } = c.req.valid('param');
-			const payload = c.req.valid('json');
-			const user = c.get('user') as SessionUser | null;
-
-			const order = await linkReplenishmentOrderToTransfer({
-				id,
-				input: payload,
-				user,
-			});
-
-			return c.json(
-				{
-					success: true,
-					message: 'Replenishment order linked to warehouse transfer successfully',
-					data: order,
-				} satisfies ApiResponse,
-				200,
-			);
-		},
-	)
-	.get(
 		'/api/auth/replenishment-orders/unfulfilled-products',
 		async (c) => {
 			try {
@@ -6339,6 +6292,53 @@ const route = app
 					error instanceof HTTPException ? error.status : 500,
 				);
 			}
+		},
+	)
+	.get(
+		'/api/auth/replenishment-orders/:id',
+		zValidator('param', z.object({ id: z.string().uuid('Invalid order ID') })),
+		async (c) => {
+			const { id } = c.req.valid('param');
+			const user = c.get('user') as SessionUser | null;
+
+			const order = await getReplenishmentOrder({
+				id,
+				user,
+			});
+
+			return c.json(
+				{
+					success: true,
+					message: 'Replenishment order retrieved successfully',
+					data: order,
+				} satisfies ApiResponse,
+				200,
+			);
+		},
+	)
+	.patch(
+		'/api/auth/replenishment-orders/:id/link-transfer',
+		zValidator('param', z.object({ id: z.string().uuid('Invalid order ID') })),
+		zValidator('json', replenishmentOrderLinkTransferSchema),
+		async (c) => {
+			const { id } = c.req.valid('param');
+			const payload = c.req.valid('json');
+			const user = c.get('user') as SessionUser | null;
+
+			const order = await linkReplenishmentOrderToTransfer({
+				id,
+				input: payload,
+				user,
+			});
+
+			return c.json(
+				{
+					success: true,
+					message: 'Replenishment order linked to warehouse transfer successfully',
+					data: order,
+				} satisfies ApiResponse,
+				200,
+			);
 		},
 	);
 
