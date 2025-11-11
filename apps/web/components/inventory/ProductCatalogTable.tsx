@@ -2,7 +2,7 @@
 "use memo";
 "use client";
 
-import type { FilterFn } from "@tanstack/react-table";
+import type { FilterFn, Header } from "@tanstack/react-table";
 import {
 	type ColumnDef,
 	type ColumnFiltersState,
@@ -91,7 +91,8 @@ import { DisposeItemDialog } from "./DisposeItemDialog";
 
 // Type for product with inventory data
 type ProductWithInventory = {
-	barcode: number;
+	barcode: number | string; // Can be a single number or comma-separated string of IDs
+	barcodeIds: number[]; // Array of parsed barcode IDs for matching
 	name: string;
 	category: string;
 	description: string;
@@ -345,6 +346,138 @@ function getItemBarcode(item: StockItem): number {
 		}
 	}
 	return 0;
+}
+
+/**
+ * Parses a barcode value that may be a single number or a comma-separated string of IDs.
+ *
+ * @param barcode - The barcode value (string or number) from the product catalog.
+ * @param goodId - The fallback good_id value if barcode parsing fails.
+ * @returns An object containing the original barcode (as string or number) and an array of parsed numeric IDs.
+ */
+function parseProductBarcode(
+	barcode: string | number | undefined,
+	goodId: number | string | undefined,
+): { barcode: number | string; barcodeIds: number[] } {
+	// Try to parse barcode first
+	let barcodeStr: string | null = null;
+	if (typeof barcode === "string" && barcode.trim().length > 0) {
+		barcodeStr = barcode.trim();
+	} else if (typeof barcode === "number" && !Number.isNaN(barcode)) {
+		return {
+			barcode,
+			barcodeIds: [barcode],
+		};
+	}
+
+	// Fallback to good_id if barcode is not available
+	if (!barcodeStr) {
+		if (typeof goodId === "string" && goodId.trim().length > 0) {
+			barcodeStr = goodId.trim();
+		} else if (typeof goodId === "number" && !Number.isNaN(goodId)) {
+			return {
+				barcode: goodId,
+				barcodeIds: [goodId],
+			};
+		}
+	}
+
+	// If still no valid value, return empty array
+	if (!barcodeStr) {
+		return {
+			barcode: "",
+			barcodeIds: [],
+		};
+	}
+
+	// Check if barcode contains comma-separated values
+	if (barcodeStr.includes(",")) {
+		const ids = barcodeStr
+			.split(",")
+			.map((id) => id.trim())
+			.map((id) => Number.parseInt(id, 10))
+			.filter((id) => !Number.isNaN(id) && id > 0);
+
+		return {
+			barcode: barcodeStr, // Keep original comma-separated string
+			barcodeIds: ids,
+		};
+	}
+
+	// Single barcode value
+	const parsedId = Number.parseInt(barcodeStr, 10);
+	if (Number.isNaN(parsedId) || parsedId <= 0) {
+		return {
+			barcode: barcodeStr,
+			barcodeIds: [],
+		};
+	}
+
+	return {
+		barcode: parsedId,
+		barcodeIds: [parsedId],
+	};
+}
+
+/**
+ * Checks if an inventory item's barcode matches any of the product's barcode IDs.
+ *
+ * @param itemBarcode - The barcode from the inventory item.
+ * @param productBarcodeIds - Array of barcode IDs from the product.
+ * @returns True if the item's barcode matches any of the product's barcode IDs.
+ */
+function matchesProductBarcode(
+	itemBarcode: number,
+	productBarcodeIds: number[],
+): boolean {
+	if (productBarcodeIds.length === 0) {
+		return false;
+	}
+	return productBarcodeIds.includes(itemBarcode);
+}
+
+/**
+ * Gets stock limit for a product by checking all its barcode IDs.
+ * Returns the first matching limit found, or null if none exists.
+ *
+ * @param stockLimitsMap - Map of stock limits keyed by `${warehouseId}:${barcode}`.
+ * @param warehouseId - The warehouse ID to check limits for.
+ * @param productBarcodeIds - Array of barcode IDs from the product.
+ * @returns The first matching StockLimit or null if none found.
+ */
+function getProductStockLimit(
+	stockLimitsMap: Map<string, StockLimit> | undefined,
+	warehouseId: string | null,
+	productBarcodeIds: number[],
+): StockLimit | null {
+	if (!stockLimitsMap || !warehouseId || productBarcodeIds.length === 0) {
+		return null;
+	}
+
+	// Check each barcode ID for a stock limit
+	for (const barcodeId of productBarcodeIds) {
+		const limitKey = `${warehouseId}:${barcodeId}`;
+		const limit = stockLimitsMap.get(limitKey);
+		if (limit) {
+			return limit;
+		}
+	}
+
+	return null;
+}
+
+/**
+ * Gets a stable key for a product to use in maps and state objects.
+ * Uses the first barcode ID if available, otherwise converts barcode to string.
+ *
+ * @param product - The product object.
+ * @returns A stable string key for the product.
+ */
+function getProductKey(product: ProductWithInventory): string {
+	if (product.barcodeIds.length > 0) {
+		return product.barcodeIds[0].toString();
+	}
+	return String(product.barcode);
 }
 
 /**
@@ -638,11 +771,22 @@ export function ProductCatalogTable({
 			return;
 		}
 		const notesValue = limitFormState.notes.trim();
+		// Use the first barcode ID for stock limit operations
+		const barcodeForLimit =
+			product.barcodeIds.length > 0
+				? product.barcodeIds[0]
+				: typeof product.barcode === "number"
+					? product.barcode
+					: Number.parseInt(String(product.barcode).split(",")[0] || "0", 10);
+		if (!barcodeForLimit || Number.isNaN(barcodeForLimit)) {
+			setLimitFormError("No se pudo determinar el código de barras del producto.");
+			return;
+		}
 		try {
 			if (limit) {
 				await updateStockLimit({
 					warehouseId,
-					barcode: product.barcode,
+					barcode: barcodeForLimit,
 					minQuantity: min,
 					maxQuantity: max,
 					notes: notesValue.length > 0 ? notesValue : undefined,
@@ -650,7 +794,7 @@ export function ProductCatalogTable({
 			} else {
 				await createStockLimit({
 					warehouseId,
-					barcode: product.barcode,
+					barcode: barcodeForLimit,
 					minQuantity: min,
 					maxQuantity: max,
 					notes: notesValue.length > 0 ? notesValue : undefined,
@@ -687,8 +831,13 @@ export function ProductCatalogTable({
 			// Transform API product data to match our expected structure
 			const transformedProducts = productCatalog.data.map(
 				(product: ProductCatalogItem) => {
+					const parsedBarcode = parseProductBarcode(
+						product.barcode as string | number | undefined,
+						product.good_id as number | string | undefined,
+					);
 					return {
-						barcode: Number.parseInt(product.barcode, 10) || product.good_id,
+						barcode: parsedBarcode.barcode,
+						barcodeIds: parsedBarcode.barcodeIds,
 						name: product.title || "Producto sin nombre",
 						category: product.category || "Sin categoría",
 						description: product.comment || "Sin descripción",
@@ -721,39 +870,60 @@ export function ProductCatalogTable({
 			normalizedWarehouse && normalizedWarehouse !== "all",
 		);
 
-	return storedProductCatalog.map((product) => {
-		// Get all inventory items for this product in the specified warehouse
-		if (!storedInventoryData) {
-			return {
-				...product,
-				inventoryItems: [],
-				stockCount: 0,
-				hasKitItems: false,
-			};
-		}
+		return storedProductCatalog.map((product) => {
+			// Get all inventory items for this product in the specified warehouse
+			if (!storedInventoryData) {
+				// Ensure barcodeIds exists for type safety
+				const barcodeIds =
+					"barcodeIds" in product && Array.isArray(product.barcodeIds)
+						? product.barcodeIds
+						: typeof product.barcode === "number"
+							? [product.barcode]
+							: [];
+				return {
+					...product,
+					barcodeIds,
+					inventoryItems: [],
+					stockCount: 0,
+					hasKitItems: false,
+				};
+			}
 
-		const inventoryItems: StockItemWithEmployee[] =
-			storedInventoryData?.filter((item) => {
+			// Get barcodeIds from product (may be from store or newly parsed)
+			const productBarcodeIds: number[] =
+				"barcodeIds" in product && Array.isArray(product.barcodeIds)
+					? product.barcodeIds
+					: typeof product.barcode === "number"
+						? [product.barcode]
+						: [];
+
+			const inventoryItems: StockItemWithEmployee[] =
+				storedInventoryData?.filter((item) => {
 					const itemStock = (item as { productStock: StockItem }).productStock;
-					if (getItemBarcode(itemStock) !== product.barcode) {
+					const itemBarcode = getItemBarcode(itemStock);
+
+					// Check if item's barcode matches any of the product's barcode IDs
+					if (!matchesProductBarcode(itemBarcode, productBarcodeIds)) {
 						return false;
 					}
+
 					if (!shouldFilterByWarehouse) {
 						return true;
 					}
 					return getItemWarehouse(itemStock) === normalizedWarehouse;
 				});
 
-		return {
-			...product,
-			inventoryItems,
-			stockCount: inventoryItems.length,
-			hasKitItems: inventoryItems.some((entry) => {
-				const stock = (entry as { productStock?: StockItem }).productStock;
-				return Boolean(stock?.isKit);
-			}),
-		};
-	});
+			return {
+				...product,
+				barcodeIds: productBarcodeIds,
+				inventoryItems,
+				stockCount: inventoryItems.length,
+				hasKitItems: inventoryItems.some((entry) => {
+					const stock = (entry as { productStock?: StockItem }).productStock;
+					return Boolean(stock?.isKit);
+				}),
+			};
+		});
 	}, [storedProductCatalog, storedInventoryData, warehouse]);
 
 	// State for table features
@@ -770,15 +940,15 @@ export function ProductCatalogTable({
 	const [showOnlyWithStock, setShowOnlyWithStock] = useState(false);
 	const [stockLimitFilter, setStockLimitFilter] = useState<string>("all");
 	const [isEmptyFilter, setIsEmptyFilter] = useState<string>("all");
-	// Per-product selection state for expanded rows (barcode -> Set of UUIDs)
+	// Per-product selection state for expanded rows (productKey -> Set of UUIDs)
 	const [selectedByBarcode, setSelectedByBarcode] = useState<
-		Record<number, Set<string>>
+		Record<string, Set<string>>
 	>({});
 	/**
-	 * Tracks expanded warehouse groups per product barcode for nested collapsible sections.
+	 * Tracks expanded warehouse groups per product key for nested collapsible sections.
 	 */
 	const [expandedGroupsByBarcode, setExpandedGroupsByBarcode] = useState<
-		Record<number, Set<string>>
+		Record<string, Set<string>>
 	>({});
 
 	// Extract unique categories from products
@@ -912,8 +1082,11 @@ export function ProductCatalogTable({
 					continue;
 				}
 
-				const limitKey = `${effectiveWarehouseId}:${product.barcode}`;
-				const limit = stockLimitsMap.get(limitKey);
+				const limit = getProductStockLimit(
+					stockLimitsMap,
+					effectiveWarehouseId,
+					product.barcodeIds,
+				);
 				if (!limit) {
 					continue;
 				}
@@ -1035,9 +1208,12 @@ export function ProductCatalogTable({
 	// Custom global filter function - split into smaller functions to reduce complexity
 	const searchInProduct = useMemo(
 		() => (product: ProductWithInventory, searchValue: string) => {
+			const barcodeMatches =
+				product.barcode.toString().includes(searchValue) ||
+				product.barcodeIds.some((id) => id.toString().includes(searchValue));
 			return (
 				product.name.toLowerCase().includes(searchValue) ||
-				product.barcode.toString().includes(searchValue) ||
+				barcodeMatches ||
 				product.category.toLowerCase().includes(searchValue)
 			);
 		},
@@ -1138,8 +1314,9 @@ export function ProductCatalogTable({
 			({ row }: { row: { original: ProductWithInventory } }) => {
 				const product = row.original as ProductWithInventory;
 				const selectionEnabledRef = enableSelection === true;
+				const productKey = getProductKey(product);
 				const productSelection =
-					selectedByBarcode[product.barcode] || new Set<string>();
+					selectedByBarcode[productKey] || new Set<string>();
 				const detailColumnCount = enableDispose ? 8 : 7;
 
 				type DisplayItem = {
@@ -1174,19 +1351,19 @@ export function ProductCatalogTable({
 				const isUpdateIsEmptyDisabled =
 					validSelectedIds.length === 0 || isUpdatingIsEmpty;
 
-				const isGroupExpanded = (barcode: number, key: string) =>
-					Boolean(expandedGroupsByBarcode[barcode]?.has(key));
+				const isGroupExpanded = (key: string) =>
+					Boolean(expandedGroupsByBarcode[productKey]?.has(key));
 
-				const toggleGroupExpanded = (barcode: number, key: string) => {
+				const toggleGroupExpanded = (key: string) => {
 					setExpandedGroupsByBarcode((prev) => {
-						const current = prev[barcode] ?? new Set<string>();
+						const current = prev[productKey] ?? new Set<string>();
 						const next = new Set(current);
 						if (next.has(key)) {
 							next.delete(key);
 						} else {
 							next.add(key);
 						}
-						return { ...prev, [barcode]: next };
+						return { ...prev, [productKey]: next };
 					});
 				};
 
@@ -1195,14 +1372,14 @@ export function ProductCatalogTable({
 						return;
 					}
 					setSelectedByBarcode((prev) => {
-						const currentSet = prev[product.barcode] || new Set<string>();
+						const currentSet = prev[productKey] || new Set<string>();
 						const nextSet = new Set(currentSet);
 						if (enabled) {
 							nextSet.add(identifier);
 						} else {
 							nextSet.delete(identifier);
 						}
-						return { ...prev, [product.barcode]: nextSet };
+						return { ...prev, [productKey]: nextSet };
 					});
 				};
 
@@ -1216,7 +1393,7 @@ export function ProductCatalogTable({
 					onAddToTransfer({ product, items: selectedItems });
 					setSelectedByBarcode((prev) => ({
 						...prev,
-						[product.barcode]: new Set<string>(),
+						[productKey]: new Set<string>(),
 					}));
 					if (selectedItems.length > 0) {
 						toast.success("Agregado a transferencia", {
@@ -1337,7 +1514,7 @@ export function ProductCatalogTable({
 						// Clear selection after successful update
 						setSelectedByBarcode((prev) => ({
 							...prev,
-							[product.barcode]: new Set<string>(),
+							[productKey]: new Set<string>(),
 						}));
 					} catch (error) {
 						// biome-ignore lint/suspicious/noConsole: diagnostics for failed updates
@@ -1413,14 +1590,11 @@ export function ProductCatalogTable({
 				const enrichedWarehouseGroups: EnrichedWarehouseGroup[] =
 					warehouseGroups.map(([groupKey, group]) => {
 						const effectiveWarehouseId = group.effectiveWarehouseId;
-						const limitKey =
-							effectiveWarehouseId && stockLimitsMap
-								? `${effectiveWarehouseId}:${product.barcode}`
-								: null;
-						const limit =
-							limitKey && stockLimitsMap
-								? (stockLimitsMap.get(limitKey) ?? null)
-								: null;
+						const limit = getProductStockLimit(
+							stockLimitsMap,
+							effectiveWarehouseId,
+							product.barcodeIds,
+						);
 						const currentCount = group.items.length;
 						const belowMinimum = limit
 							? currentCount < limit.minQuantity
@@ -1598,10 +1772,7 @@ export function ProductCatalogTable({
 								</TableHeader>
 								<TableBody>
 									{enrichedWarehouseGroups.map((group) => {
-										const isExpanded = isGroupExpanded(
-											product.barcode,
-											group.key,
-										);
+										const isExpanded = isGroupExpanded(group.key);
 										const limitTextClassName = group.belowMinimum
 											? "font-semibold text-[#B54708] dark:text-[#F7B84B]"
 											: group.aboveMaximum
@@ -1617,15 +1788,10 @@ export function ProductCatalogTable({
 														<div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
 															<div className="flex flex-wrap items-center gap-2">
 																<Button
-																	aria-controls={`wg-${product.barcode}-${group.key}`}
+																	aria-controls={`wg-${productKey}-${group.key}`}
 																	aria-expanded={isExpanded}
 																	className="h-6 w-6 p-0"
-																	onClick={() =>
-																		toggleGroupExpanded(
-																			product.barcode,
-																			group.key,
-																		)
-																	}
+																	onClick={() => toggleGroupExpanded(group.key)}
 																	size="sm"
 																	type="button"
 																	variant="ghost"
@@ -1699,7 +1865,7 @@ export function ProductCatalogTable({
 														className="p-0"
 														colSpan={detailColumnCount}
 													>
-														<div id={`wg-${product.barcode}-${group.key}`} />
+														<div id={`wg-${productKey}-${group.key}`} />
 													</TableCell>
 												</TableRow>
 												{isExpanded && (
@@ -1919,6 +2085,52 @@ export function ProductCatalogTable({
 		],
 	);
 
+	/**
+	 * Renders a sortable table header with chevron indicators.
+	 *
+	 * @param header - The header object from TanStack Table.
+	 * @param label - The text label to display in the header.
+	 * @returns A clickable header element with sorting indicators.
+	 */
+	const renderSortableHeader = useCallback(
+		(header: Header<ProductWithInventory, unknown>, label: string) => {
+			const canSort = header.column.getCanSort();
+			const sortDirection = header.column.getIsSorted();
+			const toggleHandler = header.column.getToggleSortingHandler();
+
+			if (!canSort) {
+				return <span>{label}</span>;
+			}
+
+			return (
+				<button
+					className="flex items-center gap-2 hover:text-[#0a7ea4] dark:hover:text-[#0a7ea4]"
+					onClick={toggleHandler}
+					type="button"
+				>
+					<span>{label}</span>
+					<div className="flex flex-col">
+						<ChevronUp
+							className={`h-3 w-3 transition-opacity ${
+								sortDirection === "asc"
+									? "opacity-100 text-[#0a7ea4] dark:text-[#0a7ea4]"
+									: "opacity-30"
+							}`}
+						/>
+						<ChevronDown
+							className={`-mt-1 h-3 w-3 transition-opacity ${
+								sortDirection === "desc"
+									? "opacity-100 text-[#0a7ea4] dark:text-[#0a7ea4]"
+									: "opacity-30"
+							}`}
+						/>
+					</div>
+				</button>
+			);
+		},
+		[],
+	);
+
 	// Define table columns using useMemo for stable reference
 	const columns = useMemo<ColumnDef<ProductWithInventory>[]>(
 		() => [
@@ -1945,11 +2157,19 @@ export function ProductCatalogTable({
 			},
 			{
 				accessorKey: "name",
-				header: "Producto",
+				header: ({ header }) => renderSortableHeader(header, "Producto"),
+				enableSorting: true,
+				sortingFn: "alphanumeric",
 				cell: ({ row }) => {
 					const product = row.original;
+					const warehouseIdForLimit =
+						warehouse && warehouse !== "all" ? warehouse : null;
 					const hasLimit = Boolean(
-						stockLimitsMap?.get(`${warehouse}:${product.barcode}`),
+						getProductStockLimit(
+							stockLimitsMap,
+							warehouseIdForLimit,
+							product.barcodeIds,
+						),
 					);
 					return (
 						<div className="font-medium text-[#11181C] dark:text-[#ECEDEE]">
@@ -1981,6 +2201,7 @@ export function ProductCatalogTable({
 			{
 				accessorKey: "barcode",
 				header: "Código de Barras",
+				enableSorting: false,
 				cell: ({ row }) => (
 					<div className="font-mono text-[#687076] text-sm dark:text-[#9BA1A6]">
 						{row.getValue("barcode")}
@@ -1990,7 +2211,9 @@ export function ProductCatalogTable({
 
 			{
 				accessorKey: "category",
-				header: "Categoría",
+				header: ({ header }) => renderSortableHeader(header, "Categoría"),
+				enableSorting: true,
+				sortingFn: "alphanumeric",
 				cell: ({ row }) => (
 					<Badge
 						className="bg-[#F3F4F6] text-[#374151] dark:bg-[#374151] dark:text-[#D1D5DB]"
@@ -2003,7 +2226,9 @@ export function ProductCatalogTable({
 			},
 			{
 				accessorKey: "stockCount",
-				header: "Stock",
+				header: ({ header }) => renderSortableHeader(header, "Stock"),
+				enableSorting: true,
+				sortingFn: "basic",
 				cell: ({ row }) => {
 					const stockCount = row.getValue("stockCount") as number;
 					return (
@@ -2022,7 +2247,7 @@ export function ProductCatalogTable({
 				filterFn: stockAvailabilityFilterFn,
 			},
 		],
-		[categoryFilterFn, stockAvailabilityFilterFn],
+		[categoryFilterFn, stockAvailabilityFilterFn, renderSortableHeader, stockLimitsMap, warehouse, canEditLimits],
 	);
 
 	// Initialize the table
@@ -2179,14 +2404,11 @@ export function ProductCatalogTable({
 					const effectiveWarehouseId = resolveWarehouseIdForLimit(labelSource);
 
 					// Get stock limits for this warehouse-product combination
-					const limitKey =
-						effectiveWarehouseId && stockLimitsMap
-							? `${effectiveWarehouseId}:${product.barcode}`
-							: null;
-					const limit =
-						limitKey && stockLimitsMap
-							? stockLimitsMap.get(limitKey) ?? null
-							: null;
+					const limit = getProductStockLimit(
+						stockLimitsMap,
+						effectiveWarehouseId,
+						product.barcodeIds,
+					);
 
 					csvData.push({
 						name: product.name,
