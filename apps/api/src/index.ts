@@ -1028,6 +1028,13 @@ const route = app
 	 * Returns an error response if the API is unavailable or authentication fails.
 	 * Includes proper error handling and response formatting.
 	 *
+	 * Deduplication logic:
+	 * - First deduplicates by good_id across warehouses
+	 * - Then deduplicates by title (exact match, case-sensitive)
+	 * - When multiple products share the same title but have different good_ids,
+	 *   they are merged into a single record with all good_ids as a comma-separated string
+	 * - The first occurrence's data is preserved when merging duplicates
+	 *
 	 * Fixed to retrieve 500 products per request.
 	 *
 	 * @returns {ApiResponse<DataItemArticulosType[]>} Success response with products array or error response
@@ -1172,7 +1179,43 @@ const route = app
 				}
 			}
 
-			const allProducts = Array.from(uniqueByGoodId.values()).slice(0, MAX_ITEMS);
+			/**
+			 * De-duplicate by title and accumulate good_ids for duplicate titles.
+			 * When multiple products have the same title but different good_ids,
+			 * we merge them into a single record with all good_ids as a comma-separated string.
+			 * This preserves the first occurrence's data while aggregating the good_ids.
+			 */
+			const uniqueByTitle = new Map<string, DataItemArticulosType & { good_id: number | string }>();
+			const titleToGoodIds = new Map<string, number[]>();
+
+			// First pass: collect all good_ids per normalized title
+			for (const item of uniqueByGoodId.values()) {
+				const normalizedTitle = item.title.trim();
+				if (!titleToGoodIds.has(normalizedTitle)) {
+					titleToGoodIds.set(normalizedTitle, []);
+				}
+				titleToGoodIds.get(normalizedTitle)?.push(item.good_id);
+			}
+
+			// Second pass: create merged records with accumulated good_ids
+			// Preserves the first occurrence's data for each unique title
+			for (const item of uniqueByGoodId.values()) {
+				const normalizedTitle = item.title.trim();
+				if (!uniqueByTitle.has(normalizedTitle)) {
+					const goodIds = titleToGoodIds.get(normalizedTitle) ?? [];
+					// If multiple good_ids exist for this title, join them with commas
+					// Otherwise, keep the single good_id as-is
+					const mergedGoodId =
+						goodIds.length > 1 ? goodIds.join(',') : goodIds[0] ?? item.good_id;
+
+					uniqueByTitle.set(normalizedTitle, {
+						...item,
+						good_id: mergedGoodId,
+					} as DataItemArticulosType & { good_id: number | string });
+				}
+			}
+
+			const allProducts = Array.from(uniqueByTitle.values()).slice(0, MAX_ITEMS) as DataItemArticulosType[];
 			const meta = warehouseResults.flatMap((r) => r.meta ?? []);
 			const success = warehouseResults.every((r) => r.success === true);
 
