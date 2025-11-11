@@ -31,9 +31,11 @@ import type { SessionUser } from './lib/replenishment-orders';
 import {
 	createReplenishmentOrder,
 	getReplenishmentOrder,
+	getUnfulfilledProducts,
 	linkReplenishmentOrderToTransfer,
 	listReplenishmentOrders,
 	listReplenishmentOrdersByWarehouse,
+	markBuyOrderGenerated,
 	updateReplenishmentOrder,
 } from './lib/replenishment-orders';
 import type {
@@ -6250,6 +6252,93 @@ const route = app
 				} satisfies ApiResponse,
 				200,
 			);
+		},
+	)
+	.get(
+		'/api/auth/replenishment-orders/unfulfilled-products',
+		async (c) => {
+			try {
+				const user = c.get('user') as SessionUser | null;
+
+				const unfulfilledProducts = await getUnfulfilledProducts({ user });
+
+				return c.json(
+					{
+						success: true,
+						message: 'Unfulfilled products retrieved successfully',
+						data: unfulfilledProducts,
+					} satisfies ApiResponse,
+					200,
+				);
+			} catch (error) {
+				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
+				console.error('Error fetching unfulfilled products:', error);
+				logErrorDetails(error, 'GET', '/api/auth/replenishment-orders/unfulfilled-products');
+
+				return c.json(
+					{
+						success: false,
+						message: 'Failed to fetch unfulfilled products',
+						...(process.env.NODE_ENV === 'development' && {
+							error: error instanceof Error ? error.message : 'Unknown error',
+						}),
+					} satisfies ApiResponse,
+					500,
+				);
+			}
+		},
+	)
+	.patch(
+		'/api/auth/replenishment-orders/mark-buy-order-generated',
+		zValidator(
+			'json',
+			z.object({
+				detailIds: z
+					.array(z.string().uuid('Invalid detail ID format'))
+					.min(1, 'At least one detail ID is required'),
+			}),
+		),
+		async (c) => {
+			try {
+				const { detailIds } = c.req.valid('json');
+				const user = c.get('user') as SessionUser | null;
+
+				const updatedCount = await markBuyOrderGenerated({
+					detailIds,
+					user,
+				});
+
+				return c.json(
+					{
+						success: true,
+						message: `Successfully marked ${updatedCount} item(s) as buy order generated`,
+						data: {
+							updatedCount,
+							detailIds,
+						},
+					} satisfies ApiResponse,
+					200,
+				);
+			} catch (error) {
+				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
+				console.error('Error marking buy order as generated:', error);
+				logErrorDetails(
+					error,
+					'PATCH',
+					'/api/auth/replenishment-orders/mark-buy-order-generated',
+				);
+
+				return c.json(
+					{
+						success: false,
+						message: 'Failed to mark buy order as generated',
+						...(process.env.NODE_ENV === 'development' && {
+							error: error instanceof Error ? error.message : 'Unknown error',
+						}),
+					} satisfies ApiResponse,
+					error instanceof HTTPException ? error.status : 500,
+				);
+			}
 		},
 	);
 

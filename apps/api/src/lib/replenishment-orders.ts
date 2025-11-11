@@ -1,6 +1,6 @@
 /** biome-ignore-all lint/complexity/noExcessiveCognitiveComplexity: Needed for the code to be readable */
 import { format } from 'date-fns';
-import { and, desc, eq, type SQL, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, type SQL, sql } from 'drizzle-orm';
 import { HTTPException } from 'hono/http-exception';
 import { db } from '../db/index';
 // biome-ignore lint/performance/noNamespaceImport: Drizzle schema
@@ -202,6 +202,7 @@ export async function createReplenishmentOrder({
 				barcode: item.barcode,
 				quantity: item.quantity,
 				sentQuantity: 0, // Initialize sent quantity to 0 for new orders
+				buyOrderGenerated: false, // Initialize buy order generated flag to false
 			})),
 		);
 
@@ -494,4 +495,111 @@ export async function linkReplenishmentOrderToTransfer({
 
 		return fetchOrderWithDetails(tx, id);
 	});
+}
+
+/**
+ * Type definition for unfulfilled product items.
+ * Represents products that were not fully fulfilled in received replenishment orders.
+ */
+export type UnfulfilledProduct = {
+	barcode: number;
+	quantity: number;
+	sentQuantity: number;
+	unfulfilledQuantity: number;
+	replenishmentOrderId: string;
+	orderNumber: string;
+	sourceWarehouseId: string;
+	cedisWarehouseId: string;
+	notes: string | null;
+};
+
+/**
+ * Fetches products that were not fully fulfilled from received replenishment orders.
+ * Only includes products where:
+ * - The replenishment order is received (isReceived = true)
+ * - The buy order has not been generated yet (buyOrderGenerated = false)
+ * - The sent quantity is less than the requested quantity (sentQuantity < quantity)
+ *
+ * @param user - Authenticated user (required)
+ * @returns Array of unfulfilled products with their details
+ */
+export async function getUnfulfilledProducts({
+	user,
+}: {
+	user: SessionUser | null | undefined;
+}): Promise<UnfulfilledProduct[]> {
+	assertAuthenticated(user);
+
+	const unfulfilledItems = await db
+		.select({
+			barcode: schemas.replenishmentOrderDetails.barcode,
+			quantity: schemas.replenishmentOrderDetails.quantity,
+			sentQuantity: schemas.replenishmentOrderDetails.sentQuantity,
+			replenishmentOrderId: schemas.replenishmentOrderDetails.replenishmentOrderId,
+			orderNumber: schemas.replenishmentOrder.orderNumber,
+			sourceWarehouseId: schemas.replenishmentOrder.sourceWarehouseId,
+			cedisWarehouseId: schemas.replenishmentOrder.cedisWarehouseId,
+			notes: schemas.replenishmentOrderDetails.notes,
+		})
+		.from(schemas.replenishmentOrderDetails)
+		.innerJoin(
+			schemas.replenishmentOrder,
+			eq(
+				schemas.replenishmentOrderDetails.replenishmentOrderId,
+				schemas.replenishmentOrder.id,
+			),
+		)
+		.where(
+			and(
+				eq(schemas.replenishmentOrder.isReceived, true),
+				eq(schemas.replenishmentOrderDetails.buyOrderGenerated, false),
+				sql`${schemas.replenishmentOrderDetails.sentQuantity} < ${schemas.replenishmentOrderDetails.quantity}`,
+			),
+		)
+		.orderBy(schemas.replenishmentOrderDetails.barcode);
+
+	return unfulfilledItems.map((item) => ({
+		barcode: item.barcode,
+		quantity: item.quantity,
+		sentQuantity: item.sentQuantity,
+		unfulfilledQuantity: item.quantity - item.sentQuantity,
+		replenishmentOrderId: item.replenishmentOrderId,
+		orderNumber: item.orderNumber,
+		sourceWarehouseId: item.sourceWarehouseId,
+		cedisWarehouseId: item.cedisWarehouseId,
+		notes: item.notes,
+	}));
+}
+
+/**
+ * Updates the buyOrderGenerated flag for multiple replenishment order detail items.
+ * Marks the specified detail items as having had their buy order generated.
+ *
+ * @param detailIds - Array of detail item IDs to update
+ * @param user - Authenticated user (required)
+ * @returns Number of rows updated
+ */
+export async function markBuyOrderGenerated({
+	detailIds,
+	user,
+}: {
+	detailIds: string[];
+	user: SessionUser | null | undefined;
+}): Promise<number> {
+	assertAuthenticated(user);
+
+	if (detailIds.length === 0) {
+		throw new HTTPException(400, {
+			message: 'At least one detail ID is required',
+		});
+	}
+
+	const result = await db
+		.update(schemas.replenishmentOrderDetails)
+		.set({
+			buyOrderGenerated: true,
+		})
+		.where(inArray(schemas.replenishmentOrderDetails.id, detailIds));
+
+	return result.rowCount ?? 0;
 }
