@@ -2743,24 +2743,27 @@ const route = app
 
 				// Handle limit type change or updates
 				if (payload.limitType !== undefined && payload.limitType !== current.limitType) {
-					// Changing limit type - reset the other type's fields
+					// Changing limit type - require the corresponding min/max values for the new type
 					updateValues.limitType = payload.limitType;
 					if (payload.limitType === 'usage') {
-						// Switching to usage - set quantity fields to 0
+						// Switching to usage - require minUsage and maxUsage to be provided
+						if (payload.minUsage === undefined || payload.maxUsage === undefined) {
+							return c.json(
+								{
+									success: false,
+									message:
+										'When switching to usage-based limits, both minUsage and maxUsage must be provided',
+								} satisfies ApiResponse,
+								400,
+							);
+						}
+
+						// Set quantity fields to 0 when switching to usage
 						updateValues.minQuantity = 0;
 						updateValues.maxQuantity = 0;
-						// Compute both bounds for the new type and validate
-						const nextMinUsage =
-							payload.minUsage !== undefined
-								? payload.minUsage
-								: (current.minUsage ?? 0);
-						const nextMaxUsage =
-							payload.maxUsage !== undefined
-								? payload.maxUsage
-								: (current.maxUsage ?? 0);
 
 						// Validate that minUsage <= maxUsage
-						if (nextMinUsage > nextMaxUsage) {
+						if (payload.minUsage > payload.maxUsage) {
 							return c.json(
 								{
 									success: false,
@@ -2770,24 +2773,30 @@ const route = app
 							);
 						}
 
-						updateValues.minUsage = nextMinUsage;
-						updateValues.maxUsage = nextMaxUsage;
+						updateValues.minUsage = payload.minUsage;
+						updateValues.maxUsage = payload.maxUsage;
 					} else if (payload.limitType === 'quantity') {
-						// Switching to quantity - set usage fields to null
+						// Switching to quantity - require minQuantity and maxQuantity to be provided
+						if (
+							payload.minQuantity === undefined ||
+							payload.maxQuantity === undefined
+						) {
+							return c.json(
+								{
+									success: false,
+									message:
+										'When switching to quantity-based limits, both minQuantity and maxQuantity must be provided',
+								} satisfies ApiResponse,
+								400,
+							);
+						}
+
+						// Set usage fields to null when switching to quantity
 						updateValues.minUsage = null;
 						updateValues.maxUsage = null;
-						// Compute both bounds for the new type and validate
-						const nextMin =
-							payload.minQuantity !== undefined
-								? payload.minQuantity
-								: (current.minQuantity ?? 0);
-						const nextMax =
-							payload.maxQuantity !== undefined
-								? payload.maxQuantity
-								: (current.maxQuantity ?? 0);
 
 						// Validate that minQuantity <= maxQuantity
-						if (nextMin > nextMax) {
+						if (payload.minQuantity > payload.maxQuantity) {
 							return c.json(
 								{
 									success: false,
@@ -2797,8 +2806,8 @@ const route = app
 							);
 						}
 
-						updateValues.minQuantity = nextMin;
-						updateValues.maxQuantity = nextMax;
+						updateValues.minQuantity = payload.minQuantity;
+						updateValues.maxQuantity = payload.maxQuantity;
 					}
 				} else if (limitType === 'usage') {
 					// Not changing limit type - update fields based on current type
