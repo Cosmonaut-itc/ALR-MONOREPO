@@ -573,16 +573,31 @@ export const computeLowStock = (
 } => {
 	const stockByKey = new Map<string, number>();
 	const sampleByKey = new Map<string, NormalizedInventoryItem>();
+	// Build stock counts for quantity limits (warehouse items only)
+	// and for usage limits (all items)
+	const quantityStockByKey = new Map<string, number>();
+	const usageStockByKey = new Map<string, number>();
+	
 	for (const item of inventory) {
 		if (!item.warehouseId || item.barcode == null) {
 			continue;
 		}
 		const key = `${item.warehouseId}::${item.barcode}`;
-		stockByKey.set(key, (stockByKey.get(key) ?? 0) + 1);
-		if (!sampleByKey.has(key)) {
-			sampleByKey.set(key, item);
+		
+		// For usage limits, count all items regardless of cabinet
+		usageStockByKey.set(key, (usageStockByKey.get(key) ?? 0) + 1);
+		
+		// For quantity limits, only count warehouse items (not cabinet items)
+		// Skip items that have a cabinetId assigned
+		if (item.cabinetId == null) {
+			quantityStockByKey.set(key, (quantityStockByKey.get(key) ?? 0) + 1);
+			if (!sampleByKey.has(key)) {
+				sampleByKey.set(key, item);
+			}
 		}
 	}
+	
+	// Use the appropriate stock map based on limit type
 	const lowItems: LowStockItem[] = [];
 	for (const limit of limits) {
 		if (!limit || typeof limit !== "object") {
@@ -597,24 +612,29 @@ export const computeLowStock = (
 			continue;
 		}
 		const mapKey = `${warehouse}::${barcode}`;
-		const current = stockByKey.get(mapKey) ?? 0;
+		
 		// Only check quantity-based limits for low stock
 		// Usage limits are tracked differently and don't affect "low stock" alerts
-		if (
-			limit.limitType === "quantity" &&
-			current < limit.minQuantity
-		) {
-			const sample = sampleByKey.get(mapKey) ?? null;
-			lowItems.push({
-				barcode,
-				warehouseId: warehouse,
-				current,
-				min: limit.minQuantity,
-				delta: limit.minQuantity - current,
-				description: sample?.description ?? null,
-				productId: sample?.id ?? null,
-			});
+		if (limit.limitType === "quantity") {
+			const current = quantityStockByKey.get(mapKey) ?? 0;
+			if (current < limit.minQuantity) {
+				const sample = sampleByKey.get(mapKey) ?? null;
+				lowItems.push({
+					barcode,
+					warehouseId: warehouse,
+					current,
+					min: limit.minQuantity,
+					delta: limit.minQuantity - current,
+					description: sample?.description ?? null,
+					productId: sample?.id ?? null,
+				});
+			}
 		}
+	}
+	
+	// Update stockByKey to use quantityStockByKey for backward compatibility
+	for (const [key, value] of quantityStockByKey.entries()) {
+		stockByKey.set(key, value);
 	}
 	lowItems.sort((a, b) => b.delta - a.delta || a.barcode - b.barcode);
 	return { totalLow: lowItems.length, items: lowItems, stockByKey };

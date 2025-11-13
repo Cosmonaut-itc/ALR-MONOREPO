@@ -1221,14 +1221,20 @@ export function ProductCatalogTable({
 					continue;
 				}
 
+				// Only count warehouse items (not cabinet items) for quantity limit checks
+				// Usage limits count all items regardless of location
 				const currentCount = group.items.length;
+				const warehouseItemsCount =
+					limit.limitType === "quantity"
+						? group.items.filter((item) => !item.data.currentCabinet).length
+						: currentCount;
 				const belowMinimum =
 					limit.limitType === "quantity"
-						? currentCount < limit.minQuantity
+						? warehouseItemsCount < limit.minQuantity
 						: false;
 				const aboveMaximum =
 					limit.limitType === "quantity"
-						? currentCount > limit.maxQuantity
+						? warehouseItemsCount > limit.maxQuantity
 						: false;
 
 				if (filterType === "below-minimum" && belowMinimum) {
@@ -1727,6 +1733,7 @@ export function ProductCatalogTable({
 					limitBadgeClassName: string;
 					limitRangeText: string;
 					currentCount: number;
+					isUsageLimit: boolean;
 				};
 
 				const enrichedWarehouseGroups: EnrichedWarehouseGroup[] =
@@ -1737,16 +1744,23 @@ export function ProductCatalogTable({
 							effectiveWarehouseId,
 							product.barcodeIds,
 						);
+						// Only count warehouse items (not cabinet items) for quantity limit checks
+						// Usage limits count all items regardless of location
 						const currentCount = group.items.length;
+						const warehouseItemsCount =
+							limit?.limitType === "quantity"
+								? group.items.filter((item) => !item.data.currentCabinet).length
+								: currentCount;
 						let belowMinimum = false;
 						let aboveMaximum = false;
 						let limitText = "Sin límite";
 						let limitRangeText = "Sin límite";
+						let isUsageLimit = false;
 
 						if (limit) {
 							if (limit.limitType === "quantity") {
-								belowMinimum = currentCount < limit.minQuantity;
-								aboveMaximum = currentCount > limit.maxQuantity;
+								belowMinimum = warehouseItemsCount < limit.minQuantity;
+								aboveMaximum = warehouseItemsCount > limit.maxQuantity;
 								limitText = `Límite: ${limit.minQuantity}–${limit.maxQuantity} unidades`;
 								limitRangeText = `${limit.minQuantity}–${limit.maxQuantity} unidades`;
 							} else {
@@ -1754,6 +1768,7 @@ export function ProductCatalogTable({
 								// For usage limits, we need to check the usage count of items
 								// For now, we'll show the limit but not check against current usage
 								// This would require aggregating numberOfUses from items
+								isUsageLimit = true;
 								const minUsage = limit.minUsage ?? 0;
 								const maxUsage = limit.maxUsage ?? 0;
 								limitText = `Límite: ${minUsage}–${maxUsage} usos`;
@@ -1794,6 +1809,7 @@ export function ProductCatalogTable({
 							limitBadgeClassName,
 							limitRangeText,
 							currentCount,
+							isUsageLimit,
 						};
 					});
 				return (
@@ -1927,11 +1943,13 @@ export function ProductCatalogTable({
 								<TableBody>
 									{enrichedWarehouseGroups.map((group) => {
 										const isExpanded = isGroupExpanded(group.key);
-										const limitTextClassName = group.belowMinimum
-											? "font-semibold text-[#B54708] dark:text-[#F7B84B]"
-											: group.aboveMaximum
-												? "font-semibold text-[#B42318] dark:text-[#F87171]"
-												: "";
+										const limitTextClassName = group.isUsageLimit
+											? "font-semibold text-[#7C3AED] dark:text-[#A78BFA]"
+											: group.belowMinimum
+												? "font-semibold text-[#B54708] dark:text-[#F7B84B]"
+												: group.aboveMaximum
+													? "font-semibold text-[#B42318] dark:text-[#F87171]"
+													: "";
 										const canShowAction =
 											canEditLimits && Boolean(group.effectiveWarehouseId);
 										const editActionLabel = group.limit ? "Editar" : "Definir";
