@@ -151,3 +151,32 @@ export const fetchAllWarehousesServer = async () => {
 
 	return res.json();
 };
+
+/**
+ * Fetches product stock items that are deleted or empty from the server.
+ *
+ * @returns A promise that resolves to the API response containing deleted and empty product stock items.
+ * @throws Error if the fetch request fails.
+ */
+export const fetchDeletedAndEmptyProductStockServer = async () => {
+	const origin = resolveTrustedOrigin();
+	const url = new URL(
+		"/api/auth/product-stock/deleted-and-empty",
+		origin,
+	).toString();
+	const headers = await buildCookieHeader(origin);
+
+	const res = await fetch(url, {
+		headers,
+		cache: "no-store",
+	});
+
+	if (!res.ok) {
+		const text = await res.text().catch(() => "");
+		throw new Error(
+			`Deleted and empty product stock fetch failed: ${res.status} ${res.statusText} ${text}`,
+		);
+	}
+
+	return res.json();
+};

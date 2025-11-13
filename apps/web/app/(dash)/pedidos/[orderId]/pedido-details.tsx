@@ -45,6 +45,14 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from "@/components/ui/dialog";
+import {
 	getAllProducts,
 	getAllWarehouses,
 	getCabinetWarehouse,
@@ -481,6 +489,10 @@ export function PedidoDetailsPage({
 	const [priority, setPriority] = useState<"normal" | "urgent" | "high">(
 		"normal",
 	);
+	const [showZeroQuantityDialog, setShowZeroQuantityDialog] = useState(false);
+	const [pendingTransferAction, setPendingTransferAction] = useState<
+		(() => Promise<void>) | null
+	>(null);
 
 	const warehouseOptions = useMemo(
 		() => parseWarehouses(warehousesResponse),
@@ -777,12 +789,48 @@ export function PedidoDetailsPage({
 		};
 	}, [parsedOrder, selectedItems]);
 
-	const isTransferReady =
-		Boolean(parsedOrder) && fulfillmentProgress.selected > 0;
+	const isTransferReady = Boolean(parsedOrder);
 	const hasCompleteFulfillment = fulfillmentProgress.complete;
 	const pendingPieces = fulfillmentProgress.missing;
 
-	const handleCreateTransfer = useCallback(async () => {
+	/**
+	 * Checks if any items have zero selected products
+	 * @returns Array of items with zero selections, including their display info
+	 */
+	const getZeroQuantityItems = useCallback(() => {
+		if (!parsedOrder) {
+			return [];
+		}
+		return parsedOrder.items
+			.map((item) => {
+				const selectedCount = selectedItems[item.id]?.length ?? 0;
+				if (selectedCount === 0) {
+					const productInfo = productInfoByBarcode.get(item.barcode);
+					const displayName =
+						productInfo?.name ?? `Producto ${item.barcode}`;
+					return {
+						barcode: item.barcode,
+						displayName,
+						requestedQuantity: item.quantity,
+					};
+				}
+				return null;
+			})
+			.filter(
+				(
+					item,
+				): item is {
+					barcode: number;
+					displayName: string;
+					requestedQuantity: number;
+				} => item !== null,
+			);
+	}, [parsedOrder, selectedItems, productInfoByBarcode]);
+
+	/**
+	 * Creates the transfer order and updates the replenishment order with sent quantities
+	 */
+	const executeCreateTransfer = useCallback(async () => {
 		if (!parsedOrder) {
 			toast.error("No se encontró la información del pedido.");
 			return;
@@ -810,13 +858,6 @@ export function PedidoDetailsPage({
 			return;
 		}
 
-		if (!isTransferReady) {
-			toast.error(
-				"Selecciona al menos un artículo disponible antes de crear el traspaso.",
-			);
-			return;
-		}
-
 		// Check if a transfer already exists for this order
 		if (parsedOrder.warehouseTransferId) {
 			toast.info(
@@ -825,9 +866,22 @@ export function PedidoDetailsPage({
 			try {
 				// Try to update the order status if it's not already sent
 				if (!parsedOrder.isSent) {
+					const orderItems = parsedOrder.items.map((item) => {
+						const selectedCount = selectedItems[item.id]?.length ?? 0;
+						return {
+							barcode: item.barcode,
+							quantity: item.quantity,
+							sentQuantity: selectedCount,
+							notes: item.notes ?? null,
+						};
+					});
+
 					await updateOrderMutation.mutateAsync({
 						param: { id: parsedOrder.id },
-						json: { isSent: true },
+						json: {
+							isSent: true,
+							items: orderItems,
+						},
 					});
 				}
 				toast.success("Estado del pedido actualizado.");
@@ -861,107 +915,127 @@ export function PedidoDetailsPage({
 			}));
 		});
 
-		if (transferDetails.length === 0) {
-			toast.error("Selecciona al menos un artículo para el traspaso.");
-			return;
-		}
-
 		let transferIdCandidate: string | null = null;
 
-		try {
-			const transferPayload = {
-				transferNumber: `TR-${Date.now()}`,
-				transferType: "external" as const,
-				sourceWarehouseId: parsedOrder.cedisWarehouseId,
-				destinationWarehouseId: parsedOrder.sourceWarehouseId,
-				initiatedBy: currentUser.id,
-				cabinetId,
-				transferDetails,
-				transferNotes:
-					transferNotes.trim().length > 0
-						? transferNotes.trim()
-						: `Traspaso generado desde pedido ${parsedOrder.orderNumber}`,
-				priority,
-				isCabinetToWarehouse: false,
-			};
+		// Only create transfer if there are selected items
+		if (transferDetails.length > 0) {
+			try {
+				const transferPayload = {
+					transferNumber: `TR-${Date.now()}`,
+					transferType: "external" as const,
+					sourceWarehouseId: parsedOrder.cedisWarehouseId,
+					destinationWarehouseId: parsedOrder.sourceWarehouseId,
+					initiatedBy: currentUser.id,
+					cabinetId,
+					transferDetails,
+					transferNotes:
+						transferNotes.trim().length > 0
+							? transferNotes.trim()
+							: `Traspaso generado desde pedido ${parsedOrder.orderNumber}`,
+					priority,
+					isCabinetToWarehouse: false,
+				};
 
-			const transferResult =
-				await createTransferMutation.mutateAsync(transferPayload);
+				const transferResult =
+					await createTransferMutation.mutateAsync(transferPayload);
 
-			transferIdCandidate =
-				(transferResult as Record<string, unknown>)?.data &&
-				typeof (transferResult as { data?: unknown }).data === "object"
-					? ((
-							transferResult as {
-								data?: { transfer?: { id?: string }; id?: string };
-							}
-						).data?.transfer?.id ??
-						(
-							transferResult as {
-								data?: { transfer?: { id?: string }; id?: string };
-							}
-						).data?.id ??
-						null)
-					: null;
+				transferIdCandidate =
+					(transferResult as Record<string, unknown>)?.data &&
+					typeof (transferResult as { data?: unknown }).data === "object"
+						? ((
+								transferResult as {
+									data?: { transfer?: { id?: string }; id?: string };
+								}
+							).data?.transfer?.id ??
+							(
+								transferResult as {
+									data?: { transfer?: { id?: string }; id?: string };
+								}
+							).data?.id ??
+							null)
+						: null;
 
-			if (!transferIdCandidate) {
-				toast.warning(
-					"No se pudo determinar el identificador del traspaso creado.",
-				);
+				if (!transferIdCandidate) {
+					toast.warning(
+						"No se pudo determinar el identificador del traspaso creado.",
+					);
+					return;
+				}
+
+				// Try to link the transfer to the order
+				try {
+					await linkTransferMutation.mutateAsync({
+						param: { id: parsedOrder.id },
+						json: { warehouseTransferId: transferIdCandidate },
+					});
+				} catch (linkError) {
+					// If linking fails, warn the user but don't fail completely
+					// The transfer was created, but the link failed
+					if (linkError instanceof Error && linkError.message) {
+						toast.warning(
+							`Traspaso creado exitosamente (ID: ${transferIdCandidate}), pero no se pudo vincular al pedido: ${linkError.message}. Puedes vincularlo manualmente más tarde.`,
+							{ duration: 6000 },
+						);
+					} else {
+						toast.warning(
+							`Traspaso creado exitosamente (ID: ${transferIdCandidate}), pero no se pudo vincular al pedido. Puedes vincularlo manualmente más tarde.`,
+							{ duration: 6000 },
+						);
+					}
+					// Still try to update order status if needed
+					try {
+						const orderItems = parsedOrder.items.map((item) => {
+							const selectedCount = selectedItems[item.id]?.length ?? 0;
+							return {
+								barcode: item.barcode,
+								quantity: item.quantity,
+								sentQuantity: selectedCount,
+								notes: item.notes ?? null,
+							};
+						});
+
+						await updateOrderMutation.mutateAsync({
+							param: { id: parsedOrder.id },
+							json: {
+								isSent: true,
+								items: orderItems,
+							},
+						});
+					} catch {
+						// Ignore status update errors if linking already failed
+					}
+					router.push("/pedidos");
+					return;
+				}
+			} catch (error) {
+				if (error instanceof Error && error.message) {
+					toast.error(`Error al crear el traspaso: ${error.message}`);
+				} else {
+					toast.error("No se pudo crear el traspaso.");
+				}
 				return;
 			}
-		} catch (error) {
-			if (error instanceof Error && error.message) {
-				toast.error(`Error al crear el traspaso: ${error.message}`);
-			} else {
-				toast.error("No se pudo crear el traspaso.");
-			}
-			return;
 		}
 
-		// Try to link the transfer to the order
+		// Update order with sent quantities for each item
 		try {
-			await linkTransferMutation.mutateAsync({
-				param: { id: parsedOrder.id },
-				json: { warehouseTransferId: transferIdCandidate },
+			const orderItems = parsedOrder.items.map((item) => {
+				const selectedCount = selectedItems[item.id]?.length ?? 0;
+				return {
+					barcode: item.barcode,
+					quantity: item.quantity,
+					sentQuantity: selectedCount,
+					notes: item.notes ?? null,
+				};
 			});
-		} catch (linkError) {
-			// If linking fails, warn the user but don't fail completely
-			// The transfer was created, but the link failed
-			if (linkError instanceof Error && linkError.message) {
-				toast.warning(
-					`Traspaso creado exitosamente (ID: ${transferIdCandidate}), pero no se pudo vincular al pedido: ${linkError.message}. Puedes vincularlo manualmente más tarde.`,
-					{ duration: 6000 },
-				);
-			} else {
-				toast.warning(
-					`Traspaso creado exitosamente (ID: ${transferIdCandidate}), pero no se pudo vincular al pedido. Puedes vincularlo manualmente más tarde.`,
-					{ duration: 6000 },
-				);
-			}
-			// Still try to update order status if needed
-			try {
-				if (!parsedOrder.isSent) {
-					await updateOrderMutation.mutateAsync({
-						param: { id: parsedOrder.id },
-						json: { isSent: true },
-					});
-				}
-			} catch {
-				// Ignore status update errors if linking already failed
-			}
-			router.push("/pedidos");
-			return;
-		}
 
-		// Update order status if linking succeeded
-		try {
-			if (!parsedOrder.isSent) {
-				await updateOrderMutation.mutateAsync({
-					param: { id: parsedOrder.id },
-					json: { isSent: true },
-				});
-			}
+			await updateOrderMutation.mutateAsync({
+				param: { id: parsedOrder.id },
+				json: {
+					isSent: true,
+					items: orderItems,
+				},
+			});
 		} catch (statusError) {
 			// Status update failure is less critical since transfer and link succeeded
 			if (statusError instanceof Error && statusError.message) {
@@ -981,7 +1055,6 @@ export function PedidoDetailsPage({
 		parsedOrder,
 		isEncargado,
 		currentUser?.id,
-		isTransferReady,
 		cabinetMap,
 		selectedItems,
 		transferNotes,
@@ -991,6 +1064,76 @@ export function PedidoDetailsPage({
 		updateOrderMutation,
 		router,
 	]);
+
+	/**
+	 * Handles the initial transfer creation flow, checking for zero quantity items
+	 */
+	const handleCreateTransfer = useCallback(async () => {
+		if (!parsedOrder) {
+			toast.error("No se encontró la información del pedido.");
+			return;
+		}
+
+		if (!isEncargado) {
+			toast.error("Esta acción está disponible únicamente para encargados.");
+			return;
+		}
+
+		if (!currentUser?.id) {
+			toast.error(
+				"No se encontró el usuario actual. Inicia sesión nuevamente.",
+			);
+			return;
+		}
+
+		if (!parsedOrder.cedisWarehouseId) {
+			toast.error("El pedido no tiene CEDIS asignado.");
+			return;
+		}
+
+		if (!parsedOrder.sourceWarehouseId) {
+			toast.error("El pedido no tiene bodega destino.");
+			return;
+		}
+
+		// Check for items with zero selected quantities
+		const zeroQuantityItems = getZeroQuantityItems();
+
+		if (zeroQuantityItems.length > 0) {
+			// Store the action to execute after confirmation
+			setPendingTransferAction(() => executeCreateTransfer);
+			setShowZeroQuantityDialog(true);
+			return;
+		}
+
+		// No zero quantity items, proceed directly
+		await executeCreateTransfer();
+	}, [
+		parsedOrder,
+		isEncargado,
+		currentUser?.id,
+		getZeroQuantityItems,
+		executeCreateTransfer,
+	]);
+
+	/**
+	 * Handles confirmation of transfer with zero quantity items
+	 */
+	const handleConfirmZeroQuantity = useCallback(async () => {
+		setShowZeroQuantityDialog(false);
+		if (pendingTransferAction) {
+			await pendingTransferAction();
+			setPendingTransferAction(null);
+		}
+	}, [pendingTransferAction]);
+
+	/**
+	 * Handles cancellation of transfer with zero quantity items
+	 */
+	const handleCancelZeroQuantity = useCallback(() => {
+		setShowZeroQuantityDialog(false);
+		setPendingTransferAction(null);
+	}, []);
 
 	if (!parsedOrder) {
 		return (
@@ -1289,13 +1432,14 @@ export function PedidoDetailsPage({
 											<p className="text-[#10B981] text-xs">
 												Pedido cubierto por completo.
 											</p>
-										) : isTransferReady ? (
+										) : fulfillmentProgress.selected > 0 ? (
 											<p className="text-[#B54708] text-xs dark:text-[#F7B84B]">
 												{pendingPieces} pieza(s) quedarían pendientes de envío.
 											</p>
 										) : (
 											<p className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-												Selecciona al menos una pieza disponible para enviar.
+												Puedes crear el traspaso incluso sin seleccionar artículos.
+												Se marcarán como enviados con cantidad 0.
 											</p>
 										)}
 									</div>
@@ -1489,13 +1633,13 @@ export function PedidoDetailsPage({
 										createTransferMutation.isPending ||
 										linkTransferMutation.isPending ||
 										updateOrderMutation.isPending ||
-										!isTransferReady ||
 										Boolean(parsedOrder?.warehouseTransferId)
 									}
 									onClick={handleCreateTransfer}
 								>
 									{createTransferMutation.isPending ||
-									linkTransferMutation.isPending
+									linkTransferMutation.isPending ||
+									updateOrderMutation.isPending
 										? "Procesando..."
 										: parsedOrder?.warehouseTransferId
 											? "Traspaso ya creado"
@@ -1511,6 +1655,50 @@ export function PedidoDetailsPage({
 					</CardContent>
 				</Card>
 			</section>
+
+			<Dialog onOpenChange={setShowZeroQuantityDialog} open={showZeroQuantityDialog}>
+				<DialogContent className="sm:max-w-md">
+					<DialogHeader>
+						<DialogTitle className="text-[#11181C] dark:text-[#ECEDEE]">
+							Confirmar envío con cantidad cero
+						</DialogTitle>
+						<DialogDescription className="text-[#687076] dark:text-[#9BA1A6]">
+							Algunos productos no tienen artículos seleccionados y se marcarán
+							como enviados con cantidad 0. ¿Deseas continuar?
+						</DialogDescription>
+					</DialogHeader>
+					<div className="max-h-60 space-y-2 overflow-y-auto">
+						{getZeroQuantityItems().map((item) => (
+							<div
+								className="rounded-md border border-[#E5E7EB] bg-[#F9FAFB] p-3 dark:border-[#2D3033] dark:bg-[#1E1F20]"
+								key={item.barcode}
+							>
+								<p className="font-medium text-[#11181C] text-sm dark:text-[#ECEDEE]">
+									{item.displayName}
+								</p>
+								<p className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+									Código: {item.barcode} • Solicitado: {item.requestedQuantity}{" "}
+									• Enviado: 0
+								</p>
+							</div>
+						))}
+					</div>
+					<DialogFooter className="gap-2 sm:gap-0">
+						<Button
+							onClick={handleCancelZeroQuantity}
+							variant="outline"
+						>
+							Cancelar
+						</Button>
+						<Button
+							className="bg-[#0a7ea4] text-white hover:bg-[#086885] dark:bg-[#0a7ea4] dark:hover:bg-[#0a7ea4]/80"
+							onClick={handleConfirmZeroQuantity}
+						>
+							Confirmar y continuar
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
 		</div>
 	);
 }

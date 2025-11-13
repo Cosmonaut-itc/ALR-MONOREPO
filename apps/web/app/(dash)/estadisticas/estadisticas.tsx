@@ -1,21 +1,37 @@
-"use memo";
 "use client";
 
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { format, parseISO, subDays } from "date-fns";
+import { endOfDay, format, parseISO, startOfDay, subDays } from "date-fns";
 import { es } from "date-fns/locale";
+import { ChevronDownIcon, Download } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { RoleGuard } from "@/components/auth-guard";
 import { DashboardMetricCard } from "@/components/DashboardMetricCard";
+import { DeletedAndEmptyTable } from "@/components/inventory/DeletedAndEmptyTable";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+	Collapsible,
+	CollapsibleContent,
+	CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogHeader,
+	DialogTitle,
+} from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import {
 	Popover,
 	PopoverContent,
 	PopoverTrigger,
 } from "@/components/ui/popover";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
 	Select,
 	SelectContent,
@@ -39,9 +55,16 @@ import {
 } from "@/lib/fetch-functions/inventory";
 import { getAllKits } from "@/lib/fetch-functions/kits";
 import { getWarehouseTransferAll } from "@/lib/fetch-functions/recepciones";
-import { getReplenishmentOrders } from "@/lib/fetch-functions/replenishment-orders";
-import { getAllStockLimits } from "@/lib/fetch-functions/stock-limits";
+import {
+	getReplenishmentOrders,
+	getUnfulfilledProducts,
+} from "@/lib/fetch-functions/replenishment-orders";
+import {
+	getAllStockLimits,
+	getStockLimitsByWarehouse,
+} from "@/lib/fetch-functions/stock-limits";
 import { createQueryKey } from "@/lib/helpers";
+import { useMarkBuyOrderGenerated } from "@/lib/mutations/replenishment-orders";
 import { queryKeys } from "@/lib/query-keys";
 import {
 	buildCabinetLookup,
@@ -74,8 +97,14 @@ type TransfersResponse = Awaited<
 	ReturnType<typeof getWarehouseTransferAll>
 > | null;
 type OrdersResponse = Awaited<ReturnType<typeof getReplenishmentOrders>> | null;
+type UnfulfilledProductsResponse = Awaited<
+	ReturnType<typeof getUnfulfilledProducts>
+> | null;
 type KitsResponse = Awaited<ReturnType<typeof getAllKits>> | null;
-type StockLimitsResponse = Awaited<ReturnType<typeof getAllStockLimits>> | null;
+type StockLimitsResponse =
+	| Awaited<ReturnType<typeof getAllStockLimits>>
+	| Awaited<ReturnType<typeof getStockLimitsByWarehouse>>
+	| null;
 
 type ScopeOption = "global" | "warehouse";
 
@@ -88,14 +117,233 @@ type EstadisticasPageProps = {
 type WarehouseOption = {
 	id: string;
 	name: string;
+	isCedis?: boolean;
 };
 
 type ProductNameMap = Map<number, string>;
 
 type DashboardMetricShape = Parameters<typeof DashboardMetricCard>[0]["metric"];
 
+/**
+ * Represents an unfulfilled product from a replenishment order.
+ */
+type UnfulfilledProduct = {
+	barcode: number;
+	productName?: string;
+	productId?: string | null;
+	warehouseId?: string;
+	warehouseName?: string;
+	sourceWarehouseId?: string;
+	quantityNeeded?: number;
+	orderNumber?: string;
+	orderId?: string;
+	detailId?: string;
+};
+
+/**
+ * Normalizes unfulfilled products from the API response.
+ * Handles various response shapes and extracts product information.
+ *
+ * @param response - The API response containing unfulfilled products
+ * @returns Array of normalized unfulfilled products
+ */
+const normalizeUnfulfilledProducts = (
+	response: UnfulfilledProductsResponse,
+): UnfulfilledProduct[] => {
+	if (!response || typeof response !== "object") {
+		return [];
+	}
+
+	const root = response as Record<string, unknown>;
+	let items: unknown[] = [];
+
+	// Handle different response structures
+	if (Array.isArray(root)) {
+		items = root;
+	} else if (Array.isArray(root.data)) {
+		items = root.data;
+	} else if (
+		root.data &&
+		typeof root.data === "object" &&
+		Array.isArray((root.data as { products?: unknown }).products)
+	) {
+		items = ((root.data as { products?: unknown }).products ?? []) as unknown[];
+	} else if (Array.isArray(root.products)) {
+		items = root.products;
+	}
+
+	return items.flatMap((raw): UnfulfilledProduct[] => {
+		if (!raw || typeof raw !== "object") {
+			return [];
+		}
+		const record = raw as Record<string, unknown>;
+
+		// Extract barcode (can be number or string)
+		const barcodeRaw = record.barcode ?? record.goodId ?? record.productBarcode;
+		const barcode =
+			typeof barcodeRaw === "number"
+				? barcodeRaw
+				: typeof barcodeRaw === "string"
+					? Number.parseInt(barcodeRaw, 10)
+					: Number.NaN;
+
+		if (!Number.isFinite(barcode)) {
+			return [];
+		}
+
+		const productName =
+			typeof record.productName === "string"
+				? record.productName
+				: typeof record.name === "string"
+					? record.name
+					: typeof record.title === "string"
+						? record.title
+						: undefined;
+
+		const productId =
+			typeof record.productId === "string"
+				? record.productId
+				: typeof record.goodId === "string"
+					? record.goodId
+					: typeof record.id === "string"
+						? record.id
+						: null;
+
+		const warehouseId =
+			typeof record.warehouseId === "string"
+				? record.warehouseId
+				: typeof record.warehouse_id === "string"
+					? record.warehouse_id
+					: undefined;
+
+		const warehouseName =
+			typeof record.warehouseName === "string"
+				? record.warehouseName
+				: undefined;
+
+		const sourceWarehouseId =
+			typeof record.sourceWarehouseId === "string"
+				? record.sourceWarehouseId
+				: typeof record.source_warehouse_id === "string"
+					? record.source_warehouse_id
+					: undefined;
+
+		const quantityNeeded =
+			typeof record.quantityNeeded === "number"
+				? record.quantityNeeded
+				: typeof record.quantity === "number"
+					? record.quantity
+					: typeof record.qty === "number"
+						? record.qty
+						: undefined;
+
+		const orderNumber =
+			typeof record.orderNumber === "string"
+				? record.orderNumber
+				: typeof record.order_number === "string"
+					? record.order_number
+					: undefined;
+
+		const orderId =
+			typeof record.orderId === "string"
+				? record.orderId
+				: typeof record.order_id === "string"
+					? record.order_id
+					: typeof record.replenishmentOrderId === "string"
+						? record.replenishmentOrderId
+						: undefined;
+
+		const detailId =
+			typeof record.detailId === "string"
+				? record.detailId
+				: typeof record.detail_id === "string"
+					? record.detail_id
+					: typeof record.id === "string" &&
+							/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+								record.id,
+							)
+						? record.id
+						: undefined;
+
+		return [
+			{
+				barcode,
+				productName,
+				productId,
+				warehouseId,
+				warehouseName,
+				sourceWarehouseId,
+				quantityNeeded,
+				orderNumber,
+				orderId,
+				detailId,
+			},
+		];
+	});
+};
+
 const formatDateVerbose = (date: Date) =>
 	format(date, "dd 'de' MMMM yyyy", { locale: es });
+
+/**
+ * Escapes a CSV field value by wrapping it in quotes if it contains commas, quotes, or newlines.
+ *
+ * @param field - The field value to escape.
+ * @returns The escaped CSV field value.
+ */
+const escapeCsvField = (field: string | number | null | undefined): string => {
+	if (field == null) {
+		return "";
+	}
+	const str = String(field);
+	if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+		return `"${str.replace(/"/g, '""')}"`;
+	}
+	return str;
+};
+
+/**
+ * Converts an array of objects to CSV format and triggers a download.
+ *
+ * @param data - Array of objects to convert to CSV.
+ * @param headers - Array of header objects with `label` and `key` properties.
+ * @param filename - The filename for the downloaded CSV file (without extension).
+ * @returns True if the download was successful, false otherwise.
+ */
+const downloadCsv = (
+	data: Record<string, string | number | null | undefined>[],
+	headers: Array<{ label: string; key: string }>,
+	filename: string,
+): boolean => {
+	if (data.length === 0) {
+		return false;
+	}
+
+	// Create CSV header row
+	const headerRow = headers.map((h) => escapeCsvField(h.label)).join(",");
+
+	// Create CSV data rows
+	const dataRows = data.map((row) =>
+		headers.map((h) => escapeCsvField(row[h.key])).join(","),
+	);
+
+	// Combine header and data rows
+	const csvContent = [headerRow, ...dataRows].join("\n");
+
+	// Create blob and download
+	const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+	const link = document.createElement("a");
+	const url = URL.createObjectURL(blob);
+
+	link.setAttribute("href", url);
+	link.setAttribute("download", `${filename}.csv`);
+	link.style.visibility = "hidden";
+	document.body.appendChild(link);
+	link.click();
+	document.body.removeChild(link);
+	URL.revokeObjectURL(url);
+	return true;
+};
 
 const toStockLimits = (response: StockLimitsResponse): StockLimit[] => {
 	if (
@@ -173,15 +421,15 @@ const normalizeWarehouses = (
 	) {
 		return [];
 	}
-	return ((response as { data: unknown[] }).data as unknown[])
-		.map((raw) => {
+	return ((response as { data: unknown[] }).data as unknown[]).flatMap(
+		(raw): WarehouseOption[] => {
 			if (!raw || typeof raw !== "object") {
-				return null;
+				return [];
 			}
 			const record = raw as Record<string, unknown>;
 			const id = typeof record.id === "string" ? record.id : "";
 			if (!id) {
-				return null;
+				return [];
 			}
 			const code = typeof record.code === "string" ? record.code : "";
 			const name =
@@ -190,9 +438,17 @@ const normalizeWarehouses = (
 					: code
 						? `${code} (${id.slice(0, 6)})`
 						: `Almacén ${id.slice(0, 6)}`;
-			return { id, name } satisfies WarehouseOption;
-		})
-		.filter((item): item is WarehouseOption => Boolean(item));
+			const rawIsCedis = record["isCedis"];
+			const rawLegacyIsCedis = record["is_cedis"];
+			const isCedis =
+				typeof rawIsCedis === "boolean"
+					? rawIsCedis
+					: typeof rawLegacyIsCedis === "boolean"
+						? rawLegacyIsCedis
+						: undefined;
+			return [{ id, name, isCedis }];
+		},
+	);
 };
 
 const TrendChart = ({
@@ -385,21 +641,654 @@ const DateSelector = ({
 	);
 };
 
-const MetricsGrid = ({ metrics }: { metrics: DashboardMetricShape[] }) => (
+type TransferListItem = {
+	id: string;
+	transferNumber?: string;
+	shipmentId?: string;
+	isPending?: boolean;
+	isCompleted?: boolean;
+	isCancelled?: boolean;
+	totalItems?: number;
+	createdAt?: string;
+	scheduledDate?: string;
+	receivedAt?: string;
+	sourceWarehouseId?: string;
+	destinationWarehouseId?: string;
+};
+
+/**
+ * Extracts transfer items from the raw API response.
+ * Handles various response shapes similar to recepciones.tsx
+ */
+const extractTransferItems = (
+	response: TransfersResponse,
+): TransferListItem[] => {
+	if (!response || typeof response !== "object") {
+		return [];
+	}
+	const root = response as Record<string, unknown>;
+	const items: unknown[] = [];
+
+	if (Array.isArray(root)) {
+		items.push(...(root as unknown[]));
+	} else if (Array.isArray(root.data)) {
+		items.push(...(root.data as unknown[]));
+	} else if (
+		root.data &&
+		typeof root.data === "object" &&
+		Array.isArray((root.data as { transfers?: unknown }).transfers)
+	) {
+		items.push(
+			...(((root.data as { transfers?: unknown }).transfers ??
+				[]) as unknown[]),
+		);
+	} else if (Array.isArray(root.transfers)) {
+		items.push(...(root.transfers as unknown[]));
+	}
+
+	return items.flatMap((raw): TransferListItem[] => {
+		if (!raw || typeof raw !== "object") {
+			return [];
+		}
+		const record = raw as Record<string, unknown>;
+		const id =
+			typeof record.id === "string"
+				? record.id
+				: typeof record.id === "number"
+					? String(record.id)
+					: "";
+		if (!id) {
+			return [];
+		}
+		const transferNumber =
+			typeof record.transferNumber === "string"
+				? record.transferNumber
+				: undefined;
+		const shipmentId =
+			typeof record.shipmentId === "string" ? record.shipmentId : undefined;
+		const statusRaw =
+			typeof record.status === "string"
+				? record.status
+				: typeof record.transferStatus === "string"
+					? record.transferStatus
+					: "";
+		const status = statusRaw.toLowerCase();
+		const isCompleted =
+			Boolean(record.isCompleted) ||
+			["completed", "complete", "done", "received"].includes(status);
+		const isCancelled =
+			Boolean(record.isCancelled) ||
+			["cancelled", "canceled", "cancelado"].includes(status);
+		const isPending =
+			Boolean(record.isPending) ||
+			(!isCompleted &&
+				!isCancelled &&
+				["pending", "in_transit", "sent", "en_camino"].includes(status));
+		const totalItems =
+			typeof record.totalItems === "number" ? record.totalItems : undefined;
+		const createdAt =
+			typeof record.createdAt === "string" ? record.createdAt : undefined;
+		const scheduledDate =
+			typeof record.scheduledDate === "string"
+				? record.scheduledDate
+				: undefined;
+		const receivedAt =
+			typeof record.receivedAt === "string" ? record.receivedAt : undefined;
+		const sourceWarehouseId =
+			typeof record.sourceWarehouseId === "string"
+				? record.sourceWarehouseId
+				: undefined;
+		const destinationWarehouseId =
+			typeof record.destinationWarehouseId === "string"
+				? record.destinationWarehouseId
+				: undefined;
+
+		const item: TransferListItem = {
+			id,
+			transferNumber,
+			shipmentId,
+			isPending,
+			isCompleted,
+			isCancelled,
+			totalItems,
+			createdAt,
+			scheduledDate,
+			receivedAt,
+			sourceWarehouseId,
+			destinationWarehouseId,
+		};
+
+		if (item.isCancelled) {
+			return [];
+		}
+
+		return [item];
+	});
+};
+
+const PendingReceptionsDialog = ({
+	open,
+	onOpenChange,
+	transfers,
+	warehouseNameMap,
+	effectiveRange,
+	effectiveWarehouseId,
+}: {
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+	transfers: TransferListItem[];
+	warehouseNameMap: Map<string, string>;
+	effectiveRange: DateRange;
+	effectiveWarehouseId: string | null;
+}) => {
+	const router = useRouter();
+
+	const matchesWarehouse = (
+		sourceId: string | undefined,
+		destId: string | undefined,
+		selected: string | null,
+	): boolean => {
+		if (!selected) {
+			return true;
+		}
+		return sourceId === selected || destId === selected;
+	};
+
+	const isWithinRange = (
+		value: string | undefined,
+		range: DateRange,
+	): boolean => {
+		if (!value) {
+			return false;
+		}
+		const parsed = parseISO(value);
+		if (Number.isNaN(parsed.getTime())) {
+			return false;
+		}
+		const start = startOfDay(range.start);
+		const end = endOfDay(range.end);
+		return parsed >= start && parsed <= end;
+	};
+
+	const pendingTransfers = useMemo(() => {
+		return transfers
+			.filter((transfer) => {
+				if (!transfer.isPending) {
+					return false;
+				}
+				if (
+					!matchesWarehouse(
+						transfer.sourceWarehouseId,
+						transfer.destinationWarehouseId,
+						effectiveWarehouseId,
+					)
+				) {
+					return false;
+				}
+				const referenceDate =
+					transfer.createdAt ?? transfer.scheduledDate ?? transfer.receivedAt;
+				return isWithinRange(referenceDate, effectiveRange);
+			})
+			.slice(0, 7);
+	}, [transfers, effectiveRange, effectiveWarehouseId]);
+
+	const formatTransferDate = (dateStr: string | undefined): string => {
+		if (!dateStr) {
+			return "N/A";
+		}
+		try {
+			const parsed = parseISO(dateStr);
+			if (Number.isNaN(parsed.getTime())) {
+				return "N/A";
+			}
+			return format(parsed, "dd/MM/yyyy", { locale: es });
+		} catch {
+			return "N/A";
+		}
+	};
+
+	const getShipmentId = (transfer: TransferListItem): string => {
+		return transfer.transferNumber ?? transfer.shipmentId ?? transfer.id;
+	};
+
+	return (
+		<Dialog open={open} onOpenChange={onOpenChange}>
+			<DialogContent className="max-w-2xl">
+				<DialogHeader>
+					<DialogTitle>Recepciones pendientes</DialogTitle>
+					<DialogDescription>
+						Primeras 7 recepciones pendientes en el rango seleccionado
+					</DialogDescription>
+				</DialogHeader>
+				<div className="max-h-[60vh] overflow-y-auto">
+					{pendingTransfers.length === 0 ? (
+						<div className="rounded-lg border border-dashed border-[#E5E7EB] bg-[#F9FAFB] p-6 text-center text-sm text-[#687076] dark:border-[#2D3033] dark:bg-[#1E1F20] dark:text-[#9BA1A6]">
+							No hay recepciones pendientes en el rango seleccionado.
+						</div>
+					) : (
+						<ul className="space-y-3">
+							{pendingTransfers.map((transfer) => {
+								const shipmentId = getShipmentId(transfer);
+								const sourceName = transfer.sourceWarehouseId
+									? (warehouseNameMap.get(transfer.sourceWarehouseId) ??
+										`Almacén ${transfer.sourceWarehouseId.slice(0, 6)}`)
+									: "N/A";
+								const destName = transfer.destinationWarehouseId
+									? (warehouseNameMap.get(transfer.destinationWarehouseId) ??
+										`Almacén ${transfer.destinationWarehouseId.slice(0, 6)}`)
+									: "N/A";
+								return (
+									<li
+										key={transfer.id}
+										className="flex items-center justify-between rounded-lg border border-[#E5E7EB] bg-white px-4 py-3 text-sm dark:border-[#2D3033] dark:bg-[#151718]"
+									>
+										<div className="flex flex-col gap-1">
+											<Link
+												href={`/recepciones/${transfer.id}`}
+												className="font-medium text-[#0a7ea4] hover:underline"
+											>
+												{shipmentId}
+											</Link>
+											<div className="text-xs text-[#9BA1A6]">
+												{sourceName} → {destName}
+											</div>
+											<div className="text-xs text-[#9BA1A6]">
+												{transfer.totalItems ?? 0} items •{" "}
+												{formatTransferDate(
+													transfer.createdAt ?? transfer.scheduledDate,
+												)}
+											</div>
+										</div>
+									</li>
+								);
+							})}
+						</ul>
+					)}
+				</div>
+				<div className="flex justify-end gap-2 pt-4">
+					<Button
+						variant="outline"
+						onClick={() => onOpenChange(false)}
+						type="button"
+					>
+						Cerrar
+					</Button>
+					<Button
+						onClick={() => {
+							router.push("/recepciones");
+							onOpenChange(false);
+						}}
+						type="button"
+					>
+						Ver todas las recepciones
+					</Button>
+				</div>
+			</DialogContent>
+		</Dialog>
+	);
+};
+
+const CompletedReceptionsDialog = ({
+	open,
+	onOpenChange,
+	transfers,
+	warehouseNameMap,
+	effectiveRange,
+	effectiveWarehouseId,
+}: {
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+	transfers: TransferListItem[];
+	warehouseNameMap: Map<string, string>;
+	effectiveRange: DateRange;
+	effectiveWarehouseId: string | null;
+}) => {
+	const router = useRouter();
+
+	const matchesWarehouse = (
+		sourceId: string | undefined,
+		destId: string | undefined,
+		selected: string | null,
+	): boolean => {
+		if (!selected) {
+			return true;
+		}
+		return sourceId === selected || destId === selected;
+	};
+
+	const isWithinRange = (
+		value: string | undefined,
+		range: DateRange,
+	): boolean => {
+		if (!value) {
+			return false;
+		}
+		const parsed = parseISO(value);
+		if (Number.isNaN(parsed.getTime())) {
+			return false;
+		}
+		const start = startOfDay(range.start);
+		const end = endOfDay(range.end);
+		return parsed >= start && parsed <= end;
+	};
+
+	const completedTransfers = useMemo(() => {
+		return transfers
+			.filter((transfer) => {
+				if (!transfer.isCompleted) {
+					return false;
+				}
+				if (
+					!matchesWarehouse(
+						transfer.sourceWarehouseId,
+						transfer.destinationWarehouseId,
+						effectiveWarehouseId,
+					)
+				) {
+					return false;
+				}
+				const referenceDate =
+					transfer.createdAt ?? transfer.scheduledDate ?? transfer.receivedAt;
+				return isWithinRange(referenceDate, effectiveRange);
+			})
+			.slice(0, 7);
+	}, [transfers, effectiveRange, effectiveWarehouseId]);
+
+	const formatTransferDate = (dateStr: string | undefined): string => {
+		if (!dateStr) {
+			return "N/A";
+		}
+		try {
+			const parsed = parseISO(dateStr);
+			if (Number.isNaN(parsed.getTime())) {
+				return "N/A";
+			}
+			return format(parsed, "dd/MM/yyyy", { locale: es });
+		} catch {
+			return "N/A";
+		}
+	};
+
+	const getShipmentId = (transfer: TransferListItem): string => {
+		return transfer.transferNumber ?? transfer.shipmentId ?? transfer.id;
+	};
+
+	return (
+		<Dialog open={open} onOpenChange={onOpenChange}>
+			<DialogContent className="max-w-2xl">
+				<DialogHeader>
+					<DialogTitle>Recepciones completadas</DialogTitle>
+					<DialogDescription>
+						Primeras 7 recepciones completadas en el rango seleccionado
+					</DialogDescription>
+				</DialogHeader>
+				<div className="max-h-[60vh] overflow-y-auto">
+					{completedTransfers.length === 0 ? (
+						<div className="rounded-lg border border-dashed border-[#E5E7EB] bg-[#F9FAFB] p-6 text-center text-sm text-[#687076] dark:border-[#2D3033] dark:bg-[#1E1F20] dark:text-[#9BA1A6]">
+							No hay recepciones completadas en el rango seleccionado.
+						</div>
+					) : (
+						<ul className="space-y-3">
+							{completedTransfers.map((transfer) => {
+								const shipmentId = getShipmentId(transfer);
+								const sourceName = transfer.sourceWarehouseId
+									? (warehouseNameMap.get(transfer.sourceWarehouseId) ??
+										`Almacén ${transfer.sourceWarehouseId.slice(0, 6)}`)
+									: "N/A";
+								const destName = transfer.destinationWarehouseId
+									? (warehouseNameMap.get(transfer.destinationWarehouseId) ??
+										`Almacén ${transfer.destinationWarehouseId.slice(0, 6)}`)
+									: "N/A";
+								return (
+									<li
+										key={transfer.id}
+										className="flex items-center justify-between rounded-lg border border-[#E5E7EB] bg-white px-4 py-3 text-sm dark:border-[#2D3033] dark:bg-[#151718]"
+									>
+										<div className="flex flex-col gap-1">
+											<Link
+												href={`/recepciones/${transfer.id}`}
+												className="font-medium text-[#0a7ea4] hover:underline"
+											>
+												{shipmentId}
+											</Link>
+											<div className="text-xs text-[#9BA1A6]">
+												{sourceName} → {destName}
+											</div>
+											<div className="text-xs text-[#9BA1A6]">
+												{transfer.totalItems ?? 0} items •{" "}
+												{formatTransferDate(
+													transfer.createdAt ?? transfer.scheduledDate,
+												)}
+											</div>
+										</div>
+									</li>
+								);
+							})}
+						</ul>
+					)}
+				</div>
+				<div className="flex justify-end gap-2 pt-4">
+					<Button
+						variant="outline"
+						onClick={() => onOpenChange(false)}
+						type="button"
+					>
+						Cerrar
+					</Button>
+					<Button
+						onClick={() => {
+							router.push("/recepciones");
+							onOpenChange(false);
+						}}
+						type="button"
+					>
+						Ver todas las recepciones
+					</Button>
+				</div>
+			</DialogContent>
+		</Dialog>
+	);
+};
+
+const TodayReceptionsDialog = ({
+	open,
+	onOpenChange,
+	transfers,
+	warehouseNameMap,
+	effectiveRange,
+	effectiveWarehouseId,
+}: {
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+	transfers: TransferListItem[];
+	warehouseNameMap: Map<string, string>;
+	effectiveRange: DateRange;
+	effectiveWarehouseId: string | null;
+}) => {
+	const router = useRouter();
+
+	const matchesWarehouse = (
+		sourceId: string | undefined,
+		destId: string | undefined,
+		selected: string | null,
+	): boolean => {
+		if (!selected) {
+			return true;
+		}
+		return sourceId === selected || destId === selected;
+	};
+
+	const isToday = (value: string | undefined): boolean => {
+		if (!value) {
+			return false;
+		}
+		const parsed = parseISO(value);
+		if (Number.isNaN(parsed.getTime())) {
+			return false;
+		}
+		const today = startOfDay(new Date());
+		const valueDay = startOfDay(parsed);
+		return valueDay.getTime() === today.getTime();
+	};
+
+	const todayTransfers = useMemo(() => {
+		return transfers
+			.filter((transfer) => {
+				if (
+					!matchesWarehouse(
+						transfer.sourceWarehouseId,
+						transfer.destinationWarehouseId,
+						effectiveWarehouseId,
+					)
+				) {
+					return false;
+				}
+				const referenceDate =
+					transfer.createdAt ?? transfer.scheduledDate ?? transfer.receivedAt;
+				return isToday(referenceDate);
+			})
+			.slice(0, 7);
+	}, [transfers, effectiveWarehouseId]);
+
+	const formatTransferDate = (dateStr: string | undefined): string => {
+		if (!dateStr) {
+			return "N/A";
+		}
+		try {
+			const parsed = parseISO(dateStr);
+			if (Number.isNaN(parsed.getTime())) {
+				return "N/A";
+			}
+			return format(parsed, "dd/MM/yyyy", { locale: es });
+		} catch {
+			return "N/A";
+		}
+	};
+
+	const getShipmentId = (transfer: TransferListItem): string => {
+		return transfer.transferNumber ?? transfer.shipmentId ?? transfer.id;
+	};
+
+	return (
+		<Dialog open={open} onOpenChange={onOpenChange}>
+			<DialogContent className="max-w-2xl">
+				<DialogHeader>
+					<DialogTitle>Recepciones de hoy</DialogTitle>
+					<DialogDescription>
+						Primeras 7 recepciones de hoy en el alcance seleccionado
+					</DialogDescription>
+				</DialogHeader>
+				<div className="max-h-[60vh] overflow-y-auto">
+					{todayTransfers.length === 0 ? (
+						<div className="rounded-lg border border-dashed border-[#E5E7EB] bg-[#F9FAFB] p-6 text-center text-sm text-[#687076] dark:border-[#2D3033] dark:bg-[#1E1F20] dark:text-[#9BA1A6]">
+							No hay recepciones de hoy en el alcance seleccionado.
+						</div>
+					) : (
+						<ul className="space-y-3">
+							{todayTransfers.map((transfer) => {
+								const shipmentId = getShipmentId(transfer);
+								const sourceName = transfer.sourceWarehouseId
+									? (warehouseNameMap.get(transfer.sourceWarehouseId) ??
+										`Almacén ${transfer.sourceWarehouseId.slice(0, 6)}`)
+									: "N/A";
+								const destName = transfer.destinationWarehouseId
+									? (warehouseNameMap.get(transfer.destinationWarehouseId) ??
+										`Almacén ${transfer.destinationWarehouseId.slice(0, 6)}`)
+									: "N/A";
+								return (
+									<li
+										key={transfer.id}
+										className="flex items-center justify-between rounded-lg border border-[#E5E7EB] bg-white px-4 py-3 text-sm dark:border-[#2D3033] dark:bg-[#151718]"
+									>
+										<div className="flex flex-col gap-1">
+											<Link
+												href={`/recepciones/${transfer.id}`}
+												className="font-medium text-[#0a7ea4] hover:underline"
+											>
+												{shipmentId}
+											</Link>
+											<div className="text-xs text-[#9BA1A6]">
+												{sourceName} → {destName}
+											</div>
+											<div className="text-xs text-[#9BA1A6]">
+												{transfer.totalItems ?? 0} items •{" "}
+												{formatTransferDate(
+													transfer.createdAt ?? transfer.scheduledDate,
+												)}
+											</div>
+										</div>
+									</li>
+								);
+							})}
+						</ul>
+					)}
+				</div>
+				<div className="flex justify-end gap-2 pt-4">
+					<Button
+						variant="outline"
+						onClick={() => onOpenChange(false)}
+						type="button"
+					>
+						Cerrar
+					</Button>
+					<Button
+						onClick={() => {
+							router.push("/recepciones");
+							onOpenChange(false);
+						}}
+						type="button"
+					>
+						Ver todas las recepciones
+					</Button>
+				</div>
+			</DialogContent>
+		</Dialog>
+	);
+};
+
+const MetricsGrid = ({
+	metrics,
+	onMetricClick,
+}: {
+	metrics: DashboardMetricShape[];
+	onMetricClick: (label: string) => void;
+}) => (
 	<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-		{metrics.map((metric) => (
-			<DashboardMetricCard key={metric.label} metric={metric} />
-		))}
+		{metrics.map((metric) => {
+			const isClickable =
+				metric.label === "Recepciones pendientes" ||
+				metric.label === "Recepciones completadas" ||
+				metric.label === "Recepciones de hoy";
+			return (
+				<DashboardMetricCard
+					key={metric.label}
+					metric={metric}
+					onClick={isClickable ? () => onMetricClick(metric.label) : undefined}
+				/>
+			);
+		})}
 	</div>
 );
 
+/**
+ * Component that displays both low stock items and unfulfilled products from replenishment orders.
+ * Shows products that need to be ordered for creating buy orders.
+ *
+ * @param items - Low stock items to display
+ * @param unfulfilledProducts - Unfulfilled products from replenishment orders
+ * @param resolveProductName - Function to resolve product name from barcode
+ * @param resolveWarehouseName - Function to resolve warehouse name from ID
+ * @param resolveProductId - Function to resolve product ID from barcode
+ */
 const LowStockTable = ({
 	items,
+	unfulfilledProducts,
 	resolveProductName,
 	resolveWarehouseName,
 	resolveProductId,
 }: {
 	items: LowStockItem[];
+	unfulfilledProducts: UnfulfilledProduct[];
 	resolveProductName: (
 		barcode: number,
 		fallbackDescription?: string | null,
@@ -409,70 +1298,327 @@ const LowStockTable = ({
 		barcode: number,
 		fallbackId?: string | null,
 	) => string | null;
-}) => (
-	<Card className="card-transition">
-		<CardHeader>
-			<CardTitle className="text-base font-semibold text-[#11181C] dark:text-[#ECEDEE]">
-				Productos por debajo del mínimo
-			</CardTitle>
-		</CardHeader>
-		<CardContent>
-			{items.length === 0 ? (
-				<div className="rounded-lg border border-dashed border-[#E5E7EB] bg-[#F9FAFB] p-6 text-center text-sm text-[#687076] dark:border-[#2D3033] dark:bg-[#1E1F20] dark:text-[#9BA1A6]">
-					No se detectaron productos con stock bajo en el rango y alcance
-					seleccionados.
-				</div>
-			) : (
-				<Table>
-					<TableHeader>
-						<TableRow>
-							<TableHead>Producto</TableHead>
-							<TableHead className="text-center">Almacén</TableHead>
-							<TableHead className="text-center">Actual</TableHead>
-							<TableHead className="text-center">Mínimo</TableHead>
-						</TableRow>
-					</TableHeader>
-					<TableBody>
-						{items.slice(0, 6).map((item) => {
-							const productName = resolveProductName(
-								item.barcode,
-								item.description,
-							);
-							const productIdSuffix = resolveProductId(
-								item.barcode,
-								item.productId,
-							);
-							return (
-								<TableRow key={`${item.warehouseId}-${item.barcode}`}>
-									<TableCell>
-										<div className="flex flex-col">
-											<span className="font-medium text-[#11181C] dark:text-[#ECEDEE]">
-												{productName}
-											</span>
-											<span className="text-xs text-[#9BA1A6]">
-												{productIdSuffix ? `ID ${productIdSuffix}` : "ID —"} • #
-												{item.barcode}
-											</span>
-										</div>
-									</TableCell>
-									<TableCell className="text-center text-sm text-[#687076] dark:text-[#9BA1A6]">
-										{resolveWarehouseName(item.warehouseId)}
-									</TableCell>
-									<TableCell className="text-center font-semibold text-[#E85D04]">
-										{item.current}
-									</TableCell>
-									<TableCell className="text-center text-sm text-[#687076] dark:text-[#9BA1A6]">
-										{item.min}
-									</TableCell>
-								</TableRow>
-							);
-						})}
-					</TableBody>
-				</Table>
-			)}
-		</CardContent>
-	</Card>
-);
+}) => {
+	const [isLowStockOpen, setIsLowStockOpen] = useState(true);
+	const [isUnfulfilledOpen, setIsUnfulfilledOpen] = useState(true);
+	const markBuyOrderGenerated = useMarkBuyOrderGenerated();
+
+	const hasLowStock = items.length > 0;
+	const hasUnfulfilled = unfulfilledProducts.length > 0;
+	const hasAnyData = hasLowStock || hasUnfulfilled;
+
+	/**
+	 * Exports merged data from low stock items and unfulfilled products to CSV.
+	 * Combines both data sources into a single table for buy order automation.
+	 * Also marks unfulfilled replenishment order details as having buy orders generated.
+	 */
+	const handleExportCsv = () => {
+		const csvData: Record<string, string | number | null | undefined>[] = [];
+
+		// Add low stock items
+		for (const item of items) {
+			const productName = resolveProductName(item.barcode, item.description);
+			const productIdSuffix = resolveProductId(item.barcode, item.productId);
+			const quantityNeeded = Math.max(0, item.min - item.current);
+
+			csvData.push({
+				producto: productName,
+				codigoBarras: item.barcode,
+				idProducto: productIdSuffix ?? "",
+				almacen: resolveWarehouseName(item.warehouseId),
+				cantidadNecesaria: quantityNeeded,
+				origen: "Stock bajo",
+				numeroPedido: "",
+				stockActual: item.current,
+				stockMinimo: item.min,
+			});
+		}
+
+		// Add unfulfilled products
+		for (const product of unfulfilledProducts) {
+			const productName = product.productName
+				? product.productName
+				: resolveProductName(product.barcode);
+			const productIdSuffix = resolveProductId(
+				product.barcode,
+				product.productId,
+			);
+			const warehouseName = product.warehouseName
+				? product.warehouseName
+				: product.warehouseId
+					? resolveWarehouseName(product.warehouseId)
+					: product.sourceWarehouseId
+						? resolveWarehouseName(product.sourceWarehouseId)
+						: "N/A";
+
+			csvData.push({
+				producto: productName,
+				codigoBarras: product.barcode,
+				idProducto: productIdSuffix ?? "",
+				almacen: warehouseName,
+				cantidadNecesaria: product.quantityNeeded ?? 0,
+				origen: "Pedido sin cumplir",
+				numeroPedido: product.orderNumber ?? product.orderId ?? "",
+				stockActual: "",
+				stockMinimo: "",
+			});
+		}
+
+		if (csvData.length === 0) {
+			return;
+		}
+
+		// Define CSV headers
+		const csvHeaders = [
+			{ label: "Producto", key: "producto" },
+			{ label: "Código de barras", key: "codigoBarras" },
+			{ label: "ID Producto", key: "idProducto" },
+			{ label: "Almacén", key: "almacen" },
+			{ label: "Cantidad necesaria", key: "cantidadNecesaria" },
+			{ label: "Origen", key: "origen" },
+			{ label: "Número de pedido", key: "numeroPedido" },
+			{ label: "Stock actual", key: "stockActual" },
+			{ label: "Stock mínimo", key: "stockMinimo" },
+		];
+
+		// Generate filename with timestamp
+		const timestamp = format(new Date(), "yyyy-MM-dd_HH-mm-ss", {
+			locale: es,
+		});
+		const filename = `pedidos_compra_${timestamp}`;
+
+		// Download CSV
+		downloadCsv(csvData, csvHeaders, filename);
+
+		// Extract detail IDs from unfulfilled products and mark them as having buy orders generated
+		const detailIds = unfulfilledProducts
+			.map((product) => product.detailId)
+			.filter((id): id is string => typeof id === "string" && id.length > 0);
+
+		if (detailIds.length > 0) {
+			markBuyOrderGenerated.mutate({ detailIds });
+		}
+	};
+
+	return (
+		<Card className="card-transition xl:col-span-2">
+			<CardHeader className="flex flex-row items-center justify-between">
+				<CardTitle className="text-base font-semibold text-[#11181C] dark:text-[#ECEDEE]">
+					Productos para crear pedidos de compra
+				</CardTitle>
+				{hasAnyData && (
+					<Button
+						onClick={handleExportCsv}
+						variant="outline"
+						size="sm"
+						type="button"
+					>
+						<Download className="mr-2 h-4 w-4" />
+						Exportar CSV
+					</Button>
+				)}
+			</CardHeader>
+			<CardContent className="flex flex-col gap-6">
+				{!hasAnyData ? (
+					<div className="rounded-lg border border-dashed border-[#E5E7EB] bg-[#F9FAFB] p-6 text-center text-sm text-[#687076] dark:border-[#2D3033] dark:bg-[#1E1F20] dark:text-[#9BA1A6]">
+						No se detectaron productos con stock bajo ni productos sin cumplir
+						en pedidos de reabastecimiento en el rango y alcance seleccionados.
+					</div>
+				) : (
+					<>
+						{hasLowStock && (
+							<Collapsible
+								open={isLowStockOpen}
+								onOpenChange={setIsLowStockOpen}
+							>
+								<div className="flex flex-col gap-3">
+									<CollapsibleTrigger asChild>
+										<Button
+											variant="ghost"
+											className="flex h-auto items-center justify-between p-0 hover:bg-transparent"
+											type="button"
+										>
+											<h3 className="text-sm font-semibold text-[#11181C] dark:text-[#ECEDEE]">
+												Productos por debajo del mínimo
+											</h3>
+											<ChevronDownIcon
+												className={cn(
+													"size-4 text-[#687076] transition-transform dark:text-[#9BA1A6]",
+													isLowStockOpen && "rotate-180",
+												)}
+											/>
+										</Button>
+									</CollapsibleTrigger>
+									<CollapsibleContent>
+										<ScrollArea className="h-[400px]">
+											<Table>
+												<TableHeader>
+													<TableRow>
+														<TableHead>Producto</TableHead>
+														<TableHead className="text-center">
+															Almacén
+														</TableHead>
+														<TableHead className="text-center">
+															Actual
+														</TableHead>
+														<TableHead className="text-center">
+															Mínimo
+														</TableHead>
+													</TableRow>
+												</TableHeader>
+												<TableBody>
+													{items.map((item) => {
+														const productName = resolveProductName(
+															item.barcode,
+															item.description,
+														);
+														const productIdSuffix = resolveProductId(
+															item.barcode,
+															item.productId,
+														);
+														return (
+															<TableRow
+																key={`low-stock-${item.warehouseId}-${item.barcode}`}
+															>
+																<TableCell>
+																	<div className="flex flex-col">
+																		<span className="font-medium text-[#11181C] dark:text-[#ECEDEE]">
+																			{productName}
+																		</span>
+																		<span className="text-xs text-[#9BA1A6]">
+																			{productIdSuffix
+																				? `ID ${productIdSuffix}`
+																				: "ID —"}{" "}
+																			• #{item.barcode}
+																		</span>
+																	</div>
+																</TableCell>
+																<TableCell className="text-center text-sm text-[#687076] dark:text-[#9BA1A6]">
+																	{resolveWarehouseName(item.warehouseId)}
+																</TableCell>
+																<TableCell className="text-center font-semibold text-[#E85D04]">
+																	{item.current}
+																</TableCell>
+																<TableCell className="text-center text-sm text-[#687076] dark:text-[#9BA1A6]">
+																	{item.min}
+																</TableCell>
+															</TableRow>
+														);
+													})}
+												</TableBody>
+											</Table>
+										</ScrollArea>
+									</CollapsibleContent>
+								</div>
+							</Collapsible>
+						)}
+
+						{hasUnfulfilled && (
+							<Collapsible
+								open={isUnfulfilledOpen}
+								onOpenChange={setIsUnfulfilledOpen}
+							>
+								<div className="flex flex-col gap-3">
+									{hasLowStock && (
+										<div className="border-t border-[#E5E7EB] dark:border-[#2D3033]" />
+									)}
+									<CollapsibleTrigger asChild>
+										<Button
+											variant="ghost"
+											className="flex h-auto items-center justify-between p-0 hover:bg-transparent"
+											type="button"
+										>
+											<h3 className="text-sm font-semibold text-[#11181C] dark:text-[#ECEDEE]">
+												Productos sin cumplir en pedidos de reabastecimiento
+											</h3>
+											<ChevronDownIcon
+												className={cn(
+													"size-4 text-[#687076] transition-transform dark:text-[#9BA1A6]",
+													isUnfulfilledOpen && "rotate-180",
+												)}
+											/>
+										</Button>
+									</CollapsibleTrigger>
+									<CollapsibleContent>
+										<ScrollArea className="h-[400px]">
+											<Table>
+												<TableHeader>
+													<TableRow>
+														<TableHead>Producto</TableHead>
+														<TableHead className="text-center">
+															Almacén
+														</TableHead>
+														<TableHead className="text-center">
+															Cantidad
+														</TableHead>
+														<TableHead className="text-center">
+															Pedido
+														</TableHead>
+													</TableRow>
+												</TableHeader>
+												<TableBody>
+													{unfulfilledProducts.map((product, index) => {
+														const productName = product.productName
+															? product.productName
+															: resolveProductName(product.barcode);
+														const productIdSuffix = resolveProductId(
+															product.barcode,
+															product.productId,
+														);
+														// Resolve warehouse name: check warehouseName, then warehouseId, then sourceWarehouseId
+														const warehouseName = product.warehouseName
+															? product.warehouseName
+															: product.warehouseId
+																? resolveWarehouseName(product.warehouseId)
+																: product.sourceWarehouseId
+																	? resolveWarehouseName(
+																			product.sourceWarehouseId,
+																		)
+																	: "N/A";
+														return (
+															<TableRow
+																key={`unfulfilled-${product.orderId ?? index}-${product.barcode}`}
+															>
+																<TableCell>
+																	<div className="flex flex-col">
+																		<span className="font-medium text-[#11181C] dark:text-[#ECEDEE]">
+																			{productName}
+																		</span>
+																		<span className="text-xs text-[#9BA1A6]">
+																			{productIdSuffix
+																				? `ID ${productIdSuffix}`
+																				: "ID —"}{" "}
+																			• #{product.barcode}
+																		</span>
+																	</div>
+																</TableCell>
+																<TableCell className="text-center text-sm text-[#687076] dark:text-[#9BA1A6]">
+																	{warehouseName}
+																</TableCell>
+																<TableCell className="text-center font-semibold text-[#0a7ea4]">
+																	{product.quantityNeeded ?? "—"}
+																</TableCell>
+																<TableCell className="text-center text-sm text-[#687076] dark:text-[#9BA1A6]">
+																	{product.orderNumber ??
+																		product.orderId ??
+																		"—"}
+																</TableCell>
+															</TableRow>
+														);
+													})}
+												</TableBody>
+											</Table>
+										</ScrollArea>
+									</CollapsibleContent>
+								</div>
+							</Collapsible>
+						)}
+					</>
+				)}
+			</CardContent>
+		</Card>
+	);
+};
 
 const TopList = ({
 	title,
@@ -550,6 +1696,9 @@ export function EstadisticasPage({
 		const epochDate = new Date(0);
 		return clampDateRange({ start: epochDate, end: epochDate });
 	});
+	const [dialogType, setDialogType] = useState<
+		"pending" | "completed" | "today" | null
+	>(null);
 
 	useEffect(() => {
 		setIsMounted(true);
@@ -598,6 +1747,16 @@ export function EstadisticasPage({
 		queryFn: getAllWarehouses,
 	});
 
+	const warehouseOptions = useMemo(
+		() => normalizeWarehouses(warehousesResponse),
+		[warehousesResponse],
+	);
+
+	const cedisWarehouseId = useMemo(() => {
+		const cedisWarehouse = warehouseOptions.find((w) => w.isCedis);
+		return cedisWarehouse?.id ?? null;
+	}, [warehouseOptions]);
+
 	const { data: cabinetResponse } = useSuspenseQuery<
 		CabinetResponse,
 		Error,
@@ -625,6 +1784,15 @@ export function EstadisticasPage({
 		queryFn: () => getReplenishmentOrders(),
 	});
 
+	const { data: unfulfilledProductsResponse } = useSuspenseQuery<
+		UnfulfilledProductsResponse,
+		Error,
+		UnfulfilledProductsResponse
+	>({
+		queryKey: createQueryKey(queryKeys.unfulfilledProducts, ["all"]),
+		queryFn: getUnfulfilledProducts,
+	});
+
 	const { data: kitsResponse } = useSuspenseQuery<
 		KitsResponse,
 		Error,
@@ -639,8 +1807,15 @@ export function EstadisticasPage({
 		Error,
 		StockLimitsResponse
 	>({
-		queryKey: createQueryKey(queryKeys.stockLimits, ["all"]),
-		queryFn: getAllStockLimits,
+		queryKey: createQueryKey(queryKeys.stockLimits, [
+			cedisWarehouseId ? `cedis-${cedisWarehouseId}` : "all",
+		]),
+		queryFn: () => {
+			if (cedisWarehouseId) {
+				return getStockLimitsByWarehouse(cedisWarehouseId);
+			}
+			return getAllStockLimits();
+		},
 	});
 
 	const cabinetLookup = useMemo(
@@ -670,9 +1845,9 @@ export function EstadisticasPage({
 		[stockLimitsResponse],
 	);
 
-	const warehouseOptions = useMemo(
-		() => normalizeWarehouses(warehousesResponse),
-		[warehousesResponse],
+	const unfulfilledProducts = useMemo(
+		() => normalizeUnfulfilledProducts(unfulfilledProductsResponse),
+		[unfulfilledProductsResponse],
 	);
 
 	const warehouseNameMap = useMemo(() => {
@@ -699,6 +1874,48 @@ export function EstadisticasPage({
 		() => buildProductNameMap(productCatalogResponse),
 		[productCatalogResponse],
 	);
+
+	/**
+	 * Creates a lookup map that matches barcode to product title by searching for products
+	 * where good_id matches the barcode. This is used specifically for the "productos para crear pedidos" card.
+	 */
+	const productCatalogTitleByBarcode = useMemo(() => {
+		const map = new Map<number, string>();
+		if (
+			!productCatalogResponse ||
+			typeof productCatalogResponse !== "object" ||
+			!("success" in productCatalogResponse) ||
+			!(productCatalogResponse as { success?: unknown }).success ||
+			!Array.isArray(productCatalogResponse.data)
+		) {
+			return map;
+		}
+		for (const raw of productCatalogResponse.data as unknown[]) {
+			if (!raw || typeof raw !== "object") {
+				continue;
+			}
+			const record = raw as Record<string, unknown>;
+			// Get good_id as the key to match against barcode
+			const goodId =
+				typeof record.good_id === "number"
+					? record.good_id
+					: typeof record.good_id === "string"
+						? Number.parseInt(record.good_id, 10)
+						: Number.NaN;
+			if (!Number.isFinite(goodId)) {
+				continue;
+			}
+			// Get title from the product catalog
+			const title =
+				typeof record.title === "string" && record.title.trim().length > 0
+					? record.title.trim()
+					: undefined;
+			if (title && !map.has(goodId)) {
+				map.set(goodId, title);
+			}
+		}
+		return map;
+	}, [productCatalogResponse]);
 
 	const productDetailsByBarcode = useMemo(() => {
 		const map = new Map<number, { name: string; productId: string | null }>();
@@ -807,18 +2024,39 @@ export function EstadisticasPage({
 		[inventoryItems, effectiveWarehouseId],
 	);
 
+	/**
+	 * Resolves product name prioritizing product catalog title.
+	 * Falls back to inventory item description, then product details, then barcode.
+	 *
+	 * @param barcode - Product barcode to look up
+	 * @param fallbackDescription - Optional description from inventory items
+	 * @returns Product name from catalog if available, otherwise fallback options
+	 */
 	const resolveProductName = (
 		barcode: number,
 		fallbackDescription?: string | null,
 	) => {
+		// Prioritize product catalog title first (matching barcode to good_id)
+		const catalogTitle = productCatalogTitleByBarcode.get(barcode);
+		if (catalogTitle && catalogTitle.trim().length > 0) {
+			return catalogTitle.trim();
+		}
+		// Fall back to product catalog name map (barcode-based lookup)
+		const catalogName = productCatalogNameMap.get(barcode);
+		if (catalogName && catalogName.trim().length > 0) {
+			return catalogName.trim();
+		}
+		// Fall back to inventory item description
 		if (fallbackDescription && fallbackDescription.trim().length > 0) {
 			return fallbackDescription.trim();
 		}
+		// Fall back to product details from inventory
 		const fromDetails = productDetailsByBarcode.get(barcode)?.name;
 		if (fromDetails && fromDetails.trim().length > 0) {
 			return fromDetails;
 		}
-		return productCatalogNameMap.get(barcode) ?? `Producto ${barcode}`;
+		// Last resort: use barcode
+		return `Producto ${barcode}`;
 	};
 
 	const resolveProductId = (barcode: number, fallbackId?: string | null) => {
@@ -857,6 +2095,21 @@ export function EstadisticasPage({
 		[lowStockResult.items],
 	);
 	const formattedRange = `${formatDateVerbose(effectiveRange.start)} — ${formatDateVerbose(effectiveRange.end)}`;
+
+	const transferItems = useMemo(
+		() => extractTransferItems(transfersResponse),
+		[transfersResponse],
+	);
+
+	const handleMetricClick = (label: string) => {
+		if (label === "Recepciones pendientes") {
+			setDialogType("pending");
+		} else if (label === "Recepciones completadas") {
+			setDialogType("completed");
+		} else if (label === "Recepciones de hoy") {
+			setDialogType("today");
+		}
+	};
 
 	return (
 		<RoleGuard allowedRoles={["admin", "encargado"]} userRole={normalizedRole}>
@@ -935,11 +2188,39 @@ export function EstadisticasPage({
 					</div>
 				</section>
 
-				<MetricsGrid metrics={metrics} />
+				<MetricsGrid metrics={metrics} onMetricClick={handleMetricClick} />
+
+				<PendingReceptionsDialog
+					open={dialogType === "pending"}
+					onOpenChange={(open) => setDialogType(open ? "pending" : null)}
+					transfers={transferItems}
+					warehouseNameMap={warehouseNameMap}
+					effectiveRange={effectiveRange}
+					effectiveWarehouseId={effectiveWarehouseId}
+				/>
+
+				<CompletedReceptionsDialog
+					open={dialogType === "completed"}
+					onOpenChange={(open) => setDialogType(open ? "completed" : null)}
+					transfers={transferItems}
+					warehouseNameMap={warehouseNameMap}
+					effectiveRange={effectiveRange}
+					effectiveWarehouseId={effectiveWarehouseId}
+				/>
+
+				<TodayReceptionsDialog
+					open={dialogType === "today"}
+					onOpenChange={(open) => setDialogType(open ? "today" : null)}
+					transfers={transferItems}
+					warehouseNameMap={warehouseNameMap}
+					effectiveRange={effectiveRange}
+					effectiveWarehouseId={effectiveWarehouseId}
+				/>
 
 				<section className="grid gap-4 xl:grid-cols-2">
 					<LowStockTable
 						items={lowStockItems}
+						unfulfilledProducts={unfulfilledProducts}
 						resolveProductName={resolveProductName}
 						resolveWarehouseName={resolveWarehouseName}
 						resolveProductId={resolveProductId}
@@ -977,8 +2258,12 @@ export function EstadisticasPage({
 							/>
 						</CardContent>
 					</Card>
+					<section className="flex h-full flex-col overflow-hidden">
+						<div className="flex h-full flex-col">
+							<DeletedAndEmptyTable warehouseNameMap={warehouseNameMap} />
+						</div>
+					</section>
 				</section>
-
 				<section className="grid gap-4 xl:grid-cols-2">
 					<Card className="card-transition">
 						<CardHeader>

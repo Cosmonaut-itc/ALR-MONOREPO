@@ -9,12 +9,19 @@ import {
 	fetchAllProductsServer,
 	fetchAllWarehousesServer,
 	fetchCabinetWarehouseServer,
+	fetchDeletedAndEmptyProductStockServer,
 } from "@/lib/server-functions/inventory";
 import { fetchAllKitsServer } from "@/lib/server-functions/kits";
 import { fetchWarehouseTrasnferAll } from "@/lib/server-functions/recepciones";
-import { fetchReplenishmentOrdersServer } from "@/lib/server-functions/replenishment-orders";
+import {
+	fetchReplenishmentOrdersServer,
+	fetchUnfulfilledProductsServer,
+} from "@/lib/server-functions/replenishment-orders";
 import { getServerAuth } from "@/lib/server-functions/server-auth";
-import { fetchAllStockLimitsServer } from "@/lib/server-functions/stock-limits";
+import {
+	fetchAllStockLimitsServer,
+	fetchStockLimitsByWarehouseServer,
+} from "@/lib/server-functions/stock-limits";
 import { SkeletonEstadisticasPage } from "@/ui/skeletons/Skeleton.EstadisticasPage";
 import { EstadisticasPage } from "./estadisticas";
 
@@ -48,10 +55,40 @@ export default async function Page() {
 			queryFn: fetchCabinetWarehouseServer,
 		});
 
-		queryClient.prefetchQuery({
+		const warehousesResponse = await queryClient.fetchQuery({
 			queryKey: queryKeys.warehouses,
 			queryFn: fetchAllWarehousesServer,
 		});
+
+		// Find cedis warehouse ID
+		let cedisWarehouseId: string | null = null;
+		if (
+			warehousesResponse &&
+			typeof warehousesResponse === "object" &&
+			"success" in warehousesResponse &&
+			warehousesResponse.success &&
+			"data" in warehousesResponse &&
+			Array.isArray(warehousesResponse.data)
+		) {
+			for (const warehouse of warehousesResponse.data as unknown[]) {
+				if (!warehouse || typeof warehouse !== "object") {
+					continue;
+				}
+				const record = warehouse as Record<string, unknown>;
+				const rawIsCedis = record["isCedis"];
+				const rawLegacyIsCedis = record["is_cedis"];
+				const isCedis =
+					typeof rawIsCedis === "boolean"
+						? rawIsCedis
+						: typeof rawLegacyIsCedis === "boolean"
+							? rawLegacyIsCedis
+							: false;
+				if (isCedis && typeof record.id === "string") {
+					cedisWarehouseId = record.id;
+					break;
+				}
+			}
+		}
 
 		queryClient.prefetchQuery({
 			queryKey: createQueryKey(queryKeys.receptions, ["all"]),
@@ -64,13 +101,30 @@ export default async function Page() {
 		});
 
 		queryClient.prefetchQuery({
-			queryKey: createQueryKey(queryKeys.stockLimits, ["all"]),
-			queryFn: fetchAllStockLimitsServer,
+			queryKey: createQueryKey(queryKeys.stockLimits, [
+				cedisWarehouseId ? `cedis-${cedisWarehouseId}` : "all",
+			]),
+			queryFn: () => {
+				if (cedisWarehouseId) {
+					return fetchStockLimitsByWarehouseServer(cedisWarehouseId);
+				}
+				return fetchAllStockLimitsServer();
+			},
 		});
 
 		queryClient.prefetchQuery({
 			queryKey: createQueryKey(queryKeys.kits, ["all"]),
 			queryFn: fetchAllKitsServer,
+		});
+
+		queryClient.prefetchQuery({
+			queryKey: createQueryKey(queryKeys.unfulfilledProducts, ["all"]),
+			queryFn: fetchUnfulfilledProductsServer,
+		});
+
+		queryClient.prefetchQuery({
+			queryKey: createQueryKey(queryKeys.deletedAndEmptyProductStock, ["all"]),
+			queryFn: fetchDeletedAndEmptyProductStockServer,
 		});
 	} catch (error) {
 		console.error(error);

@@ -86,3 +86,25 @@ export const fetchReplenishmentOrderByIdServer = async (id: string) => {
 
 	return res.json();
 };
+
+/**
+ * Fetches unfulfilled products from replenishment orders endpoint using tRPC client.
+ * This endpoint returns products that need to be ordered for replenishment orders.
+ *
+ * @returns Promise resolving to the API response containing unfulfilled products
+ * @throws Error if the fetch fails
+ */
+export const fetchUnfulfilledProductsServer = async () => {
+	const { getServerApiClient } = await import("../server-client");
+	const client = await getServerApiClient();
+
+	try {
+		const response =
+			await client.api.auth["replenishment-orders"]["unfulfilled-products"].$get();
+		return response.json();
+	} catch (error) {
+		const errorMessage =
+			error instanceof Error ? error.message : "Unknown error occurred";
+		throw new Error(`Unfulfilled products fetch failed: ${errorMessage}`);
+	}
+};

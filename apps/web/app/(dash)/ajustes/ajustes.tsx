@@ -23,6 +23,7 @@ import {
 	CommandItem,
 	CommandList,
 } from "@/components/ui/command";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -48,7 +49,10 @@ import {
 import { createQueryKey } from "@/lib/helpers";
 import { useSignUpMutation, useUpdateUserMutation } from "@/lib/mutations/auth";
 import { useCreateEmployee } from "@/lib/mutations/kits";
-import { useCreateWarehouseMutation } from "@/lib/mutations/warehouses";
+import {
+	useCreateWarehouseMutation,
+	useUpdateWarehouseAltegioConfigMutation,
+} from "@/lib/mutations/warehouses";
 import { queryKeys } from "@/lib/query-keys";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth-store";
@@ -213,6 +217,8 @@ export function AjustesPage({ role }: { role: string }) {
 	const [employeeUserComboboxOpen, setEmployeeUserComboboxOpen] =
 		useState(false);
 	const [permissionComboboxOpen, setPermissionComboboxOpen] = useState(false);
+	const [altegioWarehouseComboboxOpen, setAltegioWarehouseComboboxOpen] =
+		useState(false);
 
 	// Form instances for user management
 	const userForm = useForm({
@@ -252,6 +258,17 @@ export function AjustesPage({ role }: { role: string }) {
 		},
 	});
 
+	// Form instance for warehouse Altegio config
+	const altegioConfigForm = useForm({
+		defaultValues: {
+			warehouseId: "",
+			altegioId: "",
+			consumablesId: "",
+			salesId: "",
+			isCedis: false,
+		},
+	});
+
 	// Mutations
 	const { mutateAsync: createUser, isPending: isCreatingUser } =
 		useSignUpMutation();
@@ -261,6 +278,10 @@ export function AjustesPage({ role }: { role: string }) {
 		useCreateWarehouseMutation();
 	const { mutateAsync: createEmployee, isPending: isCreatingEmployee } =
 		useCreateEmployee();
+	const {
+		mutateAsync: updateWarehouseAltegioConfig,
+		isPending: isUpdatingAltegioConfig,
+	} = useUpdateWarehouseAltegioConfigMutation();
 
 	/**
 	 * Handles the submission of the create user form.
@@ -456,6 +477,97 @@ export function AjustesPage({ role }: { role: string }) {
 		try {
 			await createEmployee(payload);
 			employeeForm.reset();
+			router.refresh();
+		} catch (error) {
+			// Error handling is done in the mutation hook
+			// biome-ignore lint/suspicious/noConsole: Needed for debugging
+			console.error(error);
+		}
+	};
+
+	/**
+	 * Handles the submission of the warehouse Altegio config form.
+	 * Validates that at least one field is provided, converts string inputs to numbers,
+	 * calls the update mutation, and shows appropriate toast notifications.
+	 *
+	 * @param e - The form submission event
+	 */
+	const handleAltegioConfigSubmit = async (e: React.FormEvent) => {
+		e.preventDefault();
+		const {
+			warehouseId: configWarehouseId,
+			altegioId,
+			consumablesId,
+			salesId,
+			isCedis,
+		} = altegioConfigForm.state.values;
+
+		// Validate that warehouse is selected
+		if (!configWarehouseId.trim()) {
+			toast.error("Debes seleccionar una bodega");
+			return;
+		}
+
+		// Validate that at least one field is being updated
+		if (
+			!altegioId.trim() &&
+			!consumablesId.trim() &&
+			!salesId.trim() &&
+			isCedis === false
+		) {
+			toast.error(
+				"Debes proporcionar al menos un campo para actualizar",
+			);
+			return;
+		}
+
+		// Build payload with only provided fields
+		const payload: {
+			warehouseId: string;
+			altegioId?: number;
+			consumablesId?: number;
+			salesId?: number;
+			isCedis?: boolean;
+		} = {
+			warehouseId: configWarehouseId.trim(),
+		};
+
+		// Add optional fields if provided
+		if (altegioId.trim()) {
+			const altegioIdNum = Number.parseInt(altegioId.trim(), 10);
+			if (Number.isNaN(altegioIdNum)) {
+				toast.error("Altegio ID debe ser un número válido");
+				return;
+			}
+			payload.altegioId = altegioIdNum;
+		}
+
+		if (consumablesId.trim()) {
+			const consumablesIdNum = Number.parseInt(consumablesId.trim(), 10);
+			if (Number.isNaN(consumablesIdNum)) {
+				toast.error("Consumables ID debe ser un número válido");
+				return;
+			}
+			payload.consumablesId = consumablesIdNum;
+		}
+
+		if (salesId.trim()) {
+			const salesIdNum = Number.parseInt(salesId.trim(), 10);
+			if (Number.isNaN(salesIdNum)) {
+				toast.error("Sales ID debe ser un número válido");
+				return;
+			}
+			payload.salesId = salesIdNum;
+		}
+
+		// Only include isCedis if it's explicitly set to true
+		if (isCedis === true) {
+			payload.isCedis = true;
+		}
+
+		try {
+			await updateWarehouseAltegioConfig(payload);
+			altegioConfigForm.reset();
 			router.refresh();
 		} catch (error) {
 			// Error handling is done in the mutation hook
@@ -994,6 +1106,272 @@ export function AjustesPage({ role }: { role: string }) {
 											{isCreatingWarehouse
 												? "Creando bodega..."
 												: "Crear Bodega"}
+										</Button>
+									</div>
+								</form>
+							</CardContent>
+						</Card>
+
+						{/* Update Warehouse Altegio Config Card */}
+						<Card className="card-transition border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
+							<CardHeader>
+								<CardTitle className="text-[#11181C] dark:text-[#ECEDEE]">
+									Configuración de Altegio
+								</CardTitle>
+								<CardDescription className="text-[#687076] dark:text-[#9BA1A6]">
+									Actualiza la configuración de integración con Altegio para una
+									bodega
+								</CardDescription>
+							</CardHeader>
+							<CardContent>
+								<form
+									className="space-y-4"
+									onSubmit={handleAltegioConfigSubmit}
+								>
+									{/* Warehouse Combobox */}
+									<div className="space-y-2">
+										<Label
+											className="text-[#11181C] dark:text-[#ECEDEE]"
+											htmlFor="altegio-warehouse-select"
+										>
+											Bodega <span className="text-red-500">*</span>
+										</Label>
+										<altegioConfigForm.Field name="warehouseId">
+											{(field) => (
+												<>
+													<Popover
+														onOpenChange={setAltegioWarehouseComboboxOpen}
+														open={altegioWarehouseComboboxOpen}
+													>
+														<PopoverTrigger asChild>
+															<Button
+																aria-expanded={altegioWarehouseComboboxOpen}
+																className="input-transition h-10 w-full justify-between border-[#E5E7EB] bg-white text-[#11181C] hover:bg-white hover:text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:hover:bg-[#151718] dark:hover:text-[#ECEDEE]"
+																disabled={isUpdatingAltegioConfig}
+																role="combobox"
+																type="button"
+																variant="outline"
+															>
+																{field.state.value
+																	? (warehouses.find(
+																			(warehouse) =>
+																				warehouse.id === field.state.value,
+																		)?.name ?? "Seleccionar bodega")
+																	: "Seleccionar bodega"}
+																<ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+															</Button>
+														</PopoverTrigger>
+														<PopoverContent className="w-full p-0">
+															<Command>
+																<CommandInput placeholder="Buscar bodega..." />
+																<CommandList>
+																	<CommandEmpty>
+																		No se encontraron bodegas.
+																	</CommandEmpty>
+																	<CommandGroup>
+																		{warehouses.map((warehouse) => (
+																			<CommandItem
+																				key={warehouse.id}
+																				onSelect={() => {
+																					field.handleChange(warehouse.id);
+																					setAltegioWarehouseComboboxOpen(
+																						false,
+																					);
+																				}}
+																				value={warehouse.name}
+																			>
+																				<Check
+																					className={cn(
+																						"mr-2 h-4 w-4",
+																						field.state.value === warehouse.id
+																							? "opacity-100"
+																							: "opacity-0",
+																					)}
+																				/>
+																				<div className="flex flex-col">
+																					<span className="font-medium">
+																						{warehouse.name}
+																					</span>
+																					<span className="text-muted-foreground text-xs">
+																						{warehouse.code}
+																					</span>
+																				</div>
+																			</CommandItem>
+																		))}
+																	</CommandGroup>
+																</CommandList>
+															</Command>
+														</PopoverContent>
+													</Popover>
+													{!field.state.meta.isValid && (
+														<em className="mt-1 text-red-500 text-xs">
+															{field.state.meta.errors.join(",")}
+														</em>
+													)}
+												</>
+											)}
+										</altegioConfigForm.Field>
+									</div>
+
+									{/* Altegio ID Field */}
+									<div className="space-y-2">
+										<Label
+											className="text-[#11181C] dark:text-[#ECEDEE]"
+											htmlFor="altegio-id"
+										>
+											Altegio ID
+										</Label>
+										<altegioConfigForm.Field
+											name="altegioId"
+											validators={{
+												onChange: ({ value }) =>
+													value.trim().length === 0 ||
+													!Number.isNaN(Number.parseInt(value.trim(), 10))
+														? undefined
+														: "Debe ser un número válido",
+											}}
+										>
+											{(field) => (
+												<>
+													<Input
+														className="input-transition border-[#E5E7EB] bg-white text-[#11181C] placeholder:text-[#687076] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:placeholder:text-[#9BA1A6]"
+														disabled={isUpdatingAltegioConfig}
+														id="altegio-id"
+														name={field.name}
+														onBlur={field.handleBlur}
+														onChange={(e) => field.handleChange(e.target.value)}
+														placeholder="12345"
+														type="number"
+														value={field.state.value}
+													/>
+													{!field.state.meta.isValid && (
+														<em className="mt-1 text-red-500 text-xs">
+															{field.state.meta.errors.join(",")}
+														</em>
+													)}
+												</>
+											)}
+										</altegioConfigForm.Field>
+									</div>
+
+									{/* Consumables ID Field */}
+									<div className="space-y-2">
+										<Label
+											className="text-[#11181C] dark:text-[#ECEDEE]"
+											htmlFor="consumables-id"
+										>
+											Consumables ID
+										</Label>
+										<altegioConfigForm.Field
+											name="consumablesId"
+											validators={{
+												onChange: ({ value }) =>
+													value.trim().length === 0 ||
+													!Number.isNaN(Number.parseInt(value.trim(), 10))
+														? undefined
+														: "Debe ser un número válido",
+											}}
+										>
+											{(field) => (
+												<>
+													<Input
+														className="input-transition border-[#E5E7EB] bg-white text-[#11181C] placeholder:text-[#687076] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:placeholder:text-[#9BA1A6]"
+														disabled={isUpdatingAltegioConfig}
+														id="consumables-id"
+														name={field.name}
+														onBlur={field.handleBlur}
+														onChange={(e) => field.handleChange(e.target.value)}
+														placeholder="67890"
+														type="number"
+														value={field.state.value}
+													/>
+													{!field.state.meta.isValid && (
+														<em className="mt-1 text-red-500 text-xs">
+															{field.state.meta.errors.join(",")}
+														</em>
+													)}
+												</>
+											)}
+										</altegioConfigForm.Field>
+									</div>
+
+									{/* Sales ID Field */}
+									<div className="space-y-2">
+										<Label
+											className="text-[#11181C] dark:text-[#ECEDEE]"
+											htmlFor="sales-id"
+										>
+											Sales ID
+										</Label>
+										<altegioConfigForm.Field
+											name="salesId"
+											validators={{
+												onChange: ({ value }) =>
+													value.trim().length === 0 ||
+													!Number.isNaN(Number.parseInt(value.trim(), 10))
+														? undefined
+														: "Debe ser un número válido",
+											}}
+										>
+											{(field) => (
+												<>
+													<Input
+														className="input-transition border-[#E5E7EB] bg-white text-[#11181C] placeholder:text-[#687076] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:placeholder:text-[#9BA1A6]"
+														disabled={isUpdatingAltegioConfig}
+														id="sales-id"
+														name={field.name}
+														onBlur={field.handleBlur}
+														onChange={(e) => field.handleChange(e.target.value)}
+														placeholder="11111"
+														type="number"
+														value={field.state.value}
+													/>
+													{!field.state.meta.isValid && (
+														<em className="mt-1 text-red-500 text-xs">
+															{field.state.meta.errors.join(",")}
+														</em>
+													)}
+												</>
+											)}
+										</altegioConfigForm.Field>
+									</div>
+
+									{/* Is CEDIS Checkbox */}
+									<div className="space-y-2">
+										<div className="flex items-center space-x-2">
+											<altegioConfigForm.Field name="isCedis">
+												{(field) => (
+													<>
+														<Checkbox
+															checked={field.state.value}
+															disabled={isUpdatingAltegioConfig}
+															id="is-cedis"
+															onBlur={field.handleBlur}
+															onCheckedChange={(checked) =>
+																field.handleChange(checked === true)
+															}
+														/>
+													</>
+												)}
+											</altegioConfigForm.Field>
+											<Label
+												className="text-[#11181C] dark:text-[#ECEDEE]"
+												htmlFor="is-cedis"
+											>
+												Es CEDIS
+											</Label>
+										</div>
+									</div>
+
+									<div className="pt-2">
+										<Button
+											className="theme-transition h-11 bg-[#0a7ea4] text-white hover:bg-[#0a7ea4]/90"
+											disabled={isUpdatingAltegioConfig}
+											type="submit"
+										>
+											{isUpdatingAltegioConfig
+												? "Actualizando configuración..."
+												: "Actualizar Configuración"}
 										</Button>
 									</div>
 								</form>
