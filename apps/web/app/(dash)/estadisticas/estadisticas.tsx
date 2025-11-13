@@ -93,10 +93,10 @@ type UnfulfilledProductsResponse = Awaited<
 	ReturnType<typeof getUnfulfilledProducts>
 > | null;
 type KitsResponse = Awaited<ReturnType<typeof getAllKits>> | null;
-	type StockLimitsResponse =
-		| Awaited<ReturnType<typeof getAllStockLimits>>
-		| Awaited<ReturnType<typeof getStockLimitsByWarehouse>>
-		| null;
+type StockLimitsResponse =
+	| Awaited<ReturnType<typeof getAllStockLimits>>
+	| Awaited<ReturnType<typeof getStockLimitsByWarehouse>>
+	| null;
 
 type ScopeOption = "global" | "warehouse";
 
@@ -163,102 +163,101 @@ const normalizeUnfulfilledProducts = (
 		items = root.products;
 	}
 
-	return items
-		.flatMap((raw): UnfulfilledProduct[] => {
-			if (!raw || typeof raw !== "object") {
-				return [];
-			}
-			const record = raw as Record<string, unknown>;
+	return items.flatMap((raw): UnfulfilledProduct[] => {
+		if (!raw || typeof raw !== "object") {
+			return [];
+		}
+		const record = raw as Record<string, unknown>;
 
-			// Extract barcode (can be number or string)
-			const barcodeRaw = record.barcode ?? record.goodId ?? record.productBarcode;
-			const barcode =
-				typeof barcodeRaw === "number"
-					? barcodeRaw
-					: typeof barcodeRaw === "string"
-						? Number.parseInt(barcodeRaw, 10)
-						: Number.NaN;
+		// Extract barcode (can be number or string)
+		const barcodeRaw = record.barcode ?? record.goodId ?? record.productBarcode;
+		const barcode =
+			typeof barcodeRaw === "number"
+				? barcodeRaw
+				: typeof barcodeRaw === "string"
+					? Number.parseInt(barcodeRaw, 10)
+					: Number.NaN;
 
-			if (!Number.isFinite(barcode)) {
-				return [];
-			}
+		if (!Number.isFinite(barcode)) {
+			return [];
+		}
 
-			const productName =
-				typeof record.productName === "string"
-					? record.productName
-					: typeof record.name === "string"
-						? record.name
-						: typeof record.title === "string"
-							? record.title
-							: undefined;
-
-			const productId =
-				typeof record.productId === "string"
-					? record.productId
-					: typeof record.goodId === "string"
-						? record.goodId
-						: typeof record.id === "string"
-							? record.id
-							: null;
-
-			const warehouseId =
-				typeof record.warehouseId === "string"
-					? record.warehouseId
-					: typeof record.warehouse_id === "string"
-						? record.warehouse_id
+		const productName =
+			typeof record.productName === "string"
+				? record.productName
+				: typeof record.name === "string"
+					? record.name
+					: typeof record.title === "string"
+						? record.title
 						: undefined;
 
-			const warehouseName =
-				typeof record.warehouseName === "string"
-					? record.warehouseName
+		const productId =
+			typeof record.productId === "string"
+				? record.productId
+				: typeof record.goodId === "string"
+					? record.goodId
+					: typeof record.id === "string"
+						? record.id
+						: null;
+
+		const warehouseId =
+			typeof record.warehouseId === "string"
+				? record.warehouseId
+				: typeof record.warehouse_id === "string"
+					? record.warehouse_id
 					: undefined;
 
-			const sourceWarehouseId =
-				typeof record.sourceWarehouseId === "string"
-					? record.sourceWarehouseId
-					: typeof record.source_warehouse_id === "string"
-						? record.source_warehouse_id
+		const warehouseName =
+			typeof record.warehouseName === "string"
+				? record.warehouseName
+				: undefined;
+
+		const sourceWarehouseId =
+			typeof record.sourceWarehouseId === "string"
+				? record.sourceWarehouseId
+				: typeof record.source_warehouse_id === "string"
+					? record.source_warehouse_id
+					: undefined;
+
+		const quantityNeeded =
+			typeof record.quantityNeeded === "number"
+				? record.quantityNeeded
+				: typeof record.quantity === "number"
+					? record.quantity
+					: typeof record.qty === "number"
+						? record.qty
 						: undefined;
 
-			const quantityNeeded =
-				typeof record.quantityNeeded === "number"
-					? record.quantityNeeded
-					: typeof record.quantity === "number"
-						? record.quantity
-						: typeof record.qty === "number"
-							? record.qty
-							: undefined;
+		const orderNumber =
+			typeof record.orderNumber === "string"
+				? record.orderNumber
+				: typeof record.order_number === "string"
+					? record.order_number
+					: undefined;
 
-			const orderNumber =
-				typeof record.orderNumber === "string"
-					? record.orderNumber
-					: typeof record.order_number === "string"
-						? record.order_number
+		const orderId =
+			typeof record.orderId === "string"
+				? record.orderId
+				: typeof record.order_id === "string"
+					? record.order_id
+					: typeof record.replenishmentOrderId === "string"
+						? record.replenishmentOrderId
 						: undefined;
 
-			const orderId =
-				typeof record.orderId === "string"
-					? record.orderId
-					: typeof record.order_id === "string"
-						? record.order_id
-						: typeof record.replenishmentOrderId === "string"
-							? record.replenishmentOrderId
-							: undefined;
-
-			return [
-				{
-					barcode,
-					productName,
-					productId,
-					warehouseId,
-					warehouseName,
-					sourceWarehouseId,
-					quantityNeeded,
-					orderNumber,
-					orderId,
-				},
-			];
-		});
+		return [
+			{
+				barcode,
+				productName,
+				productId,
+				warehouseId,
+				warehouseName,
+				sourceWarehouseId,
+				quantityNeeded,
+				orderNumber,
+				orderId,
+			},
+		];
+	});
 };
 
 const formatDateVerbose = (date: Date) =>
@@ -340,8 +339,8 @@ const normalizeWarehouses = (
 	) {
 		return [];
 	}
-	return ((response as { data: unknown[] }).data as unknown[])
-		.flatMap((raw): WarehouseOption[] => {
+	return ((response as { data: unknown[] }).data as unknown[]).flatMap(
+		(raw): WarehouseOption[] => {
 			if (!raw || typeof raw !== "object") {
 				return [];
 			}
@@ -366,7 +365,8 @@ const normalizeWarehouses = (
 						? rawLegacyIsCedis
 						: undefined;
 			return [{ id, name, isCedis }];
-		});
+		},
+	);
 };
 
 const TrendChart = ({
@@ -578,7 +578,9 @@ type TransferListItem = {
  * Extracts transfer items from the raw API response.
  * Handles various response shapes similar to recepciones.tsx
  */
-const extractTransferItems = (response: TransfersResponse): TransferListItem[] => {
+const extractTransferItems = (
+	response: TransfersResponse,
+): TransferListItem[] => {
 	if (!response || typeof response !== "object") {
 		return [];
 	}
@@ -595,91 +597,91 @@ const extractTransferItems = (response: TransfersResponse): TransferListItem[] =
 		Array.isArray((root.data as { transfers?: unknown }).transfers)
 	) {
 		items.push(
-			...(((root.data as { transfers?: unknown }).transfers ?? []) as unknown[]),
+			...(((root.data as { transfers?: unknown }).transfers ??
+				[]) as unknown[]),
 		);
 	} else if (Array.isArray(root.transfers)) {
 		items.push(...(root.transfers as unknown[]));
 	}
 
-	return items
-		.flatMap((raw): TransferListItem[] => {
-			if (!raw || typeof raw !== "object") {
-				return [];
-			}
-			const record = raw as Record<string, unknown>;
-			const id =
-				typeof record.id === "string"
-					? record.id
-					: typeof record.id === "number"
-						? String(record.id)
-						: "";
-			if (!id) {
-				return [];
-			}
-			const transferNumber =
-				typeof record.transferNumber === "string"
-					? record.transferNumber
-					: undefined;
-			const shipmentId =
-				typeof record.shipmentId === "string" ? record.shipmentId : undefined;
-			const statusRaw =
-				typeof record.status === "string"
-					? record.status
-					: typeof record.transferStatus === "string"
-						? record.transferStatus
-						: "";
-			const status = statusRaw.toLowerCase();
-			const isCompleted =
-				Boolean(record.isCompleted) ||
-				["completed", "complete", "done", "received"].includes(status);
-			const isCancelled =
-				Boolean(record.isCancelled) ||
-				["cancelled", "canceled", "cancelado"].includes(status);
-			const isPending =
-				Boolean(record.isPending) ||
-				(!isCompleted &&
-					!isCancelled &&
-					["pending", "in_transit", "sent", "en_camino"].includes(status));
-			const totalItems =
-				typeof record.totalItems === "number" ? record.totalItems : undefined;
-			const createdAt =
-				typeof record.createdAt === "string" ? record.createdAt : undefined;
-			const scheduledDate =
-				typeof record.scheduledDate === "string"
-					? record.scheduledDate
-					: undefined;
-			const receivedAt =
-				typeof record.receivedAt === "string" ? record.receivedAt : undefined;
-			const sourceWarehouseId =
-				typeof record.sourceWarehouseId === "string"
-					? record.sourceWarehouseId
-					: undefined;
-			const destinationWarehouseId =
-				typeof record.destinationWarehouseId === "string"
-					? record.destinationWarehouseId
-					: undefined;
+	return items.flatMap((raw): TransferListItem[] => {
+		if (!raw || typeof raw !== "object") {
+			return [];
+		}
+		const record = raw as Record<string, unknown>;
+		const id =
+			typeof record.id === "string"
+				? record.id
+				: typeof record.id === "number"
+					? String(record.id)
+					: "";
+		if (!id) {
+			return [];
+		}
+		const transferNumber =
+			typeof record.transferNumber === "string"
+				? record.transferNumber
+				: undefined;
+		const shipmentId =
+			typeof record.shipmentId === "string" ? record.shipmentId : undefined;
+		const statusRaw =
+			typeof record.status === "string"
+				? record.status
+				: typeof record.transferStatus === "string"
+					? record.transferStatus
+					: "";
+		const status = statusRaw.toLowerCase();
+		const isCompleted =
+			Boolean(record.isCompleted) ||
+			["completed", "complete", "done", "received"].includes(status);
+		const isCancelled =
+			Boolean(record.isCancelled) ||
+			["cancelled", "canceled", "cancelado"].includes(status);
+		const isPending =
+			Boolean(record.isPending) ||
+			(!isCompleted &&
+				!isCancelled &&
+				["pending", "in_transit", "sent", "en_camino"].includes(status));
+		const totalItems =
+			typeof record.totalItems === "number" ? record.totalItems : undefined;
+		const createdAt =
+			typeof record.createdAt === "string" ? record.createdAt : undefined;
+		const scheduledDate =
+			typeof record.scheduledDate === "string"
+				? record.scheduledDate
+				: undefined;
+		const receivedAt =
+			typeof record.receivedAt === "string" ? record.receivedAt : undefined;
+		const sourceWarehouseId =
+			typeof record.sourceWarehouseId === "string"
+				? record.sourceWarehouseId
+				: undefined;
+		const destinationWarehouseId =
+			typeof record.destinationWarehouseId === "string"
+				? record.destinationWarehouseId
+				: undefined;
 
-			const item: TransferListItem = {
-				id,
-				transferNumber,
-				shipmentId,
-				isPending,
-				isCompleted,
-				isCancelled,
-				totalItems,
-				createdAt,
-				scheduledDate,
-				receivedAt,
-				sourceWarehouseId,
-				destinationWarehouseId,
-			};
+		const item: TransferListItem = {
+			id,
+			transferNumber,
+			shipmentId,
+			isPending,
+			isCompleted,
+			isCancelled,
+			totalItems,
+			createdAt,
+			scheduledDate,
+			receivedAt,
+			sourceWarehouseId,
+			destinationWarehouseId,
+		};
 
-			if (item.isCancelled) {
-				return [];
-			}
+		if (item.isCancelled) {
+			return [];
+		}
 
-			return [item];
-		});
+		return [item];
+	});
 };
 
 const PendingReceptionsDialog = ({
@@ -710,7 +712,10 @@ const PendingReceptionsDialog = ({
 		return sourceId === selected || destId === selected;
 	};
 
-	const isWithinRange = (value: string | undefined, range: DateRange): boolean => {
+	const isWithinRange = (
+		value: string | undefined,
+		range: DateRange,
+	): boolean => {
 		if (!value) {
 			return false;
 		}
@@ -782,16 +787,14 @@ const PendingReceptionsDialog = ({
 						<ul className="space-y-3">
 							{pendingTransfers.map((transfer) => {
 								const shipmentId = getShipmentId(transfer);
-								const sourceName =
-									transfer.sourceWarehouseId
-										? warehouseNameMap.get(transfer.sourceWarehouseId) ??
-											`Almacén ${transfer.sourceWarehouseId.slice(0, 6)}`
-										: "N/A";
-								const destName =
-									transfer.destinationWarehouseId
-										? warehouseNameMap.get(transfer.destinationWarehouseId) ??
-											`Almacén ${transfer.destinationWarehouseId.slice(0, 6)}`
-										: "N/A";
+								const sourceName = transfer.sourceWarehouseId
+									? (warehouseNameMap.get(transfer.sourceWarehouseId) ??
+										`Almacén ${transfer.sourceWarehouseId.slice(0, 6)}`)
+									: "N/A";
+								const destName = transfer.destinationWarehouseId
+									? (warehouseNameMap.get(transfer.destinationWarehouseId) ??
+										`Almacén ${transfer.destinationWarehouseId.slice(0, 6)}`)
+									: "N/A";
 								return (
 									<li
 										key={transfer.id}
@@ -871,7 +874,10 @@ const CompletedReceptionsDialog = ({
 		return sourceId === selected || destId === selected;
 	};
 
-	const isWithinRange = (value: string | undefined, range: DateRange): boolean => {
+	const isWithinRange = (
+		value: string | undefined,
+		range: DateRange,
+	): boolean => {
 		if (!value) {
 			return false;
 		}
@@ -943,16 +949,14 @@ const CompletedReceptionsDialog = ({
 						<ul className="space-y-3">
 							{completedTransfers.map((transfer) => {
 								const shipmentId = getShipmentId(transfer);
-								const sourceName =
-									transfer.sourceWarehouseId
-										? warehouseNameMap.get(transfer.sourceWarehouseId) ??
-											`Almacén ${transfer.sourceWarehouseId.slice(0, 6)}`
-										: "N/A";
-								const destName =
-									transfer.destinationWarehouseId
-										? warehouseNameMap.get(transfer.destinationWarehouseId) ??
-											`Almacén ${transfer.destinationWarehouseId.slice(0, 6)}`
-										: "N/A";
+								const sourceName = transfer.sourceWarehouseId
+									? (warehouseNameMap.get(transfer.sourceWarehouseId) ??
+										`Almacén ${transfer.sourceWarehouseId.slice(0, 6)}`)
+									: "N/A";
+								const destName = transfer.destinationWarehouseId
+									? (warehouseNameMap.get(transfer.destinationWarehouseId) ??
+										`Almacén ${transfer.destinationWarehouseId.slice(0, 6)}`)
+									: "N/A";
 								return (
 									<li
 										key={transfer.id}
@@ -1101,16 +1105,14 @@ const TodayReceptionsDialog = ({
 						<ul className="space-y-3">
 							{todayTransfers.map((transfer) => {
 								const shipmentId = getShipmentId(transfer);
-								const sourceName =
-									transfer.sourceWarehouseId
-										? warehouseNameMap.get(transfer.sourceWarehouseId) ??
-											`Almacén ${transfer.sourceWarehouseId.slice(0, 6)}`
-										: "N/A";
-								const destName =
-									transfer.destinationWarehouseId
-										? warehouseNameMap.get(transfer.destinationWarehouseId) ??
-											`Almacén ${transfer.destinationWarehouseId.slice(0, 6)}`
-										: "N/A";
+								const sourceName = transfer.sourceWarehouseId
+									? (warehouseNameMap.get(transfer.sourceWarehouseId) ??
+										`Almacén ${transfer.sourceWarehouseId.slice(0, 6)}`)
+									: "N/A";
+								const destName = transfer.destinationWarehouseId
+									? (warehouseNameMap.get(transfer.destinationWarehouseId) ??
+										`Almacén ${transfer.destinationWarehouseId.slice(0, 6)}`)
+									: "N/A";
 								return (
 									<li
 										key={transfer.id}
@@ -1229,8 +1231,8 @@ const LowStockTable = ({
 			<CardContent className="flex flex-col gap-6">
 				{!hasAnyData ? (
 					<div className="rounded-lg border border-dashed border-[#E5E7EB] bg-[#F9FAFB] p-6 text-center text-sm text-[#687076] dark:border-[#2D3033] dark:bg-[#1E1F20] dark:text-[#9BA1A6]">
-						No se detectaron productos con stock bajo ni productos sin cumplir en
-						pedidos de reabastecimiento en el rango y alcance seleccionados.
+						No se detectaron productos con stock bajo ni productos sin cumplir
+						en pedidos de reabastecimiento en el rango y alcance seleccionados.
 					</div>
 				) : (
 					<>
@@ -1259,15 +1261,19 @@ const LowStockTable = ({
 												item.productId,
 											);
 											return (
-												<TableRow key={`low-stock-${item.warehouseId}-${item.barcode}`}>
+												<TableRow
+													key={`low-stock-${item.warehouseId}-${item.barcode}`}
+												>
 													<TableCell>
 														<div className="flex flex-col">
 															<span className="font-medium text-[#11181C] dark:text-[#ECEDEE]">
 																{productName}
 															</span>
 															<span className="text-xs text-[#9BA1A6]">
-																{productIdSuffix ? `ID ${productIdSuffix}` : "ID —"} • #
-																{item.barcode}
+																{productIdSuffix
+																	? `ID ${productIdSuffix}`
+																	: "ID —"}{" "}
+																• #{item.barcode}
 															</span>
 														</div>
 													</TableCell>
@@ -1332,8 +1338,10 @@ const LowStockTable = ({
 																{productName}
 															</span>
 															<span className="text-xs text-[#9BA1A6]">
-																{productIdSuffix ? `ID ${productIdSuffix}` : "ID —"} • #
-																{product.barcode}
+																{productIdSuffix
+																	? `ID ${productIdSuffix}`
+																	: "ID —"}{" "}
+																• #{product.barcode}
 															</span>
 														</div>
 													</TableCell>
@@ -1998,75 +2006,76 @@ export function EstadisticasPage({
 							/>
 						</CardContent>
 					</Card>
-				</section>
-
-				<section className="grid gap-4 xl:grid-cols-2">
-					<Card className="card-transition">
-						<CardHeader>
-							<CardTitle className="text-base font-semibold text-[#11181C] dark:text-[#ECEDEE]">
-								Pedidos de reabastecimiento
-							</CardTitle>
-						</CardHeader>
-						<CardContent className="grid gap-4">
-							<div className="grid grid-cols-3 gap-4">
-								<div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-4 text-center dark:border-[#2D3033] dark:bg-[#1E1F20]">
-									<p className="text-xs uppercase text-[#9BA1A6]">Abiertos</p>
-									<p className="text-xl font-semibold text-[#E85D04]">
-										{orderMetrics.open}
-									</p>
+					<section className="flex flex-col gap-4">
+						<Card className="card-transition">
+							<CardHeader>
+								<CardTitle className="text-base font-semibold text-[#11181C] dark:text-[#ECEDEE]">
+									Pedidos de reabastecimiento
+								</CardTitle>
+							</CardHeader>
+							<CardContent className="grid gap-4">
+								<div className="grid grid-cols-3 gap-4">
+									<div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-4 text-center dark:border-[#2D3033] dark:bg-[#1E1F20]">
+										<p className="text-xs uppercase text-[#9BA1A6]">Abiertos</p>
+										<p className="text-xl font-semibold text-[#E85D04]">
+											{orderMetrics.open}
+										</p>
+									</div>
+									<div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-4 text-center dark:border-[#2D3033] dark:bg-[#1E1F20]">
+										<p className="text-xs uppercase text-[#9BA1A6]">Enviados</p>
+										<p className="text-xl font-semibold text-[#0a7ea4]">
+											{orderMetrics.sent}
+										</p>
+									</div>
+									<div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-4 text-center dark:border-[#2D3033] dark:bg-[#1E1F20]">
+										<p className="text-xs uppercase text-[#9BA1A6]">
+											Recibidos
+										</p>
+										<p className="text-xl font-semibold text-[#2E7D32]">
+											{orderMetrics.received}
+										</p>
+									</div>
 								</div>
-								<div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-4 text-center dark:border-[#2D3033] dark:bg-[#1E1F20]">
-									<p className="text-xs uppercase text-[#9BA1A6]">Enviados</p>
-									<p className="text-xl font-semibold text-[#0a7ea4]">
-										{orderMetrics.sent}
-									</p>
+								<div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-4 text-sm text-[#687076] dark:border-[#2D3033] dark:bg-[#1E1F20] dark:text-[#9BA1A6]">
+									Promedio de días abiertos:{" "}
+									<strong>{orderMetrics.averageAge}</strong>
 								</div>
-								<div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-4 text-center dark:border-[#2D3033] dark:bg-[#1E1F20]">
-									<p className="text-xs uppercase text-[#9BA1A6]">Recibidos</p>
-									<p className="text-xl font-semibold text-[#2E7D32]">
-										{orderMetrics.received}
-									</p>
+							</CardContent>
+						</Card>
+						<Card className="card-transition">
+							<CardHeader>
+								<CardTitle className="text-base font-semibold text-[#11181C] dark:text-[#ECEDEE]">
+									Kits activos
+								</CardTitle>
+							</CardHeader>
+							<CardContent className="grid gap-4">
+								<div className="grid grid-cols-3 gap-4">
+									<div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-4 text-center dark:border-[#2D3033] dark:bg-[#1E1F20]">
+										<p className="text-xs uppercase text-[#9BA1A6]">Kits</p>
+										<p className="text-xl font-semibold text-[#11181C] dark:text-[#ECEDEE]">
+											{kitMetrics.totalKits}
+										</p>
+									</div>
+									<div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-4 text-center dark:border-[#2D3033] dark:bg-[#1E1F20]">
+										<p className="text-xs uppercase text-[#9BA1A6]">
+											Items activos
+										</p>
+										<p className="text-xl font-semibold text-[#0a7ea4]">
+											{kitMetrics.activeItems}
+										</p>
+									</div>
+									<div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-4 text-center dark:border-[#2D3033] dark:bg-[#1E1F20]">
+										<p className="text-xs uppercase text-[#9BA1A6]">
+											Items devueltos
+										</p>
+										<p className="text-xl font-semibold text-[#2E7D32]">
+											{kitMetrics.returnedItems}
+										</p>
+									</div>
 								</div>
-							</div>
-							<div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-4 text-sm text-[#687076] dark:border-[#2D3033] dark:bg-[#1E1F20] dark:text-[#9BA1A6]">
-								Promedio de días abiertos:{" "}
-								<strong>{orderMetrics.averageAge}</strong>
-							</div>
-						</CardContent>
-					</Card>
-					<Card className="card-transition">
-						<CardHeader>
-							<CardTitle className="text-base font-semibold text-[#11181C] dark:text-[#ECEDEE]">
-								Kits activos
-							</CardTitle>
-						</CardHeader>
-						<CardContent className="grid gap-4">
-							<div className="grid grid-cols-3 gap-4">
-								<div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-4 text-center dark:border-[#2D3033] dark:bg-[#1E1F20]">
-									<p className="text-xs uppercase text-[#9BA1A6]">Kits</p>
-									<p className="text-xl font-semibold text-[#11181C] dark:text-[#ECEDEE]">
-										{kitMetrics.totalKits}
-									</p>
-								</div>
-								<div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-4 text-center dark:border-[#2D3033] dark:bg-[#1E1F20]">
-									<p className="text-xs uppercase text-[#9BA1A6]">
-										Items activos
-									</p>
-									<p className="text-xl font-semibold text-[#0a7ea4]">
-										{kitMetrics.activeItems}
-									</p>
-								</div>
-								<div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-4 text-center dark:border-[#2D3033] dark:bg-[#1E1F20]">
-									<p className="text-xs uppercase text-[#9BA1A6]">
-										Items devueltos
-									</p>
-									<p className="text-xl font-semibold text-[#2E7D32]">
-										{kitMetrics.returnedItems}
-									</p>
-								</div>
-							</div>
-						</CardContent>
-					</Card>
+							</CardContent>
+						</Card>
+					</section>
 				</section>
 
 				<section className="grid gap-4 xl:grid-cols-2">
