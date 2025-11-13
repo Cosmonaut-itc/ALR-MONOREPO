@@ -282,6 +282,9 @@ export const DistributionCenterId = '4818f28e-daf8-42f4-8d55-088d260b118d';
 export const replenishmentOrderItemSchema = z.object({
 	barcode: z.number().int().positive('Barcode must be a positive integer'),
 	quantity: z.number().int().positive('Quantity must be greater than zero'),
+	notes: z.string().trim().max(2000, 'Notes must be 2000 characters or fewer').optional().nullable(),
+	sentQuantity: z.number().int().nonnegative('Sent quantity must be zero or greater').optional(),
+	buyOrderGenerated: z.boolean().optional(),
 });
 
 export const replenishmentOrderCreateSchema = z.object({

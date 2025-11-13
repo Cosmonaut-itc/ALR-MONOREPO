@@ -201,8 +201,9 @@ export async function createReplenishmentOrder({
 				replenishmentOrderId: inserted[0].id,
 				barcode: item.barcode,
 				quantity: item.quantity,
-				sentQuantity: 0, // Initialize sent quantity to 0 for new orders
-				buyOrderGenerated: false, // Initialize buy order generated flag to false
+				notes: item.notes ?? null,
+				sentQuantity: item.sentQuantity ?? 0, // Initialize sent quantity to 0 for new orders if not provided
+				buyOrderGenerated: item.buyOrderGenerated ?? false, // Initialize buy order generated flag to false if not provided
 			})),
 		);
 
@@ -288,16 +289,33 @@ export async function updateReplenishmentOrder({
 
 		if (input.items) {
 			/**
-			 * Update sentQuantity for existing detail items based on barcode.
-			 * This preserves the original quantity and notes while tracking how many were actually sent.
-			 * The quantity passed in input.items represents the amount that was sent.
+			 * Update detail items based on barcode.
+			 * This preserves the original quantity while allowing updates to sentQuantity, notes, and buyOrderGenerated.
+			 * If sentQuantity is provided, use it; otherwise, use quantity for backward compatibility.
 			 */
 			for (const item of input.items) {
+				const updateData: Partial<typeof schemas.replenishmentOrderDetails.$inferInsert> = {};
+
+				// Update sentQuantity if provided, otherwise use quantity for backward compatibility
+				if (item.sentQuantity !== undefined) {
+					updateData.sentQuantity = item.sentQuantity;
+				} else {
+					updateData.sentQuantity = item.quantity;
+				}
+
+				// Update notes if provided
+				if (item.notes !== undefined) {
+					updateData.notes = item.notes;
+				}
+
+				// Update buyOrderGenerated if provided
+				if (item.buyOrderGenerated !== undefined) {
+					updateData.buyOrderGenerated = item.buyOrderGenerated;
+				}
+
 				await tx
 					.update(schemas.replenishmentOrderDetails)
-					.set({
-						sentQuantity: item.quantity,
-					})
+					.set(updateData)
 					.where(
 						and(
 							eq(schemas.replenishmentOrderDetails.replenishmentOrderId, id),
