@@ -615,7 +615,8 @@ export const computeLowStock = (
 		
 		// Only check quantity-based limits for low stock
 		// Usage limits are tracked differently and don't affect "low stock" alerts
-		if (limit.limitType === "quantity") {
+		// Default undefined limitType to "quantity" for legacy limits
+		if ((limit.limitType ?? "quantity") === "quantity") {
 			const current = quantityStockByKey.get(mapKey) ?? 0;
 			if (current < limit.minQuantity) {
 				const sample = sampleByKey.get(mapKey) ?? null;

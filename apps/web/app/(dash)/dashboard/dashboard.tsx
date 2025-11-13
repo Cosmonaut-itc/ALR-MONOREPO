@@ -999,7 +999,8 @@ export default function DashboardPageClient({
 					? `Almacen ${limit.warehouseId.slice(0, 6)}`
 					: "Bodega");
 
-			if (limit.limitType === "quantity") {
+			// Default undefined limitType to "quantity" for legacy limits
+			if ((limit.limitType ?? "quantity") === "quantity") {
 				const currentQuantity =
 					stockQuantityByWarehouseBarcode.get(
 						getStockQuantityKey(limit.warehouseId, limit.barcode),
@@ -1022,8 +1023,8 @@ export default function DashboardPageClient({
 				} else {
 					group.entries.push(entry);
 				}
-			} else {
-				// limitType === "usage"
+			} else if (limit.limitType === "usage") {
+				// Only process usage limits explicitly
 				const usageItems =
 					usageItemsByWarehouseBarcode.get(
 						getStockQuantityKey(limit.warehouseId, limit.barcode),
