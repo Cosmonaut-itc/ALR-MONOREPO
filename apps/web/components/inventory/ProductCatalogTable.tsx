@@ -1522,16 +1522,6 @@ export function ProductCatalogTable({
 					}
 				};
 
-				if (displayItems.length === 0) {
-					return (
-						<div className="border-[#E5E7EB] border-b bg-[#F8FAFC] p-4 text-center dark:border-[#374151] dark:bg-[#1A1B1C]">
-							<p className="text-[#687076] text-sm dark:text-[#9BA1A6]">
-								No hay items en inventario para este producto
-							</p>
-						</div>
-					);
-				}
-
 				const groupedByWarehouse = displayItems.reduce(
 					(acc, item) => {
 						const locationKey = item.warehouseKey || "unassigned";
@@ -1568,6 +1558,21 @@ export function ProductCatalogTable({
 						}
 					>(),
 				);
+
+				// Ensure all available warehouses are included, even if they have no stock
+				for (const warehouseOption of warehouseFilterOptions) {
+					const warehouseId = warehouseOption.value;
+					if (!groupedByWarehouse.has(warehouseId)) {
+						const isDistributionCenter = distributionCenterIds.has(warehouseId);
+						const effectiveWarehouseId = resolveWarehouseIdForLimit(warehouseId);
+						groupedByWarehouse.set(warehouseId, {
+							label: warehouseOption.label,
+							items: [],
+							isDistributionCenter,
+							effectiveWarehouseId,
+						});
+					}
+				}
 
 				const warehouseGroups = Array.from(groupedByWarehouse.entries());
 
@@ -2082,6 +2087,7 @@ export function ProductCatalogTable({
 			isUpdatingIsEmpty,
 			warehouse,
 			isEmptyFilter,
+			warehouseFilterOptions,
 		],
 	);
 
