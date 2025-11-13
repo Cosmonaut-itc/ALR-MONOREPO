@@ -239,6 +239,13 @@
       "when": 1762898968198,
       "tag": "0033_fair_zarda",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1763066067689,
+      "tag": "0034_stiff_the_renegades",
+      "breakpoints": true
     }
   ]
 }
