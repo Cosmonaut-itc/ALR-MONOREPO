@@ -1765,16 +1765,23 @@ export function ProductCatalogTable({
 								limitRangeText = `${limit.minQuantity}–${limit.maxQuantity} unidades`;
 							} else {
 								// limitType === "usage"
-								// For usage limits, we need to check the usage count of items
-								// For now, we'll show the limit but not check against current usage
-								// This would require aggregating numberOfUses from items
+								// Aggregate usage counts from all items in the group
+								const totalUsage = group.items.reduce(
+									(sum, item) => sum + (item.data.numberOfUses ?? 0),
+									0,
+								);
 								isUsageLimit = true;
-								const minUsage = limit.minUsage ?? 0;
-								const maxUsage = limit.maxUsage ?? 0;
-								limitText = `Límite: ${minUsage}–${maxUsage} usos`;
-								limitRangeText = `${minUsage}–${maxUsage} usos`;
-								// Usage limits don't affect belowMinimum/aboveMaximum for now
-								// as we'd need to aggregate usage counts from items
+								// Treat null as unlimited (Infinity) rather than zero
+								const minUsage = limit.minUsage ?? Number.NEGATIVE_INFINITY;
+								const maxUsage = limit.maxUsage ?? Number.POSITIVE_INFINITY;
+								belowMinimum = totalUsage < minUsage;
+								aboveMaximum = totalUsage > maxUsage;
+								const minUsageText =
+									limit.minUsage !== null ? `${limit.minUsage}` : "Sin límite";
+								const maxUsageText =
+									limit.maxUsage !== null ? `${limit.maxUsage}` : "Sin límite";
+								limitText = `Límite: ${minUsageText}–${maxUsageText} usos`;
+								limitRangeText = `${minUsageText}–${maxUsageText} usos`;
 							}
 						}
 						let limitBadgeLabel = "Sin límite configurado";

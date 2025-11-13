@@ -509,14 +509,17 @@ const limitStatusForQuantity = (
 /**
  * Determines the limit status for usage limits.
  *
+ * Treats null usage bounds as unlimited (Infinity) rather than zero.
+ *
  * @param usage - Current usage count to compare against the limit
  * @param limit - StockLimit object with limitType "usage" and minUsage/maxUsage values
  * @returns LimitStatus indicating if the value is below, within, or above the limit
  */
 const limitStatusForUsage = (usage: number, limit: StockLimit): LimitStatus => {
 	if (limit.limitType === "usage") {
-		const minUsage = limit.minUsage ?? 0;
-		const maxUsage = limit.maxUsage ?? 0;
+		// Treat null as unlimited (Infinity) rather than zero
+		const minUsage = limit.minUsage ?? Number.NEGATIVE_INFINITY;
+		const maxUsage = limit.maxUsage ?? Number.POSITIVE_INFINITY;
 		if (usage < minUsage) {
 			return "below";
 		}
@@ -1167,7 +1170,6 @@ export default function DashboardPageClient({
 	const totalUsage = itemsInUse.length;
 	const pendingOrdersCount = pendingOrders.length;
 	const pendingTransfersCount = pendingTransfers.length;
-	console.log(totalStockLimits);
 
 	return (
 		<div className="flex flex-1 flex-col gap-6 p-4 md:p-6">
@@ -1406,8 +1408,14 @@ export default function DashboardPageClient({
 																			{entry.warehouseName}
 																		</p>
 																		<p className="text-xs text-[#687076] dark:text-[#9BA1A6]">
-																			Min {entry.limit.minUsage ?? 0} usos / Max{" "}
-																			{entry.limit.maxUsage ?? 0} usos
+																			Min{" "}
+																			{entry.limit.minUsage !== null
+																				? `${entry.limit.minUsage} usos`
+																				: "Sin límite"}{" "}
+																			/ Max{" "}
+																			{entry.limit.maxUsage !== null
+																				? `${entry.limit.maxUsage} usos`
+																				: "Sin límite"}
 																		</p>
 																	</div>
 																	<Badge className={badgeClass}>
