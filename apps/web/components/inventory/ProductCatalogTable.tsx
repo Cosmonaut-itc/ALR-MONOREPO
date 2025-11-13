@@ -1246,7 +1246,8 @@ export function ProductCatalogTable({
 				let belowMinimum = false;
 				let aboveMaximum = false;
 
-				if (limit.limitType === "quantity") {
+				// Treat undefined limitType as "quantity" for legacy limits
+				if ((limit.limitType ?? "quantity") === "quantity") {
 					// Only count warehouse items (not cabinet items) for quantity limit checks
 					const warehouseItemsCount = group.items.filter(
 						(item) => !item.data.currentCabinet,
@@ -1786,8 +1787,9 @@ export function ProductCatalogTable({
 						// Only count warehouse items (not cabinet items) for quantity limit checks
 						// Usage limits count all items regardless of location
 						const currentCount = group.items.length;
+						// Treat undefined limitType as "quantity" for legacy limits
 						const warehouseItemsCount =
-							limit?.limitType === "quantity"
+							(limit?.limitType ?? "quantity") === "quantity"
 								? group.items.filter((item) => !item.data.currentCabinet).length
 								: currentCount;
 						let belowMinimum = false;
@@ -1797,7 +1799,8 @@ export function ProductCatalogTable({
 						let isUsageLimit = false;
 
 						if (limit) {
-							if (limit.limitType === "quantity") {
+							// Treat undefined limitType as "quantity" for legacy limits
+							if ((limit.limitType ?? "quantity") === "quantity") {
 								belowMinimum = warehouseItemsCount < limit.minQuantity;
 								aboveMaximum = warehouseItemsCount > limit.maxQuantity;
 								limitText = `Límite: ${limit.minQuantity}–${limit.maxQuantity} unidades`;
@@ -2676,7 +2679,8 @@ export function ProductCatalogTable({
 					let minLimit: number | string = "Sin límite";
 					let maxLimit: number | string = "Sin límite";
 					if (limit) {
-						if (limit.limitType === "quantity") {
+						// Treat undefined limitType as "quantity" for legacy limits
+						if ((limit.limitType ?? "quantity") === "quantity") {
 							minLimit = limit.minQuantity;
 							maxLimit = limit.maxQuantity;
 						} else {

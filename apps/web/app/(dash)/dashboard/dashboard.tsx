@@ -484,6 +484,8 @@ const getStockQuantityKey = (warehouseId: string, barcode: number) =>
  * For usage limits, this function should be called with aggregated usage counts,
  * but currently only quantity limits are supported in the dashboard display.
  *
+ * Legacy limits (without limitType field) are treated as quantity limits.
+ *
  * @param quantity - Current quantity or usage count to compare against the limit
  * @param limit - StockLimit object with limitType and corresponding min/max values
  * @returns LimitStatus indicating if the value is below, within, or above the limit
@@ -492,7 +494,8 @@ const limitStatusForQuantity = (
 	quantity: number,
 	limit: StockLimit,
 ): LimitStatus => {
-	if (limit.limitType === "quantity") {
+	// Treat undefined limitType as "quantity" for legacy limits
+	if ((limit.limitType ?? "quantity") === "quantity") {
 		if (quantity < limit.minQuantity) {
 			return "below";
 		}
