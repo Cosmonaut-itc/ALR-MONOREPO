@@ -1255,16 +1255,25 @@ export function ProductCatalogTable({
 					aboveMaximum = warehouseItemsCount > limit.maxQuantity;
 				} else {
 					// limitType === "usage"
-					// Aggregate usage counts from all items in the group
-					const totalUsage = group.items.reduce(
-						(sum, item) => sum + (item.data.numberOfUses ?? 0),
-						0,
-					);
+					// numberOfUses is per-item, so check each item individually, not sum them
 					// Treat null as unlimited (Infinity) rather than zero
 					const minUsage = limit.minUsage ?? Number.NEGATIVE_INFINITY;
 					const maxUsage = limit.maxUsage ?? Number.POSITIVE_INFINITY;
-					belowMinimum = totalUsage < minUsage;
-					aboveMaximum = totalUsage > maxUsage;
+
+					// Check each item for violations
+					for (const item of group.items) {
+						const itemUsage = item.data.numberOfUses ?? 0;
+						if (itemUsage < minUsage) {
+							belowMinimum = true;
+						}
+						if (itemUsage > maxUsage) {
+							aboveMaximum = true;
+						}
+						// If we found both violations, no need to continue
+						if (belowMinimum && aboveMaximum) {
+							break;
+						}
+					}
 				}
 
 				if (filterType === "below-minimum" && belowMinimum) {
@@ -1795,17 +1804,26 @@ export function ProductCatalogTable({
 								limitRangeText = `${limit.minQuantity}–${limit.maxQuantity} unidades`;
 							} else {
 								// limitType === "usage"
-								// Aggregate usage counts from all items in the group
-								const totalUsage = group.items.reduce(
-									(sum, item) => sum + (item.data.numberOfUses ?? 0),
-									0,
-								);
+								// numberOfUses is per-item, so check each item individually, not sum them
 								isUsageLimit = true;
 								// Treat null as unlimited (Infinity) rather than zero
 								const minUsage = limit.minUsage ?? Number.NEGATIVE_INFINITY;
 								const maxUsage = limit.maxUsage ?? Number.POSITIVE_INFINITY;
-								belowMinimum = totalUsage < minUsage;
-								aboveMaximum = totalUsage > maxUsage;
+
+								// Check each item for violations and track max usage for display
+								let maxItemUsage = 0;
+								for (const item of group.items) {
+									const itemUsage = item.data.numberOfUses ?? 0;
+									maxItemUsage = Math.max(maxItemUsage, itemUsage);
+
+									if (itemUsage < minUsage) {
+										belowMinimum = true;
+									}
+									if (itemUsage > maxUsage) {
+										aboveMaximum = true;
+									}
+								}
+
 								const minUsageText =
 									limit.minUsage !== null ? `${limit.minUsage}` : "Sin límite";
 								const maxUsageText =

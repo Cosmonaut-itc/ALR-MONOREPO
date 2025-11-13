@@ -507,29 +507,65 @@ const limitStatusForQuantity = (
 };
 
 /**
- * Determines the limit status for usage limits.
+ * Determines the limit status for usage limits by checking each item individually.
  *
+ * numberOfUses is a per-item counter, so limits should be enforced per unit, not as a sum.
  * Treats null usage bounds as unlimited (Infinity) rather than zero.
  *
- * @param usage - Current usage count to compare against the limit
+ * @param items - Array of inventory items to check against the limit
  * @param limit - StockLimit object with limitType "usage" and minUsage/maxUsage values
- * @returns LimitStatus indicating if the value is below, within, or above the limit
+ * @returns Object with status and maxUsage for display
  */
-const limitStatusForUsage = (usage: number, limit: StockLimit): LimitStatus => {
+const limitStatusForUsage = (
+	items: Array<{ numberOfUses: number }>,
+	limit: StockLimit,
+): { status: LimitStatus; maxUsage: number; violatingCount: number } => {
 	if (limit.limitType === "usage") {
 		// Treat null as unlimited (Infinity) rather than zero
 		const minUsage = limit.minUsage ?? Number.NEGATIVE_INFINITY;
 		const maxUsage = limit.maxUsage ?? Number.POSITIVE_INFINITY;
-		if (usage < minUsage) {
-			return "below";
+
+		// Check each item individually for violations
+		let belowMinimumCount = 0;
+		let aboveMaximumCount = 0;
+		let maxItemUsage = 0;
+
+		for (const item of items) {
+			const itemUsage = item.numberOfUses ?? 0;
+			maxItemUsage = Math.max(maxItemUsage, itemUsage);
+
+			if (itemUsage < minUsage) {
+				belowMinimumCount++;
+			}
+			if (itemUsage > maxUsage) {
+				aboveMaximumCount++;
+			}
 		}
-		if (usage > maxUsage) {
-			return "above";
+
+		// Status is "above" if any item exceeds max, "below" if any item is below min
+		// Priority: above > below > within
+		if (aboveMaximumCount > 0) {
+			return {
+				status: "above",
+				maxUsage: maxItemUsage,
+				violatingCount: aboveMaximumCount,
+			};
 		}
-		return "within";
+		if (belowMinimumCount > 0) {
+			return {
+				status: "below",
+				maxUsage: maxItemUsage,
+				violatingCount: belowMinimumCount,
+			};
+		}
+		return {
+			status: "within",
+			maxUsage: maxItemUsage,
+			violatingCount: 0,
+		};
 	}
 	// For quantity limits, return "within" as default
-	return "within";
+	return { status: "within", maxUsage: 0, violatingCount: 0 };
 };
 
 const formatDateSafe = (value: string) => {
@@ -868,9 +904,10 @@ export default function DashboardPageClient({
 		return map;
 	}, [inventoryGroups.warehouse, inventoryGroups.cabinet]);
 
-	// Build usage count map for usage limits (count all items regardless of cabinet)
-	const usageCountByWarehouseBarcode = useMemo(() => {
-		const counts = new Map<string, number>();
+	// Build usage items map for usage limits (group items by warehouse/barcode for per-item checking)
+	// numberOfUses is per-item, so we need to check each item individually, not sum them
+	const usageItemsByWarehouseBarcode = useMemo(() => {
+		const itemsMap = new Map<string, Array<{ numberOfUses: number }>>();
 		const allItems = [...inventoryGroups.warehouse, ...inventoryGroups.cabinet];
 		for (const item of allItems) {
 			const stock = item.productStock ?? {};
@@ -902,10 +939,11 @@ export default function DashboardPageClient({
 					? (stock as { numberOfUses: number }).numberOfUses
 					: 0;
 			const key = getStockQuantityKey(warehouse, parsedBarcode);
-			const current = counts.get(key) ?? 0;
-			counts.set(key, current + numberOfUses);
+			const existing = itemsMap.get(key) ?? [];
+			existing.push({ numberOfUses });
+			itemsMap.set(key, existing);
 		}
-		return counts;
+		return itemsMap;
 	}, [inventoryGroups.warehouse, inventoryGroups.cabinet]);
 
 	const totalStockLimits = useMemo(() => {
@@ -986,16 +1024,17 @@ export default function DashboardPageClient({
 				}
 			} else {
 				// limitType === "usage"
-				const currentUsage =
-					usageCountByWarehouseBarcode.get(
+				const usageItems =
+					usageItemsByWarehouseBarcode.get(
 						getStockQuantityKey(limit.warehouseId, limit.barcode),
-					) ?? 0;
+					) ?? [];
+				const usageStatus = limitStatusForUsage(usageItems, limit);
 				const entry: UsageLimitEntry = {
 					warehouseId: limit.warehouseId,
 					warehouseName,
 					limit,
-					currentUsage,
-					status: limitStatusForUsage(currentUsage, limit),
+					currentUsage: usageStatus.maxUsage,
+					status: usageStatus.status,
 				};
 				const group = usageGroupsByBarcode.get(limit.barcode);
 				if (!group) {
@@ -1031,7 +1070,7 @@ export default function DashboardPageClient({
 		productDescriptionByBarcode,
 		warehouseNameById,
 		stockQuantityByWarehouseBarcode,
-		usageCountByWarehouseBarcode,
+		usageItemsByWarehouseBarcode,
 	]);
 
 	const usageRows = useMemo<UsageRow[]>(() => {
