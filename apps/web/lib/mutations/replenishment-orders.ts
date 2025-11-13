@@ -12,10 +12,11 @@ type CreateReplenishmentOrderPostOptions = Parameters<
 /**
  * Type inference for the JSON payload expected by the API
  */
-type InferredPayload =
-	CreateReplenishmentOrderPostOptions extends { json: infer J }
-		? J
-		: never;
+type InferredPayload = CreateReplenishmentOrderPostOptions extends {
+	json: infer J;
+}
+	? J
+	: never;
 
 /**
  * Explicit type definition for replenishment order detail items.
@@ -76,8 +77,7 @@ type LinkTransferPatchOptions = Parameters<
 	(typeof client.api.auth)["replenishment-orders"][":id"]["link-transfer"]["$patch"]
 >[0];
 
-export type LinkTransferToReplenishmentOrderPayload =
-	LinkTransferPatchOptions;
+export type LinkTransferToReplenishmentOrderPayload = LinkTransferPatchOptions;
 
 const invalidateReplenishmentQueries = (orderId?: string | null) => {
 	const queryClient = getQueryClient();
@@ -143,9 +143,8 @@ export const useUpdateReplenishmentOrder = () =>
 	useMutation({
 		mutationKey: ["update-replenishment-order"],
 		mutationFn: async (options: UpdateReplenishmentOrderPayload) => {
-			const response = await client.api.auth["replenishment-orders"][":id"].$put(
-				options,
-			);
+			const response =
+				await client.api.auth["replenishment-orders"][":id"].$put(options);
 			const result = await response.json();
 			if (!result?.success) {
 				throw new Error(
@@ -181,9 +180,9 @@ export const useLinkTransferToReplenishmentOrder = () =>
 		mutationKey: ["link-transfer-to-replenishment-order"],
 		mutationFn: async (options: LinkTransferToReplenishmentOrderPayload) => {
 			const response =
-				await client.api.auth["replenishment-orders"][":id"]["link-transfer"].$patch(
-					options,
-				);
+				await client.api.auth["replenishment-orders"][":id"][
+					"link-transfer"
+				].$patch(options);
 			const result = await response.json();
 			if (!result?.success) {
 				throw new Error(
@@ -208,6 +207,62 @@ export const useLinkTransferToReplenishmentOrder = () =>
 		onError: (error) => {
 			toast.error("Error al vincular traspaso", {
 				id: "link-transfer-to-replenishment-order",
+			});
+			// biome-ignore lint/suspicious/noConsole: Needed for debugging
+			console.error(error);
+		},
+	});
+
+type MarkBuyOrderGeneratedPostOptions = Parameters<
+	(typeof client.api.auth)["replenishment-orders"]["mark-buy-order-generated"]["$patch"]
+>[0];
+
+export type MarkBuyOrderGeneratedPayload =
+	MarkBuyOrderGeneratedPostOptions extends { json: infer J } ? J : never;
+
+/**
+ * Hook for marking replenishment order details as having a buy order generated.
+ * This is called when a CSV is exported for buy order automation.
+ *
+ * @returns Mutation hook for marking buy orders as generated
+ */
+export const useMarkBuyOrderGenerated = () =>
+	useMutation({
+		mutationKey: ["mark-buy-order-generated"],
+		mutationFn: async (data: { detailIds: string[] }) => {
+			const response = await client.api.auth["replenishment-orders"][
+				"mark-buy-order-generated"
+			].$patch({
+				json: { detailIds: data.detailIds },
+			});
+			const result = await response.json();
+			if (!result?.success) {
+				throw new Error(
+					result?.message ||
+						"La API devolvió éxito=false al marcar pedidos de compra como generados",
+				);
+			}
+			return result;
+		},
+		onMutate: () => {
+			toast.loading("Marcando pedidos de compra como generados...", {
+				id: "mark-buy-order-generated",
+			});
+		},
+		onSuccess: () => {
+			toast.success("Pedidos de compra marcados correctamente", {
+				id: "mark-buy-order-generated",
+			});
+			const queryClient = getQueryClient();
+			invalidateReplenishmentQueries();
+			// Invalidate unfulfilled products query to refresh the list
+			queryClient.invalidateQueries({
+				queryKey: createQueryKey(queryKeys.unfulfilledProducts, ["all"]),
+			});
+		},
+		onError: (error) => {
+			toast.error("Error al marcar pedidos de compra", {
+				id: "mark-buy-order-generated",
 			});
 			// biome-ignore lint/suspicious/noConsole: Needed for debugging
 			console.error(error);

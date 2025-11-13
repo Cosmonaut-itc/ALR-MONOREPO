@@ -4,6 +4,7 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { endOfDay, format, parseISO, startOfDay, subDays } from "date-fns";
 import { es } from "date-fns/locale";
+import { ChevronDownIcon, Download } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -12,6 +13,11 @@ import { DashboardMetricCard } from "@/components/DashboardMetricCard";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+	Collapsible,
+	CollapsibleContent,
+	CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import {
 	Dialog,
 	DialogContent,
@@ -25,6 +31,7 @@ import {
 	PopoverContent,
 	PopoverTrigger,
 } from "@/components/ui/popover";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
 	Select,
 	SelectContent,
@@ -57,6 +64,7 @@ import {
 	getStockLimitsByWarehouse,
 } from "@/lib/fetch-functions/stock-limits";
 import { createQueryKey } from "@/lib/helpers";
+import { useMarkBuyOrderGenerated } from "@/lib/mutations/replenishment-orders";
 import { queryKeys } from "@/lib/query-keys";
 import {
 	buildCabinetLookup,
@@ -129,6 +137,7 @@ type UnfulfilledProduct = {
 	quantityNeeded?: number;
 	orderNumber?: string;
 	orderId?: string;
+	detailId?: string;
 };
 
 /**
@@ -244,6 +253,18 @@ const normalizeUnfulfilledProducts = (
 						? record.replenishmentOrderId
 						: undefined;
 
+		const detailId =
+			typeof record.detailId === "string"
+				? record.detailId
+				: typeof record.detail_id === "string"
+					? record.detail_id
+					: typeof record.id === "string" &&
+							/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+								record.id,
+							)
+						? record.id
+						: undefined;
+
 		return [
 			{
 				barcode,
@@ -255,6 +276,7 @@ const normalizeUnfulfilledProducts = (
 				quantityNeeded,
 				orderNumber,
 				orderId,
+				detailId,
 			},
 		];
 	});
@@ -262,6 +284,66 @@ const normalizeUnfulfilledProducts = (
 
 const formatDateVerbose = (date: Date) =>
 	format(date, "dd 'de' MMMM yyyy", { locale: es });
+
+/**
+ * Escapes a CSV field value by wrapping it in quotes if it contains commas, quotes, or newlines.
+ *
+ * @param field - The field value to escape.
+ * @returns The escaped CSV field value.
+ */
+const escapeCsvField = (field: string | number | null | undefined): string => {
+	if (field == null) {
+		return "";
+	}
+	const str = String(field);
+	if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+		return `"${str.replace(/"/g, '""')}"`;
+	}
+	return str;
+};
+
+/**
+ * Converts an array of objects to CSV format and triggers a download.
+ *
+ * @param data - Array of objects to convert to CSV.
+ * @param headers - Array of header objects with `label` and `key` properties.
+ * @param filename - The filename for the downloaded CSV file (without extension).
+ * @returns True if the download was successful, false otherwise.
+ */
+const downloadCsv = (
+	data: Record<string, string | number | null | undefined>[],
+	headers: Array<{ label: string; key: string }>,
+	filename: string,
+): boolean => {
+	if (data.length === 0) {
+		return false;
+	}
+
+	// Create CSV header row
+	const headerRow = headers.map((h) => escapeCsvField(h.label)).join(",");
+
+	// Create CSV data rows
+	const dataRows = data.map((row) =>
+		headers.map((h) => escapeCsvField(row[h.key])).join(","),
+	);
+
+	// Combine header and data rows
+	const csvContent = [headerRow, ...dataRows].join("\n");
+
+	// Create blob and download
+	const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+	const link = document.createElement("a");
+	const url = URL.createObjectURL(blob);
+
+	link.setAttribute("href", url);
+	link.setAttribute("download", `${filename}.csv`);
+	link.style.visibility = "hidden";
+	document.body.appendChild(link);
+	link.click();
+	document.body.removeChild(link);
+	URL.revokeObjectURL(url);
+	return true;
+};
 
 const toStockLimits = (response: StockLimitsResponse): StockLimit[] => {
 	if (
@@ -1217,16 +1299,124 @@ const LowStockTable = ({
 		fallbackId?: string | null,
 	) => string | null;
 }) => {
+	const [isLowStockOpen, setIsLowStockOpen] = useState(true);
+	const [isUnfulfilledOpen, setIsUnfulfilledOpen] = useState(true);
+	const markBuyOrderGenerated = useMarkBuyOrderGenerated();
+
 	const hasLowStock = items.length > 0;
 	const hasUnfulfilled = unfulfilledProducts.length > 0;
 	const hasAnyData = hasLowStock || hasUnfulfilled;
 
+	/**
+	 * Exports merged data from low stock items and unfulfilled products to CSV.
+	 * Combines both data sources into a single table for buy order automation.
+	 * Also marks unfulfilled replenishment order details as having buy orders generated.
+	 */
+	const handleExportCsv = () => {
+		const csvData: Record<string, string | number | null | undefined>[] = [];
+
+		// Add low stock items
+		for (const item of items) {
+			const productName = resolveProductName(item.barcode, item.description);
+			const productIdSuffix = resolveProductId(item.barcode, item.productId);
+			const quantityNeeded = Math.max(0, item.min - item.current);
+
+			csvData.push({
+				producto: productName,
+				codigoBarras: item.barcode,
+				idProducto: productIdSuffix ?? "",
+				almacen: resolveWarehouseName(item.warehouseId),
+				cantidadNecesaria: quantityNeeded,
+				origen: "Stock bajo",
+				numeroPedido: "",
+				stockActual: item.current,
+				stockMinimo: item.min,
+			});
+		}
+
+		// Add unfulfilled products
+		for (const product of unfulfilledProducts) {
+			const productName = product.productName
+				? product.productName
+				: resolveProductName(product.barcode);
+			const productIdSuffix = resolveProductId(
+				product.barcode,
+				product.productId,
+			);
+			const warehouseName = product.warehouseName
+				? product.warehouseName
+				: product.warehouseId
+					? resolveWarehouseName(product.warehouseId)
+					: product.sourceWarehouseId
+						? resolveWarehouseName(product.sourceWarehouseId)
+						: "N/A";
+
+			csvData.push({
+				producto: productName,
+				codigoBarras: product.barcode,
+				idProducto: productIdSuffix ?? "",
+				almacen: warehouseName,
+				cantidadNecesaria: product.quantityNeeded ?? 0,
+				origen: "Pedido sin cumplir",
+				numeroPedido: product.orderNumber ?? product.orderId ?? "",
+				stockActual: "",
+				stockMinimo: "",
+			});
+		}
+
+		if (csvData.length === 0) {
+			return;
+		}
+
+		// Define CSV headers
+		const csvHeaders = [
+			{ label: "Producto", key: "producto" },
+			{ label: "Código de barras", key: "codigoBarras" },
+			{ label: "ID Producto", key: "idProducto" },
+			{ label: "Almacén", key: "almacen" },
+			{ label: "Cantidad necesaria", key: "cantidadNecesaria" },
+			{ label: "Origen", key: "origen" },
+			{ label: "Número de pedido", key: "numeroPedido" },
+			{ label: "Stock actual", key: "stockActual" },
+			{ label: "Stock mínimo", key: "stockMinimo" },
+		];
+
+		// Generate filename with timestamp
+		const timestamp = format(new Date(), "yyyy-MM-dd_HH-mm-ss", {
+			locale: es,
+		});
+		const filename = `pedidos_compra_${timestamp}`;
+
+		// Download CSV
+		downloadCsv(csvData, csvHeaders, filename);
+
+		// Extract detail IDs from unfulfilled products and mark them as having buy orders generated
+		const detailIds = unfulfilledProducts
+			.map((product) => product.detailId)
+			.filter((id): id is string => typeof id === "string" && id.length > 0);
+
+		if (detailIds.length > 0) {
+			markBuyOrderGenerated.mutate({ detailIds });
+		}
+	};
+
 	return (
 		<Card className="card-transition xl:col-span-2">
-			<CardHeader>
+			<CardHeader className="flex flex-row items-center justify-between">
 				<CardTitle className="text-base font-semibold text-[#11181C] dark:text-[#ECEDEE]">
 					Productos para crear pedidos de compra
 				</CardTitle>
+				{hasAnyData && (
+					<Button
+						onClick={handleExportCsv}
+						variant="outline"
+						size="sm"
+						type="button"
+					>
+						<Download className="mr-2 h-4 w-4" />
+						Exportar CSV
+					</Button>
+				)}
 			</CardHeader>
 			<CardContent className="flex flex-col gap-6">
 				{!hasAnyData ? (
@@ -1237,129 +1427,191 @@ const LowStockTable = ({
 				) : (
 					<>
 						{hasLowStock && (
-							<div className="flex flex-col gap-3">
-								<h3 className="text-sm font-semibold text-[#11181C] dark:text-[#ECEDEE]">
-									Productos por debajo del mínimo
-								</h3>
-								<Table>
-									<TableHeader>
-										<TableRow>
-											<TableHead>Producto</TableHead>
-											<TableHead className="text-center">Almacén</TableHead>
-											<TableHead className="text-center">Actual</TableHead>
-											<TableHead className="text-center">Mínimo</TableHead>
-										</TableRow>
-									</TableHeader>
-									<TableBody>
-										{items.slice(0, 6).map((item) => {
-											const productName = resolveProductName(
-												item.barcode,
-												item.description,
-											);
-											const productIdSuffix = resolveProductId(
-												item.barcode,
-												item.productId,
-											);
-											return (
-												<TableRow
-													key={`low-stock-${item.warehouseId}-${item.barcode}`}
-												>
-													<TableCell>
-														<div className="flex flex-col">
-															<span className="font-medium text-[#11181C] dark:text-[#ECEDEE]">
-																{productName}
-															</span>
-															<span className="text-xs text-[#9BA1A6]">
-																{productIdSuffix
-																	? `ID ${productIdSuffix}`
-																	: "ID —"}{" "}
-																• #{item.barcode}
-															</span>
-														</div>
-													</TableCell>
-													<TableCell className="text-center text-sm text-[#687076] dark:text-[#9BA1A6]">
-														{resolveWarehouseName(item.warehouseId)}
-													</TableCell>
-													<TableCell className="text-center font-semibold text-[#E85D04]">
-														{item.current}
-													</TableCell>
-													<TableCell className="text-center text-sm text-[#687076] dark:text-[#9BA1A6]">
-														{item.min}
-													</TableCell>
-												</TableRow>
-											);
-										})}
-									</TableBody>
-								</Table>
-							</div>
+							<Collapsible
+								open={isLowStockOpen}
+								onOpenChange={setIsLowStockOpen}
+							>
+								<div className="flex flex-col gap-3">
+									<CollapsibleTrigger asChild>
+										<Button
+											variant="ghost"
+											className="flex h-auto items-center justify-between p-0 hover:bg-transparent"
+											type="button"
+										>
+											<h3 className="text-sm font-semibold text-[#11181C] dark:text-[#ECEDEE]">
+												Productos por debajo del mínimo
+											</h3>
+											<ChevronDownIcon
+												className={cn(
+													"size-4 text-[#687076] transition-transform dark:text-[#9BA1A6]",
+													isLowStockOpen && "rotate-180",
+												)}
+											/>
+										</Button>
+									</CollapsibleTrigger>
+									<CollapsibleContent>
+										<ScrollArea className="h-[400px]">
+											<Table>
+												<TableHeader>
+													<TableRow>
+														<TableHead>Producto</TableHead>
+														<TableHead className="text-center">
+															Almacén
+														</TableHead>
+														<TableHead className="text-center">
+															Actual
+														</TableHead>
+														<TableHead className="text-center">
+															Mínimo
+														</TableHead>
+													</TableRow>
+												</TableHeader>
+												<TableBody>
+													{items.map((item) => {
+														const productName = resolveProductName(
+															item.barcode,
+															item.description,
+														);
+														const productIdSuffix = resolveProductId(
+															item.barcode,
+															item.productId,
+														);
+														return (
+															<TableRow
+																key={`low-stock-${item.warehouseId}-${item.barcode}`}
+															>
+																<TableCell>
+																	<div className="flex flex-col">
+																		<span className="font-medium text-[#11181C] dark:text-[#ECEDEE]">
+																			{productName}
+																		</span>
+																		<span className="text-xs text-[#9BA1A6]">
+																			{productIdSuffix
+																				? `ID ${productIdSuffix}`
+																				: "ID —"}{" "}
+																			• #{item.barcode}
+																		</span>
+																	</div>
+																</TableCell>
+																<TableCell className="text-center text-sm text-[#687076] dark:text-[#9BA1A6]">
+																	{resolveWarehouseName(item.warehouseId)}
+																</TableCell>
+																<TableCell className="text-center font-semibold text-[#E85D04]">
+																	{item.current}
+																</TableCell>
+																<TableCell className="text-center text-sm text-[#687076] dark:text-[#9BA1A6]">
+																	{item.min}
+																</TableCell>
+															</TableRow>
+														);
+													})}
+												</TableBody>
+											</Table>
+										</ScrollArea>
+									</CollapsibleContent>
+								</div>
+							</Collapsible>
 						)}
 
 						{hasUnfulfilled && (
-							<div className="flex flex-col gap-3">
-								{hasLowStock && (
-									<div className="border-t border-[#E5E7EB] dark:border-[#2D3033]" />
-								)}
-								<h3 className="text-sm font-semibold text-[#11181C] dark:text-[#ECEDEE]">
-									Productos sin cumplir en pedidos de reabastecimiento
-								</h3>
-								<Table>
-									<TableHeader>
-										<TableRow>
-											<TableHead>Producto</TableHead>
-											<TableHead className="text-center">Almacén</TableHead>
-											<TableHead className="text-center">Cantidad</TableHead>
-											<TableHead className="text-center">Pedido</TableHead>
-										</TableRow>
-									</TableHeader>
-									<TableBody>
-										{unfulfilledProducts.slice(0, 6).map((product, index) => {
-											const productName = product.productName
-												? product.productName
-												: resolveProductName(product.barcode);
-											const productIdSuffix = resolveProductId(
-												product.barcode,
-												product.productId,
-											);
-											// Resolve warehouse name: check warehouseName, then warehouseId, then sourceWarehouseId
-											const warehouseName = product.warehouseName
-												? product.warehouseName
-												: product.warehouseId
-													? resolveWarehouseName(product.warehouseId)
-													: product.sourceWarehouseId
-														? resolveWarehouseName(product.sourceWarehouseId)
-														: "N/A";
-											return (
-												<TableRow
-													key={`unfulfilled-${product.orderId ?? index}-${product.barcode}`}
-												>
-													<TableCell>
-														<div className="flex flex-col">
-															<span className="font-medium text-[#11181C] dark:text-[#ECEDEE]">
-																{productName}
-															</span>
-															<span className="text-xs text-[#9BA1A6]">
-																{productIdSuffix
-																	? `ID ${productIdSuffix}`
-																	: "ID —"}{" "}
-																• #{product.barcode}
-															</span>
-														</div>
-													</TableCell>
-													<TableCell className="text-center text-sm text-[#687076] dark:text-[#9BA1A6]">
-														{warehouseName}
-													</TableCell>
-													<TableCell className="text-center font-semibold text-[#0a7ea4]">
-														{product.quantityNeeded ?? "—"}
-													</TableCell>
-													<TableCell className="text-center text-sm text-[#687076] dark:text-[#9BA1A6]">
-														{product.orderNumber ?? product.orderId ?? "—"}
-													</TableCell>
-												</TableRow>
-											);
-										})}
-									</TableBody>
-								</Table>
-							</div>
+							<Collapsible
+								open={isUnfulfilledOpen}
+								onOpenChange={setIsUnfulfilledOpen}
+							>
+								<div className="flex flex-col gap-3">
+									{hasLowStock && (
+										<div className="border-t border-[#E5E7EB] dark:border-[#2D3033]" />
+									)}
+									<CollapsibleTrigger asChild>
+										<Button
+											variant="ghost"
+											className="flex h-auto items-center justify-between p-0 hover:bg-transparent"
+											type="button"
+										>
+											<h3 className="text-sm font-semibold text-[#11181C] dark:text-[#ECEDEE]">
+												Productos sin cumplir en pedidos de reabastecimiento
+											</h3>
+											<ChevronDownIcon
+												className={cn(
+													"size-4 text-[#687076] transition-transform dark:text-[#9BA1A6]",
+													isUnfulfilledOpen && "rotate-180",
+												)}
+											/>
+										</Button>
+									</CollapsibleTrigger>
+									<CollapsibleContent>
+										<ScrollArea className="h-[400px]">
+											<Table>
+												<TableHeader>
+													<TableRow>
+														<TableHead>Producto</TableHead>
+														<TableHead className="text-center">
+															Almacén
+														</TableHead>
+														<TableHead className="text-center">
+															Cantidad
+														</TableHead>
+														<TableHead className="text-center">
+															Pedido
+														</TableHead>
+													</TableRow>
+												</TableHeader>
+												<TableBody>
+													{unfulfilledProducts.map((product, index) => {
+														const productName = product.productName
+															? product.productName
+															: resolveProductName(product.barcode);
+														const productIdSuffix = resolveProductId(
+															product.barcode,
+															product.productId,
+														);
+														// Resolve warehouse name: check warehouseName, then warehouseId, then sourceWarehouseId
+														const warehouseName = product.warehouseName
+															? product.warehouseName
+															: product.warehouseId
+																? resolveWarehouseName(product.warehouseId)
+																: product.sourceWarehouseId
+																	? resolveWarehouseName(
+																			product.sourceWarehouseId,
+																		)
+																	: "N/A";
+														return (
+															<TableRow
+																key={`unfulfilled-${product.orderId ?? index}-${product.barcode}`}
+															>
+																<TableCell>
+																	<div className="flex flex-col">
+																		<span className="font-medium text-[#11181C] dark:text-[#ECEDEE]">
+																			{productName}
+																		</span>
+																		<span className="text-xs text-[#9BA1A6]">
+																			{productIdSuffix
+																				? `ID ${productIdSuffix}`
+																				: "ID —"}{" "}
+																			• #{product.barcode}
+																		</span>
+																	</div>
+																</TableCell>
+																<TableCell className="text-center text-sm text-[#687076] dark:text-[#9BA1A6]">
+																	{warehouseName}
+																</TableCell>
+																<TableCell className="text-center font-semibold text-[#0a7ea4]">
+																	{product.quantityNeeded ?? "—"}
+																</TableCell>
+																<TableCell className="text-center text-sm text-[#687076] dark:text-[#9BA1A6]">
+																	{product.orderNumber ??
+																		product.orderId ??
+																		"—"}
+																</TableCell>
+															</TableRow>
+														);
+													})}
+												</TableBody>
+											</Table>
+										</ScrollArea>
+									</CollapsibleContent>
+								</div>
+							</Collapsible>
 						)}
 					</>
 				)}
