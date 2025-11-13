@@ -2259,75 +2259,76 @@ export function EstadisticasPage({
 						</CardContent>
 					</Card>
 					<section className="flex flex-col gap-4">
-						<Card className="card-transition">
-							<CardHeader>
-								<CardTitle className="text-base font-semibold text-[#11181C] dark:text-[#ECEDEE]">
-									Pedidos de reabastecimiento
-								</CardTitle>
-							</CardHeader>
-							<CardContent className="grid gap-4">
-								<div className="grid grid-cols-3 gap-4">
-									<div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-4 text-center dark:border-[#2D3033] dark:bg-[#1E1F20]">
-										<p className="text-xs uppercase text-[#9BA1A6]">Abiertos</p>
-										<p className="text-xl font-semibold text-[#E85D04]">
-											{orderMetrics.open}
-										</p>
-									</div>
-									<div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-4 text-center dark:border-[#2D3033] dark:bg-[#1E1F20]">
-										<p className="text-xs uppercase text-[#9BA1A6]">Enviados</p>
-										<p className="text-xl font-semibold text-[#0a7ea4]">
-											{orderMetrics.sent}
-										</p>
-									</div>
-									<div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-4 text-center dark:border-[#2D3033] dark:bg-[#1E1F20]">
-										<p className="text-xs uppercase text-[#9BA1A6]">
-											Recibidos
-										</p>
-										<p className="text-xl font-semibold text-[#2E7D32]">
-											{orderMetrics.received}
-										</p>
-									</div>
-								</div>
-								<div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-4 text-sm text-[#687076] dark:border-[#2D3033] dark:bg-[#1E1F20] dark:text-[#9BA1A6]">
-									Promedio de días abiertos:{" "}
-									<strong>{orderMetrics.averageAge}</strong>
-								</div>
-							</CardContent>
-						</Card>
-						<Card className="card-transition">
-							<CardHeader>
-								<CardTitle className="text-base font-semibold text-[#11181C] dark:text-[#ECEDEE]">
-									Kits activos
-								</CardTitle>
-							</CardHeader>
-							<CardContent className="grid gap-4">
-								<div className="grid grid-cols-3 gap-4">
-									<div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-4 text-center dark:border-[#2D3033] dark:bg-[#1E1F20]">
-										<p className="text-xs uppercase text-[#9BA1A6]">Kits</p>
-										<p className="text-xl font-semibold text-[#11181C] dark:text-[#ECEDEE]">
-											{kitMetrics.totalKits}
-										</p>
-									</div>
-									<div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-4 text-center dark:border-[#2D3033] dark:bg-[#1E1F20]">
-										<p className="text-xs uppercase text-[#9BA1A6]">
-											Items activos
-										</p>
-										<p className="text-xl font-semibold text-[#0a7ea4]">
-											{kitMetrics.activeItems}
-										</p>
-									</div>
-									<div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-4 text-center dark:border-[#2D3033] dark:bg-[#1E1F20]">
-										<p className="text-xs uppercase text-[#9BA1A6]">
-											Items devueltos
-										</p>
-										<p className="text-xl font-semibold text-[#2E7D32]">
-											{kitMetrics.returnedItems}
-										</p>
-									</div>
-								</div>
-							</CardContent>
-						</Card>
+						<Card className="card-transition"></Card>
 					</section>
+				</section>
+				<section className="grid gap-4 xl:grid-cols-2">
+					<Card className="card-transition">
+						<CardHeader>
+							<CardTitle className="text-base font-semibold text-[#11181C] dark:text-[#ECEDEE]">
+								Pedidos de reabastecimiento
+							</CardTitle>
+						</CardHeader>
+						<CardContent className="grid gap-4">
+							<div className="grid grid-cols-3 gap-4">
+								<div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-4 text-center dark:border-[#2D3033] dark:bg-[#1E1F20]">
+									<p className="text-xs uppercase text-[#9BA1A6]">Abiertos</p>
+									<p className="text-xl font-semibold text-[#E85D04]">
+										{orderMetrics.open}
+									</p>
+								</div>
+								<div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-4 text-center dark:border-[#2D3033] dark:bg-[#1E1F20]">
+									<p className="text-xs uppercase text-[#9BA1A6]">Enviados</p>
+									<p className="text-xl font-semibold text-[#0a7ea4]">
+										{orderMetrics.sent}
+									</p>
+								</div>
+								<div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-4 text-center dark:border-[#2D3033] dark:bg-[#1E1F20]">
+									<p className="text-xs uppercase text-[#9BA1A6]">Recibidos</p>
+									<p className="text-xl font-semibold text-[#2E7D32]">
+										{orderMetrics.received}
+									</p>
+								</div>
+							</div>
+							<div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-4 text-sm text-[#687076] dark:border-[#2D3033] dark:bg-[#1E1F20] dark:text-[#9BA1A6]">
+								Promedio de días abiertos:{" "}
+								<strong>{orderMetrics.averageAge}</strong>
+							</div>
+						</CardContent>
+					</Card>
+					<Card className="card-transition">
+						<CardHeader>
+							<CardTitle className="text-base font-semibold text-[#11181C] dark:text-[#ECEDEE]">
+								Kits activos
+							</CardTitle>
+						</CardHeader>
+						<CardContent className="grid gap-4">
+							<div className="grid grid-cols-3 gap-4">
+								<div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-4 text-center dark:border-[#2D3033] dark:bg-[#1E1F20]">
+									<p className="text-xs uppercase text-[#9BA1A6]">Kits</p>
+									<p className="text-xl font-semibold text-[#11181C] dark:text-[#ECEDEE]">
+										{kitMetrics.totalKits}
+									</p>
+								</div>
+								<div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-4 text-center dark:border-[#2D3033] dark:bg-[#1E1F20]">
+									<p className="text-xs uppercase text-[#9BA1A6]">
+										Items activos
+									</p>
+									<p className="text-xl font-semibold text-[#0a7ea4]">
+										{kitMetrics.activeItems}
+									</p>
+								</div>
+								<div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-4 text-center dark:border-[#2D3033] dark:bg-[#1E1F20]">
+									<p className="text-xs uppercase text-[#9BA1A6]">
+										Items devueltos
+									</p>
+									<p className="text-xl font-semibold text-[#2E7D32]">
+										{kitMetrics.returnedItems}
+									</p>
+								</div>
+							</div>
+						</CardContent>
+					</Card>
 				</section>
 
 				<section className="grid gap-4 xl:grid-cols-2">
