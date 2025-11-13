@@ -598,7 +598,12 @@ export const computeLowStock = (
 		}
 		const mapKey = `${warehouse}::${barcode}`;
 		const current = stockByKey.get(mapKey) ?? 0;
-		if (current < limit.minQuantity) {
+		// Only check quantity-based limits for low stock
+		// Usage limits are tracked differently and don't affect "low stock" alerts
+		if (
+			limit.limitType === "quantity" &&
+			current < limit.minQuantity
+		) {
 			const sample = sampleByKey.get(mapKey) ?? null;
 			lowItems.push({
 				barcode,

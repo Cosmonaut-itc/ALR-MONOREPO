@@ -132,8 +132,11 @@ export type ProductCatalogItem = ProductCatalogData extends { data: infer T }
 export type StockLimit = {
 	warehouseId: string;
 	barcode: number;
+	limitType: "quantity" | "usage";
 	minQuantity: number;
 	maxQuantity: number;
+	minUsage: number | null;
+	maxUsage: number | null;
 	notes?: string | null;
 };
 

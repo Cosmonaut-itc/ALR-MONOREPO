@@ -168,14 +168,20 @@ type LimitDialogContext = {
 };
 
 type LimitFormState = {
+	limitType: "quantity" | "usage";
 	minQuantity: string;
 	maxQuantity: string;
+	minUsage: string;
+	maxUsage: string;
 	notes: string;
 };
 
 const createEmptyLimitFormState = (): LimitFormState => ({
+	limitType: "quantity",
 	minQuantity: "",
 	maxQuantity: "",
+	minUsage: "",
+	maxUsage: "",
 	notes: "",
 });
 
@@ -216,11 +222,12 @@ function extractInventoryItemData(
 ): InventoryItemDisplay {
 	if (item && typeof item === "object" && "productStock" in item) {
 		const itemStock = (item as { productStock: StockItem }).productStock;
-	const employee = (
-		item as { employee?: { name?: string; surname?: string } }
-	).employee;
-	const isKitFlag = (itemStock as { isKit?: boolean | null }).isKit ?? false;
-	const isEmptyFlag = (itemStock as { isEmpty?: boolean | null }).isEmpty ?? false;
+		const employee = (
+			item as { employee?: { name?: string; surname?: string } }
+		).employee;
+		const isKitFlag = (itemStock as { isKit?: boolean | null }).isKit ?? false;
+		const isEmptyFlag =
+			(itemStock as { isEmpty?: boolean | null }).isEmpty ?? false;
 		const locationId = getItemWarehouse(itemStock);
 		const rawCabinet = (itemStock as { currentCabinet?: unknown })
 			.currentCabinet;
@@ -254,10 +261,10 @@ function extractInventoryItemData(
 			currentWarehouse: locationId,
 			currentCabinet: cabinetId,
 			homeWarehouseId: warehouseId,
-		locationType,
-		isKit: Boolean(isKitFlag),
-		isEmpty: Boolean(isEmptyFlag),
-	};
+			locationType,
+			isKit: Boolean(isKitFlag),
+			isEmpty: Boolean(isEmptyFlag),
+		};
 
 		return result;
 	}
@@ -706,16 +713,31 @@ export function ProductCatalogTable({
 
 	const handleOpenLimitDialog = useCallback((context: LimitDialogContext) => {
 		setLimitDialogContext(context);
+		const existingLimit = context.limit;
+		const limitType = existingLimit?.limitType ?? "quantity";
 		setLimitFormState({
+			limitType,
 			minQuantity:
-				context.limit && Number.isFinite(context.limit.minQuantity)
-					? context.limit.minQuantity.toString()
+				existingLimit && Number.isFinite(existingLimit.minQuantity)
+					? existingLimit.minQuantity.toString()
 					: "",
 			maxQuantity:
-				context.limit && Number.isFinite(context.limit.maxQuantity)
-					? context.limit.maxQuantity.toString()
+				existingLimit && Number.isFinite(existingLimit.maxQuantity)
+					? existingLimit.maxQuantity.toString()
 					: "",
-			notes: context.limit?.notes ?? "",
+			minUsage:
+				existingLimit &&
+				existingLimit.minUsage !== null &&
+				Number.isFinite(existingLimit.minUsage)
+					? existingLimit.minUsage.toString()
+					: "",
+			maxUsage:
+				existingLimit &&
+				existingLimit.maxUsage !== null &&
+				Number.isFinite(existingLimit.maxUsage)
+					? existingLimit.maxUsage.toString()
+					: "",
+			notes: existingLimit?.notes ?? "",
 		});
 		setLimitFormError(null);
 		setIsLimitDialogOpen(true);
@@ -732,10 +754,25 @@ export function ProductCatalogTable({
 
 	const handleLimitFormChange = useCallback(
 		(field: keyof LimitFormState, value: string) => {
-			setLimitFormState((prev) => ({
-				...prev,
-				[field]: value,
-			}));
+			setLimitFormState((prev) => {
+				// If changing limitType, clear the fields for the other type
+				if (field === "limitType") {
+					const newLimitType = value as "quantity" | "usage";
+					return {
+						...prev,
+						limitType: newLimitType,
+						// Clear the other type's fields
+						minQuantity: newLimitType === "quantity" ? prev.minQuantity : "",
+						maxQuantity: newLimitType === "quantity" ? prev.maxQuantity : "",
+						minUsage: newLimitType === "usage" ? prev.minUsage : "",
+						maxUsage: newLimitType === "usage" ? prev.maxUsage : "",
+					};
+				}
+				return {
+					...prev,
+					[field]: value,
+				};
+			});
 			setLimitFormError(null);
 		},
 		[],
@@ -750,70 +787,150 @@ export function ProductCatalogTable({
 			setLimitFormError("No se pudo determinar el almacén para este límite.");
 			return;
 		}
-		const rawMin = limitFormState.minQuantity.trim();
-		const rawMax = limitFormState.maxQuantity.trim();
-		if (!rawMin || !rawMax) {
-			setLimitFormError("Completa los campos de mínimo y máximo.");
-			return;
-		}
-		const min = Number.parseInt(rawMin, 10);
-		const max = Number.parseInt(rawMax, 10);
-		if (Number.isNaN(min) || Number.isNaN(max)) {
-			setLimitFormError("Ingresa cantidades numéricas válidas.");
-			return;
-		}
-		if (min < 0 || max < 0) {
-			setLimitFormError("Las cantidades no pueden ser negativas.");
-			return;
-		}
-		if (min > max) {
-			setLimitFormError("El mínimo no puede ser mayor al máximo.");
-			return;
-		}
+
+		const limitType = limitFormState.limitType;
 		const notesValue = limitFormState.notes.trim();
-		// Use the first barcode ID for stock limit operations
-		const barcodeForLimit =
-			product.barcodeIds.length > 0
-				? product.barcodeIds[0]
-				: typeof product.barcode === "number"
-					? product.barcode
-					: Number.parseInt(String(product.barcode).split(",")[0] || "0", 10);
-		if (!barcodeForLimit || Number.isNaN(barcodeForLimit)) {
-			setLimitFormError("No se pudo determinar el código de barras del producto.");
-			return;
-		}
-		try {
-			if (limit) {
-				await updateStockLimit({
-					warehouseId,
-					barcode: barcodeForLimit,
-					minQuantity: min,
-					maxQuantity: max,
-					notes: notesValue.length > 0 ? notesValue : undefined,
-				});
-			} else {
-				await createStockLimit({
-					warehouseId,
-					barcode: barcodeForLimit,
-					minQuantity: min,
-					maxQuantity: max,
-					notes: notesValue.length > 0 ? notesValue : undefined,
-				});
+
+		// Validate based on limit type
+		if (limitType === "quantity") {
+			const rawMin = limitFormState.minQuantity.trim();
+			const rawMax = limitFormState.maxQuantity.trim();
+			if (!rawMin || !rawMax) {
+				setLimitFormError("Completa los campos de cantidad mínima y máxima.");
+				return;
 			}
-			handleLimitDialogOpenChange(false);
-		} catch (error) {
-			if (error instanceof Error && error.message) {
-				setLimitFormError(error.message);
-			} else {
-				setLimitFormError("No se pudo guardar el límite.");
+			const min = Number.parseInt(rawMin, 10);
+			const max = Number.parseInt(rawMax, 10);
+			if (Number.isNaN(min) || Number.isNaN(max)) {
+				setLimitFormError("Ingresa cantidades numéricas válidas.");
+				return;
+			}
+			if (min < 0 || max < 0) {
+				setLimitFormError("Las cantidades no pueden ser negativas.");
+				return;
+			}
+			if (min > max) {
+				setLimitFormError("La cantidad mínima no puede ser mayor a la máxima.");
+				return;
+			}
+
+			// Use the first barcode ID for stock limit operations
+			const barcodeForLimit =
+				product.barcodeIds.length > 0
+					? product.barcodeIds[0]
+					: typeof product.barcode === "number"
+						? product.barcode
+						: Number.parseInt(String(product.barcode).split(",")[0] || "0", 10);
+			if (!barcodeForLimit || Number.isNaN(barcodeForLimit)) {
+				setLimitFormError(
+					"No se pudo determinar el código de barras del producto.",
+				);
+				return;
+			}
+
+			try {
+				if (limit) {
+					await updateStockLimit({
+						warehouseId,
+						barcode: barcodeForLimit,
+						limitType: "quantity",
+						minQuantity: min,
+						maxQuantity: max,
+						notes: notesValue.length > 0 ? notesValue : undefined,
+					});
+				} else {
+					await createStockLimit({
+						warehouseId,
+						barcode: barcodeForLimit,
+						limitType: "quantity",
+						minQuantity: min,
+						maxQuantity: max,
+						notes: notesValue.length > 0 ? notesValue : undefined,
+					});
+				}
+				handleLimitDialogOpenChange(false);
+			} catch (error) {
+				if (error instanceof Error && error.message) {
+					setLimitFormError(error.message);
+				} else {
+					setLimitFormError("No se pudo guardar el límite.");
+				}
+			}
+		} else {
+			// limitType === "usage"
+			const rawMinUsage = limitFormState.minUsage.trim();
+			const rawMaxUsage = limitFormState.maxUsage.trim();
+			if (!rawMinUsage || !rawMaxUsage) {
+				setLimitFormError("Completa los campos de uso mínimo y máximo.");
+				return;
+			}
+			const minUsage = Number.parseInt(rawMinUsage, 10);
+			const maxUsage = Number.parseInt(rawMaxUsage, 10);
+			if (Number.isNaN(minUsage) || Number.isNaN(maxUsage)) {
+				setLimitFormError("Ingresa valores numéricos válidos.");
+				return;
+			}
+			if (minUsage < 0 || maxUsage < 0) {
+				setLimitFormError("Los valores de uso no pueden ser negativos.");
+				return;
+			}
+			if (minUsage > maxUsage) {
+				setLimitFormError("El uso mínimo no puede ser mayor al máximo.");
+				return;
+			}
+
+			// Use the first barcode ID for stock limit operations
+			const barcodeForLimit =
+				product.barcodeIds.length > 0
+					? product.barcodeIds[0]
+					: typeof product.barcode === "number"
+						? product.barcode
+						: Number.parseInt(String(product.barcode).split(",")[0] || "0", 10);
+			if (!barcodeForLimit || Number.isNaN(barcodeForLimit)) {
+				setLimitFormError(
+					"No se pudo determinar el código de barras del producto.",
+				);
+				return;
+			}
+
+			try {
+				if (limit) {
+					await updateStockLimit({
+						warehouseId,
+						barcode: barcodeForLimit,
+						limitType: "usage",
+						minUsage,
+						maxUsage,
+						notes: notesValue.length > 0 ? notesValue : undefined,
+					});
+				} else {
+					await createStockLimit({
+						warehouseId,
+						barcode: barcodeForLimit,
+						limitType: "usage",
+						minUsage,
+						maxUsage,
+						notes: notesValue.length > 0 ? notesValue : undefined,
+					});
+				}
+				handleLimitDialogOpenChange(false);
+			} catch (error) {
+				if (error instanceof Error && error.message) {
+					setLimitFormError(error.message);
+				} else {
+					setLimitFormError("No se pudo guardar el límite.");
+				}
 			}
 		}
 	}, [
 		createStockLimit,
 		handleLimitDialogOpenChange,
 		limitDialogContext,
+		limitFormState.limitType,
 		limitFormState.maxQuantity,
 		limitFormState.minQuantity,
+		limitFormState.minUsage,
+		limitFormState.maxUsage,
 		limitFormState.notes,
 		updateStockLimit,
 	]);
@@ -835,8 +952,18 @@ export function ProductCatalogTable({
 						product.barcode as string | number | undefined,
 						product.good_id as number | string | undefined,
 					);
+					// Normalize barcode to number for store (use first barcode ID or parse)
+					const normalizedBarcode: number =
+						parsedBarcode.barcodeIds.length > 0
+							? parsedBarcode.barcodeIds[0]
+							: typeof parsedBarcode.barcode === "number"
+								? parsedBarcode.barcode
+								: Number.parseInt(
+										String(parsedBarcode.barcode).split(",")[0] || "0",
+										10,
+									) || 0;
 					return {
-						barcode: parsedBarcode.barcode,
+						barcode: normalizedBarcode,
 						barcodeIds: parsedBarcode.barcodeIds,
 						name: product.title || "Producto sin nombre",
 						category: product.category || "Sin categoría",
@@ -1033,7 +1160,10 @@ export function ProductCatalogTable({
 	 * @returns True if the product has the specified violation type in any warehouse.
 	 */
 	const hasStockLimitViolation = useCallback(
-		(product: ProductWithInventory, filterType: "below-minimum" | "above-maximum"): boolean => {
+		(
+			product: ProductWithInventory,
+			filterType: "below-minimum" | "above-maximum",
+		): boolean => {
 			if (!stockLimitsMap || stockLimitsMap.size === 0) {
 				return false;
 			}
@@ -1092,8 +1222,14 @@ export function ProductCatalogTable({
 				}
 
 				const currentCount = group.items.length;
-				const belowMinimum = currentCount < limit.minQuantity;
-				const aboveMaximum = currentCount > limit.maxQuantity;
+				const belowMinimum =
+					limit.limitType === "quantity"
+						? currentCount < limit.minQuantity
+						: false;
+				const aboveMaximum =
+					limit.limitType === "quantity"
+						? currentCount > limit.maxQuantity
+						: false;
 
 				if (filterType === "below-minimum" && belowMinimum) {
 					return true;
@@ -1564,7 +1700,8 @@ export function ProductCatalogTable({
 					const warehouseId = warehouseOption.value;
 					if (!groupedByWarehouse.has(warehouseId)) {
 						const isDistributionCenter = distributionCenterIds.has(warehouseId);
-						const effectiveWarehouseId = resolveWarehouseIdForLimit(warehouseId);
+						const effectiveWarehouseId =
+							resolveWarehouseIdForLimit(warehouseId);
 						groupedByWarehouse.set(warehouseId, {
 							label: warehouseOption.label,
 							items: [],
@@ -1601,18 +1738,30 @@ export function ProductCatalogTable({
 							product.barcodeIds,
 						);
 						const currentCount = group.items.length;
-						const belowMinimum = limit
-							? currentCount < limit.minQuantity
-							: false;
-						const aboveMaximum = limit
-							? currentCount > limit.maxQuantity
-							: false;
-						const limitText = limit
-							? `Límite: ${limit.minQuantity}–${limit.maxQuantity}`
-							: "Sin límite";
-						const limitRangeText = limit
-							? `${limit.minQuantity}–${limit.maxQuantity}`
-							: "Sin límite";
+						let belowMinimum = false;
+						let aboveMaximum = false;
+						let limitText = "Sin límite";
+						let limitRangeText = "Sin límite";
+
+						if (limit) {
+							if (limit.limitType === "quantity") {
+								belowMinimum = currentCount < limit.minQuantity;
+								aboveMaximum = currentCount > limit.maxQuantity;
+								limitText = `Límite: ${limit.minQuantity}–${limit.maxQuantity} unidades`;
+								limitRangeText = `${limit.minQuantity}–${limit.maxQuantity} unidades`;
+							} else {
+								// limitType === "usage"
+								// For usage limits, we need to check the usage count of items
+								// For now, we'll show the limit but not check against current usage
+								// This would require aggregating numberOfUses from items
+								const minUsage = limit.minUsage ?? 0;
+								const maxUsage = limit.maxUsage ?? 0;
+								limitText = `Límite: ${minUsage}–${maxUsage} usos`;
+								limitRangeText = `${minUsage}–${maxUsage} usos`;
+								// Usage limits don't affect belowMinimum/aboveMaximum for now
+								// as we'd need to aggregate usage counts from items
+							}
+						}
 						let limitBadgeLabel = "Sin límite configurado";
 						let limitBadgeClassName =
 							"bg-[#F3F4F6] text-[#374151] dark:bg-[#374151] dark:text-[#D1D5DB]";
@@ -1889,169 +2038,185 @@ export function ProductCatalogTable({
 																return true;
 															})
 															.map((item) => {
-															const { data, key: selectionKey } = item;
-															const isSelected = selectionKey
-																? productSelection.has(selectionKey)
-																: false;
-															const isDisabled =
-																data.isBeingUsed ||
-																group.isDistributionCenter ||
-																(selectionKey
-																	? disabledUUIDs.has(selectionKey)
-																	: false);
-															const hasLimit = Boolean(group.limit);
-															return (
-																<TableRow
-																	className="border-[#E5E7EB] border-b last:border-b-0 dark:border-[#374151]"
-																	data-has-limit={hasLimit ? "true" : undefined}
-																	key={selectionKey || data.id}
-																>
-																	<TableCell className="font-mono text-[#687076] text-xs dark:text-[#9BA1A6]">
-																		<div className="flex flex-col gap-1">
-																			{(selectionEnabledRef || canManageKits) && (
-																				<Checkbox
-																					checked={isSelected}
-																					disabled={isDisabled}
-																					onCheckedChange={(checked) =>
-																						toggleUUID(
-																							selectionKey,
-																							Boolean(checked),
-																						)
-																					}
-																				/>
-																			)}
-									<span className="truncate">
-										{(data.id || "").slice(0, 8)}...
-									</span>
-									{data.isKit && (
-										<Badge
-											className="bg-[#EDE9FE] text-[#4C1D95] dark:bg-[#312763] dark:text-[#EDE9FE]"
-											variant="secondary"
-										>
-											Kit
-										</Badge>
-									)}
-									<Tooltip>
-																				<TooltipTrigger asChild>
-																					<Button
-																						className="h-4 w-4 p-0 hover:bg-[#E5E7EB] dark:hover:bg-[#2D3033]"
-																						onClick={() => {
-																							copyToClipboard(
-																								data.uuid || data.id || "",
-																							);
-																						}}
-																						size="sm"
-																						variant="ghost"
-																					>
-																						<Copy className="h-3 w-3" />
-																					</Button>
-																				</TooltipTrigger>
-																				<TooltipContent side="top">
-																					Copiar UUID
-																				</TooltipContent>
-																			</Tooltip>
-																			<Tooltip>
-																				<TooltipTrigger asChild>
-																					<Button
-																						aria-label="Reimprimir código QR"
-																						className="h-4 w-4 p-0 hover:bg-[#E5E7EB] dark:hover:bg-[#2D3033]"
-																						disabled={
-																							!onReprintQr ||
-																							!(data.uuid || data.id)
+																const { data, key: selectionKey } = item;
+																const isSelected = selectionKey
+																	? productSelection.has(selectionKey)
+																	: false;
+																const isDisabled =
+																	data.isBeingUsed ||
+																	group.isDistributionCenter ||
+																	(selectionKey
+																		? disabledUUIDs.has(selectionKey)
+																		: false);
+																const hasLimit = Boolean(group.limit);
+																return (
+																	<TableRow
+																		className="border-[#E5E7EB] border-b last:border-b-0 dark:border-[#374151]"
+																		data-has-limit={
+																			hasLimit ? "true" : undefined
+																		}
+																		key={selectionKey || data.id}
+																	>
+																		<TableCell className="font-mono text-[#687076] text-xs dark:text-[#9BA1A6]">
+																			<div className="flex flex-col gap-1">
+																				{(selectionEnabledRef ||
+																					canManageKits) && (
+																					<Checkbox
+																						checked={isSelected}
+																						disabled={isDisabled}
+																						onCheckedChange={(checked) =>
+																							toggleUUID(
+																								selectionKey,
+																								Boolean(checked),
+																							)
 																						}
-																						onClick={() => {
-																							if (
+																					/>
+																				)}
+																				<span className="truncate">
+																					{(data.id || "").slice(0, 8)}...
+																				</span>
+																				{data.isKit && (
+																					<Badge
+																						className="bg-[#EDE9FE] text-[#4C1D95] dark:bg-[#312763] dark:text-[#EDE9FE]"
+																						variant="secondary"
+																					>
+																						Kit
+																					</Badge>
+																				)}
+																				<Tooltip>
+																					<TooltipTrigger asChild>
+																						<Button
+																							className="h-4 w-4 p-0 hover:bg-[#E5E7EB] dark:hover:bg-[#2D3033]"
+																							onClick={() => {
+																								copyToClipboard(
+																									data.uuid || data.id || "",
+																								);
+																							}}
+																							size="sm"
+																							variant="ghost"
+																						>
+																							<Copy className="h-3 w-3" />
+																						</Button>
+																					</TooltipTrigger>
+																					<TooltipContent side="top">
+																						Copiar UUID
+																					</TooltipContent>
+																				</Tooltip>
+																				<Tooltip>
+																					<TooltipTrigger asChild>
+																						<Button
+																							aria-label="Reimprimir código QR"
+																							className="h-4 w-4 p-0 hover:bg-[#E5E7EB] dark:hover:bg-[#2D3033]"
+																							disabled={
 																								!onReprintQr ||
 																								!(data.uuid || data.id)
-																							) {
-																								return;
 																							}
-																							onReprintQr({
-																								product,
-																								item: data,
-																							});
-																						}}
-																						size="sm"
-																						variant="ghost"
-																					>
-																						<QrCode className="h-3 w-3" />
-																					</Button>
-																				</TooltipTrigger>
-																				<TooltipContent side="top">
-																					Generar nuevamente el código QR
-																				</TooltipContent>
-																			</Tooltip>
-																		</div>
-																	</TableCell>
-																	<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-																		{formatDate(data.lastUsed)}
-																	</TableCell>
-																	<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-																		{data.lastUsedBy || "N/A"}
-																	</TableCell>
-																	<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-																		{data.numberOfUses}
-																	</TableCell>
-																	<TableCell>
-																		<Badge
-																			className={
-																				data.isBeingUsed
-																					? "bg-[#EF4444] text-white text-xs"
-																					: "bg-[#10B981] text-white text-xs"
-																			}
-																			variant={
-																				data.isBeingUsed
-																					? "destructive"
-																					: "default"
-																			}
-																		>
-																			{data.isBeingUsed
-																				? "En Uso"
-																				: "Disponible"}
-																		</Badge>
-																	</TableCell>
-																	<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-																		{formatDate(data.firstUsed)}
-																	</TableCell>
-																	<TableCell>
-																		<Badge
-																			className={
-																				data.isEmpty
-																					? "bg-amber-100 text-amber-800 text-xs dark:bg-amber-900 dark:text-amber-100"
-																					: "bg-blue-100 text-blue-800 text-xs dark:bg-blue-900 dark:text-blue-100"
-																			}
-																			variant="secondary"
-																		>
-																			{data.isEmpty ? "Sí" : "No"}
-																		</Badge>
-																	</TableCell>
-																	<TableCell>
-																		{enableDispose && (
-																			<Button
-																				className="h-6 w-6 p-0 text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950 dark:hover:text-red-300"
-																				onClick={() => {
-																					showDisposeDialog({
-																						id: data.id || "",
-																						uuid: data.id || "",
-																						barcode: product.barcode,
-																						productInfo: {
-																							name: product.name,
-																							category: product.category,
-																							description: product.description,
-																						},
-																					});
-																				}}
-																				size="sm"
-																				title="Dar de baja artículo"
-																				variant="ghost"
+																							onClick={() => {
+																								if (
+																									!onReprintQr ||
+																									!(data.uuid || data.id)
+																								) {
+																									return;
+																								}
+																								onReprintQr({
+																									product,
+																									item: data,
+																								});
+																							}}
+																							size="sm"
+																							variant="ghost"
+																						>
+																							<QrCode className="h-3 w-3" />
+																						</Button>
+																					</TooltipTrigger>
+																					<TooltipContent side="top">
+																						Generar nuevamente el código QR
+																					</TooltipContent>
+																				</Tooltip>
+																			</div>
+																		</TableCell>
+																		<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+																			{formatDate(data.lastUsed)}
+																		</TableCell>
+																		<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+																			{data.lastUsedBy || "N/A"}
+																		</TableCell>
+																		<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+																			{data.numberOfUses}
+																		</TableCell>
+																		<TableCell>
+																			<Badge
+																				className={
+																					data.isBeingUsed
+																						? "bg-[#EF4444] text-white text-xs"
+																						: "bg-[#10B981] text-white text-xs"
+																				}
+																				variant={
+																					data.isBeingUsed
+																						? "destructive"
+																						: "default"
+																				}
 																			>
-																				<Trash2 className="h-4 w-4" />
-																			</Button>
-																		)}
-																	</TableCell>
-																</TableRow>
-															);
-														})}
+																				{data.isBeingUsed
+																					? "En Uso"
+																					: "Disponible"}
+																			</Badge>
+																		</TableCell>
+																		<TableCell className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+																			{formatDate(data.firstUsed)}
+																		</TableCell>
+																		<TableCell>
+																			<Badge
+																				className={
+																					data.isEmpty
+																						? "bg-amber-100 text-amber-800 text-xs dark:bg-amber-900 dark:text-amber-100"
+																						: "bg-blue-100 text-blue-800 text-xs dark:bg-blue-900 dark:text-blue-100"
+																				}
+																				variant="secondary"
+																			>
+																				{data.isEmpty ? "Sí" : "No"}
+																			</Badge>
+																		</TableCell>
+																		<TableCell>
+																			{enableDispose && (
+																				<Button
+																					className="h-6 w-6 p-0 text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950 dark:hover:text-red-300"
+																					onClick={() => {
+																						const barcodeForDisposal =
+																							typeof product.barcode ===
+																							"number"
+																								? product.barcode
+																								: product.barcodeIds.length > 0
+																									? product.barcodeIds[0]
+																									: Number.parseInt(
+																											String(
+																												product.barcode,
+																											).split(",")[0] || "0",
+																											10,
+																										) || 0;
+																						showDisposeDialog({
+																							id: data.id || "",
+																							uuid: data.id || "",
+																							barcode: barcodeForDisposal,
+																							productInfo: {
+																								name: product.name,
+																								category: product.category,
+																								description:
+																									product.description,
+																							},
+																						});
+																					}}
+																					size="sm"
+																					title="Dar de baja artículo"
+																					variant="ghost"
+																				>
+																					<Trash2 className="h-4 w-4" />
+																				</Button>
+																			)}
+																		</TableCell>
+																	</TableRow>
+																);
+															})}
 													</React.Fragment>
 												)}
 											</React.Fragment>
@@ -2253,7 +2418,14 @@ export function ProductCatalogTable({
 				filterFn: stockAvailabilityFilterFn,
 			},
 		],
-		[categoryFilterFn, stockAvailabilityFilterFn, renderSortableHeader, stockLimitsMap, warehouse, canEditLimits],
+		[
+			categoryFilterFn,
+			stockAvailabilityFilterFn,
+			renderSortableHeader,
+			stockLimitsMap,
+			warehouse,
+			canEditLimits,
+		],
 	);
 
 	// Initialize the table
@@ -2382,9 +2554,18 @@ export function ProductCatalogTable({
 
 			// If product has no inventory items, still add one row with zero stock
 			if (warehouseGroups.length === 0) {
+				const barcodeForCsv =
+					typeof product.barcode === "number"
+						? product.barcode
+						: product.barcodeIds.length > 0
+							? product.barcodeIds[0]
+							: Number.parseInt(
+									String(product.barcode).split(",")[0] || "0",
+									10,
+								) || 0;
 				csvData.push({
 					name: product.name,
-					barcode: product.barcode,
+					barcode: barcodeForCsv,
 					category: product.category,
 					warehouse: "Sin almacén asignado",
 					warehouseStock: 0,
@@ -2416,15 +2597,37 @@ export function ProductCatalogTable({
 						product.barcodeIds,
 					);
 
+					let minLimit: number | string = "Sin límite";
+					let maxLimit: number | string = "Sin límite";
+					if (limit) {
+						if (limit.limitType === "quantity") {
+							minLimit = limit.minQuantity;
+							maxLimit = limit.maxQuantity;
+						} else {
+							minLimit =
+								limit.minUsage !== null ? limit.minUsage : "Sin límite";
+							maxLimit =
+								limit.maxUsage !== null ? limit.maxUsage : "Sin límite";
+						}
+					}
+					const barcodeForCsv =
+						typeof product.barcode === "number"
+							? product.barcode
+							: product.barcodeIds.length > 0
+								? product.barcodeIds[0]
+								: Number.parseInt(
+										String(product.barcode).split(",")[0] || "0",
+										10,
+									) || 0;
 					csvData.push({
 						name: product.name,
-						barcode: product.barcode,
+						barcode: barcodeForCsv,
 						category: product.category,
 						warehouse: group.label,
 						warehouseStock: group.items.length,
 						emptyItems: emptyItemsCount,
-						minLimit: limit?.minQuantity ?? "Sin límite",
-						maxLimit: limit?.maxQuantity ?? "Sin límite",
+						minLimit,
+						maxLimit,
 						totalStock: product.stockCount,
 					});
 				}
@@ -2437,8 +2640,9 @@ export function ProductCatalogTable({
 
 		const success = downloadCsv(csvData, csvHeaders, filename);
 		if (success) {
-			const uniqueProducts = new Set(filteredRows.map((r) => r.original.barcode))
-				.size;
+			const uniqueProducts = new Set(
+				filteredRows.map((r) => r.original.barcode),
+			).size;
 			toast.success("CSV exportado exitosamente", {
 				description: `Se exportaron ${uniqueProducts} producto(s) con detalles por almacén`,
 				duration: 2000,
@@ -2473,33 +2677,98 @@ export function ProductCatalogTable({
 							</DialogHeader>
 							<div className="grid gap-4 py-2">
 								<div className="grid gap-2">
-									<Label htmlFor="stock-limit-min">Cantidad mínima</Label>
-									<Input
-										id="stock-limit-min"
-										inputMode="numeric"
-										min={0}
-										onChange={(event) =>
-											handleLimitFormChange("minQuantity", event.target.value)
+									<Label htmlFor="stock-limit-type">Tipo de límite</Label>
+									<Select
+										onValueChange={(value) =>
+											handleLimitFormChange(
+												"limitType",
+												value as "quantity" | "usage",
+											)
 										}
-										placeholder="Ej. 5"
-										type="number"
-										value={limitFormState.minQuantity}
-									/>
+										value={limitFormState.limitType}
+									>
+										<SelectTrigger id="stock-limit-type">
+											<SelectValue />
+										</SelectTrigger>
+										<SelectContent>
+											<SelectItem value="quantity">
+												Por cantidad (stock físico)
+											</SelectItem>
+											<SelectItem value="usage">
+												Por uso (número de usos)
+											</SelectItem>
+										</SelectContent>
+									</Select>
 								</div>
-								<div className="grid gap-2">
-									<Label htmlFor="stock-limit-max">Cantidad máxima</Label>
-									<Input
-										id="stock-limit-max"
-										inputMode="numeric"
-										min={0}
-										onChange={(event) =>
-											handleLimitFormChange("maxQuantity", event.target.value)
-										}
-										placeholder="Ej. 20"
-										type="number"
-										value={limitFormState.maxQuantity}
-									/>
-								</div>
+								{limitFormState.limitType === "quantity" ? (
+									<>
+										<div className="grid gap-2">
+											<Label htmlFor="stock-limit-min">Cantidad mínima</Label>
+											<Input
+												id="stock-limit-min"
+												inputMode="numeric"
+												min={0}
+												onChange={(event) =>
+													handleLimitFormChange(
+														"minQuantity",
+														event.target.value,
+													)
+												}
+												placeholder="Ej. 5"
+												type="number"
+												value={limitFormState.minQuantity}
+											/>
+										</div>
+										<div className="grid gap-2">
+											<Label htmlFor="stock-limit-max">Cantidad máxima</Label>
+											<Input
+												id="stock-limit-max"
+												inputMode="numeric"
+												min={0}
+												onChange={(event) =>
+													handleLimitFormChange(
+														"maxQuantity",
+														event.target.value,
+													)
+												}
+												placeholder="Ej. 20"
+												type="number"
+												value={limitFormState.maxQuantity}
+											/>
+										</div>
+									</>
+								) : (
+									<>
+										<div className="grid gap-2">
+											<Label htmlFor="stock-limit-min-usage">Uso mínimo</Label>
+											<Input
+												id="stock-limit-min-usage"
+												inputMode="numeric"
+												min={0}
+												onChange={(event) =>
+													handleLimitFormChange("minUsage", event.target.value)
+												}
+												placeholder="Ej. 5"
+												type="number"
+												value={limitFormState.minUsage}
+											/>
+										</div>
+										<div className="grid gap-2">
+											<Label htmlFor="stock-limit-max-usage">Uso máximo</Label>
+											<Input
+												id="stock-limit-max-usage"
+												inputMode="numeric"
+												min={0}
+												onChange={(event) =>
+													handleLimitFormChange("maxUsage", event.target.value)
+												}
+												placeholder="Ej. 20"
+												type="number"
+												value={limitFormState.maxUsage}
+											/>
+										</div>
+									</>
+								)}
 								<div className="grid gap-2">
 									<Label htmlFor="stock-limit-notes">Notas</Label>
 									<Textarea
@@ -2661,10 +2930,7 @@ export function ProductCatalogTable({
 
 					{/* IsEmpty Filter */}
 					<div className="min-w-[180px]">
-						<Select
-							onValueChange={setIsEmptyFilter}
-							value={isEmptyFilter}
-						>
+						<Select onValueChange={setIsEmptyFilter} value={isEmptyFilter}>
 							<SelectTrigger className="border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]">
 								<SelectValue placeholder="Todos los estados" />
 							</SelectTrigger>
@@ -2754,7 +3020,8 @@ export function ProductCatalogTable({
 								No hay productos
 							</h3>
 							<p className="mt-2 text-center text-[#687076] text-sm dark:text-[#9BA1A6]">
-								No se encontraron productos que coincidan con los filtros aplicados.
+								No se encontraron productos que coincidan con los filtros
+								aplicados.
 							</p>
 						</CardContent>
 					</Card>

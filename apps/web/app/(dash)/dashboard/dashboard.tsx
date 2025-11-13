@@ -2,45 +2,41 @@
 "use memo";
 
 import { useSuspenseQuery } from "@tanstack/react-query";
-import Link from "next/link";
 import { addDays, differenceInCalendarDays, format } from "date-fns";
 import { es } from "date-fns/locale";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
-	getAllProducts,
 	getAllProductStock,
+	getAllProducts,
 	getAllWarehouses,
 	getCabinetWarehouse,
 	getInventoryByWarehouse,
 } from "@/lib/fetch-functions/inventory";
-import {
-	getAllStockLimits,
-	getStockLimitsByWarehouse,
-} from "@/lib/fetch-functions/stock-limits";
 import {
 	getAllEmployees,
 	getAllKits,
 	getEmployeesByWarehouseId,
 } from "@/lib/fetch-functions/kits";
 import {
+	getWarehouseTransferAll,
+	getWarehouseTransferAllByWarehouseId,
+} from "@/lib/fetch-functions/recepciones";
+import {
 	getReplenishmentOrders,
 	getReplenishmentOrdersByWarehouse,
 } from "@/lib/fetch-functions/replenishment-orders";
 import {
-	getWarehouseTransferAll,
-	getWarehouseTransferAllByWarehouseId,
-} from "@/lib/fetch-functions/recepciones";
+	getAllStockLimits,
+	getStockLimitsByWarehouse,
+} from "@/lib/fetch-functions/stock-limits";
 import { createQueryKey } from "@/lib/helpers";
 import { queryKeys } from "@/lib/query-keys";
 import type { StockItemWithEmployee } from "@/stores/inventory-store";
-import type {
-	KitData,
-	StockLimit,
-	StockLimitListResponse,
-} from "@/types";
+import type { KitData, StockLimit, StockLimitListResponse } from "@/types";
 
 type InventoryResponse =
 	| Awaited<ReturnType<typeof getAllProductStock>>
@@ -140,8 +136,8 @@ const isStockItemWithEmployee = (
 ): value is StockItemWithEmployee =>
 	Boolean(
 		value &&
-		typeof value === "object" &&
-		"productStock" in (value as Record<string, unknown>),
+			typeof value === "object" &&
+			"productStock" in (value as Record<string, unknown>),
 	);
 
 const extractInventoryGroups = (response: InventoryResponse) => {
@@ -236,9 +232,8 @@ const normalizeEmployees = (response: EmployeesResponse) => {
 				warehouseId,
 			} as NormalizedEmployee;
 		})
-		.filter(
-			(employee): employee is NormalizedEmployee =>
-				Boolean(employee && employee.id),
+		.filter((employee): employee is NormalizedEmployee =>
+			Boolean(employee && employee.id),
 		);
 };
 
@@ -266,9 +261,8 @@ const normalizeWarehouses = (response: WarehousesResponse) => {
 					: `Almacen ${id.slice(0, 6)}`);
 			return { id, name } as NormalizedWarehouse;
 		})
-		.filter(
-			(item): item is NormalizedWarehouse =>
-				Boolean(item && item.id && item.name),
+		.filter((item): item is NormalizedWarehouse =>
+			Boolean(item && item.id && item.name),
 		);
 };
 
@@ -338,9 +332,8 @@ const extractOrders = (response: OrdersResponse): OrderSummary[] => {
 				isReceived: Boolean(record.isReceived),
 			};
 		})
-		.filter(
-			(order): order is OrderSummary =>
-				Boolean(order && typeof order.id === "string"),
+		.filter((order): order is OrderSummary =>
+			Boolean(order && typeof order.id === "string"),
 		);
 };
 
@@ -367,8 +360,10 @@ const extractTransfers = (response: TransfersResponse): TransferSummary[] => {
 		typeof root.data === "object" &&
 		Array.isArray((root.data as { transfers?: unknown }).transfers)
 	) {
-		items.push(...(((root.data as { transfers?: unknown }).transfers ??
-			[]) as unknown[]));
+		items.push(
+			...(((root.data as { transfers?: unknown }).transfers ??
+				[]) as unknown[]),
+		);
 	}
 	if (Array.isArray(root.transfers)) {
 		items.push(...(root.transfers as unknown[]));
@@ -388,8 +383,7 @@ const extractTransfers = (response: TransfersResponse): TransferSummary[] => {
 				return null;
 			}
 			const statusRaw =
-				toStringSafe(record.status) ||
-				toStringSafe(record.transferStatus);
+				toStringSafe(record.status) || toStringSafe(record.transferStatus);
 			const status = statusRaw ? statusRaw.toLowerCase() : undefined;
 			const isCompleted =
 				Boolean(record.isCompleted) ||
@@ -413,27 +407,41 @@ const extractTransfers = (response: TransfersResponse): TransferSummary[] => {
 				createdAt: toStringSafe(record.createdAt),
 			} as TransferSummary;
 		})
-		.filter(
-			(item): item is TransferSummary =>
-				Boolean(item && item.linkId && !item.isCancelled),
+		.filter((item): item is TransferSummary =>
+			Boolean(item && item.linkId && !item.isCancelled),
 		);
 };
 
-const getStockQuantityKey = (
-	warehouseId: string,
-	barcode: number,
-) => `${warehouseId}::${barcode}`;
+const getStockQuantityKey = (warehouseId: string, barcode: number) =>
+	`${warehouseId}::${barcode}`;
 
+/**
+ * Determines the limit status based on the limit type and current value.
+ *
+ * For quantity limits, compares currentQuantity against minQuantity/maxQuantity.
+ * For usage limits, this function should be called with aggregated usage counts,
+ * but currently only quantity limits are supported in the dashboard display.
+ *
+ * @param quantity - Current quantity or usage count to compare against the limit
+ * @param limit - StockLimit object with limitType and corresponding min/max values
+ * @returns LimitStatus indicating if the value is below, within, or above the limit
+ */
 const limitStatusForQuantity = (
 	quantity: number,
 	limit: StockLimit,
 ): LimitStatus => {
-	if (quantity < limit.minQuantity) {
-		return "below";
+	if (limit.limitType === "quantity") {
+		if (quantity < limit.minQuantity) {
+			return "below";
+		}
+		if (quantity > limit.maxQuantity) {
+			return "above";
+		}
+		return "within";
 	}
-	if (quantity > limit.maxQuantity) {
-		return "above";
-	}
+	// For usage limits, we'd need to compare against minUsage/maxUsage
+	// but the dashboard currently only shows quantity-based limits
+	// Return "within" as default for usage limits
 	return "within";
 };
 
@@ -448,7 +456,7 @@ const formatDateSafe = (value: string) => {
 	return format(date, "dd MMM yyyy", { locale: es });
 };
 
-	const withinLastDays = (value: string, days: number) => {
+const withinLastDays = (value: string, days: number) => {
 	if (!value) {
 		return false;
 	}
@@ -589,10 +597,7 @@ export default function DashboardPageClient({
 	);
 
 	const scopedInventoryItems = useMemo(() => {
-		const combined = [
-			...inventoryGroups.warehouse,
-			...inventoryGroups.cabinet,
-		];
+		const combined = [...inventoryGroups.warehouse, ...inventoryGroups.cabinet];
 		if (isEncargado) {
 			return combined;
 		}
@@ -650,10 +655,6 @@ export default function DashboardPageClient({
 		}
 		return counts;
 	}, [inventoryGroups.warehouse, inventoryGroups.cabinet]);
-
-
-
-
 
 	const itemsInUse = useMemo(
 		() =>
@@ -722,8 +723,8 @@ export default function DashboardPageClient({
 						"barcode" in limit &&
 						typeof limit.barcode === "number" &&
 						Number.isFinite(limit.barcode),
-					),
-			);
+				),
+		);
 		const warehouseIds = new Set<string>();
 		const groupsByBarcode = new Map<number, StockLimitGroup>();
 		for (const limit of limits) {
@@ -731,11 +732,12 @@ export default function DashboardPageClient({
 				warehouseIds.add(limit.warehouseId);
 			}
 			const productName =
-				productNameByBarcode.get(limit.barcode) ??
-				`Producto ${limit.barcode}`;
+				productNameByBarcode.get(limit.barcode) ?? `Producto ${limit.barcode}`;
 			const warehouseName =
 				warehouseNameById.get(limit.warehouseId) ??
-				(limit.warehouseId ? `Almacen ${limit.warehouseId.slice(0, 6)}` : "Bodega");
+				(limit.warehouseId
+					? `Almacen ${limit.warehouseId.slice(0, 6)}`
+					: "Bodega");
 			const currentQuantity =
 				stockQuantityByWarehouseBarcode.get(
 					getStockQuantityKey(limit.warehouseId, limit.barcode),
@@ -815,7 +817,7 @@ export default function DashboardPageClient({
 
 	const allowedEmployeeIds = useMemo(() => {
 		if (isEncargado) {
-		 return null;
+			return null;
 		}
 		const set = new Set<string>();
 		for (const employee of employees) {
@@ -853,10 +855,7 @@ export default function DashboardPageClient({
 		});
 	}, [scopedKits, currentDate]);
 
-	const orders = useMemo(
-		() => extractOrders(ordersResponse),
-		[ordersResponse],
-	);
+	const orders = useMemo(() => extractOrders(ordersResponse), [ordersResponse]);
 
 	const pendingOrders = useMemo<PendingOrderRow[]>(() => {
 		const result: PendingOrderRow[] = [];
@@ -957,12 +956,12 @@ export default function DashboardPageClient({
 						</CardTitle>
 					</CardHeader>
 					<CardContent className="space-y-1">
-						<p className="text-3xl font-bold text-[#0a7ea4]">
-							{totalUsage}
-						</p>
+						<p className="text-3xl font-bold text-[#0a7ea4]">{totalUsage}</p>
 						<p className="text-sm text-[#687076] dark:text-[#9BA1A6]">
 							{usageRows.length}{" "}
-							{usageRows.length === 1 ? "colaborador activo" : "colaboradores activos"}
+							{usageRows.length === 1
+								? "colaborador activo"
+								: "colaboradores activos"}
 						</p>
 					</CardContent>
 				</Card>
@@ -1022,9 +1021,13 @@ export default function DashboardPageClient({
 									if (!stockLimitSearch.trim()) {
 										return true;
 									}
-									const normalizedSearch = stockLimitSearch.trim().toLowerCase();
+									const normalizedSearch = stockLimitSearch
+										.trim()
+										.toLowerCase();
 									return (
-										group.productName.toLowerCase().includes(normalizedSearch) ||
+										group.productName
+											.toLowerCase()
+											.includes(normalizedSearch) ||
 										group.barcode.toString().includes(normalizedSearch)
 									);
 								})
@@ -1052,7 +1055,17 @@ export default function DashboardPageClient({
 																{entry.warehouseName}
 															</p>
 															<p className="text-xs text-[#687076] dark:text-[#9BA1A6]">
-																Min {entry.limit.minQuantity} / Max {entry.limit.maxQuantity}
+																{entry.limit.limitType === "quantity" ? (
+																	<>
+																		Min {entry.limit.minQuantity} / Max{" "}
+																		{entry.limit.maxQuantity}
+																	</>
+																) : (
+																	<>
+																		Min {entry.limit.minUsage ?? 0} usos / Max{" "}
+																		{entry.limit.maxUsage ?? 0} usos
+																	</>
+																)}
 															</p>
 														</div>
 														<Badge className={badgeClass}>
@@ -1099,9 +1112,7 @@ export default function DashboardPageClient({
 											</p>
 										)}
 									</div>
-									<Badge className="bg-[#0a7ea4] text-white">
-										{row.count}
-									</Badge>
+									<Badge className="bg-[#0a7ea4] text-white">{row.count}</Badge>
 								</div>
 							))
 						) : (
@@ -1127,7 +1138,9 @@ export default function DashboardPageClient({
 								const assignedEmployeeId = toStringSafe(kit.assignedEmployee);
 								const employeeName =
 									employeeNameById.get(assignedEmployeeId) ??
-									(assignedEmployeeId ? `Empleado ${assignedEmployeeId.slice(0, 6)}` : "Sin asignar");
+									(assignedEmployeeId
+										? `Empleado ${assignedEmployeeId.slice(0, 6)}`
+										: "Sin asignar");
 								return (
 									<Link
 										className="flex items-center justify-between rounded-lg border border-[#E5E7EB] px-3 py-2 text-sm text-[#11181C] transition hover:bg-[#EEF2FF] dark:border-[#2D3033] dark:text-[#ECEDEE] dark:hover:bg-[#1F2937]"
@@ -1135,7 +1148,9 @@ export default function DashboardPageClient({
 										key={kitId}
 									>
 										<div className="flex flex-col">
-											<span className="font-medium">Kit {kitId.slice(0, 8)}</span>
+											<span className="font-medium">
+												Kit {kitId.slice(0, 8)}
+											</span>
 											<span className="text-xs text-[#687076] dark:text-[#9BA1A6]">
 												{employeeName}
 											</span>
@@ -1171,7 +1186,13 @@ export default function DashboardPageClient({
 											{formatDateSafe(order.createdAt)}
 										</p>
 									</div>
-									<Badge className={order.status === "sent" ? "bg-[#F59E0B] text-white" : "bg-[#0a7ea4] text-white"}>
+									<Badge
+										className={
+											order.status === "sent"
+												? "bg-[#F59E0B] text-white"
+												: "bg-[#0a7ea4] text-white"
+										}
+									>
 										{order.status === "sent" ? "Enviado" : "Abierto"}
 									</Badge>
 								</Link>
@@ -1200,9 +1221,14 @@ export default function DashboardPageClient({
 								key={transfer.linkId}
 							>
 								<div>
-									<p className="font-medium">Recepcion {transfer.linkId.slice(0, 8)}</p>
+									<p className="font-medium">
+										Recepcion {transfer.linkId.slice(0, 8)}
+									</p>
 									<p className="text-xs text-[#687076] dark:text-[#9BA1A6]">
-										Programada: {formatDateSafe(transfer.scheduledDate ?? transfer.createdAt ?? "")}
+										Programada:{" "}
+										{formatDateSafe(
+											transfer.scheduledDate ?? transfer.createdAt ?? "",
+										)}
 									</p>
 								</div>
 								<Badge className="bg-[#F59E0B] text-white">Pendiente</Badge>
@@ -1218,5 +1244,3 @@ export default function DashboardPageClient({
 		</div>
 	);
 }
-
-
