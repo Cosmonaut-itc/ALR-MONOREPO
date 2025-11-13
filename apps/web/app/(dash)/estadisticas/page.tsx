@@ -9,6 +9,7 @@ import {
 	fetchAllProductsServer,
 	fetchAllWarehousesServer,
 	fetchCabinetWarehouseServer,
+	fetchDeletedAndEmptyProductStockServer,
 } from "@/lib/server-functions/inventory";
 import { fetchAllKitsServer } from "@/lib/server-functions/kits";
 import { fetchWarehouseTrasnferAll } from "@/lib/server-functions/recepciones";
@@ -119,6 +120,11 @@ export default async function Page() {
 		queryClient.prefetchQuery({
 			queryKey: createQueryKey(queryKeys.unfulfilledProducts, ["all"]),
 			queryFn: fetchUnfulfilledProductsServer,
+		});
+
+		queryClient.prefetchQuery({
+			queryKey: createQueryKey(queryKeys.deletedAndEmptyProductStock, ["all"]),
+			queryFn: fetchDeletedAndEmptyProductStockServer,
 		});
 	} catch (error) {
 		console.error(error);

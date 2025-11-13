@@ -10,6 +10,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { RoleGuard } from "@/components/auth-guard";
 import { DashboardMetricCard } from "@/components/DashboardMetricCard";
+import { DeletedAndEmptyTable } from "@/components/inventory/DeletedAndEmptyTable";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -2258,8 +2259,10 @@ export function EstadisticasPage({
 							/>
 						</CardContent>
 					</Card>
-					<section className="flex flex-col gap-4">
-						<Card className="card-transition"></Card>
+					<section className="flex h-full flex-col overflow-hidden">
+						<div className="flex h-full flex-col">
+							<DeletedAndEmptyTable warehouseNameMap={warehouseNameMap} />
+						</div>
 					</section>
 				</section>
 				<section className="grid gap-4 xl:grid-cols-2">

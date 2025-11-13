@@ -11,4 +11,5 @@ export const queryKeys = {
 	replenishmentOrderDetail: ["replenishmentOrderDetail"],
 	unfulfilledProducts: ["unfulfilledProducts"],
 	stockLimits: ["stockLimits"],
+	deletedAndEmptyProductStock: ["deletedAndEmptyProductStock"],
 };

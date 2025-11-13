@@ -78,3 +78,19 @@ export const getAllWarehouses = async () => {
 		return null;
 	}
 };
+
+/**
+ * Fetches product stock items that are deleted or empty from the API.
+ *
+ * @returns A promise that resolves to the API response containing deleted and empty product stock items, or null if the request fails.
+ */
+export const getDeletedAndEmptyProductStock = async () => {
+	try {
+		const response =
+			await client.api.auth["product-stock"]["deleted-and-empty"].$get();
+		return response.json();
+	} catch (error) {
+		console.error(error);
+		return null;
+	}
+};
