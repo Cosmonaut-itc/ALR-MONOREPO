@@ -110,7 +110,23 @@ type StockLimitEntry = {
 type StockLimitGroup = {
 	barcode: number;
 	productName: string;
+	productDescription: string | null;
 	entries: StockLimitEntry[];
+};
+
+type UsageLimitEntry = {
+	warehouseId: string;
+	warehouseName: string;
+	limit: StockLimit;
+	currentUsage: number;
+	status: LimitStatus;
+};
+
+type UsageLimitGroup = {
+	barcode: number;
+	productName: string;
+	productDescription: string | null;
+	entries: UsageLimitEntry[];
 };
 
 const toArray = <T,>(value: unknown): T[] =>
@@ -124,6 +140,13 @@ const toStringSafe = (value: unknown): string => {
 		return String(value);
 	}
 	return "";
+};
+
+const toRecord = (value: unknown): Record<string, unknown> | null => {
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
+		return null;
+	}
+	return value as Record<string, unknown>;
 };
 
 const readId = (value: unknown): string => {
@@ -266,6 +289,32 @@ const normalizeWarehouses = (response: WarehousesResponse) => {
 		);
 };
 
+const extractBarcodeNumbers = (value: unknown): number[] => {
+	if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+		return [value];
+	}
+	if (typeof value === "string") {
+		const normalized = value.trim();
+		if (!normalized) {
+			return [];
+		}
+		return normalized
+			.split(",")
+			.map((segment) => segment.trim())
+			.filter((segment) => segment.length > 0)
+			.map((segment) => Number.parseInt(segment, 10))
+			.filter((parsed) => Number.isFinite(parsed) && parsed > 0);
+	}
+	if (Array.isArray(value)) {
+		const nested: number[] = [];
+		for (const entry of value) {
+			nested.push(...extractBarcodeNumbers(entry));
+		}
+		return nested;
+	}
+	return [];
+};
+
 const buildProductNameMap = (response: ProductsResponse) => {
 	const map = new Map<number, string>();
 	if (
@@ -284,24 +333,37 @@ const buildProductNameMap = (response: ProductsResponse) => {
 			continue;
 		}
 		const record = raw as Record<string, unknown>;
-		const barcodeCandidate = toStringSafe(record.barcode);
-		const fallbackBarcode = record.good_id;
-		let barcode: number | null = null;
-		if (barcodeCandidate) {
-			const parsed = Number.parseInt(barcodeCandidate, 10);
-			barcode = Number.isNaN(parsed) ? null : parsed;
-		} else if (typeof fallbackBarcode === "number") {
-			barcode = fallbackBarcode;
-		}
-		if (barcode == null || Number.isNaN(barcode)) {
+		const barcodeSet = new Set<number>();
+		const registerBarcodes = (input: unknown) => {
+			for (const parsed of extractBarcodeNumbers(input)) {
+				if (parsed > 0) {
+					barcodeSet.add(parsed);
+				}
+			}
+		};
+		registerBarcodes(record.barcode);
+		registerBarcodes((record as { barcodeIds?: unknown })?.barcodeIds);
+		registerBarcodes((record as { barcode_ids?: unknown })?.barcode_ids);
+		registerBarcodes(record.good_id);
+		registerBarcodes((record as { goodId?: unknown })?.goodId);
+		if (barcodeSet.size === 0) {
 			continue;
 		}
 		const title = toStringSafe(record.title).trim();
 		const name = toStringSafe(record.name).trim();
 		const comment = toStringSafe(record.comment).trim();
-		const displayName = title || name || comment || `Producto ${barcode}`;
-		if (!map.has(barcode)) {
-			map.set(barcode, displayName);
+		const description = toStringSafe(record.description).trim();
+		const [primaryBarcode] = Array.from(barcodeSet.values());
+		const displayName =
+			title ||
+			name ||
+			comment ||
+			description ||
+			(primaryBarcode ? `Producto ${primaryBarcode}` : "Producto sin nombre");
+		for (const barcode of barcodeSet) {
+			if (!map.has(barcode)) {
+				map.set(barcode, displayName);
+			}
 		}
 	}
 	return map;
@@ -440,8 +502,30 @@ const limitStatusForQuantity = (
 		return "within";
 	}
 	// For usage limits, we'd need to compare against minUsage/maxUsage
-	// but the dashboard currently only shows quantity-based limits
-	// Return "within" as default for usage limits
+	// but this function is for quantity limits only
+	return "within";
+};
+
+/**
+ * Determines the limit status for usage limits.
+ *
+ * @param usage - Current usage count to compare against the limit
+ * @param limit - StockLimit object with limitType "usage" and minUsage/maxUsage values
+ * @returns LimitStatus indicating if the value is below, within, or above the limit
+ */
+const limitStatusForUsage = (usage: number, limit: StockLimit): LimitStatus => {
+	if (limit.limitType === "usage") {
+		const minUsage = limit.minUsage ?? 0;
+		const maxUsage = limit.maxUsage ?? 0;
+		if (usage < minUsage) {
+			return "below";
+		}
+		if (usage > maxUsage) {
+			return "above";
+		}
+		return "within";
+	}
+	// For quantity limits, return "within" as default
 	return "within";
 };
 
@@ -623,6 +707,14 @@ export default function DashboardPageClient({
 			if (!stock || typeof stock !== "object") {
 				return;
 			}
+			// Only count warehouse items (not cabinet items) for quantity limit checks
+			// Skip items that have a currentCabinet assigned
+			const currentCabinet = toStringSafe(
+				(stock as { currentCabinet?: unknown })?.currentCabinet,
+			);
+			if (currentCabinet) {
+				return;
+			}
 			const warehouse = toStringSafe(
 				(stock as { currentWarehouse?: unknown })?.currentWarehouse,
 			);
@@ -647,14 +739,13 @@ export default function DashboardPageClient({
 			const current = counts.get(key) ?? 0;
 			counts.set(key, current + 1);
 		};
+		// Only process warehouse items, and registerStock will filter out items with currentCabinet
 		for (const item of inventoryGroups.warehouse) {
 			registerStock(item.productStock as Record<string, unknown> | undefined);
 		}
-		for (const item of inventoryGroups.cabinet) {
-			registerStock(item.productStock as Record<string, unknown> | undefined);
-		}
+		// Do not count cabinet items for quantity limits
 		return counts;
-	}, [inventoryGroups.warehouse, inventoryGroups.cabinet]);
+	}, [inventoryGroups.warehouse]);
 
 	const itemsInUse = useMemo(
 		() =>
@@ -701,6 +792,119 @@ export default function DashboardPageClient({
 		[productCatalogResponse],
 	);
 
+	// Build product description map from inventory data (preferred over product catalog)
+	const productDescriptionByBarcode = useMemo(() => {
+		const map = new Map<number, string>();
+		const allItems = [...inventoryGroups.warehouse, ...inventoryGroups.cabinet];
+		const collectCandidateValues = (
+			record: Record<string, unknown> | null,
+		): string[] => {
+			if (!record) {
+				return [];
+			}
+			const candidateKeys = [
+				"productDescription",
+				"description",
+				"name",
+				"productName",
+				"title",
+				"comment",
+			];
+			const values: string[] = [];
+			for (const key of candidateKeys) {
+				const rawValue = toStringSafe(
+					(record as { [key: string]: unknown })[key],
+				).trim();
+				if (rawValue.length > 0) {
+					values.push(rawValue);
+				}
+			}
+			return values;
+		};
+		for (const item of allItems) {
+			const stockRecord = toRecord(item.productStock);
+			if (!stockRecord) {
+				continue;
+			}
+			const rawBarcode =
+				(stockRecord as { barcode?: unknown }).barcode ??
+				(stockRecord as { good_id?: unknown }).good_id ??
+				(stockRecord as { productId?: unknown }).productId ??
+				(stockRecord as { product_id?: unknown }).product_id;
+			const parsedBarcode =
+				typeof rawBarcode === "number"
+					? rawBarcode
+					: typeof rawBarcode === "string"
+						? Number.parseInt(rawBarcode, 10)
+						: Number.NaN;
+			if (!Number.isFinite(parsedBarcode) || parsedBarcode <= 0) {
+				continue;
+			}
+			const nestedProduct = toRecord(
+				(stockRecord as { product?: unknown }).product,
+			);
+			const nestedProductInfo = toRecord(
+				(stockRecord as { productInfo?: unknown }).productInfo,
+			);
+			const candidates = [
+				...collectCandidateValues(stockRecord),
+				...collectCandidateValues(nestedProduct),
+				...collectCandidateValues(nestedProductInfo),
+			];
+			const preferred = candidates.find((value) => value.length > 0);
+			if (!preferred) {
+				continue;
+			}
+			if (
+				!map.has(parsedBarcode) ||
+				(map.get(parsedBarcode)?.trim().length ?? 0) === 0
+			) {
+				map.set(parsedBarcode, preferred);
+			}
+		}
+		return map;
+	}, [inventoryGroups.warehouse, inventoryGroups.cabinet]);
+
+	// Build usage count map for usage limits (count all items regardless of cabinet)
+	const usageCountByWarehouseBarcode = useMemo(() => {
+		const counts = new Map<string, number>();
+		const allItems = [...inventoryGroups.warehouse, ...inventoryGroups.cabinet];
+		for (const item of allItems) {
+			const stock = item.productStock ?? {};
+			if (typeof stock !== "object") {
+				continue;
+			}
+			const warehouse = toStringSafe(
+				(stock as { currentWarehouse?: unknown })?.currentWarehouse,
+			);
+			if (!warehouse) {
+				continue;
+			}
+			const rawBarcode =
+				(stock as { barcode?: unknown })?.barcode ??
+				(stock as { good_id?: unknown })?.good_id ??
+				(stock as { productId?: unknown })?.productId ??
+				(stock as { product_id?: unknown })?.product_id;
+			const parsedBarcode =
+				typeof rawBarcode === "number"
+					? rawBarcode
+					: typeof rawBarcode === "string"
+						? Number.parseInt(rawBarcode, 10)
+						: Number.NaN;
+			if (!Number.isFinite(parsedBarcode) || parsedBarcode <= 0) {
+				continue;
+			}
+			const numberOfUses =
+				typeof (stock as { numberOfUses?: unknown })?.numberOfUses === "number"
+					? (stock as { numberOfUses: number }).numberOfUses
+					: 0;
+			const key = getStockQuantityKey(warehouse, parsedBarcode);
+			const current = counts.get(key) ?? 0;
+			counts.set(key, current + numberOfUses);
+		}
+		return counts;
+	}, [inventoryGroups.warehouse, inventoryGroups.cabinet]);
+
 	const totalStockLimits = useMemo(() => {
 		if (
 			!stockLimitsResponse ||
@@ -712,7 +916,8 @@ export default function DashboardPageClient({
 			return {
 				total: 0,
 				warehouses: 0,
-				groups: [] as StockLimitGroup[],
+				quantityGroups: [] as StockLimitGroup[],
+				usageGroups: [] as UsageLimitGroup[],
 			};
 		}
 		const limits = stockLimitsResponse.data.filter(
@@ -726,55 +931,104 @@ export default function DashboardPageClient({
 				),
 		);
 		const warehouseIds = new Set<string>();
-		const groupsByBarcode = new Map<number, StockLimitGroup>();
+		const quantityGroupsByBarcode = new Map<number, StockLimitGroup>();
+		const usageGroupsByBarcode = new Map<number, UsageLimitGroup>();
+
 		for (const limit of limits) {
 			if (limit.warehouseId) {
 				warehouseIds.add(limit.warehouseId);
 			}
-			const productName =
-				productNameByBarcode.get(limit.barcode) ?? `Producto ${limit.barcode}`;
+			// Get product description from inventory (preferred)
+			const productDescription =
+				productDescriptionByBarcode.get(limit.barcode) ?? null;
+			// Get product name from catalog
+			const productNameFromCatalog =
+				productNameByBarcode.get(limit.barcode) ?? null;
+			// For display name: use description if available, otherwise catalog name, otherwise fallback
+			// But keep productName separate for subtitle display
+			const displayName =
+				productDescription ||
+				productNameFromCatalog ||
+				`Producto ${limit.barcode}`;
+			// Store the catalog name separately (not the fallback) for subtitle
+			const productName = productNameFromCatalog || `Producto ${limit.barcode}`;
 			const warehouseName =
 				warehouseNameById.get(limit.warehouseId) ??
 				(limit.warehouseId
 					? `Almacen ${limit.warehouseId.slice(0, 6)}`
 					: "Bodega");
-			const currentQuantity =
-				stockQuantityByWarehouseBarcode.get(
-					getStockQuantityKey(limit.warehouseId, limit.barcode),
-				) ?? 0;
-			const entry: StockLimitEntry = {
-				warehouseId: limit.warehouseId,
-				warehouseName,
-				limit,
-				currentQuantity,
-				status: limitStatusForQuantity(currentQuantity, limit),
-			};
-			const group = groupsByBarcode.get(limit.barcode);
-			if (!group) {
-				groupsByBarcode.set(limit.barcode, {
-					barcode: limit.barcode,
-					productName,
-					entries: [entry],
-				});
+
+			if (limit.limitType === "quantity") {
+				const currentQuantity =
+					stockQuantityByWarehouseBarcode.get(
+						getStockQuantityKey(limit.warehouseId, limit.barcode),
+					) ?? 0;
+				const entry: StockLimitEntry = {
+					warehouseId: limit.warehouseId,
+					warehouseName,
+					limit,
+					currentQuantity,
+					status: limitStatusForQuantity(currentQuantity, limit),
+				};
+				const group = quantityGroupsByBarcode.get(limit.barcode);
+				if (!group) {
+					quantityGroupsByBarcode.set(limit.barcode, {
+						barcode: limit.barcode,
+						productName: productNameFromCatalog || `Producto ${limit.barcode}`,
+						productDescription,
+						entries: [entry],
+					});
+				} else {
+					group.entries.push(entry);
+				}
 			} else {
-				group.entries.push(entry);
+				// limitType === "usage"
+				const currentUsage =
+					usageCountByWarehouseBarcode.get(
+						getStockQuantityKey(limit.warehouseId, limit.barcode),
+					) ?? 0;
+				const entry: UsageLimitEntry = {
+					warehouseId: limit.warehouseId,
+					warehouseName,
+					limit,
+					currentUsage,
+					status: limitStatusForUsage(currentUsage, limit),
+				};
+				const group = usageGroupsByBarcode.get(limit.barcode);
+				if (!group) {
+					usageGroupsByBarcode.set(limit.barcode, {
+						barcode: limit.barcode,
+						productName: productNameFromCatalog || `Producto ${limit.barcode}`,
+						productDescription,
+						entries: [entry],
+					});
+				} else {
+					group.entries.push(entry);
+				}
 			}
 		}
-		return {
-			total: limits.length,
-			warehouses: warehouseIds.size,
-			groups: Array.from(groupsByBarcode.values()).sort((a, b) =>
+
+		const sortGroups = <T extends { productName: string }>(groups: T[]) =>
+			groups.sort((a, b) =>
 				a.productName.localeCompare(b.productName, "es", {
 					sensitivity: "base",
 					ignorePunctuation: true,
 				}),
-			),
+			);
+
+		return {
+			total: limits.length,
+			warehouses: warehouseIds.size,
+			quantityGroups: sortGroups(Array.from(quantityGroupsByBarcode.values())),
+			usageGroups: sortGroups(Array.from(usageGroupsByBarcode.values())),
 		};
 	}, [
 		stockLimitsResponse,
 		productNameByBarcode,
+		productDescriptionByBarcode,
 		warehouseNameById,
 		stockQuantityByWarehouseBarcode,
+		usageCountByWarehouseBarcode,
 	]);
 
 	const usageRows = useMemo<UsageRow[]>(() => {
@@ -913,6 +1167,7 @@ export default function DashboardPageClient({
 	const totalUsage = itemsInUse.length;
 	const pendingOrdersCount = pendingOrders.length;
 	const pendingTransfersCount = pendingTransfers.length;
+	console.log(totalStockLimits);
 
 	return (
 		<div className="flex flex-1 flex-col gap-6 p-4 md:p-6">
@@ -1016,67 +1271,164 @@ export default function DashboardPageClient({
 					</CardHeader>
 					<CardContent className="space-y-3">
 						{totalStockLimits.total > 0 ? (
-							totalStockLimits.groups
-								.filter((group) => {
-									if (!stockLimitSearch.trim()) {
-										return true;
-									}
-									const normalizedSearch = stockLimitSearch
-										.trim()
-										.toLowerCase();
-									return (
-										group.productName
-											.toLowerCase()
-											.includes(normalizedSearch) ||
-										group.barcode.toString().includes(normalizedSearch)
-									);
-								})
-								.map((group) => (
-									<div
-										className="rounded-lg border border-[#E5E7EB] p-3 dark:border-[#2D3033]"
-										key={group.barcode}
-									>
-										<p className="text-sm font-semibold text-[#11181C] dark:text-[#ECEDEE]">
-											{group.productName}
-										</p>
-										<div className="mt-2 space-y-2">
-											{group.entries.map((entry) => {
-												const badgeClass =
-													entry.status === "within"
-														? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100"
-														: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100";
+							<>
+								{/* Quantity Limits */}
+								{totalStockLimits.quantityGroups.length > 0 && (
+									<div className="space-y-3">
+										<h3 className="text-sm font-semibold text-[#11181C] dark:text-[#ECEDEE]">
+											Límites por cantidad
+										</h3>
+										{totalStockLimits.quantityGroups
+											.filter((group) => {
+												if (!stockLimitSearch.trim()) {
+													return true;
+												}
+												const normalizedSearch = stockLimitSearch
+													.trim()
+													.toLowerCase();
 												return (
-													<div
-														className="flex items-start justify-between rounded-md border border-[#E5E7EB] p-3 dark:border-[#2D3033]"
-														key={`${entry.warehouseId}-${entry.limit.barcode}`}
-													>
-														<div>
-															<p className="text-sm font-medium text-[#11181C] dark:text-[#ECEDEE]">
-																{entry.warehouseName}
-															</p>
-															<p className="text-xs text-[#687076] dark:text-[#9BA1A6]">
-																{entry.limit.limitType === "quantity" ? (
-																	<>
-																		Min {entry.limit.minQuantity} / Max{" "}
-																		{entry.limit.maxQuantity}
-																	</>
-																) : (
-																	<>
-																		Min {entry.limit.minUsage ?? 0} usos / Max{" "}
-																		{entry.limit.maxUsage ?? 0} usos
-																	</>
-																)}
-															</p>
-														</div>
-														<Badge className={badgeClass}>
-															Actual {entry.currentQuantity}
-														</Badge>
-													</div>
+													group.productName
+														.toLowerCase()
+														.includes(normalizedSearch) ||
+													(group.productDescription &&
+														group.productDescription
+															.toLowerCase()
+															.includes(normalizedSearch)) ||
+													group.barcode.toString().includes(normalizedSearch)
 												);
-											})}
-										</div>
+											})
+											.map((group) => (
+												<div
+													className="rounded-lg border border-[#E5E7EB] p-3 dark:border-[#2D3033]"
+													key={group.barcode}
+												>
+													<p className="text-sm font-semibold text-[#11181C] dark:text-[#ECEDEE]">
+														{group.productDescription ||
+															(group.productName !== `Producto ${group.barcode}`
+																? group.productName
+																: `Barcode: ${group.barcode}`)}
+													</p>
+													{group.productDescription &&
+														group.productName !==
+															`Producto ${group.barcode}` && (
+															<p className="text-xs text-[#687076] dark:text-[#9BA1A6] mt-1">
+																{group.productName}
+															</p>
+														)}
+													<div className="mt-2 space-y-2">
+														{group.entries.map((entry) => {
+															const badgeClass =
+																entry.status === "within"
+																	? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100"
+																	: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100";
+															return (
+																<div
+																	className="flex items-start justify-between rounded-md border border-[#E5E7EB] p-3 dark:border-[#2D3033]"
+																	key={`${entry.warehouseId}-${entry.limit.barcode}`}
+																>
+																	<div>
+																		<p className="text-sm font-medium text-[#11181C] dark:text-[#ECEDEE]">
+																			{entry.warehouseName}
+																		</p>
+																		<p className="text-xs text-[#687076] dark:text-[#9BA1A6]">
+																			Min {entry.limit.minQuantity} / Max{" "}
+																			{entry.limit.maxQuantity}
+																		</p>
+																	</div>
+																	<Badge className={badgeClass}>
+																		Actual {entry.currentQuantity}
+																	</Badge>
+																</div>
+															);
+														})}
+													</div>
+												</div>
+											))}
 									</div>
-								))
+								)}
+
+								{/* Usage Limits */}
+								{totalStockLimits.usageGroups.length > 0 && (
+									<div className="space-y-3">
+										<h3 className="text-sm font-semibold text-[#11181C] dark:text-[#ECEDEE]">
+											Límites por uso
+										</h3>
+										{totalStockLimits.usageGroups
+											.filter((group) => {
+												if (!stockLimitSearch.trim()) {
+													return true;
+												}
+												const normalizedSearch = stockLimitSearch
+													.trim()
+													.toLowerCase();
+												return (
+													group.productName
+														.toLowerCase()
+														.includes(normalizedSearch) ||
+													(group.productDescription &&
+														group.productDescription
+															.toLowerCase()
+															.includes(normalizedSearch)) ||
+													group.barcode.toString().includes(normalizedSearch)
+												);
+											})
+											.map((group) => (
+												<div
+													className="rounded-lg border border-[#E5E7EB] p-3 dark:border-[#2D3033]"
+													key={group.barcode}
+												>
+													<p className="text-sm font-semibold text-[#7C3AED] dark:text-[#A78BFA]">
+														{group.productDescription ||
+															(group.productName !== `Producto ${group.barcode}`
+																? group.productName
+																: `Barcode: ${group.barcode}`)}
+													</p>
+													{group.productDescription &&
+														group.productName !==
+															`Producto ${group.barcode}` && (
+															<p className="text-xs text-[#687076] dark:text-[#9BA1A6] mt-1">
+																{group.productName}
+															</p>
+														)}
+													<div className="mt-2 space-y-2">
+														{group.entries.map((entry) => {
+															const badgeClass =
+																entry.status === "within"
+																	? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100"
+																	: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100";
+															return (
+																<div
+																	className="flex items-start justify-between rounded-md border border-[#E5E7EB] p-3 dark:border-[#2D3033]"
+																	key={`${entry.warehouseId}-${entry.limit.barcode}`}
+																>
+																	<div>
+																		<p className="text-sm font-medium text-[#11181C] dark:text-[#ECEDEE]">
+																			{entry.warehouseName}
+																		</p>
+																		<p className="text-xs text-[#687076] dark:text-[#9BA1A6]">
+																			Min {entry.limit.minUsage ?? 0} usos / Max{" "}
+																			{entry.limit.maxUsage ?? 0} usos
+																		</p>
+																	</div>
+																	<Badge className={badgeClass}>
+																		Actual {entry.currentUsage} usos
+																	</Badge>
+																</div>
+															);
+														})}
+													</div>
+												</div>
+											))}
+									</div>
+								)}
+
+								{totalStockLimits.quantityGroups.length === 0 &&
+									totalStockLimits.usageGroups.length === 0 && (
+										<p className="text-sm text-[#687076] dark:text-[#9BA1A6]">
+											No se encontraron limites que coincidan con la búsqueda.
+										</p>
+									)}
+							</>
 						) : (
 							<p className="text-sm text-[#687076] dark:text-[#9BA1A6]">
 								No se encontraron limites configurados.
