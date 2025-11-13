@@ -30,7 +30,7 @@ export const fetchAllStockLimitsServer =
 	};
 
 /**
- * Fetch stock limits for a specific warehouse on the server (authenticated).
+ * Fetch stock limits for a specific warehouse on the server using tRPC client.
  * @param warehouseId - Warehouse identifier to filter stock limits
  */
 export const fetchStockLimitsByWarehouseServer = async (
@@ -40,22 +40,30 @@ export const fetchStockLimitsByWarehouseServer = async (
 		throw new Error("warehouseId is required");
 	}
 
-	const origin = resolveTrustedOrigin();
-	const headers = await buildCookieHeader(origin);
-	const url = new URL("/api/auth/stock-limits/by-warehouse", origin);
-	url.searchParams.set("warehouseId", warehouseId);
+	const { getServerApiClient } = await import("../server-client");
+	const client = await getServerApiClient();
 
-	const res = await fetch(url.toString(), {
-		headers,
-		cache: "no-store",
-	});
-
-	if (!res.ok) {
-		const text = await res.text().catch(() => "");
-		throw new Error(
-			`Stock limits (by warehouse) fetch failed: ${res.status} ${res.statusText} ${text}`,
-		);
+	try {
+		// Type assertion needed due to hono client type inference limitations
+		const response = await (
+			client.api as unknown as {
+				auth: {
+					"stock-limits": {
+						"by-warehouse": {
+							$get: (options: {
+								query: { warehouseId: string };
+							}) => Promise<{ json: () => Promise<StockLimitListResponse> }>;
+						};
+					};
+				};
+			}
+		).auth["stock-limits"]["by-warehouse"].$get({
+			query: { warehouseId },
+		});
+		return response.json();
+	} catch (error) {
+		const errorMessage =
+			error instanceof Error ? error.message : "Unknown error occurred";
+		throw new Error(`Stock limits (by warehouse) fetch failed: ${errorMessage}`);
 	}
-
-	return res.json();
 };

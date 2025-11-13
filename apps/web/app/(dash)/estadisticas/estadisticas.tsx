@@ -52,7 +52,10 @@ import {
 	getReplenishmentOrders,
 	getUnfulfilledProducts,
 } from "@/lib/fetch-functions/replenishment-orders";
-import { getAllStockLimits } from "@/lib/fetch-functions/stock-limits";
+import {
+	getAllStockLimits,
+	getStockLimitsByWarehouse,
+} from "@/lib/fetch-functions/stock-limits";
 import { createQueryKey } from "@/lib/helpers";
 import { queryKeys } from "@/lib/query-keys";
 import {
@@ -90,7 +93,10 @@ type UnfulfilledProductsResponse = Awaited<
 	ReturnType<typeof getUnfulfilledProducts>
 > | null;
 type KitsResponse = Awaited<ReturnType<typeof getAllKits>> | null;
-type StockLimitsResponse = Awaited<ReturnType<typeof getAllStockLimits>> | null;
+	type StockLimitsResponse =
+		| Awaited<ReturnType<typeof getAllStockLimits>>
+		| Awaited<ReturnType<typeof getStockLimitsByWarehouse>>
+		| null;
 
 type ScopeOption = "global" | "warehouse";
 
@@ -103,6 +109,7 @@ type EstadisticasPageProps = {
 type WarehouseOption = {
 	id: string;
 	name: string;
+	isCedis?: boolean;
 };
 
 type ProductNameMap = Map<number, string>;
@@ -118,6 +125,7 @@ type UnfulfilledProduct = {
 	productId?: string | null;
 	warehouseId?: string;
 	warehouseName?: string;
+	sourceWarehouseId?: string;
 	quantityNeeded?: number;
 	orderNumber?: string;
 	orderId?: string;
@@ -156,9 +164,9 @@ const normalizeUnfulfilledProducts = (
 	}
 
 	return items
-		.map((raw) => {
+		.flatMap((raw): UnfulfilledProduct[] => {
 			if (!raw || typeof raw !== "object") {
-				return null;
+				return [];
 			}
 			const record = raw as Record<string, unknown>;
 
@@ -172,7 +180,7 @@ const normalizeUnfulfilledProducts = (
 						: Number.NaN;
 
 			if (!Number.isFinite(barcode)) {
-				return null;
+				return [];
 			}
 
 			const productName =
@@ -205,6 +213,13 @@ const normalizeUnfulfilledProducts = (
 					? record.warehouseName
 					: undefined;
 
+			const sourceWarehouseId =
+				typeof record.sourceWarehouseId === "string"
+					? record.sourceWarehouseId
+					: typeof record.source_warehouse_id === "string"
+						? record.source_warehouse_id
+						: undefined;
+
 			const quantityNeeded =
 				typeof record.quantityNeeded === "number"
 					? record.quantityNeeded
@@ -230,18 +245,20 @@ const normalizeUnfulfilledProducts = (
 							? record.replenishmentOrderId
 							: undefined;
 
-			return {
-				barcode,
-				productName,
-				productId,
-				warehouseId,
-				warehouseName,
-				quantityNeeded,
-				orderNumber,
-				orderId,
-			} satisfies UnfulfilledProduct;
-		})
-		.filter((item): item is UnfulfilledProduct => Boolean(item));
+			return [
+				{
+					barcode,
+					productName,
+					productId,
+					warehouseId,
+					warehouseName,
+					sourceWarehouseId,
+					quantityNeeded,
+					orderNumber,
+					orderId,
+				},
+			];
+		});
 };
 
 const formatDateVerbose = (date: Date) =>
@@ -324,14 +341,14 @@ const normalizeWarehouses = (
 		return [];
 	}
 	return ((response as { data: unknown[] }).data as unknown[])
-		.map((raw) => {
+		.flatMap((raw): WarehouseOption[] => {
 			if (!raw || typeof raw !== "object") {
-				return null;
+				return [];
 			}
 			const record = raw as Record<string, unknown>;
 			const id = typeof record.id === "string" ? record.id : "";
 			if (!id) {
-				return null;
+				return [];
 			}
 			const code = typeof record.code === "string" ? record.code : "";
 			const name =
@@ -340,9 +357,16 @@ const normalizeWarehouses = (
 					: code
 						? `${code} (${id.slice(0, 6)})`
 						: `Almacén ${id.slice(0, 6)}`;
-			return { id, name } satisfies WarehouseOption;
-		})
-		.filter((item): item is WarehouseOption => Boolean(item));
+			const rawIsCedis = record["isCedis"];
+			const rawLegacyIsCedis = record["is_cedis"];
+			const isCedis =
+				typeof rawIsCedis === "boolean"
+					? rawIsCedis
+					: typeof rawLegacyIsCedis === "boolean"
+						? rawLegacyIsCedis
+						: undefined;
+			return [{ id, name, isCedis }];
+		});
 };
 
 const TrendChart = ({
@@ -578,9 +602,9 @@ const extractTransferItems = (response: TransfersResponse): TransferListItem[] =
 	}
 
 	return items
-		.map((raw) => {
+		.flatMap((raw): TransferListItem[] => {
 			if (!raw || typeof raw !== "object") {
-				return null;
+				return [];
 			}
 			const record = raw as Record<string, unknown>;
 			const id =
@@ -590,7 +614,7 @@ const extractTransferItems = (response: TransfersResponse): TransferListItem[] =
 						? String(record.id)
 						: "";
 			if (!id) {
-				return null;
+				return [];
 			}
 			const transferNumber =
 				typeof record.transferNumber === "string"
@@ -635,7 +659,7 @@ const extractTransferItems = (response: TransfersResponse): TransferListItem[] =
 					? record.destinationWarehouseId
 					: undefined;
 
-			return {
+			const item: TransferListItem = {
 				id,
 				transferNumber,
 				shipmentId,
@@ -648,12 +672,14 @@ const extractTransferItems = (response: TransfersResponse): TransferListItem[] =
 				receivedAt,
 				sourceWarehouseId,
 				destinationWarehouseId,
-			} satisfies TransferListItem;
-		})
-		.filter(
-			(item): item is TransferListItem =>
-				Boolean(item && !item.isCancelled),
-		);
+			};
+
+			if (item.isCancelled) {
+				return [];
+			}
+
+			return [item];
+		});
 };
 
 const PendingReceptionsDialog = ({
@@ -1288,11 +1314,14 @@ const LowStockTable = ({
 												product.barcode,
 												product.productId,
 											);
+											// Resolve warehouse name: check warehouseName, then warehouseId, then sourceWarehouseId
 											const warehouseName = product.warehouseName
 												? product.warehouseName
 												: product.warehouseId
 													? resolveWarehouseName(product.warehouseId)
-													: "N/A";
+													: product.sourceWarehouseId
+														? resolveWarehouseName(product.sourceWarehouseId)
+														: "N/A";
 											return (
 												<TableRow
 													key={`unfulfilled-${product.orderId ?? index}-${product.barcode}`}
@@ -1458,6 +1487,16 @@ export function EstadisticasPage({
 		queryFn: getAllWarehouses,
 	});
 
+	const warehouseOptions = useMemo(
+		() => normalizeWarehouses(warehousesResponse),
+		[warehousesResponse],
+	);
+
+	const cedisWarehouseId = useMemo(() => {
+		const cedisWarehouse = warehouseOptions.find((w) => w.isCedis);
+		return cedisWarehouse?.id ?? null;
+	}, [warehouseOptions]);
+
 	const { data: cabinetResponse } = useSuspenseQuery<
 		CabinetResponse,
 		Error,
@@ -1508,8 +1547,15 @@ export function EstadisticasPage({
 		Error,
 		StockLimitsResponse
 	>({
-		queryKey: createQueryKey(queryKeys.stockLimits, ["all"]),
-		queryFn: getAllStockLimits,
+		queryKey: createQueryKey(queryKeys.stockLimits, [
+			cedisWarehouseId ? `cedis-${cedisWarehouseId}` : "all",
+		]),
+		queryFn: () => {
+			if (cedisWarehouseId) {
+				return getStockLimitsByWarehouse(cedisWarehouseId);
+			}
+			return getAllStockLimits();
+		},
 	});
 
 	const cabinetLookup = useMemo(
@@ -1544,11 +1590,6 @@ export function EstadisticasPage({
 		[unfulfilledProductsResponse],
 	);
 
-	const warehouseOptions = useMemo(
-		() => normalizeWarehouses(warehousesResponse),
-		[warehousesResponse],
-	);
-
 	const warehouseNameMap = useMemo(() => {
 		const map = new Map<string, string>();
 		for (const option of warehouseOptions) {
@@ -1573,6 +1614,48 @@ export function EstadisticasPage({
 		() => buildProductNameMap(productCatalogResponse),
 		[productCatalogResponse],
 	);
+
+	/**
+	 * Creates a lookup map that matches barcode to product title by searching for products
+	 * where good_id matches the barcode. This is used specifically for the "productos para crear pedidos" card.
+	 */
+	const productCatalogTitleByBarcode = useMemo(() => {
+		const map = new Map<number, string>();
+		if (
+			!productCatalogResponse ||
+			typeof productCatalogResponse !== "object" ||
+			!("success" in productCatalogResponse) ||
+			!(productCatalogResponse as { success?: unknown }).success ||
+			!Array.isArray(productCatalogResponse.data)
+		) {
+			return map;
+		}
+		for (const raw of productCatalogResponse.data as unknown[]) {
+			if (!raw || typeof raw !== "object") {
+				continue;
+			}
+			const record = raw as Record<string, unknown>;
+			// Get good_id as the key to match against barcode
+			const goodId =
+				typeof record.good_id === "number"
+					? record.good_id
+					: typeof record.good_id === "string"
+						? Number.parseInt(record.good_id, 10)
+						: Number.NaN;
+			if (!Number.isFinite(goodId)) {
+				continue;
+			}
+			// Get title from the product catalog
+			const title =
+				typeof record.title === "string" && record.title.trim().length > 0
+					? record.title.trim()
+					: undefined;
+			if (title && !map.has(goodId)) {
+				map.set(goodId, title);
+			}
+		}
+		return map;
+	}, [productCatalogResponse]);
 
 	const productDetailsByBarcode = useMemo(() => {
 		const map = new Map<number, { name: string; productId: string | null }>();
@@ -1681,18 +1764,39 @@ export function EstadisticasPage({
 		[inventoryItems, effectiveWarehouseId],
 	);
 
+	/**
+	 * Resolves product name prioritizing product catalog title.
+	 * Falls back to inventory item description, then product details, then barcode.
+	 *
+	 * @param barcode - Product barcode to look up
+	 * @param fallbackDescription - Optional description from inventory items
+	 * @returns Product name from catalog if available, otherwise fallback options
+	 */
 	const resolveProductName = (
 		barcode: number,
 		fallbackDescription?: string | null,
 	) => {
+		// Prioritize product catalog title first (matching barcode to good_id)
+		const catalogTitle = productCatalogTitleByBarcode.get(barcode);
+		if (catalogTitle && catalogTitle.trim().length > 0) {
+			return catalogTitle.trim();
+		}
+		// Fall back to product catalog name map (barcode-based lookup)
+		const catalogName = productCatalogNameMap.get(barcode);
+		if (catalogName && catalogName.trim().length > 0) {
+			return catalogName.trim();
+		}
+		// Fall back to inventory item description
 		if (fallbackDescription && fallbackDescription.trim().length > 0) {
 			return fallbackDescription.trim();
 		}
+		// Fall back to product details from inventory
 		const fromDetails = productDetailsByBarcode.get(barcode)?.name;
 		if (fromDetails && fromDetails.trim().length > 0) {
 			return fromDetails;
 		}
-		return productCatalogNameMap.get(barcode) ?? `Producto ${barcode}`;
+		// Last resort: use barcode
+		return `Producto ${barcode}`;
 	};
 
 	const resolveProductId = (barcode: number, fallbackId?: string | null) => {
