@@ -1187,7 +1187,10 @@ const route = app
 			 * we merge them into a single record with all good_ids as a comma-separated string.
 			 * This preserves the first occurrence's data while aggregating the good_ids.
 			 */
-			const uniqueByTitle = new Map<string, DataItemArticulosType & { good_id: number | string }>();
+			const uniqueByTitle = new Map<
+				string,
+				DataItemArticulosType & { good_id: number | string }
+			>();
 			const titleToGoodIds = new Map<string, number[]>();
 
 			// First pass: collect all good_ids per normalized title
@@ -1208,7 +1211,7 @@ const route = app
 					// If multiple good_ids exist for this title, join them with commas
 					// Otherwise, keep the single good_id as-is
 					const mergedGoodId =
-						goodIds.length > 1 ? goodIds.join(',') : goodIds[0] ?? item.good_id;
+						goodIds.length > 1 ? goodIds.join(',') : (goodIds[0] ?? item.good_id);
 
 					uniqueByTitle.set(normalizedTitle, {
 						...item,
@@ -1217,7 +1220,10 @@ const route = app
 				}
 			}
 
-			const allProducts = Array.from(uniqueByTitle.values()).slice(0, MAX_ITEMS) as DataItemArticulosType[];
+			const allProducts = Array.from(uniqueByTitle.values()).slice(
+				0,
+				MAX_ITEMS,
+			) as DataItemArticulosType[];
 			const meta = warehouseResults.flatMap((r) => r.meta ?? []);
 			const success = warehouseResults.every((r) => r.success === true);
 
@@ -2352,6 +2358,57 @@ const route = app
 				{
 					success: false,
 					message: 'Failed to fetch product stock with employee',
+				} satisfies ApiResponse,
+				500,
+			);
+		}
+	})
+	/**
+	 * GET /api/auth/product-stock/deleted-and-empty - Retrieve product stock that are deleted or empty
+	 *
+	 * This endpoint fetches all product stock records from the database where either
+	 * `isDeleted` or `isEmpty` flag is set to true (or both). This is useful for identifying
+	 * products that have been marked as deleted, are empty, or both, which may need
+	 * special handling or cleanup operations. Returns the complete product stock row
+	 * with all fields including id, barcode, description, warehouse location, usage
+	 * history, and other metadata.
+	 *
+	 * @returns {ApiResponse} Success response with product stock data where isDeleted=true or isEmpty=true
+	 * @throws {500} If an unexpected error occurs during data retrieval
+	 */
+	.get('/api/auth/product-stock/deleted-and-empty', async (c) => {
+		try {
+			// Query product stock records where either isDeleted or isEmpty is true
+			const deletedOrEmptyProductStock = await db
+				.select()
+				.from(schemas.productStock)
+				.where(
+					or(
+						eq(schemas.productStock.isDeleted, true),
+						eq(schemas.productStock.isEmpty, true),
+					),
+				);
+
+			// Return the complete product stock records
+			return c.json(
+				{
+					success: true,
+					message:
+						deletedOrEmptyProductStock.length > 0
+							? `Retrieved ${deletedOrEmptyProductStock.length} product stock record(s) that are deleted or empty`
+							: 'No product stock records found that are deleted or empty',
+					data: deletedOrEmptyProductStock,
+				} satisfies ApiResponse,
+				200,
+			);
+		} catch (error) {
+			// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
+			console.error('Error fetching deleted or empty product stock:', error);
+
+			return c.json(
+				{
+					success: false,
+					message: 'Failed to fetch deleted or empty product stock',
 				} satisfies ApiResponse,
 				500,
 			);
@@ -4202,7 +4259,8 @@ const route = app
 						data.salesId !== undefined ||
 						data.isCedis !== undefined,
 					{
-						message: 'At least one field (altegioId, consumablesId, salesId, or isCedis) must be provided',
+						message:
+							'At least one field (altegioId, consumablesId, salesId, or isCedis) must be provided',
 						path: ['altegioId'],
 					},
 				),
@@ -5911,12 +5969,12 @@ const route = app
 						.where(eq(schemas.kitsDetails.id, kitItemId))
 						.returning();
 
-				const updatedItem = updatedRows[0];
+					const updatedItem = updatedRows[0];
 					if (!updatedItem) {
 						return { type: 'not_found' as const };
 					}
 
-				const currentDate = new Date().toISOString().split('T')[0];
+					const currentDate = new Date().toISOString().split('T')[0];
 
 					// Update the product stock status based on return status
 					if (isReturned !== undefined) {
@@ -5924,8 +5982,8 @@ const route = app
 							.update(schemas.productStock)
 							.set({
 								isBeingUsed: !isReturned,
-							lastUsed: currentDate,
-							isEmpty: true,
+								lastUsed: currentDate,
+								isEmpty: true,
 							})
 							.where(eq(schemas.productStock.id, updatedItem.productId))
 							.returning();
@@ -5943,13 +6001,13 @@ const route = app
 								usageDate: new Date(),
 							});
 						}
-				} else {
-					await tx
-						.update(schemas.productStock)
-						.set({
-							isEmpty: true,
-						})
-						.where(eq(schemas.productStock.id, updatedItem.productId));
+					} else {
+						await tx
+							.update(schemas.productStock)
+							.set({
+								isEmpty: true,
+							})
+							.where(eq(schemas.productStock.id, updatedItem.productId));
 					}
 
 					return { type: 'ok' as const, updatedItem };
@@ -6394,40 +6452,37 @@ const route = app
 			);
 		},
 	)
-	.get(
-		'/api/auth/replenishment-orders/unfulfilled-products',
-		async (c) => {
-			try {
-				const user = c.get('user') as SessionUser | null;
+	.get('/api/auth/replenishment-orders/unfulfilled-products', async (c) => {
+		try {
+			const user = c.get('user') as SessionUser | null;
 
-				const unfulfilledProducts = await getUnfulfilledProducts({ user });
+			const unfulfilledProducts = await getUnfulfilledProducts({ user });
 
-				return c.json(
-					{
-						success: true,
-						message: 'Unfulfilled products retrieved successfully',
-						data: unfulfilledProducts,
-					} satisfies ApiResponse,
-					200,
-				);
-			} catch (error) {
-				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
-				console.error('Error fetching unfulfilled products:', error);
-				logErrorDetails(error, 'GET', '/api/auth/replenishment-orders/unfulfilled-products');
+			return c.json(
+				{
+					success: true,
+					message: 'Unfulfilled products retrieved successfully',
+					data: unfulfilledProducts,
+				} satisfies ApiResponse,
+				200,
+			);
+		} catch (error) {
+			// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging API issues
+			console.error('Error fetching unfulfilled products:', error);
+			logErrorDetails(error, 'GET', '/api/auth/replenishment-orders/unfulfilled-products');
 
-				return c.json(
-					{
-						success: false,
-						message: 'Failed to fetch unfulfilled products',
-						...(process.env.NODE_ENV === 'development' && {
-							error: error instanceof Error ? error.message : 'Unknown error',
-						}),
-					} satisfies ApiResponse,
-					500,
-				);
-			}
-		},
-	)
+			return c.json(
+				{
+					success: false,
+					message: 'Failed to fetch unfulfilled products',
+					...(process.env.NODE_ENV === 'development' && {
+						error: error instanceof Error ? error.message : 'Unknown error',
+					}),
+				} satisfies ApiResponse,
+				500,
+			);
+		}
+	})
 	.patch(
 		'/api/auth/replenishment-orders/mark-buy-order-generated',
 		zValidator(
