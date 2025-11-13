@@ -1863,7 +1863,10 @@ export function ProductCatalogTable({
 							limitBadgeLabel,
 							limitBadgeClassName,
 							limitRangeText,
-							currentCount,
+							// Use warehouseItemsCount for display to match what's evaluated against limits
+							// For quantity limits: excludes cabinet items
+							// For usage limits: includes all items (same as currentCount)
+							currentCount: warehouseItemsCount,
 							isUsageLimit,
 						};
 					});
