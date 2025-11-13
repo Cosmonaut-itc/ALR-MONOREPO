@@ -4123,6 +4123,193 @@ const route = app
 	)
 
 	/**
+	 * PATCH /api/auth/warehouse/:warehouseId/update-altegio-config - Update warehouse Altegio configuration
+	 *
+	 * Updates the Altegio-related configuration fields for a specific warehouse.
+	 * This endpoint allows administrators to configure the integration settings
+	 * that connect the warehouse to the Altegio system, including identifiers
+	 * for different Altegio storage types and the CEDIS designation.
+	 *
+	 * The endpoint updates the following fields:
+	 * - altegioId: The primary Altegio warehouse identifier (integer)
+	 * - consumablesId: The Altegio consumables storage identifier (integer)
+	 * - salesId: The Altegio sales storage identifier (integer)
+	 * - isCedis: Boolean flag indicating if this warehouse is a CEDIS (Distribution Center)
+	 *
+	 * All fields are optional, allowing partial updates. At least one field must be provided.
+	 * The warehouse must exist for the update to succeed.
+	 *
+	 * @param {string} warehouseId - UUID of the warehouse to update (path parameter)
+	 * @param {number} [altegioId] - Altegio warehouse identifier (optional, must be non-negative integer)
+	 * @param {number} [consumablesId] - Altegio consumables storage identifier (optional, must be non-negative integer)
+	 * @param {number} [salesId] - Altegio sales storage identifier (optional, must be non-negative integer)
+	 * @param {boolean} [isCedis] - Whether this warehouse is a CEDIS (optional)
+	 * @returns {ApiResponse} Success response with updated warehouse data
+	 * @throws {400} Validation error if input data is invalid or no fields provided
+	 * @throws {404} If warehouse not found
+	 * @throws {500} Database error if update fails
+	 *
+	 * @example
+	 * // Request to update all Altegio fields
+	 * PATCH /api/auth/warehouse/123e4567-e89b-12d3-a456-426614174000/update-altegio-config
+	 * {
+	 *   "altegioId": 12345,
+	 *   "consumablesId": 67890,
+	 *   "salesId": 11111,
+	 *   "isCedis": true
+	 * }
+	 *
+	 * @example
+	 * // Request to update only the CEDIS flag
+	 * PATCH /api/auth/warehouse/123e4567-e89b-12d3-a456-426614174000/update-altegio-config
+	 * {
+	 *   "isCedis": false
+	 * }
+	 */
+	.patch(
+		'/api/auth/warehouse/:warehouseId/update-altegio-config',
+		zValidator(
+			'param',
+			z.object({
+				warehouseId: z.string().uuid('Invalid warehouse ID format'),
+			}),
+		),
+		zValidator(
+			'json',
+			z
+				.object({
+					altegioId: z
+						.number()
+						.int()
+						.nonnegative('Altegio ID must be a non-negative integer')
+						.optional(),
+					consumablesId: z
+						.number()
+						.int()
+						.nonnegative('Consumables ID must be a non-negative integer')
+						.optional(),
+					salesId: z
+						.number()
+						.int()
+						.nonnegative('Sales ID must be a non-negative integer')
+						.optional(),
+					isCedis: z.boolean().optional(),
+				})
+				.refine(
+					(data) =>
+						data.altegioId !== undefined ||
+						data.consumablesId !== undefined ||
+						data.salesId !== undefined ||
+						data.isCedis !== undefined,
+					{
+						message: 'At least one field (altegioId, consumablesId, salesId, or isCedis) must be provided',
+						path: ['altegioId'],
+					},
+				),
+		),
+		async (c) => {
+			try {
+				const { warehouseId } = c.req.valid('param');
+				const payload = c.req.valid('json');
+
+				// Check if warehouse exists
+				const existingWarehouse = await db
+					.select({
+						id: schemas.warehouse.id,
+					})
+					.from(schemas.warehouse)
+					.where(eq(schemas.warehouse.id, warehouseId))
+					.limit(1);
+
+				if (existingWarehouse.length === 0) {
+					return c.json(
+						{
+							success: false,
+							message: 'Warehouse not found',
+						} satisfies ApiResponse,
+						404,
+					);
+				}
+
+				// Get the current user for audit trail
+				const currentUser = c.get('user');
+				const userId = currentUser?.id || null;
+
+				// Build update values object dynamically based on provided fields
+				const updateValues: Record<string, unknown> = {
+					updatedAt: new Date(),
+					lastModifiedBy: userId,
+				};
+
+				if (payload.altegioId !== undefined) {
+					updateValues.altegioId = payload.altegioId;
+				}
+
+				if (payload.consumablesId !== undefined) {
+					updateValues.consumablesId = payload.consumablesId;
+				}
+
+				if (payload.salesId !== undefined) {
+					updateValues.salesId = payload.salesId;
+				}
+
+				if (payload.isCedis !== undefined) {
+					updateValues.isCedis = payload.isCedis;
+				}
+
+				// Update the warehouse with Altegio configuration
+				const updatedWarehouse = await db
+					.update(schemas.warehouse)
+					.set(updateValues)
+					.where(eq(schemas.warehouse.id, warehouseId))
+					.returning();
+
+				if (updatedWarehouse.length === 0) {
+					return c.json(
+						{
+							success: false,
+							message: 'Failed to update warehouse Altegio configuration',
+						} satisfies ApiResponse,
+						500,
+					);
+				}
+
+				return c.json(
+					{
+						success: true,
+						message: 'Warehouse Altegio configuration updated successfully',
+						data: updatedWarehouse[0],
+					} satisfies ApiResponse,
+					200,
+				);
+			} catch (error) {
+				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
+				console.error('Error updating warehouse Altegio configuration:', error);
+
+				// Handle validation errors
+				if (error instanceof Error && error.message.includes('validation')) {
+					return c.json(
+						{
+							success: false,
+							message: 'Invalid input data provided',
+						} satisfies ApiResponse,
+						400,
+					);
+				}
+
+				// Handle generic database errors
+				return c.json(
+					{
+						success: false,
+						message: 'Failed to update warehouse Altegio configuration',
+					} satisfies ApiResponse,
+					500,
+				);
+			}
+		},
+	)
+
+	/**
 	 * GET /api/auth/warehouse-transfers/all - Retrieve all warehouse transfers
 	 *
 	 * This endpoint fetches all warehouse transfer records from the database with
