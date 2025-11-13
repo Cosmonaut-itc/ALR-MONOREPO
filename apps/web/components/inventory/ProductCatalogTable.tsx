@@ -860,21 +860,39 @@ export function ProductCatalogTable({
 			// limitType === "usage"
 			const rawMinUsage = limitFormState.minUsage.trim();
 			const rawMaxUsage = limitFormState.maxUsage.trim();
-			if (!rawMinUsage || !rawMaxUsage) {
-				setLimitFormError("Completa los campos de uso mínimo y máximo.");
+			// Allow empty values to represent "no bound" (null)
+			// Parse non-empty values, otherwise use null
+			const minUsage =
+				rawMinUsage.length > 0
+					? Number.parseInt(rawMinUsage, 10)
+					: null;
+			const maxUsage =
+				rawMaxUsage.length > 0
+					? Number.parseInt(rawMaxUsage, 10)
+					: null;
+
+			// Validate that if values are provided, they are valid numbers
+			if (rawMinUsage.length > 0 && Number.isNaN(minUsage)) {
+				setLimitFormError("El valor de uso mínimo debe ser un número válido.");
 				return;
 			}
-			const minUsage = Number.parseInt(rawMinUsage, 10);
-			const maxUsage = Number.parseInt(rawMaxUsage, 10);
-			if (Number.isNaN(minUsage) || Number.isNaN(maxUsage)) {
-				setLimitFormError("Ingresa valores numéricos válidos.");
+			if (rawMaxUsage.length > 0 && Number.isNaN(maxUsage)) {
+				setLimitFormError("El valor de uso máximo debe ser un número válido.");
 				return;
 			}
-			if (minUsage < 0 || maxUsage < 0) {
-				setLimitFormError("Los valores de uso no pueden ser negativos.");
+
+			// Validate that provided values are non-negative
+			if (minUsage !== null && minUsage < 0) {
+				setLimitFormError("El valor de uso mínimo no puede ser negativo.");
 				return;
 			}
-			if (minUsage > maxUsage) {
+			if (maxUsage !== null && maxUsage < 0) {
+				setLimitFormError("El valor de uso máximo no puede ser negativo.");
+				return;
+			}
+
+			// Validate that if both are provided, minUsage <= maxUsage
+			if (minUsage !== null && maxUsage !== null && minUsage > maxUsage) {
 				setLimitFormError("El uso mínimo no puede ser mayor al máximo.");
 				return;
 			}
@@ -899,8 +917,10 @@ export function ProductCatalogTable({
 						warehouseId,
 						barcode: barcodeForLimit,
 						limitType: "usage",
-						minUsage,
-						maxUsage,
+						// API accepts null for "no bound" (StockLimit type allows null)
+						// Use type assertion since mutation payload types expect number | undefined
+						minUsage: minUsage as number | undefined,
+						maxUsage: maxUsage as number | undefined,
 						notes: notesValue.length > 0 ? notesValue : undefined,
 					});
 				} else {
@@ -908,8 +928,10 @@ export function ProductCatalogTable({
 						warehouseId,
 						barcode: barcodeForLimit,
 						limitType: "usage",
-						minUsage,
-						maxUsage,
+						// API accepts null for "no bound" (StockLimit type allows null)
+						// Use type assertion since mutation payload types expect number | undefined
+						minUsage: minUsage as number | undefined,
+						maxUsage: maxUsage as number | undefined,
 						notes: notesValue.length > 0 ? notesValue : undefined,
 					});
 				}
@@ -1221,21 +1243,29 @@ export function ProductCatalogTable({
 					continue;
 				}
 
-				// Only count warehouse items (not cabinet items) for quantity limit checks
-				// Usage limits count all items regardless of location
-				const currentCount = group.items.length;
-				const warehouseItemsCount =
-					limit.limitType === "quantity"
-						? group.items.filter((item) => !item.data.currentCabinet).length
-						: currentCount;
-				const belowMinimum =
-					limit.limitType === "quantity"
-						? warehouseItemsCount < limit.minQuantity
-						: false;
-				const aboveMaximum =
-					limit.limitType === "quantity"
-						? warehouseItemsCount > limit.maxQuantity
-						: false;
+				let belowMinimum = false;
+				let aboveMaximum = false;
+
+				if (limit.limitType === "quantity") {
+					// Only count warehouse items (not cabinet items) for quantity limit checks
+					const warehouseItemsCount = group.items.filter(
+						(item) => !item.data.currentCabinet,
+					).length;
+					belowMinimum = warehouseItemsCount < limit.minQuantity;
+					aboveMaximum = warehouseItemsCount > limit.maxQuantity;
+				} else {
+					// limitType === "usage"
+					// Aggregate usage counts from all items in the group
+					const totalUsage = group.items.reduce(
+						(sum, item) => sum + (item.data.numberOfUses ?? 0),
+						0,
+					);
+					// Treat null as unlimited (Infinity) rather than zero
+					const minUsage = limit.minUsage ?? Number.NEGATIVE_INFINITY;
+					const maxUsage = limit.maxUsage ?? Number.POSITIVE_INFINITY;
+					belowMinimum = totalUsage < minUsage;
+					aboveMaximum = totalUsage > maxUsage;
+				}
 
 				if (filterType === "below-minimum" && belowMinimum) {
 					return true;
