@@ -2749,28 +2749,56 @@ const route = app
 						// Switching to usage - set quantity fields to 0
 						updateValues.minQuantity = 0;
 						updateValues.maxQuantity = 0;
-						// Use provided usage values or keep current if switching
-						updateValues.minUsage =
+						// Compute both bounds for the new type and validate
+						const nextMinUsage =
 							payload.minUsage !== undefined
 								? payload.minUsage
 								: (current.minUsage ?? 0);
-						updateValues.maxUsage =
+						const nextMaxUsage =
 							payload.maxUsage !== undefined
 								? payload.maxUsage
 								: (current.maxUsage ?? 0);
+
+						// Validate that minUsage <= maxUsage
+						if (nextMinUsage > nextMaxUsage) {
+							return c.json(
+								{
+									success: false,
+									message: 'minUsage must be ≤ maxUsage',
+								} satisfies ApiResponse,
+								400,
+							);
+						}
+
+						updateValues.minUsage = nextMinUsage;
+						updateValues.maxUsage = nextMaxUsage;
 					} else if (payload.limitType === 'quantity') {
 						// Switching to quantity - set usage fields to null
 						updateValues.minUsage = null;
 						updateValues.maxUsage = null;
-						// Use provided quantity values or keep current if switching
-						updateValues.minQuantity =
+						// Compute both bounds for the new type and validate
+						const nextMin =
 							payload.minQuantity !== undefined
 								? payload.minQuantity
 								: (current.minQuantity ?? 0);
-						updateValues.maxQuantity =
+						const nextMax =
 							payload.maxQuantity !== undefined
 								? payload.maxQuantity
 								: (current.maxQuantity ?? 0);
+
+						// Validate that minQuantity <= maxQuantity
+						if (nextMin > nextMax) {
+							return c.json(
+								{
+									success: false,
+									message: 'minQuantity must be ≤ maxQuantity',
+								} satisfies ApiResponse,
+								400,
+							);
+						}
+
+						updateValues.minQuantity = nextMin;
+						updateValues.maxQuantity = nextMax;
 					}
 				} else if (limitType === 'usage') {
 					// Not changing limit type - update fields based on current type
