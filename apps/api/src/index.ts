@@ -83,24 +83,129 @@ type CabinetWarehouseMapEntry = {
 	warehouseName: string;
 };
 
+/**
+ * Schema for creating stock limits
+ * Supports two limit types:
+ * - 'quantity': Requires minQuantity and maxQuantity
+ * - 'usage': Requires minUsage and maxUsage
+ */
 const stockLimitCreateSchema = z
 	.object({
 		warehouseId: z.string().uuid('Invalid warehouse ID'),
 		barcode: z.number().int().nonnegative('Barcode must be a non-negative integer'),
-		minQuantity: z.number().int().nonnegative('Minimum quantity cannot be negative'),
-		maxQuantity: z.number().int().nonnegative('Maximum quantity cannot be negative'),
+		limitType: z.enum(['quantity', 'usage']).default('quantity'),
+		// Quantity-based limits (required when limitType is 'quantity')
+		minQuantity: z.number().int().nonnegative('Minimum quantity cannot be negative').optional(),
+		maxQuantity: z.number().int().nonnegative('Maximum quantity cannot be negative').optional(),
+		// Usage-based limits (required when limitType is 'usage')
+		minUsage: z.number().int().nonnegative('Minimum usage cannot be negative').optional(),
+		maxUsage: z.number().int().nonnegative('Maximum usage cannot be negative').optional(),
 		notes: z.string().max(1000, 'Notes must be 1000 characters or less').optional(),
 	})
-	.refine((data) => data.minQuantity <= data.maxQuantity, {
-		message: 'minQuantity must be ≤ maxQuantity',
-		path: ['maxQuantity'],
-	});
+	.refine(
+		(data) => {
+			if (data.limitType === 'quantity') {
+				return (
+					data.minQuantity !== undefined &&
+					data.maxQuantity !== undefined &&
+					data.minQuantity <= data.maxQuantity
+				);
+			}
+			return true;
+		},
+		{
+			message: 'minQuantity must be ≤ maxQuantity for quantity-based limits',
+			path: ['maxQuantity'],
+		},
+	)
+	.refine(
+		(data) => {
+			if (data.limitType === 'usage') {
+				return (
+					data.minUsage !== undefined &&
+					data.maxUsage !== undefined &&
+					data.minUsage <= data.maxUsage
+				);
+			}
+			return true;
+		},
+		{
+			message: 'minUsage must be ≤ maxUsage for usage-based limits',
+			path: ['maxUsage'],
+		},
+	)
+	.refine(
+		(data) => {
+			if (data.limitType === 'quantity') {
+				return data.minQuantity !== undefined && data.maxQuantity !== undefined;
+			}
+			return true;
+		},
+		{
+			message: 'minQuantity and maxQuantity are required for quantity-based limits',
+			path: ['minQuantity'],
+		},
+	)
+	.refine(
+		(data) => {
+			if (data.limitType === 'usage') {
+				return data.minUsage !== undefined && data.maxUsage !== undefined;
+			}
+			return true;
+		},
+		{
+			message: 'minUsage and maxUsage are required for usage-based limits',
+			path: ['minUsage'],
+		},
+	);
 
-const stockLimitUpdateSchema = z.object({
-	minQuantity: z.number().int().nonnegative('Minimum quantity cannot be negative').optional(),
-	maxQuantity: z.number().int().nonnegative('Maximum quantity cannot be negative').optional(),
-	notes: z.string().max(1000, 'Notes must be 1000 characters or less').optional(),
-});
+/**
+ * Schema for updating stock limits
+ * Supports updating both quantity-based and usage-based limits
+ */
+const stockLimitUpdateSchema = z
+	.object({
+		limitType: z.enum(['quantity', 'usage']).optional(),
+		minQuantity: z.number().int().nonnegative('Minimum quantity cannot be negative').optional(),
+		maxQuantity: z.number().int().nonnegative('Maximum quantity cannot be negative').optional(),
+		minUsage: z.number().int().nonnegative('Minimum usage cannot be negative').optional(),
+		maxUsage: z.number().int().nonnegative('Maximum usage cannot be negative').optional(),
+		notes: z.string().max(1000, 'Notes must be 1000 characters or less').optional(),
+	})
+	.refine(
+		(data) => {
+			// If updating quantity fields, ensure min <= max
+			if (
+				data.minQuantity !== undefined &&
+				data.maxQuantity !== undefined &&
+				data.minQuantity > data.maxQuantity
+			) {
+				return false;
+			}
+			return true;
+		},
+		{
+			message: 'minQuantity must be ≤ maxQuantity',
+			path: ['maxQuantity'],
+		},
+	)
+	.refine(
+		(data) => {
+			// If updating usage fields, ensure min <= max
+			if (
+				data.minUsage !== undefined &&
+				data.maxUsage !== undefined &&
+				data.minUsage > data.maxUsage
+			) {
+				return false;
+			}
+			return true;
+		},
+		{
+			message: 'minUsage must be ≤ maxUsage',
+			path: ['maxUsage'],
+		},
+	);
 
 const inventorySyncRequestSchema = z
 	.object({
@@ -2417,7 +2522,10 @@ const route = app
 	/**
 	 * POST /api/auth/stock-limits - Create a new stock limit configuration
 	 *
-	 * Stores minimum and maximum quantity thresholds for a barcode in a given warehouse.
+	 * Stores minimum and maximum thresholds for a barcode in a given warehouse.
+	 * Supports two limit types:
+	 * - 'quantity': Limits based on physical quantity in stock (minQuantity/maxQuantity)
+	 * - 'usage': Limits based on number of times a product has been used (minUsage/maxUsage)
 	 * Requires authenticated user with role 'encargado'.
 	 */
 	.post('/api/auth/stock-limits', zValidator('json', stockLimitCreateSchema), async (c) => {
@@ -2445,19 +2553,38 @@ const route = app
 		const payload = c.req.valid('json');
 
 		try {
-			const [created] = await db
-				.insert(schemas.stockLimit)
-				.values({
-					warehouseId: payload.warehouseId,
-					barcode: payload.barcode,
-					minQuantity: payload.minQuantity,
-					maxQuantity: payload.maxQuantity,
-					notes: payload.notes,
-					createdBy: user.id,
-					createdAt: new Date(),
-					updatedAt: new Date(),
-				})
-				.returning();
+			// Build values object based on limit type
+			const limitType = payload.limitType ?? 'quantity';
+			const insertValues =
+				limitType === 'usage'
+					? {
+							warehouseId: payload.warehouseId,
+							barcode: payload.barcode,
+							limitType: 'usage' as const,
+							minUsage: payload.minUsage,
+							maxUsage: payload.maxUsage,
+							minQuantity: 0,
+							maxQuantity: 0,
+							notes: payload.notes,
+							createdBy: user.id,
+							createdAt: new Date(),
+							updatedAt: new Date(),
+						}
+					: {
+							warehouseId: payload.warehouseId,
+							barcode: payload.barcode,
+							limitType: 'quantity' as const,
+							minQuantity: payload.minQuantity ?? 0,
+							maxQuantity: payload.maxQuantity ?? 0,
+							minUsage: null,
+							maxUsage: null,
+							notes: payload.notes,
+							createdBy: user.id,
+							createdAt: new Date(),
+							updatedAt: new Date(),
+						};
+
+			const [created] = await db.insert(schemas.stockLimit).values(insertValues).returning();
 
 			if (!created) {
 				return c.json(
@@ -2523,7 +2650,10 @@ const route = app
 	/**
 	 * PUT /api/auth/stock-limits/:warehouseId/:barcode - Update an existing stock limit
 	 *
-	 * Allows updating min/max thresholds or notes while enforcing minQuantity ≤ maxQuantity.
+	 * Allows updating min/max thresholds (quantity or usage based) or notes.
+	 * Supports both limit types:
+	 * - 'quantity': Updates minQuantity/maxQuantity
+	 * - 'usage': Updates minUsage/maxUsage
 	 * Requires authenticated user with role 'encargado'.
 	 */
 	.put(
@@ -2564,9 +2694,13 @@ const route = app
 			const { warehouseId, barcode } = c.req.valid('param');
 			const payload = c.req.valid('json');
 
+			// Check if at least one field is being updated
 			if (
+				payload.limitType === undefined &&
 				payload.minQuantity === undefined &&
 				payload.maxQuantity === undefined &&
+				payload.minUsage === undefined &&
+				payload.maxUsage === undefined &&
 				payload.notes === undefined
 			) {
 				return c.json(
@@ -2600,24 +2734,88 @@ const route = app
 				}
 
 				const current = existing[0];
-				const nextMin = payload.minQuantity ?? current.minQuantity;
-				const nextMax = payload.maxQuantity ?? current.maxQuantity;
-
-				if (nextMin > nextMax) {
-					return c.json(
-						{
-							success: false,
-							message: 'minQuantity must be ≤ maxQuantity',
-						} satisfies ApiResponse,
-						400,
-					);
-				}
-
 				const updateValues: Record<string, unknown> = {
-					minQuantity: nextMin,
-					maxQuantity: nextMax,
 					updatedAt: new Date(),
 				};
+
+				// Determine the limit type (use payload if provided, otherwise use current)
+				const limitType = payload.limitType ?? current.limitType ?? 'quantity';
+
+				// Handle limit type change or updates
+				if (payload.limitType !== undefined && payload.limitType !== current.limitType) {
+					// Changing limit type - reset the other type's fields
+					updateValues.limitType = payload.limitType;
+					if (payload.limitType === 'usage') {
+						// Switching to usage - set quantity fields to 0
+						updateValues.minQuantity = 0;
+						updateValues.maxQuantity = 0;
+						// Use provided usage values or keep current if switching
+						updateValues.minUsage =
+							payload.minUsage !== undefined
+								? payload.minUsage
+								: (current.minUsage ?? 0);
+						updateValues.maxUsage =
+							payload.maxUsage !== undefined
+								? payload.maxUsage
+								: (current.maxUsage ?? 0);
+					} else if (payload.limitType === 'quantity') {
+						// Switching to quantity - set usage fields to null
+						updateValues.minUsage = null;
+						updateValues.maxUsage = null;
+						// Use provided quantity values or keep current if switching
+						updateValues.minQuantity =
+							payload.minQuantity !== undefined
+								? payload.minQuantity
+								: (current.minQuantity ?? 0);
+						updateValues.maxQuantity =
+							payload.maxQuantity !== undefined
+								? payload.maxQuantity
+								: (current.maxQuantity ?? 0);
+					}
+				} else if (limitType === 'usage') {
+					// Not changing limit type - update fields based on current type
+					// Updating usage-based limits
+					const nextMinUsage =
+						payload.minUsage !== undefined ? payload.minUsage : (current.minUsage ?? 0);
+					const nextMaxUsage =
+						payload.maxUsage !== undefined ? payload.maxUsage : (current.maxUsage ?? 0);
+
+					if (nextMinUsage > nextMaxUsage) {
+						return c.json(
+							{
+								success: false,
+								message: 'minUsage must be ≤ maxUsage',
+							} satisfies ApiResponse,
+							400,
+						);
+					}
+
+					updateValues.minUsage = nextMinUsage;
+					updateValues.maxUsage = nextMaxUsage;
+				} else {
+					// Updating quantity-based limits
+					const nextMin =
+						payload.minQuantity !== undefined
+							? payload.minQuantity
+							: (current.minQuantity ?? 0);
+					const nextMax =
+						payload.maxQuantity !== undefined
+							? payload.maxQuantity
+							: (current.maxQuantity ?? 0);
+
+					if (nextMin > nextMax) {
+						return c.json(
+							{
+								success: false,
+								message: 'minQuantity must be ≤ maxQuantity',
+							} satisfies ApiResponse,
+							400,
+						);
+					}
+
+					updateValues.minQuantity = nextMin;
+					updateValues.maxQuantity = nextMax;
+				}
 
 				if (payload.notes !== undefined) {
 					updateValues.notes = payload.notes;
