@@ -293,8 +293,9 @@ export async function updateReplenishmentOrder({
 			 * This preserves the original quantity while allowing updates to sentQuantity, notes, and buyOrderGenerated.
 			 * If sentQuantity is provided, use it; otherwise, use quantity for backward compatibility.
 			 */
-			for (const item of input.items) {
-				const updateData: Partial<typeof schemas.replenishmentOrderDetails.$inferInsert> = {};
+			const updatePromises = input.items.map((item) => {
+				const updateData: Partial<typeof schemas.replenishmentOrderDetails.$inferInsert> =
+					{};
 
 				// Update sentQuantity if provided, otherwise use quantity for backward compatibility
 				if (item.sentQuantity !== undefined) {
@@ -313,7 +314,7 @@ export async function updateReplenishmentOrder({
 					updateData.buyOrderGenerated = item.buyOrderGenerated;
 				}
 
-				await tx
+				return tx
 					.update(schemas.replenishmentOrderDetails)
 					.set(updateData)
 					.where(
@@ -322,7 +323,9 @@ export async function updateReplenishmentOrder({
 							eq(schemas.replenishmentOrderDetails.barcode, item.barcode),
 						),
 					);
-			}
+			});
+
+			await Promise.all(updatePromises);
 		}
 
 		return fetchOrderWithDetails(tx, id);
@@ -465,12 +468,17 @@ export async function linkReplenishmentOrderToTransfer({
 			user.role === 'encargado' ||
 			(user.warehouseId && user.warehouseId === order.cedisWarehouseId);
 
-		if (!isAuthorized) {
-			const reason = !user.warehouseId
-				? 'User is not assigned to a warehouse'
-				: user.warehouseId !== order.cedisWarehouseId
-					? `User warehouse (${user.warehouseId}) does not match order CEDIS warehouse (${order.cedisWarehouseId})`
-					: 'Insufficient permissions to link transfer to this order';
+		if (isAuthorized) {
+			// User is authorized, continue with the operation
+		} else {
+			let reason: string;
+			if (!user.warehouseId) {
+				reason = 'User is not assigned to a warehouse';
+			} else if (user.warehouseId !== order.cedisWarehouseId) {
+				reason = `User warehouse (${user.warehouseId}) does not match order CEDIS warehouse (${order.cedisWarehouseId})`;
+			} else {
+				reason = 'Insufficient permissions to link transfer to this order';
+			}
 
 			throw new HTTPException(403, {
 				message: `Forbidden: ${reason}. Only users assigned to the CEDIS warehouse or users with 'encargado' role can link transfers to replenishment orders.`,
@@ -550,6 +558,7 @@ export async function getUnfulfilledProducts({
 
 	const unfulfilledItems = await db
 		.select({
+			id: schemas.replenishmentOrderDetails.id,
 			barcode: schemas.replenishmentOrderDetails.barcode,
 			quantity: schemas.replenishmentOrderDetails.quantity,
 			sentQuantity: schemas.replenishmentOrderDetails.sentQuantity,
@@ -569,7 +578,7 @@ export async function getUnfulfilledProducts({
 		)
 		.where(
 			and(
-				eq(schemas.replenishmentOrder.isReceived, true),
+				eq(schemas.replenishmentOrder.isSent, true),
 				eq(schemas.replenishmentOrderDetails.buyOrderGenerated, false),
 				sql`${schemas.replenishmentOrderDetails.sentQuantity} < ${schemas.replenishmentOrderDetails.quantity}`,
 			),
@@ -577,6 +586,7 @@ export async function getUnfulfilledProducts({
 		.orderBy(schemas.replenishmentOrderDetails.barcode);
 
 	return unfulfilledItems.map((item) => ({
+		id: item.id,
 		barcode: item.barcode,
 		quantity: item.quantity,
 		sentQuantity: item.sentQuantity,
