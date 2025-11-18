@@ -8,16 +8,22 @@ import { queryKeys } from "../query-keys";
 type CreateStockLimitPayload = {
 	warehouseId: string;
 	barcode: number;
-	minQuantity: number;
-	maxQuantity: number;
+	limitType: "quantity" | "usage";
+	minQuantity?: number;
+	maxQuantity?: number;
+	minUsage?: number;
+	maxUsage?: number;
 	notes?: string;
 };
 
 type UpdateStockLimitPayload = {
 	warehouseId: string;
 	barcode: number;
+	limitType?: "quantity" | "usage";
 	minQuantity?: number;
 	maxQuantity?: number;
+	minUsage?: number;
+	maxUsage?: number;
 	notes?: string;
 };
 
