@@ -11,8 +11,8 @@ type CreateStockLimitPayload = {
 	limitType: "quantity" | "usage";
 	minQuantity?: number;
 	maxQuantity?: number;
-	minUsage?: number;
-	maxUsage?: number;
+	minUsage?: number | null;
+	maxUsage?: number | null;
 	notes?: string;
 };
 
@@ -22,8 +22,8 @@ type UpdateStockLimitPayload = {
 	limitType?: "quantity" | "usage";
 	minQuantity?: number;
 	maxQuantity?: number;
-	minUsage?: number;
-	maxUsage?: number;
+	minUsage?: number | null;
+	maxUsage?: number | null;
 	notes?: string;
 };
 

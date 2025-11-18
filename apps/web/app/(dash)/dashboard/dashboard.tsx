@@ -544,12 +544,12 @@ const limitStatusForQuantity = (
  *
  * @param items - Array of inventory items to check against the limit
  * @param limit - StockLimit object with limitType "usage" and minUsage/maxUsage values
- * @returns Object with status and maxUsage for display
+ * @returns Object with status and violatingUsage for display (shows the offending metric)
  */
 const limitStatusForUsage = (
 	items: Array<{ numberOfUses: number }>,
 	limit: StockLimit,
-): { status: LimitStatus; maxUsage: number; violatingCount: number } => {
+): { status: LimitStatus; violatingUsage: number; violatingCount: number } => {
 	if (limit.limitType === "usage") {
 		// Treat null as unlimited (Infinity) rather than zero
 		const minUsage = limit.minUsage ?? Number.NEGATIVE_INFINITY;
@@ -559,6 +559,8 @@ const limitStatusForUsage = (
 		let belowMinimumCount = 0;
 		let aboveMaximumCount = 0;
 		let maxItemUsage = 0;
+		let minViolatingUsage = Number.POSITIVE_INFINITY;
+		let maxViolatingUsage = 0;
 
 		for (const item of items) {
 			const itemUsage = item.numberOfUses ?? 0;
@@ -566,36 +568,41 @@ const limitStatusForUsage = (
 
 			if (itemUsage < minUsage) {
 				belowMinimumCount++;
+				// Track the minimum violating usage (lowest value below minimum)
+				minViolatingUsage = Math.min(minViolatingUsage, itemUsage);
 			}
 			if (itemUsage > maxUsage) {
 				aboveMaximumCount++;
+				// Track the maximum violating usage (highest value above maximum)
+				maxViolatingUsage = Math.max(maxViolatingUsage, itemUsage);
 			}
 		}
 
 		// Status is "above" if any item exceeds max, "below" if any item is below min
 		// Priority: above > below > within
+		// Return the violating usage to show the actual problem
 		if (aboveMaximumCount > 0) {
 			return {
 				status: "above",
-				maxUsage: maxItemUsage,
+				violatingUsage: maxViolatingUsage,
 				violatingCount: aboveMaximumCount,
 			};
 		}
 		if (belowMinimumCount > 0) {
 			return {
 				status: "below",
-				maxUsage: maxItemUsage,
+				violatingUsage: minViolatingUsage,
 				violatingCount: belowMinimumCount,
 			};
 		}
 		return {
 			status: "within",
-			maxUsage: maxItemUsage,
+			violatingUsage: maxItemUsage,
 			violatingCount: 0,
 		};
 	}
 	// For quantity limits, return "within" as default
-	return { status: "within", maxUsage: 0, violatingCount: 0 };
+	return { status: "within", violatingUsage: 0, violatingCount: 0 };
 };
 
 const formatDateSafe = (value: string) => {
@@ -1064,7 +1071,7 @@ export default function DashboardPageClient({
 					warehouseId: limit.warehouseId,
 					warehouseName,
 					limit,
-					currentUsage: usageStatus.maxUsage,
+					currentUsage: usageStatus.violatingUsage,
 					status: usageStatus.status,
 				};
 				const group = usageGroupsByBarcode.get(limit.barcode);

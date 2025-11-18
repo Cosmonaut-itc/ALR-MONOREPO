@@ -15,6 +15,12 @@ export type CreateProductStockPayload = CreateProductStockPostOptions extends {
 	? J
 	: never;
 
+/**
+ * Altegio payload type extracted from CreateProductStockPayload.
+ * Represents the optional altegio field structure for product stock creation.
+ */
+export type AltegioPayload = NonNullable<CreateProductStockPayload["altegio"]>;
+
 export const useCreateInventoryItem = () =>
 	useMutation({
 		mutationKey: ["create-inventory-item"],
@@ -215,7 +221,11 @@ export const useUpdateInventoryIsEmpty = () =>
 			productIds: string[];
 			invalidateContexts?: Array<string | null | undefined>;
 		}) => {
-			if (!data?.productIds || !Array.isArray(data.productIds) || data.productIds.length === 0) {
+			if (
+				!data?.productIds ||
+				!Array.isArray(data.productIds) ||
+				data.productIds.length === 0
+			) {
 				throw new Error("Los identificadores de producto son obligatorios");
 			}
 			const response = await client.api.auth["product-stock"][

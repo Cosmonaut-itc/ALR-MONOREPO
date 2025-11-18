@@ -915,9 +915,9 @@ export function ProductCatalogTable({
 						barcode: barcodeForLimit,
 						limitType: "usage",
 						// API accepts null for "no bound" (StockLimit type allows null)
-						// Use type assertion since mutation payload types expect number | undefined
-						minUsage: minUsage as number | undefined,
-						maxUsage: maxUsage as number | undefined,
+						// Send null explicitly to clear the bound when field is empty
+						minUsage: minUsage,
+						maxUsage: maxUsage,
 						notes: notesValue.length > 0 ? notesValue : undefined,
 					});
 				} else {
@@ -926,9 +926,9 @@ export function ProductCatalogTable({
 						barcode: barcodeForLimit,
 						limitType: "usage",
 						// API accepts null for "no bound" (StockLimit type allows null)
-						// Use type assertion since mutation payload types expect number | undefined
-						minUsage: minUsage as number | undefined,
-						maxUsage: maxUsage as number | undefined,
+						// Send null explicitly to clear the bound when field is empty
+						minUsage: minUsage,
+						maxUsage: maxUsage,
 						notes: notesValue.length > 0 ? notesValue : undefined,
 					});
 				}
@@ -2736,12 +2736,27 @@ export function ProductCatalogTable({
 								limit.maxUsage !== null ? limit.maxUsage : "Sin límite";
 						}
 					}
+					const barcodeForCsv =
+						typeof product.barcode === "number"
+							? product.barcode
+							: product.barcodeIds.length > 0
+								? product.barcodeIds[0]
+								: Number.parseInt(
+										String(product.barcode).split(",")[0] || "0",
+										10,
+									) || 0;
+					// For quantity limits, exclude cabinet items to match UI filtering
+					// For usage limits, include all items (usage limits check per-item)
+					const warehouseStock =
+						limit && (limit.limitType ?? "quantity") === "quantity"
+							? group.items.filter((item) => !item.data.currentCabinet).length
+							: group.items.length;
 					csvData.push({
 						name: product.name,
-						barcode: product.barcodeLabel || product.barcode,
+						barcode: product.barcodeLabel || barcodeForCsv,
 						category: product.category,
 						warehouse: group.label,
-						warehouseStock: group.items.length,
+						warehouseStock,
 						emptyItems: emptyItemsCount,
 						minLimit,
 						maxLimit,

@@ -55,6 +55,8 @@ import {
 } from "@/lib/fetch-functions/stock-limits";
 import { createQueryKey } from "@/lib/helpers";
 import {
+	type AltegioPayload,
+	type CreateProductStockPayload,
 	useCreateInventoryItem,
 	useSyncInventory,
 } from "@/lib/mutations/inventory";
@@ -63,6 +65,7 @@ import { queryKeys } from "@/lib/query-keys";
 import type { StockItemWithEmployee } from "@/stores/inventory-store";
 import { useTransferStore } from "@/stores/transfer-store";
 import type {
+	ProductCatalogItem,
 	ProductCatalogResponse,
 	ProductStockWithEmployee,
 	StockLimit,
@@ -78,6 +81,7 @@ type CatalogProductOption = {
 	name: string;
 	category: string;
 	description: string;
+	catalogItem: ProductCatalogItem | null;
 };
 
 type WarehouseOption = {
@@ -91,12 +95,126 @@ type WarehouseCabinetMapping = {
 	warehouseId: string;
 	warehouseName: string;
 	isDistributionCenter: boolean;
+	timeZone: string | null;
 };
 
 type QrLabelPayload = {
 	barcode: number;
 	uuid: string;
 	productName: string;
+};
+
+const DEFAULT_ALTEGIO_TIME_ZONE = "America/Mexico_City";
+
+const toPositiveNumber = (value: unknown): number | null => {
+	if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+		return value;
+	}
+	if (typeof value === "string" && value.trim().length > 0) {
+		const parsed = Number.parseFloat(value.trim());
+		if (Number.isFinite(parsed) && parsed > 0) {
+			return parsed;
+		}
+	}
+	return null;
+};
+
+const toPositiveInteger = (value: unknown): number | null => {
+	const normalized = toPositiveNumber(value);
+	return normalized == null ? null : Math.floor(normalized);
+};
+
+const toNonEmptyString = (value: unknown): string | null => {
+	if (typeof value !== "string") {
+		return null;
+	}
+	const trimmed = value.trim();
+	return trimmed.length > 0 ? trimmed : null;
+};
+
+const formatLotDate = () => new Date().toISOString().split("T")[0];
+
+const buildAltegioPayload = ({
+	catalogItem,
+	quantity,
+	warehouseTimeZone,
+}: {
+	catalogItem?: ProductCatalogItem | null;
+	quantity: number;
+	warehouseTimeZone?: string | null;
+}): AltegioPayload => {
+	const normalizedQuantity =
+		Number.isFinite(quantity) && quantity > 0
+			? Math.max(1, Math.floor(quantity))
+			: 1;
+	const lotDate = formatLotDate();
+
+	const totalCostCandidate =
+		catalogItem != null
+			? (toPositiveNumber(catalogItem.actual_cost) ??
+				toPositiveNumber(catalogItem.cost))
+			: null;
+
+	const supplierIdCandidate =
+		catalogItem != null
+			? toPositiveInteger(
+					(catalogItem as { supplier_id?: number }).supplier_id ??
+						catalogItem.good_id ??
+						catalogItem.salon_id,
+				)
+			: null;
+
+	const titleLabel =
+		catalogItem != null ? toNonEmptyString(catalogItem.title) : null;
+	const documentComment =
+		catalogItem != null
+			? (toNonEmptyString(catalogItem.comment) ??
+				(titleLabel ? `Ingreso catálogo: ${titleLabel}` : null))
+			: null;
+
+	const categoryLabel =
+		catalogItem != null ? toNonEmptyString(catalogItem.category) : null;
+	const operationComment = categoryLabel
+		? `Reposición ${categoryLabel}`
+		: (documentComment ?? undefined);
+
+	const transactionComment = (() => {
+		if (catalogItem == null) {
+			return `Lot ${lotDate}`;
+		}
+		const explicitTransaction = toNonEmptyString(
+			(catalogItem as { transaction_comment?: string }).transaction_comment,
+		);
+		if (explicitTransaction) {
+			return explicitTransaction;
+		}
+		const articleLabel = toNonEmptyString(catalogItem.article);
+		return articleLabel ? `Lot ${articleLabel} - ${lotDate}` : `Lot ${lotDate}`;
+	})();
+
+	const operationUnitType =
+		catalogItem != null &&
+		typeof catalogItem.unit_id === "number" &&
+		Number.isFinite(catalogItem.unit_id) &&
+		catalogItem.unit_id > 0
+			? catalogItem.unit_id
+			: undefined;
+
+	const resolvedDocumentComment =
+		documentComment ?? `Ingreso manual ${lotDate}`;
+	const resolvedOperationComment =
+		operationComment ?? `Reposición manual ${lotDate}`;
+
+	return {
+		amount: normalizedQuantity,
+		...(totalCostCandidate ? { totalCost: totalCostCandidate } : {}),
+		...(operationUnitType ? { operationUnitType } : {}),
+		...(supplierIdCandidate ? { supplierId: supplierIdCandidate } : {}),
+		documentComment: resolvedDocumentComment,
+		operationComment: resolvedOperationComment,
+		transactionComment,
+		timeZone: warehouseTimeZone ?? DEFAULT_ALTEGIO_TIME_ZONE,
+	};
 };
 
 /**
@@ -199,6 +317,22 @@ export function InventarioPage({
 							).trim()
 						: null;
 
+			const entryTimeZone = (() => {
+				if (
+					typeof (entry as { timeZone?: string }).timeZone === "string" &&
+					(entry as { timeZone?: string }).timeZone?.trim().length
+				) {
+					return ((entry as { timeZone?: string }).timeZone as string).trim();
+				}
+				if (
+					typeof (entry as { timezone?: string }).timezone === "string" &&
+					(entry as { timezone?: string }).timezone?.trim().length
+				) {
+					return ((entry as { timezone?: string }).timezone as string).trim();
+				}
+				return null;
+			})();
+
 			const entryWarehouseName =
 				typeof entry.warehouseName === "string" &&
 				entry.warehouseName.trim().length > 0
@@ -219,6 +353,7 @@ export function InventarioPage({
 				warehouseName:
 					entryWarehouseName ?? `Almacén ${entryWarehouseId.slice(0, 6)}`,
 				isDistributionCenter: entryCabinetId == null,
+				timeZone: entryTimeZone,
 			});
 		}
 
@@ -311,24 +446,25 @@ export function InventarioPage({
 		};
 
 		const rawData = Array.isArray(productCatalog.data)
-			? (productCatalog.data as Array<Record<string, unknown>>)
+			? (productCatalog.data as ProductCatalogItem[])
 			: [];
 		const options: CatalogProductOption[] = [];
 		for (const rawItem of rawData) {
 			if (!rawItem || typeof rawItem !== "object") {
 				continue;
 			}
-			const item = rawItem as Record<string, unknown>;
+			const item = rawItem as ProductCatalogItem;
 			const barcodeNumber =
 				parseBarcode(item.barcode) ??
 				parseBarcode(item.good_id) ??
-				parseBarcode(item.id);
+				parseBarcode((item as Record<string, unknown>).id);
 			if (barcodeNumber == null || Number.isNaN(barcodeNumber)) {
 				continue;
 			}
-			const nameCandidate = item.title ?? item.name;
+			const nameCandidate = item.title;
 			const categoryCandidate = item.category;
-			const descriptionCandidate = item.comment ?? item.description;
+			const descriptionCandidate =
+				item.comment ?? (item as { description?: string }).description;
 			options.push({
 				barcode: barcodeNumber,
 				name:
@@ -345,6 +481,7 @@ export function InventarioPage({
 					descriptionCandidate.trim().length > 0
 						? descriptionCandidate
 						: "Sin descripción",
+				catalogItem: item,
 			});
 		}
 		return options;
@@ -542,14 +679,34 @@ export function InventarioPage({
 		const quantity = Number.isFinite(qrQuantity)
 			? Math.max(1, Math.min(50, Math.floor(qrQuantity)))
 			: 1;
+		const selectedWarehouseMeta = warehouseCabinetMap.get(selectedWarehouseId);
+		const normalizedDescription = (() => {
+			const trimmed = selectedProduct.description?.trim();
+			if (!trimmed || trimmed === "Sin descripción") {
+				return selectedProduct.name;
+			}
+			return trimmed;
+		})();
+		const baseAltegioPayload = buildAltegioPayload({
+			catalogItem: selectedProduct.catalogItem ?? null,
+			quantity: 1,
+			warehouseTimeZone: selectedWarehouseMeta?.timeZone,
+		});
+		const basePayload: CreateProductStockPayload = {
+			barcode: selectedProduct.barcode,
+			currentWarehouse: selectedWarehouseId,
+			isKit,
+			description: normalizedDescription,
+			isBeingUsed: false,
+			numberOfUses: 0,
+			altegio: baseAltegioPayload,
+		};
 		const labels: QrLabelPayload[] = [];
 		try {
 			for (let index = 0; index < quantity; index += 1) {
 				const result = await createInventoryItem({
-					barcode: selectedProduct.barcode,
-					currentWarehouse: selectedWarehouseId,
-					isKit,
-					description: selectedProduct.name,
+					...basePayload,
+					altegio: { ...baseAltegioPayload },
 				});
 				const createdId =
 					result && typeof result === "object" && "data" in result
@@ -603,6 +760,7 @@ export function InventarioPage({
 		selectedProduct,
 		selectedWarehouseId,
 		isKit,
+		warehouseCabinetMap,
 	]);
 
 	const handleReprintItemQr = useCallback(
