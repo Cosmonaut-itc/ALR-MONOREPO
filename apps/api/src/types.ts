@@ -66,6 +66,10 @@ const documentStorageSchema = z.object({
 	title: z.string(),
 });
 
+const coordinateStringSchema = z
+	.union([z.string(), z.number()])
+	.transform((value) => value.toString());
+
 const documentCompanySchema = z.object({
 	id: z.number(),
 	title: z.string(),
@@ -73,8 +77,9 @@ const documentCompanySchema = z.object({
 	city_id: z.number(),
 	timezone: z.number(),
 	address: z.string(),
-	ccoordinate_lat: z.string(),
-	coordinate_lon: z.string(),
+	coordinate_lat: coordinateStringSchema.optional(),
+	ccoordinate_lat: coordinateStringSchema.optional(),
+	coordinate_lon: coordinateStringSchema.optional(),
 	logo: z.string(),
 	zip: z.string(),
 	phones: z.array(z.unknown()),
@@ -82,7 +87,7 @@ const documentCompanySchema = z.object({
 });
 
 const documentUserSchema = z.object({
-	id: z.string(),
+	id: z.coerce.string(),
 	name: z.string(),
 	phone: z.string(),
 });

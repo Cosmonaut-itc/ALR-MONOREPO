@@ -26,15 +26,16 @@ import { db } from './db/index';
 import * as schemas from './db/schema';
 import {
 	type AggregatedTotals,
-	type AltegioStockArrivalPayload,
 	ALTEGIO_DOCUMENT_TYPE_ARRIVAL,
 	ALTEGIO_DOCUMENT_TYPE_DEPARTURE,
 	ALTEGIO_OPERATION_TYPE_ARRIVAL,
 	ALTEGIO_OPERATION_TYPE_DEPARTURE,
+	type AltegioStockArrivalPayload,
 	createAggregatedOperationRequest,
 	postAltegioStorageDocument,
 	postAltegioStorageOperation,
 	replicateStockCreationToAltegio,
+	resolveAltegioStorageIds,
 } from './lib/altegio-service';
 import { auth } from './lib/auth';
 import { InventorySyncError, syncInventory } from './lib/inventory-sync';
@@ -538,12 +539,7 @@ const altegioArrivalPayloadSchema = z.object({
 		.nonnegative('Unit cost cannot be negative')
 		.optional()
 		.describe('Cost per unit (optional if total cost provided)'),
-	supplierId: z
-		.number()
-		.int()
-		.positive()
-		.optional()
-		.describe('Altegio supplier identifier'),
+	supplierId: z.number().int().positive().optional().describe('Altegio supplier identifier'),
 	masterId: z.number().int().positive().optional().describe('Master (employee) ID'),
 	clientId: z.number().int().positive().optional().describe('Client ID when applicable'),
 	documentComment: z
@@ -552,12 +548,7 @@ const altegioArrivalPayloadSchema = z.object({
 		.max(500)
 		.optional()
 		.describe('Custom arrival document comment'),
-	operationComment: z
-		.string()
-		.min(1)
-		.max(500)
-		.optional()
-		.describe('Custom operation comment'),
+	operationComment: z.string().min(1).max(500).optional().describe('Custom operation comment'),
 	transactionComment: z
 		.string()
 		.min(1)
@@ -5076,24 +5067,30 @@ const route = app
 
 						// Destination arrival (if not DC)
 						if (transferRow.destinationWarehouseId !== DistributionCenterId) {
-						const destinationWarehouses = await db
-							.select({
-								id: schemas.warehouse.id,
-								altegioId: schemas.warehouse.altegioId,
-								consumablesId: schemas.warehouse.consumablesId,
-								salesId: schemas.warehouse.salesId,
-								timeZone: schemas.warehouse.timeZone,
-							})
+							const destinationWarehouses = await db
+								.select({
+									id: schemas.warehouse.id,
+									altegioId: schemas.warehouse.altegioId,
+									consumablesId: schemas.warehouse.consumablesId,
+									salesId: schemas.warehouse.salesId,
+									timeZone: schemas.warehouse.timeZone,
+								})
 								.from(schemas.warehouse)
 								.where(
 									eq(schemas.warehouse.id, transferRow.destinationWarehouseId),
 								);
 
 							const destinationWarehouse = destinationWarehouses[0];
+							const destinationStorage = destinationWarehouse?.altegioId
+								? resolveAltegioStorageIds(destinationWarehouse.altegioId, {
+										consumablesId: destinationWarehouse.consumablesId,
+										salesId: destinationWarehouse.salesId,
+									})
+								: undefined;
 							if (
 								!(
 									destinationWarehouse?.altegioId &&
-									destinationWarehouse.consumablesId
+									destinationStorage?.consumablesId
 								)
 							) {
 								// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
@@ -5109,79 +5106,85 @@ const route = app
 								);
 							}
 
-						const arrivalDocument = await postAltegioStorageDocument(
-							destinationWarehouse.altegioId,
-							altegioHeaders,
-							{
-								typeId: ALTEGIO_DOCUMENT_TYPE_ARRIVAL,
-								comment: `Arrival document for transfer ${transferRow.transferNumber}`,
-								storageId: destinationWarehouse.consumablesId,
-								createDate: new Date(),
+							const arrivalDocument = await postAltegioStorageDocument(
+								destinationWarehouse.altegioId,
+								altegioHeaders,
+								{
+									typeId: ALTEGIO_DOCUMENT_TYPE_ARRIVAL,
+									comment: `Arrival document for transfer ${transferRow.transferNumber}`,
+									storageId: destinationStorage.consumablesId,
+									createDate: new Date(),
+									...(destinationWarehouse.timeZone
+										? { timeZone: destinationWarehouse.timeZone }
+										: {}),
+								},
+								apiResponseSchemaDocument,
+							);
+
+							if (!arrivalDocument.success) {
+								// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
+								console.error('Failed to create arrival document');
+								return c.json(
+									{
+										success: false,
+										message: 'Failed to create arrival document',
+									} satisfies ApiResponse,
+									500,
+								);
+							}
+
+							const arrivalOperationRequest = createAggregatedOperationRequest({
+								documentId: arrivalDocument.data.id,
+								storageId: destinationStorage.consumablesId,
+								typeId: ALTEGIO_OPERATION_TYPE_ARRIVAL,
+								transferNumber: transferRow.transferNumber,
+								aggregatedTransactions,
 								...(destinationWarehouse.timeZone
 									? { timeZone: destinationWarehouse.timeZone }
 									: {}),
-							},
-							apiResponseSchemaDocument,
-						);
+							});
 
-						if (!arrivalDocument.success) {
-							// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
-							console.error('Failed to create arrival document');
-							return c.json(
-								{
-									success: false,
-									message: 'Failed to create arrival document',
-								} satisfies ApiResponse,
-								500,
+							const arrivalOperation = await postAltegioStorageOperation(
+								destinationWarehouse.altegioId,
+								altegioHeaders,
+								arrivalOperationRequest,
+								apiResponseSchemaStorageOperation,
 							);
-						}
 
-						const arrivalOperationRequest = createAggregatedOperationRequest({
-							documentId: arrivalDocument.data.id,
-							storageId: destinationWarehouse.consumablesId,
-							typeId: ALTEGIO_OPERATION_TYPE_ARRIVAL,
-							transferNumber: transferRow.transferNumber,
-							aggregatedTransactions,
-							...(destinationWarehouse.timeZone
-								? { timeZone: destinationWarehouse.timeZone }
-								: {}),
-						});
-
-						const arrivalOperation = await postAltegioStorageOperation(
-							destinationWarehouse.altegioId,
-							altegioHeaders,
-							arrivalOperationRequest,
-							apiResponseSchemaStorageOperation,
-						);
-
-						if (!arrivalOperation.success) {
-							// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
-							console.error('Failed to create storage operation');
-							return c.json(
-								{
-									success: false,
-									message: 'Failed to create storage operation',
-								} satisfies ApiResponse,
-								500,
-							);
-						}
+							if (!arrivalOperation.success) {
+								// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
+								console.error('Failed to create storage operation');
+								return c.json(
+									{
+										success: false,
+										message: 'Failed to create storage operation',
+									} satisfies ApiResponse,
+									500,
+								);
+							}
 						}
 
 						// Source departure (if not DC)
-					if (transferRow.sourceWarehouseId !== DistributionCenterId) {
-						const sourceWarehouses = await db
-							.select({
-								id: schemas.warehouse.id,
-								altegioId: schemas.warehouse.altegioId,
-								consumablesId: schemas.warehouse.consumablesId,
-								salesId: schemas.warehouse.salesId,
-								timeZone: schemas.warehouse.timeZone,
-							})
+						if (transferRow.sourceWarehouseId !== DistributionCenterId) {
+							const sourceWarehouses = await db
+								.select({
+									id: schemas.warehouse.id,
+									altegioId: schemas.warehouse.altegioId,
+									consumablesId: schemas.warehouse.consumablesId,
+									salesId: schemas.warehouse.salesId,
+									timeZone: schemas.warehouse.timeZone,
+								})
 								.from(schemas.warehouse)
 								.where(eq(schemas.warehouse.id, transferRow.sourceWarehouseId));
 
 							const sourceWarehouse = sourceWarehouses[0];
-							if (!(sourceWarehouse?.altegioId && sourceWarehouse.consumablesId)) {
+							const sourceStorage = sourceWarehouse?.altegioId
+								? resolveAltegioStorageIds(sourceWarehouse.altegioId, {
+										consumablesId: sourceWarehouse.consumablesId,
+										salesId: sourceWarehouse.salesId,
+									})
+								: undefined;
+							if (!(sourceWarehouse?.altegioId && sourceStorage?.consumablesId)) {
 								// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
 								console.error(
 									`Source warehouse ${transferRow.sourceWarehouseId} not found`,
@@ -5195,58 +5198,62 @@ const route = app
 								);
 							}
 
-						const departureDocument = await postAltegioStorageDocument(
-							sourceWarehouse.altegioId,
-							altegioHeaders,
-							{
-								typeId: ALTEGIO_DOCUMENT_TYPE_DEPARTURE,
-								comment: `Departure document for transfer ${transferRow.transferNumber}`,
-								storageId: sourceWarehouse.consumablesId,
-								createDate: new Date(),
-								...(sourceWarehouse.timeZone ? { timeZone: sourceWarehouse.timeZone } : {}),
-							},
-							apiResponseSchemaDocument,
-						);
-
-						if (!departureDocument.success) {
-							// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
-							console.error('Failed to create departure document');
-							return c.json(
+							const departureDocument = await postAltegioStorageDocument(
+								sourceWarehouse.altegioId,
+								altegioHeaders,
 								{
-									success: false,
-									message: 'Failed to create departure document',
-								} satisfies ApiResponse,
-								500,
+									typeId: ALTEGIO_DOCUMENT_TYPE_DEPARTURE,
+									comment: `Departure document for transfer ${transferRow.transferNumber}`,
+									storageId: sourceStorage.consumablesId,
+									createDate: new Date(),
+									...(sourceWarehouse.timeZone
+										? { timeZone: sourceWarehouse.timeZone }
+										: {}),
+								},
+								apiResponseSchemaDocument,
 							);
-						}
 
-						const departureOperationRequest = createAggregatedOperationRequest({
-							documentId: departureDocument.data.id,
-							storageId: sourceWarehouse.consumablesId,
-							typeId: ALTEGIO_OPERATION_TYPE_DEPARTURE,
-							transferNumber: transferRow.transferNumber,
-							aggregatedTransactions,
-							...(sourceWarehouse.timeZone ? { timeZone: sourceWarehouse.timeZone } : {}),
-						});
+							if (!departureDocument.success) {
+								// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
+								console.error('Failed to create departure document');
+								return c.json(
+									{
+										success: false,
+										message: 'Failed to create departure document',
+									} satisfies ApiResponse,
+									500,
+								);
+							}
 
-						const departureOperation = await postAltegioStorageOperation(
-							sourceWarehouse.altegioId,
-							altegioHeaders,
-							departureOperationRequest,
-							apiResponseSchemaStorageOperation,
-						);
+							const departureOperationRequest = createAggregatedOperationRequest({
+								documentId: departureDocument.data.id,
+								storageId: sourceStorage.consumablesId,
+								typeId: ALTEGIO_OPERATION_TYPE_DEPARTURE,
+								transferNumber: transferRow.transferNumber,
+								aggregatedTransactions,
+								...(sourceWarehouse.timeZone
+									? { timeZone: sourceWarehouse.timeZone }
+									: {}),
+							});
 
-						if (!departureOperation.success) {
-							// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
-							console.error('Failed to create departure storage operation');
-							return c.json(
-								{
-									success: false,
-									message: 'Failed to create departure storage operation',
-								} satisfies ApiResponse,
-								500,
+							const departureOperation = await postAltegioStorageOperation(
+								sourceWarehouse.altegioId,
+								altegioHeaders,
+								departureOperationRequest,
+								apiResponseSchemaStorageOperation,
 							);
-						}
+
+							if (!departureOperation.success) {
+								// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
+								console.error('Failed to create departure storage operation');
+								return c.json(
+									{
+										success: false,
+										message: 'Failed to create departure storage operation',
+									} satisfies ApiResponse,
+									500,
+								);
+							}
 						}
 					}
 				}

@@ -1,19 +1,19 @@
-import { z } from 'zod';
 import { formatInTimeZone } from 'date-fns-tz';
-import { db } from '../db/index';
-import * as schemas from '../db/schema';
 import { eq } from 'drizzle-orm';
+import { z } from 'zod';
+import { db } from '../db/index';
+import { warehouse as warehouseTable } from '../db/schema';
 import {
 	type AltegioDocumentTypeId,
 	type AltegioOperationTypeId,
+	type AltegioResponseSchema,
 	apiResponseSchemaDocument,
 	apiResponseSchemaStorageOperation,
-	type AltegioResponseSchema,
 } from '../types';
 
 const ALTEGIO_BASE_URL = 'https://api.alteg.io';
 const ALTEGIO_STORAGE_DOCUMENT_PATH = '/api/v1/storage_operations/documents';
-const ALTEGIO_STORAGE_OPERATION_PATH = '/api/v1/storage_operations/operations';
+const ALTEGIO_STORAGE_OPERATION_PATH = '/api/v1/storage_operations/operation';
 const ALTEGIO_DATETIME_FORMAT = 'yyyy-MM-dd HH:mm:ss';
 const DEFAULT_TIME_ZONE = 'UTC';
 const DEFAULT_TIME_ZONE_OFFSET = '+00:00';
@@ -21,6 +21,12 @@ export const ALTEGIO_DOCUMENT_TYPE_ARRIVAL: AltegioDocumentTypeId = 3;
 export const ALTEGIO_DOCUMENT_TYPE_DEPARTURE: AltegioDocumentTypeId = 7;
 export const ALTEGIO_OPERATION_TYPE_ARRIVAL: AltegioOperationTypeId = 3;
 export const ALTEGIO_OPERATION_TYPE_DEPARTURE: AltegioOperationTypeId = 4;
+
+const HARDCODED_STORAGE_MAP: Record<number, { consumablesId: number; salesId: number }> = {
+	1308654: { consumablesId: 2_624_863, salesId: 2_624_864 },
+	729299: { consumablesId: 1_460_023, salesId: 1_460_024 },
+	706097: { consumablesId: 1_412_069, salesId: 1_412_070 },
+};
 
 const altegioCompanyIdSchema = z.number().int().positive();
 const altegioAuthHeadersSchema = z.object({
@@ -109,6 +115,11 @@ export type AltegioRequestOptions = {
 	baseUrl?: string;
 };
 
+export type AltegioStorageIds = {
+	consumablesId: number;
+	salesId?: number;
+};
+
 export type AltegioStockArrivalPayload = {
 	amount: number;
 	totalCost?: number;
@@ -124,11 +135,13 @@ export type AltegioStockArrivalPayload = {
 };
 
 const TIME_ZONE_OFFSET_REGEX = /^[+-]\d{2}:\d{2}$/;
+const GMT_OFFSET_REGEX = /GMT([+-]\d{1,2})(?::(\d{2}))?/i;
 
 const formatCreateDate = (date: Date, timeZone?: string): string => {
 	return formatInTimeZone(date, timeZone ?? DEFAULT_TIME_ZONE, ALTEGIO_DATETIME_FORMAT);
 };
 
+/* biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Time-zone parsing requires explicit branches */
 const formatTimeZoneOffset = (timeZone?: string, date: Date = new Date()): string => {
 	if (!timeZone) {
 		return DEFAULT_TIME_ZONE_OFFSET;
@@ -148,11 +161,11 @@ const formatTimeZoneOffset = (timeZone?: string, date: Date = new Date()): strin
 			.find((part) => part.type === 'timeZoneName')?.value;
 
 		if (timeZonePart) {
-			const match = timeZonePart.match(/GMT([+-]\d{1,2})(?::(\d{2}))?/i);
+			const match = timeZonePart.match(GMT_OFFSET_REGEX);
 			if (match) {
 				const hours = Number(match[1]);
 				const minutes = match[2] ? Number(match[2]) : 0;
-				if (!Number.isNaN(hours) && !Number.isNaN(minutes)) {
+				if (!(Number.isNaN(hours) || Number.isNaN(minutes))) {
 					const sign = hours >= 0 ? '+' : '-';
 					return `${sign}${Math.abs(hours).toString().padStart(2, '0')}:${minutes
 						.toString()
@@ -179,6 +192,31 @@ const createHeaders = ({ authHeader, acceptHeader }: AltegioAuthHeaders): Header
 export const createAltegioHeaders = (headers: AltegioAuthHeaders): HeadersInit => {
 	const parsed = altegioAuthHeadersSchema.parse(headers);
 	return createHeaders(parsed);
+};
+
+const normalizeStorageId = (value?: number | null): number | undefined => {
+	return typeof value === 'number' && value > 0 ? value : undefined;
+};
+
+export const resolveAltegioStorageIds = (
+	altegioCompanyId: number,
+	fallback?: { consumablesId?: number | null; salesId?: number | null },
+): AltegioStorageIds | undefined => {
+	const override = HARDCODED_STORAGE_MAP[altegioCompanyId];
+	if (override) {
+		return override;
+	}
+
+	const fallbackConsumables = normalizeStorageId(fallback?.consumablesId);
+	if (!fallbackConsumables) {
+		return;
+	}
+
+	const fallbackSales = normalizeStorageId(fallback?.salesId);
+	return {
+		consumablesId: fallbackConsumables,
+		...(fallbackSales ? { salesId: fallbackSales } : {}),
+	};
 };
 
 const logFailedResponse = async (response: Response, operation: string): Promise<never> => {
@@ -298,6 +336,219 @@ export const postAltegioStorageOperation = async <TResponse>(
 
 // --- Helper Function ---
 
+type ArrivalValidationResult =
+	| {
+			kind: 'skip';
+			response: { success: boolean; message: string; skipped: boolean };
+	  }
+	| { kind: 'error'; response: { success: boolean; message: string } }
+	| {
+			kind: 'ok';
+			details: AltegioStockArrivalPayload;
+			normalizedTotalCost: number;
+			normalizedUnitCost: number;
+	  };
+
+const validateArrivalRequest = (
+	barcode: number,
+	arrivalDetails?: AltegioStockArrivalPayload,
+): ArrivalValidationResult => {
+	if (barcode !== 24_849_114) {
+		return {
+			kind: 'skip',
+			response: {
+				success: true,
+				message: 'Skipped: Barcode not targeted for Altegio replication test',
+				skipped: true,
+			},
+		};
+	}
+
+	if (!arrivalDetails) {
+		return {
+			kind: 'error',
+			response: {
+				success: false,
+				message: 'Missing Altegio arrival payload for targeted barcode',
+			},
+		};
+	}
+
+	const { amount, totalCost, unitCost } = arrivalDetails;
+	if (!(amount && amount > 0)) {
+		return {
+			kind: 'error',
+			response: {
+				success: false,
+				message: 'Altegio arrival amount must be greater than zero',
+			},
+		};
+	}
+
+	const normalizedTotalCost = totalCost ?? (unitCost ?? 0) * amount;
+	const normalizedUnitCost = unitCost ?? (amount === 0 ? 0 : normalizedTotalCost / amount);
+
+	return {
+		kind: 'ok',
+		details: arrivalDetails,
+		normalizedTotalCost,
+		normalizedUnitCost,
+	};
+};
+
+type WarehouseConfigResult =
+	| {
+			kind: 'ok';
+			warehouse: {
+				id: string;
+				altegioId: number;
+				consumablesId: number;
+				salesId: number | null;
+				timeZone: string | null;
+			};
+			storageIds: AltegioStorageIds;
+	  }
+	| { kind: 'error'; response: { success: boolean; message: string } };
+
+const getWarehouseConfig = async (warehouseId: string): Promise<WarehouseConfigResult> => {
+	const warehouses = await db
+		.select({
+			id: warehouseTable.id,
+			altegioId: warehouseTable.altegioId,
+			consumablesId: warehouseTable.consumablesId,
+			salesId: warehouseTable.salesId,
+			timeZone: warehouseTable.timeZone,
+		})
+		.from(warehouseTable)
+		.where(eq(warehouseTable.id, warehouseId));
+
+	const selectedWarehouse = warehouses[0];
+	const storageIds = selectedWarehouse?.altegioId
+		? resolveAltegioStorageIds(selectedWarehouse.altegioId, {
+				consumablesId: selectedWarehouse.consumablesId,
+				salesId: selectedWarehouse.salesId,
+			})
+		: undefined;
+
+	if (!(selectedWarehouse?.altegioId && storageIds?.consumablesId)) {
+		// biome-ignore lint/suspicious/noConsole: Operational visibility for configuration gaps
+		console.error(`Warehouse ${warehouseId} missing Altegio configuration`);
+		return {
+			kind: 'error',
+			response: {
+				success: false,
+				message: `Warehouse ${warehouseId} missing Altegio configuration`,
+			},
+		};
+	}
+
+	return {
+		kind: 'ok',
+		warehouse: {
+			id: selectedWarehouse.id,
+			altegioId: selectedWarehouse.altegioId as number,
+			consumablesId: selectedWarehouse.consumablesId as number,
+			salesId: selectedWarehouse.salesId,
+			timeZone: selectedWarehouse.timeZone,
+		},
+		storageIds,
+	};
+};
+
+type AltegioArrivalParams = {
+	warehouseId: string;
+	headers: AltegioAuthHeaders;
+	details: AltegioStockArrivalPayload;
+	normalizedTotalCost: number;
+	normalizedUnitCost: number;
+	barcode: number;
+};
+
+const executeAltegioArrival = async ({
+	warehouseId,
+	headers,
+	details,
+	normalizedTotalCost,
+	normalizedUnitCost,
+	barcode,
+}: AltegioArrivalParams): Promise<{ success: boolean; message: string }> => {
+	try {
+		const warehouseResult = await getWarehouseConfig(warehouseId);
+		if (warehouseResult.kind === 'error') {
+			return warehouseResult.response;
+		}
+		const { warehouse, storageIds } = warehouseResult;
+
+		const resolvedTimeZone = details.timeZone ?? warehouse.timeZone ?? DEFAULT_TIME_ZONE;
+		const documentComment =
+			details.documentComment ?? `Arrival for product ${barcode} (Auto-replicated)`;
+		const operationComment = details.operationComment ?? `Arrival for product ${barcode}`;
+		const documentRequest: AltegioStorageDocumentRequest = {
+			typeId: ALTEGIO_DOCUMENT_TYPE_ARRIVAL,
+			comment: documentComment,
+			storageId: storageIds.consumablesId,
+			createDate: new Date(),
+			timeZone: resolvedTimeZone,
+		};
+
+		const documentResponse = await postAltegioStorageDocument(
+			warehouse.altegioId,
+			headers,
+			documentRequest,
+			apiResponseSchemaDocument,
+		);
+
+		if (!documentResponse.success) {
+			return { success: false, message: 'Failed to create Altegio document' };
+		}
+
+		const operationRequest: AltegioStorageOperationRequest = {
+			typeId: ALTEGIO_OPERATION_TYPE_ARRIVAL,
+			comment: operationComment,
+			storageId: storageIds.consumablesId,
+			createDate: new Date(),
+			timeZone: resolvedTimeZone,
+			goodsTransactions: [
+				{
+					documentId: documentResponse.data.id,
+					goodId: barcode,
+					amount: details.amount,
+					costPerUnit: normalizedUnitCost,
+					discount: 0,
+					cost: normalizedTotalCost,
+					operationUnitType: details.operationUnitType ?? 1,
+					// Altegio error "Staff member required": supply masterId when available.
+					...(details.masterId ? { masterId: details.masterId } : {}),
+					...(details.clientId ? { clientId: details.clientId } : {}),
+					...(details.supplierId ? { supplierId: details.supplierId } : {}),
+					...(details.transactionComment ? { comment: details.transactionComment } : {}),
+				},
+			],
+		};
+
+		const operationResponse = await postAltegioStorageOperation(
+			warehouse.altegioId,
+			headers,
+			operationRequest,
+			apiResponseSchemaStorageOperation,
+		);
+
+		if (!operationResponse.success) {
+			return { success: false, message: 'Failed to create Altegio operation' };
+		}
+
+		return { success: true, message: 'Altegio replication successful' };
+	} catch (error) {
+		// biome-ignore lint/suspicious/noConsole: Needed for troubleshooting external API interactions
+		console.error('Altegio replication error:', error);
+		return {
+			success: false,
+			message:
+				error instanceof Error ? error.message : 'Unknown error during Altegio replication',
+		};
+	}
+};
+
 /**
  * Replicates a local stock creation (Arrival) to Altegio.
  * Creates a Storage Document (Arrival) and then a Storage Operation (Arrival).
@@ -311,139 +562,30 @@ export const replicateStockCreationToAltegio = async (
 	warehouseId: string,
 	arrivalDetails?: AltegioStockArrivalPayload,
 ): Promise<{ success: boolean; message: string; skipped?: boolean }> => {
-	// Test Restriction
-	if (barcode !== 24849114) {
-		return {
-			success: true,
-			message: 'Skipped: Barcode not targeted for Altegio replication test',
-			skipped: true,
-		};
+	const validation = validateArrivalRequest(barcode, arrivalDetails);
+	if (validation.kind !== 'ok') {
+		return validation.response;
 	}
 
-	if (!arrivalDetails) {
-		return {
-			success: false,
-			message: 'Missing Altegio arrival payload for targeted barcode',
-		};
-	}
-
-	const { amount, totalCost, unitCost } = arrivalDetails;
-	if (!(amount && amount > 0)) {
-		return {
-			success: false,
-			message: 'Altegio arrival amount must be greater than zero',
-		};
-	}
-
-	const normalizedTotalCost = totalCost ?? (unitCost ?? 0) * amount;
-	const normalizedUnitCost =
-		unitCost ?? (amount === 0 ? 0 : normalizedTotalCost / amount);
+	const { details, normalizedTotalCost, normalizedUnitCost } = validation;
 
 	const authHeader = process.env.AUTH_HEADER;
 	const acceptHeader = process.env.ACCEPT_HEADER;
 
-	if (!authHeader || !acceptHeader) {
+	if (!(authHeader && acceptHeader)) {
+		// biome-ignore lint/suspicious/noConsole: Logging missing configuration aids incident response
 		console.error('Missing Altegio authentication configuration');
 		return { success: false, message: 'Missing Altegio authentication configuration' };
 	}
 
-	const altegioHeaders = { authHeader, acceptHeader };
-
-	try {
-		// 1. Get Warehouse Info
-		const warehouses = await db
-			.select({
-				id: schemas.warehouse.id,
-				altegioId: schemas.warehouse.altegioId,
-				consumablesId: schemas.warehouse.consumablesId,
-				timeZone: schemas.warehouse.timeZone,
-			})
-			.from(schemas.warehouse)
-			.where(eq(schemas.warehouse.id, warehouseId));
-
-		const warehouse = warehouses[0];
-		if (!warehouse?.altegioId || !warehouse.consumablesId) {
-			console.error(`Warehouse ${warehouseId} missing Altegio configuration`);
-			return {
-				success: false,
-				message: `Warehouse ${warehouseId} missing Altegio configuration`,
-			};
-		}
-
-		// 2. Create Document (Arrival)
-		const resolvedTimeZone = arrivalDetails.timeZone ?? warehouse.timeZone ?? DEFAULT_TIME_ZONE;
-		const documentComment =
-			arrivalDetails.documentComment ?? `Arrival for product ${barcode} (Auto-replicated)`;
-		const operationComment = arrivalDetails.operationComment ?? `Arrival for product ${barcode}`;
-		const documentRequest: AltegioStorageDocumentRequest = {
-			typeId: ALTEGIO_DOCUMENT_TYPE_ARRIVAL,
-			comment: documentComment,
-			storageId: warehouse.consumablesId,
-			createDate: new Date(),
-			timeZone: resolvedTimeZone,
-		};
-
-		const documentResponse = await postAltegioStorageDocument(
-			warehouse.altegioId,
-			altegioHeaders,
-			documentRequest,
-			apiResponseSchemaDocument,
-		);
-
-		if (!documentResponse.success) {
-			return { success: false, message: 'Failed to create Altegio document' };
-		}
-
-		const documentId = documentResponse.data.id;
-
-		// 3. Create Operation (Arrival)
-		const operationRequest: AltegioStorageOperationRequest = {
-			typeId: ALTEGIO_OPERATION_TYPE_ARRIVAL,
-			comment: operationComment,
-			storageId: warehouse.consumablesId,
-			createDate: new Date(),
-			timeZone: resolvedTimeZone,
-			goodsTransactions: [
-				{
-					documentId: documentId,
-					goodId: barcode,
-					amount,
-					costPerUnit: normalizedUnitCost,
-					discount: 0,
-					cost: normalizedTotalCost,
-					operationUnitType: arrivalDetails.operationUnitType ?? 1,
-					...(arrivalDetails.masterId ? { masterId: arrivalDetails.masterId } : {}),
-					...(arrivalDetails.clientId ? { clientId: arrivalDetails.clientId } : {}),
-					...(arrivalDetails.supplierId ? { supplierId: arrivalDetails.supplierId } : {}),
-					...(arrivalDetails.transactionComment
-						? { comment: arrivalDetails.transactionComment }
-						: {}),
-				},
-			],
-		};
-
-		// Note: operationUnitType is often 1 for 'pcs'.
-		// If we don't know it, 1 is a safe bet for now or we need to fetch it from good details.
-
-		const operationResponse = await postAltegioStorageOperation(
-			warehouse.altegioId,
-			altegioHeaders,
-			operationRequest,
-			apiResponseSchemaStorageOperation,
-		);
-
-		if (!operationResponse.success) {
-			return { success: false, message: 'Failed to create Altegio operation' };
-		}
-
-		return { success: true, message: 'Altegio replication successful' };
-	} catch (error) {
-		console.error('Altegio replication error:', error);
-		return {
-			success: false,
-			message: error instanceof Error ? error.message : 'Unknown error during Altegio replication',
-		};
-	}
+	return await executeAltegioArrival({
+		warehouseId,
+		headers: { authHeader, acceptHeader },
+		details,
+		normalizedTotalCost,
+		normalizedUnitCost,
+		barcode,
+	});
 };
 
 /**
