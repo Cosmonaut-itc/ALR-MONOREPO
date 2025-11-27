@@ -4,6 +4,8 @@ import { devtools } from 'zustand/middleware';
 // Type for product catalog items
 export type ProductCatalogItem = {
 	barcode: number;
+	barcodeIds?: number[];
+	barcodeLabel?: string;
 	name: string;
 	category: string;
 	description: string;

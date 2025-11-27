@@ -974,7 +974,7 @@ export function RecepcionesPage({
 							(product: ProductCatalogItem) => product.good_id === item.barcode,
 						)?.cost ?? 0,
 				})),
-				transferNotes: transferDraft.transferNotes || "",
+			notes: transferDraft.transferNotes || "",
 				priority: transferDraft.priority,
 				scheduledDate,
 				isCabinetToWarehouse: false,

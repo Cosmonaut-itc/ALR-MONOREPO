@@ -1,6 +1,6 @@
 import { hc } from 'hono/client';
 import { headers } from 'next/headers';
-import type { AppType } from 'ns-inventory-api-types/dist/src';
+import type { AppType } from 'ns-inventory-api-types/dist/packages/api-types/src';
 import 'server-only';
 
 /**

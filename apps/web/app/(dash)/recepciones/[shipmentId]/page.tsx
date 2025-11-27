@@ -62,9 +62,9 @@ export default async function Page({
 		: () => fetchReplenishmentOrdersByWarehouseServer(warehouseId as string);
 	queryClient.prefetchQuery({
 		queryKey: createQueryKey(queryKeys.replenishmentOrders, [
-			isEncargado ? "all" : warehouseId as string,
+			isEncargado ? "all" : (warehouseId as string),
 		]),
-		queryFn: replenishmentOrdersPrefetchFn,
+		queryFn: () => replenishmentOrdersPrefetchFn(),
 	});
 
 	// Note: Individual order details will be fetched on-demand when a link is found

@@ -176,8 +176,17 @@ export function InventoryCatalogTable({ catalog, inventory }: InventoryCatalogTa
 																					<span className="sr-only">Ver detalles</span>
 																				</Button>
 																				<Button
-																					className="h-8 w-8 p-0 text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-900/20"
-																					onClick={() => showDisposeDialog({ ...it, productInfo: { barcode: product.barcode, name: product.name, category: product.category, description: product.description } })}
+																				className="h-8 w-8 p-0 text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-900/20"
+																				onClick={() =>
+																					showDisposeDialog({
+																						...it,
+																						productInfo: {
+																							name: product.name,
+																							category: product.category,
+																							description: product.description,
+																						},
+																					})
+																				}
 																					size="sm"
 																					variant="ghost"
 																					type="button"
@@ -206,5 +215,4 @@ export function InventoryCatalogTable({ catalog, inventory }: InventoryCatalogTa
 		</>
 	);
 }
-
 

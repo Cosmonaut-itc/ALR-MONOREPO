@@ -93,6 +93,7 @@ import { DisposeItemDialog } from "./DisposeItemDialog";
 type ProductWithInventory = {
 	barcode: number | string; // Can be a single number or comma-separated string of IDs
 	barcodeIds: number[]; // Array of parsed barcode IDs for matching
+	barcodeLabel: string;
 	name: string;
 	category: string;
 	description: string;
@@ -863,13 +864,9 @@ export function ProductCatalogTable({
 			// Allow empty values to represent "no bound" (null)
 			// Parse non-empty values, otherwise use null
 			const minUsage =
-				rawMinUsage.length > 0
-					? Number.parseInt(rawMinUsage, 10)
-					: null;
+				rawMinUsage.length > 0 ? Number.parseInt(rawMinUsage, 10) : null;
 			const maxUsage =
-				rawMaxUsage.length > 0
-					? Number.parseInt(rawMaxUsage, 10)
-					: null;
+				rawMaxUsage.length > 0 ? Number.parseInt(rawMaxUsage, 10) : null;
 
 			// Validate that if values are provided, they are valid numbers
 			if (rawMinUsage.length > 0 && Number.isNaN(minUsage)) {
@@ -1029,9 +1026,16 @@ export function ProductCatalogTable({
 						: typeof product.barcode === "number"
 							? [product.barcode]
 							: [];
+				const fallbackBarcodeLabel =
+					"barcodeLabel" in product && typeof product.barcodeLabel === "string"
+						? product.barcodeLabel
+						: barcodeIds.length > 0
+							? barcodeIds.join(", ")
+							: String(product.barcode ?? "");
 				return {
 					...product,
 					barcodeIds,
+					barcodeLabel: fallbackBarcodeLabel,
 					inventoryItems: [],
 					stockCount: 0,
 					hasKitItems: false,
@@ -1045,6 +1049,12 @@ export function ProductCatalogTable({
 					: typeof product.barcode === "number"
 						? [product.barcode]
 						: [];
+			const productBarcodeLabel =
+				"barcodeLabel" in product && typeof product.barcodeLabel === "string"
+					? product.barcodeLabel
+					: productBarcodeIds.length > 0
+						? productBarcodeIds.join(", ")
+						: String(product.barcode ?? "");
 
 			const inventoryItems: StockItemWithEmployee[] =
 				storedInventoryData?.filter((item) => {
@@ -1065,6 +1075,7 @@ export function ProductCatalogTable({
 			return {
 				...product,
 				barcodeIds: productBarcodeIds,
+				barcodeLabel: productBarcodeLabel,
 				inventoryItems,
 				stockCount: inventoryItems.length,
 				hasKitItems: inventoryItems.some((entry) => {
@@ -2452,11 +2463,52 @@ export function ProductCatalogTable({
 				accessorKey: "barcode",
 				header: "Código de Barras",
 				enableSorting: false,
-				cell: ({ row }) => (
-					<div className="font-mono text-[#687076] text-sm dark:text-[#9BA1A6]">
-						{row.getValue("barcode")}
-					</div>
-				),
+				cell: ({ row }) => {
+					const product = row.original as ProductWithInventory;
+					// Get all barcode IDs, ensuring we have at least one value
+					const barcodeIds =
+						product.barcodeIds && product.barcodeIds.length > 0
+							? product.barcodeIds
+							: typeof product.barcode === "number"
+								? [product.barcode]
+								: typeof product.barcode === "string" && product.barcode.trim()
+									? product.barcode
+											.split(",")
+											.map((id) => Number.parseInt(id.trim(), 10))
+											.filter((id) => !Number.isNaN(id) && id > 0)
+									: [];
+
+					// If no barcode IDs found, fallback to barcodeLabel or barcode
+					if (barcodeIds.length === 0) {
+						const fallbackValue =
+							product.barcodeLabel || String(product.barcode || "");
+						return (
+							<div className="flex flex-wrap gap-1 font-mono text-[#687076] text-xs dark:text-[#9BA1A6]">
+								<Badge
+									className="bg-[#F3F4F6] text-[#374151] dark:bg-[#374151] dark:text-[#D1D5DB]"
+									variant="secondary"
+								>
+									{fallbackValue}
+								</Badge>
+							</div>
+						);
+					}
+
+					// Display each barcode ID in its own badge
+					return (
+						<div className="flex flex-wrap gap-1 font-mono text-[#687076] text-xs dark:text-[#9BA1A6]">
+							{barcodeIds.map((barcodeId) => (
+								<Badge
+									className="bg-[#F3F4F6] text-[#374151] dark:bg-[#374151] dark:text-[#D1D5DB]"
+									key={barcodeId}
+									variant="secondary"
+								>
+									{barcodeId}
+								</Badge>
+							))}
+						</div>
+					);
+				},
 			},
 
 			{
@@ -2581,7 +2633,7 @@ export function ProductCatalogTable({
 		// Extract data from filtered rows, creating one row per product-warehouse combination
 		const csvData: Array<{
 			name: string;
-			barcode: number;
+			barcode: string | number;
 			category: string;
 			warehouse: string;
 			warehouseStock: number;
@@ -2633,18 +2685,9 @@ export function ProductCatalogTable({
 
 			// If product has no inventory items, still add one row with zero stock
 			if (warehouseGroups.length === 0) {
-				const barcodeForCsv =
-					typeof product.barcode === "number"
-						? product.barcode
-						: product.barcodeIds.length > 0
-							? product.barcodeIds[0]
-							: Number.parseInt(
-									String(product.barcode).split(",")[0] || "0",
-									10,
-								) || 0;
 				csvData.push({
 					name: product.name,
-					barcode: barcodeForCsv,
+					barcode: product.barcodeLabel || product.barcode,
 					category: product.category,
 					warehouse: "Sin almacén asignado",
 					warehouseStock: 0,
@@ -2690,18 +2733,9 @@ export function ProductCatalogTable({
 								limit.maxUsage !== null ? limit.maxUsage : "Sin límite";
 						}
 					}
-					const barcodeForCsv =
-						typeof product.barcode === "number"
-							? product.barcode
-							: product.barcodeIds.length > 0
-								? product.barcodeIds[0]
-								: Number.parseInt(
-										String(product.barcode).split(",")[0] || "0",
-										10,
-									) || 0;
 					csvData.push({
 						name: product.name,
-						barcode: barcodeForCsv,
+						barcode: product.barcodeLabel || product.barcode,
 						category: product.category,
 						warehouse: group.label,
 						warehouseStock: group.items.length,

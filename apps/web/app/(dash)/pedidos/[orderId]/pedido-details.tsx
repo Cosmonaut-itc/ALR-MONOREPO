@@ -872,7 +872,7 @@ export function PedidoDetailsPage({
 							barcode: item.barcode,
 							quantity: item.quantity,
 							sentQuantity: selectedCount,
-							notes: item.notes ?? null,
+							notes: item.notes ?? undefined,
 						};
 					});
 
@@ -920,21 +920,21 @@ export function PedidoDetailsPage({
 		// Only create transfer if there are selected items
 		if (transferDetails.length > 0) {
 			try {
-				const transferPayload = {
-					transferNumber: `TR-${Date.now()}`,
-					transferType: "external" as const,
-					sourceWarehouseId: parsedOrder.cedisWarehouseId,
-					destinationWarehouseId: parsedOrder.sourceWarehouseId,
-					initiatedBy: currentUser.id,
-					cabinetId,
-					transferDetails,
-					transferNotes:
-						transferNotes.trim().length > 0
-							? transferNotes.trim()
-							: `Traspaso generado desde pedido ${parsedOrder.orderNumber}`,
-					priority,
-					isCabinetToWarehouse: false,
-				};
+					const transferPayload = {
+						transferNumber: `TR-${Date.now()}`,
+						transferType: "external" as const,
+						sourceWarehouseId: parsedOrder.cedisWarehouseId,
+						destinationWarehouseId: parsedOrder.sourceWarehouseId,
+						initiatedBy: currentUser.id,
+						cabinetId,
+						transferDetails,
+						notes:
+							transferNotes.trim().length > 0
+								? transferNotes.trim()
+								: `Traspaso generado desde pedido ${parsedOrder.orderNumber}`,
+						priority,
+						isCabinetToWarehouse: false,
+					};
 
 				const transferResult =
 					await createTransferMutation.mutateAsync(transferPayload);
@@ -990,7 +990,7 @@ export function PedidoDetailsPage({
 								barcode: item.barcode,
 								quantity: item.quantity,
 								sentQuantity: selectedCount,
-								notes: item.notes ?? null,
+							notes: item.notes ?? undefined,
 							};
 						});
 
@@ -1025,7 +1025,7 @@ export function PedidoDetailsPage({
 					barcode: item.barcode,
 					quantity: item.quantity,
 					sentQuantity: selectedCount,
-					notes: item.notes ?? null,
+							notes: item.notes ?? undefined,
 				};
 			});
 

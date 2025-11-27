@@ -31,8 +31,7 @@
 			"semicolons": "always",
 			"arrowParentheses": "always",
 			"bracketSameLine": false,
-			"quoteStyle": "single"
+			"quoteStyle": "double"
 		}
-	},
-	"extends": ["ultracite"]
+	}
 }

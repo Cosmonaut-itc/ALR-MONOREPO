@@ -83,7 +83,7 @@ export function ReceiveItemsModal({ open, onOpenChange }: ReceiveItemsModalProps
 			await new Promise((resolve) => setTimeout(resolve, 1500));
 
 			// Prepare data (simulate submit)
-			const _data: Reception = {
+			const _data = {
 				shipmentNumber: formData.shipmentNumber,
 				arrivalDate: new Date(formData.arrivalDate).toISOString(),
 				lines: validLines.map((line) => ({

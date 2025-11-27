@@ -20,8 +20,9 @@ export function KitCard({ kit }: KitCardProps) {
   const employee = employees.find(emp => emp.id === kit.employeeId)
   const totalProducts = kit.items.reduce((sum, item) => sum + item.qty, 0)
   
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('es-MX', {
+  const formatDate = (dateValue: string | Date) => {
+    const date = typeof dateValue === "string" ? new Date(dateValue) : dateValue;
+    return date.toLocaleDateString('es-MX', {
       weekday: 'short',
       day: 'numeric',
       month: 'short',

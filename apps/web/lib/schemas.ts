@@ -78,3 +78,38 @@ export type Reception = typeof receptionSchema.infer;
 export type Kit = typeof kitSchema.infer;
 export type KitItem = typeof kitItemSchema.infer;
 export type ProductStockItem = typeof productStockItemSchema.infer;
+
+// Dashboard / statistics helper types (UI-only convenience)
+export type DashboardMetric = {
+	label: string;
+	value: number;
+	icon: string;
+};
+
+export type TopProduct = {
+	id: string;
+	name: string;
+	sales: number;
+};
+
+export type ActiveEmployee = {
+	id: string;
+	name: string;
+	avatar?: string;
+	specialty?: string;
+};
+
+export type Efficiency = {
+	label: string;
+	value: number;
+};
+
+export type EmployeeUse = {
+	employeeId: string;
+	uses: number;
+};
+
+export type ProductStat = {
+	productId: string;
+	count: number;
+};

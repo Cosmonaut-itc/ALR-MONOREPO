@@ -11,12 +11,32 @@ interface KitsState {
 	inspectionItems: InspectionKitItem[];
 	/** Whether inspection data is loading */
 	inspectionLoading: boolean;
+	/** Available employees (for display) */
+	employees: Array<{
+		id: string;
+		name: string;
+		avatar?: string;
+		specialty?: string;
+	}>;
+	/** Product lookup used for display */
+	products: Array<{ id: string; name: string }>;
 	/** Form draft for any temporary data storage */
 	draft: Record<string, unknown>;
 	/** Update draft with partial data */
 	setDraft: (partial: Record<string, unknown>) => void;
 	/** Clear all draft data */
 	clearDraft: () => void;
+	/** Set employees list */
+	setEmployees: (
+		employees: Array<{
+			id: string;
+			name: string;
+			avatar?: string;
+			specialty?: string;
+		}>,
+	) => void;
+	/** Set products list */
+	setProducts: (products: Array<{ id: string; name: string }>) => void;
 	/** Load kit items for inspection */
 	loadInspection: (kitId: string, items: InspectionKitItem[]) => void;
 	/** Toggle return status of a single item */
@@ -36,10 +56,14 @@ export const useKitsStore = create<KitsState>()(
 		(set, get) => ({
 			inspectionItems: [],
 			inspectionLoading: false,
+			employees: [],
+			products: [],
 			draft: {},
 			setDraft: (partial) =>
 				set((state) => ({ draft: { ...state.draft, ...partial } })),
 			clearDraft: () => set({ draft: {} }),
+			setEmployees: (employees) => set({ employees }),
+			setProducts: (products) => set({ products }),
 
 			loadInspection: (_kitId, items) => {
 				set({ inspectionLoading: true });
