@@ -319,6 +319,20 @@ export function PedidosPage({
 		) {
 			return [];
 		}
+
+		const parseBarcode = (value: unknown): number | null => {
+			if (typeof value === "number" && Number.isFinite(value)) {
+				return value;
+			}
+			if (typeof value === "string" && value.trim().length > 0) {
+				const parsed = Number.parseInt(value, 10);
+				if (!Number.isNaN(parsed)) {
+					return parsed;
+				}
+			}
+			return null;
+		};
+
 		const rawData = Array.isArray(productCatalog.data)
 			? (productCatalog.data as Array<Record<string, unknown>>)
 			: [];
@@ -328,23 +342,16 @@ export function PedidosPage({
 				continue;
 			}
 			const item = rawItem as Record<string, unknown>;
-			const barcodeRaw = item.barcode;
-			const fallbackBarcode = item.good_id;
-			let barcodeNumber: number | null = null;
-			if (typeof barcodeRaw === "string" && barcodeRaw.trim().length > 0) {
-				const parsed = Number.parseInt(barcodeRaw, 10);
-				if (!Number.isNaN(parsed)) {
-					barcodeNumber = parsed;
-				}
-			} else if (typeof fallbackBarcode === "number") {
-				barcodeNumber = fallbackBarcode;
-			}
+			const barcodeNumber =
+				parseBarcode(item.barcode) ??
+				parseBarcode(item.good_id) ??
+				parseBarcode(item.id);
 			if (barcodeNumber == null || Number.isNaN(barcodeNumber)) {
 				continue;
 			}
 			const nameCandidate = item.title ?? item.name;
 			const categoryCandidate = item.category;
-			const descriptionCandidate = item.comment;
+			const descriptionCandidate = item.comment ?? item.description;
 			options.push({
 				barcode: barcodeNumber,
 				name:

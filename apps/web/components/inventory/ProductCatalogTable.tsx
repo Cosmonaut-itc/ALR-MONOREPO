@@ -994,11 +994,14 @@ export function ProductCatalogTable({
 			setProductCatalog(transformedProducts);
 
 			// Extract unique categories from product catalog
-			const uniqueCategories = Array.from(
+			const uniqueCategories: string[] = Array.from(
 				new Set(
 					transformedProducts
-						.map((product) => product.category)
-						.filter(Boolean),
+						.map((product: { category: string }) => product.category)
+						.filter(
+							(cat: string): cat is string =>
+								typeof cat === "string" && cat.trim().length > 0,
+						),
 				),
 			);
 			setCategories(uniqueCategories);
