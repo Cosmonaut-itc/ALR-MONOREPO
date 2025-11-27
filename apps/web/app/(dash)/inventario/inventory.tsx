@@ -692,6 +692,11 @@ export function InventarioPage({
 			quantity: 1,
 			warehouseTimeZone: selectedWarehouseMeta?.timeZone,
 		});
+		// Override operationUnitType to 2 when adding products
+		const baseAltegioPayloadWithUnitType = {
+			...baseAltegioPayload,
+			operationUnitType: 2,
+		};
 		const basePayload: CreateProductStockPayload = {
 			barcode: selectedProduct.barcode,
 			currentWarehouse: selectedWarehouseId,
@@ -699,14 +704,14 @@ export function InventarioPage({
 			description: normalizedDescription,
 			isBeingUsed: false,
 			numberOfUses: 0,
-			altegio: baseAltegioPayload,
+			altegio: baseAltegioPayloadWithUnitType,
 		};
 		const labels: QrLabelPayload[] = [];
 		try {
 			for (let index = 0; index < quantity; index += 1) {
 				const result = await createInventoryItem({
 					...basePayload,
-					altegio: { ...baseAltegioPayload },
+					altegio: { ...baseAltegioPayloadWithUnitType },
 				});
 				const createdId =
 					result && typeof result === "object" && "data" in result
