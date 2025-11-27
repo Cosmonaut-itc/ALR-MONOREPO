@@ -117,7 +117,17 @@ async function fetchGoods(altegioId: number, headers: HeadersInit): Promise<Alte
 				});
 			}
 
+
 			const validated = apiResponseSchema.parse(json);
+			if (!validated.success) {
+				throw new InventorySyncError('Altegio API responded with success=false', 502, {
+					apiUrl,
+					page,
+					altegioId,
+					meta: validated.meta,
+				});
+			}
+
 			const currentPage = validated.data as AltegioGood[];
 
 			goods.push(...currentPage);
@@ -258,6 +268,7 @@ async function loadExistingCounts(
 			and(
 				eq(schema.productStock.currentWarehouse, warehouseId),
 				eq(schema.productStock.isDeleted, false),
+				eq(schema.productStock.isEmpty, false),
 				inArray(schema.productStock.barcode, barcodes),
 			),
 		)
