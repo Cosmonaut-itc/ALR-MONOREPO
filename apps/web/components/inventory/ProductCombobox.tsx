@@ -23,25 +23,38 @@ type ProductCatalogItem = {
 	description: string;
 };
 
-interface ProductComboboxProps {
-	products: ProductCatalogItem[];
+type BivariantCallback<T> = {
+	// Enables consumers to pass wider/narrower callbacks without type errors
+	bivarianceHack(product: T): void;
+}["bivarianceHack"];
+
+type SearchableProduct<T extends ProductCatalogItem> = {
+	barcode: number;
+	barcodeText: string;
+	name: string;
+	category: string;
+	description: string;
+	keywords: string[];
+	raw: T;
+};
+
+interface ProductComboboxProps<T extends ProductCatalogItem = ProductCatalogItem> {
+	products: T[];
 	value: string;
 	onValueChange: (value: string) => void;
 	placeholder?: string;
-	onSelectProduct?: (product: {
-		barcode: number;
-		name: string;
-		category: string;
-	}) => void;
+	onSelectProduct?: BivariantCallback<T>;
+	getKeywords?: (product: T) => string[];
 }
 
-export function ProductCombobox({
+export function ProductCombobox<T extends ProductCatalogItem = ProductCatalogItem>({
 	products,
 	value,
 	onValueChange,
 	placeholder = "Buscar producto...",
 	onSelectProduct,
-}: ProductComboboxProps) {
+	getKeywords,
+}: ProductComboboxProps<T>) {
 	const [open, setOpen] = useState(false);
 	const [query, setQuery] = useState("");
 
@@ -53,7 +66,7 @@ export function ProductCombobox({
 
 	const searchableProducts = useMemo(() => {
 		return products
-			.map((product) => {
+			.map<SearchableProduct<T>>((product) => {
 				const safeName =
 					typeof product.name === "string" && product.name.trim().length > 0
 						? product.name.trim()
@@ -68,6 +81,9 @@ export function ProductCombobox({
 					product.description.trim().length > 0
 						? product.description.trim()
 						: "Sin descripción";
+				const extraKeywords = (getKeywords?.(product) ?? [])
+					.map((keyword) => keyword?.toString()?.trim())
+					.filter(Boolean) as string[];
 
 				return {
 					barcode: product.barcode,
@@ -75,21 +91,28 @@ export function ProductCombobox({
 					name: safeName,
 					category: safeCategory,
 					description: safeDescription,
-					keywords: [safeName, safeCategory, safeDescription],
+					keywords: [
+						safeName,
+						safeCategory,
+						safeDescription,
+						...extraKeywords,
+					],
+					raw: product,
 				};
 			})
 			.sort((a, b) =>
 				a.name.localeCompare(b.name, "es", { sensitivity: "base" }),
 			);
-	}, [products]);
+	}, [getKeywords, products]);
 
 	const fuse = useMemo(() => {
 		return new Fuse(searchableProducts, {
 			keys: [
 				{ name: "name", weight: 0.5 },
-				{ name: "barcodeText", weight: 0.3 },
+				{ name: "barcodeText", weight: 0.25 },
 				{ name: "category", weight: 0.15 },
 				{ name: "description", weight: 0.05 },
+				{ name: "keywords", weight: 0.05 },
 			],
 			threshold: 0.35,
 			ignoreLocation: true,
@@ -152,14 +175,10 @@ export function ProductCombobox({
 							{filteredResults.map((option) => (
 								<CommandItem
 									className="cursor-pointer text-[#11181C] hover:bg-[#F9FAFB] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
-									key={`${option.barcode}-${option.name}`}
+									key={`${option.barcodeText}-${option.name}-${option.category}`}
 									onSelect={() => {
 										if (onSelectProduct) {
-											onSelectProduct({
-												barcode: option.barcode,
-												name: option.name,
-												category: option.category,
-											});
+											onSelectProduct(option.raw);
 											onValueChange("");
 											setQuery("");
 											setOpen(false);

@@ -19,13 +19,10 @@ import {
 	ArrowRight,
 	Calendar,
 	CalendarIcon,
-	Check,
 	CheckCircle,
-	ChevronsUpDown,
 	Clock,
 	Package,
 	Plus,
-	Search,
 	Trash2,
 } from "lucide-react";
 import Link from "next/link";
@@ -38,18 +35,11 @@ import {
 } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/shallow";
+import { GroupedProductCombobox } from "@/components/recepciones/GroupedProductCombobox";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-	Command,
-	CommandEmpty,
-	CommandGroup,
-	CommandInput,
-	CommandItem,
-	CommandList,
-} from "@/components/ui/command";
 import {
 	Dialog,
 	DialogContent,
@@ -787,7 +777,6 @@ export function RecepcionesPage({
 		useCreateTransferOrder();
 
 	const [isDialogOpen, setIsDialogOpen] = useState(false);
-	const [productPickerOpen, setProductPickerOpen] = useState(false);
 	const [selectedProductStockId, setSelectedProductStockId] = useState("");
 	const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
 	const [globalFilter, setGlobalFilter] = useState("");
@@ -808,6 +797,15 @@ export function RecepcionesPage({
 	const draftedItemIds = useMemo(() => {
 		return new Set(transferDraft.items.map((item) => item.productStockId));
 	}, [transferDraft.items]);
+
+	const isProductSelectionDisabled = useMemo(() => {
+		if (productGroups.length === 0) {
+			return true;
+		}
+		return productGroups.every((group) =>
+			group.items.every((item) => draftedItemIds.has(item.productStockId)),
+		);
+	}, [draftedItemIds, productGroups]);
 
 	const selectedCabinetId = useMemo(() => {
 		const destinationId = transferDraft.destinationWarehouseId?.trim();
@@ -835,21 +833,6 @@ export function RecepcionesPage({
 		);
 		return uniqueCabinets.length === 1 ? uniqueCabinets[0] : undefined;
 	}, [cabinetWarehouse, transferDraft.destinationWarehouseId]);
-
-	const productPickerDisabled = useMemo(() => {
-		if (productGroups.length === 0) {
-			return true;
-		}
-		return productGroups.every((group) =>
-			group.items.every((item) => draftedItemIds.has(item.productStockId)),
-		);
-	}, [draftedItemIds, productGroups]);
-
-	useEffect(() => {
-		if (productPickerDisabled) {
-			setProductPickerOpen(false);
-		}
-	}, [productPickerDisabled]);
 
 	const { warehouseOptions } = useMemo(
 		() => createWarehouseOptions(cabinetWarehouse),
@@ -885,24 +868,21 @@ export function RecepcionesPage({
 		if (!selectedProductStockId) {
 			return;
 		}
-		if (!productLookup.has(selectedProductStockId)) {
+		if (
+			!productLookup.has(selectedProductStockId) ||
+			draftedItemIds.has(selectedProductStockId)
+		) {
 			setSelectedProductStockId("");
 		}
-	}, [productLookup, selectedProductStockId]);
+	}, [draftedItemIds, productLookup, selectedProductStockId]);
+
+	const handleSelectProduct = useCallback((product: ProductItemOption) => {
+		setSelectedProductStockId(product.productStockId);
+	}, []);
 
 	const selectedInventoryItem = selectedProductStockId
 		? productLookup.get(selectedProductStockId)
 		: undefined;
-
-	const productPickerLabel = useMemo(() => {
-		if (selectedInventoryItem) {
-			return `${selectedInventoryItem.productStockId} · ${selectedInventoryItem.productName}`;
-		}
-		if (productPickerDisabled) {
-			return "No hay productos disponibles";
-		}
-		return "Selecciona un producto disponible";
-	}, [productPickerDisabled, selectedInventoryItem]);
 
 	const handleAddProduct = () => {
 		if (!selectedInventoryItem) {
@@ -918,7 +898,6 @@ export function RecepcionesPage({
 			quantity: 1,
 		});
 		setSelectedProductStockId("");
-		setProductPickerOpen(false);
 		toast.success("Producto agregado al traspaso");
 	};
 
@@ -1691,119 +1670,39 @@ export function RecepcionesPage({
 										Agregar productos
 									</Label>
 
-									{/* Product picker - responsive flex layout */}
-									<div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-										{/* Product combobox with search */}
-										<Popover
-											onOpenChange={setProductPickerOpen}
-											open={productPickerOpen}
-										>
-											<PopoverTrigger asChild>
-												<Button
-													className="w-full justify-between border-[#E5E7EB] bg-white text-left text-[#11181C] hover:bg-[#F9FAFB] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
-													disabled={productPickerDisabled}
-													id="inventory-product"
-													type="button"
-													variant="outline"
-												>
-													<div className="flex min-w-0 items-center gap-2">
-														<Search className="h-4 w-4 text-[#687076] dark:text-[#9BA1A6]" />
-														<span className="truncate">
-															{productPickerLabel}
-														</span>
-													</div>
-													<ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-												</Button>
-											</PopoverTrigger>
-											<PopoverContent className="w-[320px] border-[#E5E7EB] bg-white p-0 dark:border-[#2D3033] dark:bg-[#151718]">
-												<Command className="bg-white dark:bg-[#1E1F20]">
-													<CommandInput
-														className="border-0 text-[#11181C] placeholder:text-[#687076] focus:ring-0 dark:text-[#ECEDEE] dark:placeholder:text-[#9BA1A6]"
-														placeholder="Buscar por descripción o ID..."
-													/>
-													<CommandList>
-														<CommandEmpty className="py-6 text-center text-[#687076] text-sm dark:text-[#9BA1A6]">
-															No hay productos disponibles.
-														</CommandEmpty>
-														{productGroups.map((group) => (
-															<CommandGroup
-																heading={group.name}
-																key={group.barcode}
-															>
-																{group.description && (
-																	<p className="px-2 pb-2 text-[#687076] text-xs dark:text-[#9BA1A6]">
-																		{group.description}
-																	</p>
-																)}
-																{group.items.map((item) => {
-																	const isDisabled = draftedItemIds.has(
-																		item.productStockId,
-																	);
-																	const isSelected =
-																		selectedProductStockId ===
-																		item.productStockId;
-																	return (
-																		<CommandItem
-																			disabled={isDisabled}
-																			key={item.productStockId}
-																			keywords={[
-																				item.productStockId,
-																				item.productName,
-																				group.name,
-																				group.description,
-																				String(item.barcode ?? ""),
-																			]}
-																			onSelect={(value) => {
-																				if (isDisabled) {
-																					return;
-																				}
-																				setSelectedProductStockId(value);
-																				setProductPickerOpen(false);
-																			}}
-																			value={item.productStockId}
-																		>
-																			<div className="flex w-full items-center justify-between gap-2">
-																				<div className="flex min-w-0 flex-col text-left">
-																					<span className="font-medium text-[#11181C] dark:text-[#ECEDEE]">
-																						{item.productStockId}
-																					</span>
-																					<span className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-																						{item.description}
-																					</span>
-																					<span className="text-[#9BA1A6] text-xs dark:text-[#71767B]">
-																						Código: {item.barcode || "—"}
-																					</span>
-																				</div>
-																				{isDisabled ? (
-																					<span className="text-[#9BA1A6] text-xs dark:text-[#71767B]">
-																						En traspaso
-																					</span>
-																				) : (
-																					<Check
-																						className={cn(
-																							"h-4 w-4 text-[#0a7ea4]",
-																							isSelected
-																								? "opacity-100"
-																								: "opacity-0",
-																						)}
-																					/>
-																				)}
-																			</div>
-																		</CommandItem>
-																	);
-																})}
-															</CommandGroup>
-														))}
-													</CommandList>
-												</Command>
-											</PopoverContent>
-										</Popover>
+									<div className="space-y-2">
+										<GroupedProductCombobox
+											disabled={isProductSelectionDisabled}
+											draftedIds={draftedItemIds}
+											groups={productGroups}
+											onSelect={handleSelectProduct}
+											placeholder={
+												isProductSelectionDisabled
+													? "No hay productos disponibles"
+													: "Buscar por nombre y elegir un ID único..."
+											}
+											selectedId={selectedProductStockId}
+										/>
+										{selectedInventoryItem ? (
+											<p className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+												ID seleccionado:{" "}
+												<span className="font-medium">
+													{selectedInventoryItem.productStockId}
+												</span>{" "}
+												• Código: {selectedInventoryItem.barcode || "—"}
+											</p>
+										) : (
+											<p className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+												Selecciona un producto disponible para agregarlo.
+											</p>
+										)}
 									</div>
 
-									{/* Add product button */}
 									<Button
 										className="flex w-[100px] items-center gap-2 bg-[#0a7ea4] text-white hover:bg-[#0a7ea4]/90"
-										disabled={!selectedProductStockId}
+										disabled={
+											isProductSelectionDisabled || !selectedInventoryItem
+										}
 										onClick={handleAddProduct}
 										type="button"
 									>

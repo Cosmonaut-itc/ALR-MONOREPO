@@ -1,6 +1,12 @@
 "use client";
 
 import { useSuspenseQuery } from "@tanstack/react-query";
+import type {
+	ColumnDef,
+	ColumnFiltersState,
+	PaginationState,
+	SortingState,
+} from "@tanstack/react-table";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import Link from "next/link";
@@ -12,7 +18,13 @@ import {
 	useState,
 } from "react";
 import { toast } from "sonner";
+import {
+	DateFilter,
+	type DateFilterValue,
+} from "@/components/filters/DateFilter";
+import { SelectFilter } from "@/components/filters/SelectFilter";
 import { ProductCombobox } from "@/components/inventory/ProductCombobox";
+import { DataTable } from "@/components/table/DataTable";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -79,6 +91,12 @@ type OrderSummary = {
 	notes: string | null;
 };
 
+type OrderRow = OrderSummary & {
+	sourceName: string;
+	statusCode: "open" | "sent" | "received";
+	statusLabel: string;
+};
+
 type SelectedItem = {
 	barcode: number;
 	name: string;
@@ -108,13 +126,6 @@ const STATUS_BADGE_VARIANTS: Record<
 	sent: "secondary",
 	received: "default",
 };
-
-const statusOptions: Array<{ label: string; value: StatusFilter }> = [
-	{ label: "Todos", value: "all" },
-	{ label: "Abiertos", value: "open" },
-	{ label: "Enviados", value: "sent" },
-	{ label: "Recibidos", value: "received" },
-];
 
 /**
  * Narrow an unknown orders response into a successful response shape.
@@ -170,7 +181,6 @@ export function PedidosPage({
 	warehouseId,
 	canManageAllWarehouses,
 }: PedidosPageProps) {
-	const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 	const [isDialogOpen, setIsDialogOpen] = useState(false);
 	const [cedisWarehouseId, setCedisWarehouseId] = useState("");
 	const [notes, setNotes] = useState("");
@@ -178,16 +188,51 @@ export function PedidosPage({
 	const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([]);
 	const [productSearch, setProductSearch] = useState("");
 	const [itemsSearch, setItemsSearch] = useState("");
+	const [ordersGlobalFilter, setOrdersGlobalFilter] = useState("");
+	const [ordersSorting, setOrdersSorting] = useState<SortingState>([]);
+	const [ordersColumnFilters, setOrdersColumnFilters] =
+		useState<ColumnFiltersState>([]);
+	const [ordersPagination, setOrdersPagination] = useState<PaginationState>({
+		pageIndex: 0,
+		pageSize: 10,
+	});
+
+	const handleSourceFilterChange = useCallback((value: string | null) => {
+		setOrdersColumnFilters((prev) => {
+			const next = prev.filter((f) => f.id !== "sourceName");
+			if (!value) return next;
+			return [...next, { id: "sourceName", value }];
+		});
+	}, []);
+
+	const handleStatusFilterChange = useCallback(
+		(value: "open" | "sent" | "received" | null) => {
+			setOrdersColumnFilters((prev) => {
+				const next = prev.filter((f) => f.id !== "statusLabel");
+				if (!value) return next;
+				return [...next, { id: "statusLabel", value }];
+			});
+		},
+		[],
+	);
+
+	const handleDateFilterChange = useCallback(
+		(value: DateFilterValue | null) => {
+			setOrdersColumnFilters((prev) => {
+				const next = prev.filter((f) => f.id !== "createdAt");
+				if (!value) return next;
+				return [...next, { id: "createdAt", value }];
+			});
+		},
+		[],
+	);
 
 	const scopeKey = canManageAllWarehouses ? "all" : warehouseId || "unknown";
-	const ordersQueryKey = canManageAllWarehouses
-		? createQueryKey(queryKeys.replenishmentOrders, [scopeKey, statusFilter])
-		: createQueryKey(queryKeys.replenishmentOrders, [scopeKey]);
+	const ordersQueryKey = createQueryKey(queryKeys.replenishmentOrders, [
+		scopeKey,
+	]);
 
-	const statusParam =
-		canManageAllWarehouses && statusFilter !== "all"
-			? (statusFilter as Exclude<StatusFilter, "all">)
-			: undefined;
+	const statusParam = undefined;
 
 	const { data: ordersResponse } = useSuspenseQuery<
 		OrderListResponse,
@@ -273,6 +318,14 @@ export function PedidosPage({
 	const requesterWarehouses = useMemo(
 		() => warehouses.filter((warehouse) => !warehouse.isCedis),
 		[warehouses],
+	);
+
+	const requesterFilterOptions = useMemo(
+		() =>
+			requesterWarehouses
+				.filter((warehouse) => warehouse.id !== warehouseId)
+				.map((warehouse) => ({ label: warehouse.name, value: warehouse.id })),
+		[requesterWarehouses, warehouseId],
 	);
 
 	useEffect(() => {
@@ -390,11 +443,27 @@ export function PedidosPage({
 				if (!id) {
 					return null;
 				}
+				const rawItems = record.items;
+				let itemsCount = 0;
+				if (typeof record.itemsCount === "number") {
+					itemsCount = record.itemsCount;
+				} else if (
+					typeof record.itemsCount === "string" &&
+					record.itemsCount.trim().length > 0
+				) {
+					const parsed = Number.parseInt(record.itemsCount, 10);
+					if (!Number.isNaN(parsed)) {
+						itemsCount = parsed;
+					} else if (Array.isArray(rawItems)) {
+						itemsCount = rawItems.length;
+					}
+				} else if (Array.isArray(rawItems)) {
+					itemsCount = rawItems.length;
+				}
 				return {
 					id,
 					orderNumber,
-					itemsCount:
-						typeof record.itemsCount === "number" ? record.itemsCount : 0,
+					itemsCount,
 					createdAt:
 						typeof record.createdAt === "string" ? record.createdAt : "",
 					sourceWarehouseId:
@@ -417,11 +486,8 @@ export function PedidosPage({
 	}, [ordersResponse]);
 
 	const filteredOrders = useMemo(() => {
-		if (statusFilter === "all") {
-			return orders;
-		}
-		return orders.filter((order) => statusFromOrder(order) === statusFilter);
-	}, [orders, statusFilter]);
+		return orders;
+	}, [orders]);
 
 	const warehouseNameMap = useMemo(() => {
 		const entries = new Map<string, string>();
@@ -458,6 +524,123 @@ export function PedidosPage({
 			`Bodega ${sourceWarehouseId.slice(0, 6)}`
 		);
 	}, [sourceWarehouseId, warehouseNameMap]);
+
+	const ordersTableData = useMemo<OrderRow[]>(() => {
+		return filteredOrders.map((order) => {
+			const statusCode = statusFromOrder(order);
+			const sourceName =
+				warehouseNameMap.get(order.sourceWarehouseId) ??
+				`Bodega ${order.sourceWarehouseId.slice(0, 6)}`;
+			return {
+				...order,
+				sourceName,
+				statusCode,
+				statusLabel:
+					statusCode === "open"
+						? "Abierto"
+						: statusCode === "sent"
+							? "Enviado"
+							: "Recibido",
+			};
+		});
+	}, [filteredOrders, warehouseNameMap]);
+
+	const ordersColumns = useMemo<ColumnDef<OrderRow>[]>(() => {
+		return [
+			{
+				accessorKey: "orderNumber",
+				header: "Pedido",
+				cell: ({ row }) => (
+					<Link
+						className="text-[#0a7ea4] underline-offset-4 hover:underline"
+						href={`/pedidos/${row.original.id}`}
+					>
+						{row.original.orderNumber}
+					</Link>
+				),
+			},
+			{
+				accessorKey: "sourceName",
+				header: "Bodega origen",
+				filterFn: (row, _columnId, value) => {
+					if (!value) return true;
+					return row.original.sourceWarehouseId === value;
+				},
+			},
+			{
+				accessorKey: "itemsCount",
+				header: "Artículos",
+				cell: ({ row }) => row.original.itemsCount,
+			},
+			{
+				accessorKey: "createdAt",
+				header: "Creado",
+				cell: ({ row }) => {
+					const value = row.getValue<string>("createdAt");
+					if (!value || typeof value !== "string") {
+						return "N/A";
+					}
+					// Extract yyyy-mm-dd from ISO string
+					return value.slice(0, 10);
+				},
+				filterFn: (row, columnId, filterValue) => {
+					if (!filterValue || typeof filterValue !== "object") return true;
+					const value = row.getValue<string>(columnId);
+					if (!value || typeof value !== "string") return true;
+					const rowDate = new Date(`${value.slice(0, 10)}T00:00:00Z`);
+					if (Number.isNaN(rowDate.getTime())) return true;
+					const { mode, from, to } = filterValue as DateFilterValue;
+					const fromDate = from ? new Date(`${from}T00:00:00Z`) : null;
+					const toDate = to ? new Date(`${to}T00:00:00Z`) : null;
+					switch (mode) {
+						case "before":
+							return fromDate ? rowDate.getTime() < fromDate.getTime() : true;
+						case "after":
+							return fromDate ? rowDate.getTime() > fromDate.getTime() : true;
+						case "between":
+							return fromDate && toDate
+								? rowDate.getTime() >= fromDate.getTime() &&
+										rowDate.getTime() <= toDate.getTime()
+								: true;
+						case "on":
+							return fromDate ? rowDate.getTime() === fromDate.getTime() : true;
+						default:
+							return true;
+					}
+				},
+			},
+			{
+				accessorKey: "statusLabel",
+				header: "Estado",
+				cell: ({ row }) => {
+					const badgeVariant = STATUS_BADGE_VARIANTS[row.original.statusCode];
+					return (
+						<Badge variant={badgeVariant}>{row.original.statusLabel}</Badge>
+					);
+				},
+				enableSorting: false,
+				filterFn: (row, _columnId, value) => {
+					if (!value) return true;
+					return row.original.statusCode === value;
+				},
+			},
+			{
+				id: "actions",
+				header: "Acciones",
+				enableSorting: false,
+				cell: ({ row }) => (
+					<Button
+						asChild
+						className="border-[#0a7ea4] text-[#0a7ea4] hover:bg-[#0a7ea4]/10 dark:border-[#0a7ea4] dark:text-[#0a7ea4]"
+						size="sm"
+						variant="outline"
+					>
+						<Link href={`/pedidos/${row.original.id}`}>Ver detalles</Link>
+					</Button>
+				),
+			},
+		];
+	}, []);
 
 	const cedisOptions =
 		cedisWarehouses.length > 0 ? cedisWarehouses : warehouses;
@@ -835,118 +1018,68 @@ export function PedidosPage({
 			</div>
 
 			<Card className="card-transition border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
-				<CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+				<CardHeader>
 					<CardTitle className="text-[#11181C] text-transition dark:text-[#ECEDEE]">
 						Listado de pedidos
 					</CardTitle>
-					<div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-						<Select
-							onValueChange={(value: StatusFilter) => setStatusFilter(value)}
-							value={statusFilter}
-						>
-							<SelectTrigger className="input-transition w-full border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] sm:w-48">
-								<SelectValue placeholder="Filtrar por estado" />
-							</SelectTrigger>
-							<SelectContent>
-								{statusOptions.map((option) => (
-									<SelectItem key={option.value} value={option.value}>
-										{option.label}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-					</div>
 				</CardHeader>
-				<CardContent>
-					<div className="theme-transition rounded-md border border-[#E5E7EB] dark:border-[#2D3033]">
-						<Table>
-							<TableHeader>
-								<TableRow className="border-[#E5E7EB] border-b dark:border-[#2D3033]">
-									<TableHead className="text-[#11181C] text-transition dark:text-[#ECEDEE]">
-										Pedido
-									</TableHead>
-									<TableHead className="text-[#11181C] text-transition dark:text-[#ECEDEE]">
-										Bodega origen
-									</TableHead>
-									<TableHead className="text-[#11181C] text-transition dark:text-[#ECEDEE]">
-										Artículos
-									</TableHead>
-									<TableHead className="text-[#11181C] text-transition dark:text-[#ECEDEE]">
-										Creado
-									</TableHead>
-									<TableHead className="text-[#11181C] text-transition dark:text-[#ECEDEE]">
-										Estado
-									</TableHead>
-									<TableHead className="text-right text-[#11181C] text-transition dark:text-[#ECEDEE]">
-										Acciones
-									</TableHead>
-								</TableRow>
-							</TableHeader>
-
-							<TableBody>
-								{filteredOrders.length === 0 ? (
-									<TableRow>
-										<TableCell
-											className="py-10 text-center text-[#687076] dark:text-[#9BA1A6]"
-											colSpan={6}
-										>
-											{isNonInteractive
-												? "Tu usuario no tiene una bodega asignada. Contacta al administrador."
-												: "No hay pedidos que coincidan con el filtro seleccionado."}
-										</TableCell>
-									</TableRow>
-								) : (
-									filteredOrders.map((order) => {
-										const status = statusFromOrder(order);
-										const badgeVariant = STATUS_BADGE_VARIANTS[status];
-										const sourceName =
-											warehouseNameMap.get(order.sourceWarehouseId) ??
-											`Bodega ${order.sourceWarehouseId.slice(0, 6)}`;
-										return (
-											<TableRow
-												className="theme-transition border-[#E5E7EB] border-b hover:bg-[#F9FAFB] dark:border-[#2D3033] dark:hover:bg-[#2D3033]"
-												key={order.id}
-											>
-												<TableCell className="font-medium text-[#11181C] dark:text-[#ECEDEE]">
-													{getOrderIdentifier(order)}
-												</TableCell>
-												<TableCell className="text-[#687076] dark:text-[#9BA1A6]">
-													{sourceName}
-												</TableCell>
-												<TableCell className="text-[#11181C] dark:text-[#ECEDEE]">
-													{order.itemsCount}
-												</TableCell>
-												<TableCell className="text-[#687076] dark:text-[#9BA1A6]">
-													{formatDate(order.createdAt)}
-												</TableCell>
-												<TableCell>
-													<Badge variant={badgeVariant}>
-														{status === "open"
-															? "Abierto"
-															: status === "sent"
-																? "Enviado"
-																: "Recibido"}
-													</Badge>
-												</TableCell>
-												<TableCell className="text-right">
-													<Button
-														asChild
-														className="border-[#0a7ea4] text-[#0a7ea4] hover:bg-[#0a7ea4]/10 dark:border-[#0a7ea4] dark:text-[#0a7ea4]"
-														size="sm"
-														variant="outline"
-													>
-														<Link href={`/pedidos/${order.id}`}>
-															Ver detalles
-														</Link>
-													</Button>
-												</TableCell>
-											</TableRow>
-										);
-									})
-								)}
-							</TableBody>
-						</Table>
+				<CardContent className="space-y-4">
+					<div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+						<SelectFilter
+							label="Bodega origen"
+							onChange={handleSourceFilterChange}
+							options={requesterFilterOptions}
+							value={
+								(ordersColumnFilters.find((f) => f.id === "sourceName")
+									?.value as string | undefined) ?? null
+							}
+						/>
+						<SelectFilter
+							label="Estado"
+							onChange={handleStatusFilterChange}
+							options={[
+								{ label: "Abierto", value: "open" },
+								{ label: "Enviado", value: "sent" },
+								{ label: "Recibido", value: "received" },
+							]}
+							value={
+								(ordersColumnFilters.find((f) => f.id === "statusLabel")
+									?.value as "open" | "sent" | "received" | undefined) ?? null
+							}
+						/>
+						<DateFilter
+							label="Fecha de creación"
+							onChange={handleDateFilterChange}
+							value={
+								(ordersColumnFilters.find((f) => f.id === "createdAt")?.value as
+									| DateFilterValue
+									| undefined) ?? null
+							}
+						/>
 					</div>
+
+					{ordersTableData.length === 0 ? (
+						<div className="py-10 text-center text-[#687076] dark:text-[#9BA1A6]">
+							{isNonInteractive
+								? "Tu usuario no tiene una bodega asignada. Contacta al administrador."
+								: "No hay pedidos que coincidan con el filtro seleccionado."}
+						</div>
+					) : (
+						<DataTable<OrderRow, unknown>
+							columns={ordersColumns}
+							data={ordersTableData}
+							enableFiltering
+							globalFilter={ordersGlobalFilter}
+							globalFilterPlaceholder="Buscar por pedido, bodega o estado..."
+							onGlobalFilterChange={setOrdersGlobalFilter}
+							onPaginationChange={setOrdersPagination}
+							onSortingChange={setOrdersSorting}
+							onColumnFiltersChange={setOrdersColumnFilters}
+							columnFilters={ordersColumnFilters}
+							pagination={ordersPagination}
+							sorting={ordersSorting}
+						/>
+					)}
 				</CardContent>
 			</Card>
 		</div>
