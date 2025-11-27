@@ -2,13 +2,16 @@
 "use memo";
 
 import { useSuspenseQuery } from "@tanstack/react-query";
+import type { ColumnDef } from "@tanstack/react-table";
 import { addDays, differenceInCalendarDays, format } from "date-fns";
 import { es } from "date-fns/locale";
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { DataTable } from "@/components/table/DataTable";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
 	getAllProductStock,
 	getAllProducts,
@@ -127,6 +130,30 @@ type UsageLimitGroup = {
 	productName: string;
 	productDescription: string | null;
 	entries: UsageLimitEntry[];
+};
+
+type QuantityLimitRow = {
+	id: string;
+	barcode: number;
+	productName: string;
+	productDescription: string | null;
+	warehouseName: string;
+	minQuantity: number;
+	maxQuantity: number;
+	currentQuantity: number;
+	status: LimitStatus;
+};
+
+type UsageLimitRow = {
+	id: string;
+	barcode: number;
+	productName: string;
+	productDescription: string | null;
+	warehouseName: string;
+	minUsage: number | null;
+	maxUsage: number | null;
+	currentUsage: number;
+	status: LimitStatus;
 };
 
 const toArray = <T,>(value: unknown): T[] =>
@@ -1210,6 +1237,206 @@ export default function DashboardPageClient({
 			.slice(0, 5);
 	}, [transfers]);
 
+	const filteredQuantityGroups = useMemo(() => {
+		if (!stockLimitSearch.trim()) {
+			return totalStockLimits.quantityGroups;
+		}
+		const normalizedSearch = stockLimitSearch.trim().toLowerCase();
+		return totalStockLimits.quantityGroups.filter(
+			(group) =>
+				group.productName.toLowerCase().includes(normalizedSearch) ||
+				(group.productDescription &&
+					group.productDescription.toLowerCase().includes(normalizedSearch)) ||
+				group.barcode.toString().includes(normalizedSearch),
+		);
+	}, [totalStockLimits.quantityGroups, stockLimitSearch]);
+
+	const filteredUsageGroups = useMemo(() => {
+		if (!stockLimitSearch.trim()) {
+			return totalStockLimits.usageGroups;
+		}
+		const normalizedSearch = stockLimitSearch.trim().toLowerCase();
+		return totalStockLimits.usageGroups.filter(
+			(group) =>
+				group.productName.toLowerCase().includes(normalizedSearch) ||
+				(group.productDescription &&
+					group.productDescription.toLowerCase().includes(normalizedSearch)) ||
+				group.barcode.toString().includes(normalizedSearch),
+		);
+	}, [totalStockLimits.usageGroups, stockLimitSearch]);
+
+	const quantityRows = useMemo<QuantityLimitRow[]>(() => {
+		return filteredQuantityGroups.flatMap((group) =>
+			group.entries.map((entry) => ({
+				id: `${group.barcode}-${entry.warehouseId}`,
+				barcode: group.barcode,
+				productName: group.productName,
+				productDescription: group.productDescription,
+				warehouseName: entry.warehouseName,
+				minQuantity: entry.limit.minQuantity,
+				maxQuantity: entry.limit.maxQuantity,
+				currentQuantity: entry.currentQuantity,
+				status: entry.status,
+			})),
+		);
+	}, [filteredQuantityGroups]);
+
+	const usageRowsTable = useMemo<UsageLimitRow[]>(() => {
+		return filteredUsageGroups.flatMap((group) =>
+			group.entries.map((entry) => ({
+				id: `${group.barcode}-${entry.warehouseId}`,
+				barcode: group.barcode,
+				productName: group.productName,
+				productDescription: group.productDescription,
+				warehouseName: entry.warehouseName,
+				minUsage: entry.limit.minUsage ?? null,
+				maxUsage: entry.limit.maxUsage ?? null,
+				currentUsage: entry.currentUsage,
+				status: entry.status,
+			})),
+		);
+	}, [filteredUsageGroups]);
+
+	const statusWeight = useMemo(
+		() =>
+			({
+				above: 2,
+				within: 1,
+				below: 0,
+			}) as const,
+		[],
+	);
+
+	const quantityColumns = useMemo<ColumnDef<QuantityLimitRow>[]>(() => [
+		{
+			accessorKey: "productName",
+			header: "Producto",
+			cell: ({ row }) => {
+				const item = row.original;
+				return (
+					<div className="flex flex-col">
+						<span className="font-medium">
+							{item.productDescription || item.productName}
+						</span>
+						<span className="text-xs text-muted-foreground">{item.barcode}</span>
+					</div>
+				);
+			},
+			sortingFn: (a, b) =>
+				a.original.productName.localeCompare(b.original.productName, "es", {
+					sensitivity: "base",
+				}),
+		},
+		{
+			accessorKey: "warehouseName",
+			header: "Almacén",
+			sortingFn: (a, b) =>
+				a.original.warehouseName.localeCompare(b.original.warehouseName, "es", {
+					sensitivity: "base",
+				}),
+		},
+		{
+			id: "limits",
+			header: "Límites",
+			cell: ({ row }) => {
+				const item = row.original;
+				return (
+					<span>
+						Min {item.minQuantity} / Max {item.maxQuantity}
+					</span>
+				);
+			},
+			enableSorting: false,
+		},
+		{
+			accessorKey: "currentQuantity",
+			header: "Actual",
+		},
+		{
+			id: "status",
+			header: "Estado",
+			cell: ({ row }) => {
+				const item = row.original;
+				const badgeClass =
+					item.status === "within"
+						? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100 hover:bg-emerald-100"
+						: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100 hover:bg-red-100";
+				return (
+					<Badge className={badgeClass} variant="secondary">
+						{item.status === "within" ? "OK" : "Revisar"}
+					</Badge>
+				);
+			},
+			sortingFn: (a, b) =>
+				statusWeight[a.original.status] - statusWeight[b.original.status],
+		},
+	], [statusWeight]);
+
+	const usageColumns = useMemo<ColumnDef<UsageLimitRow>[]>(() => [
+		{
+			accessorKey: "productName",
+			header: "Producto",
+			cell: ({ row }) => {
+				const item = row.original;
+				return (
+					<div className="flex flex-col">
+						<span className="font-medium">
+							{item.productDescription || item.productName}
+						</span>
+						<span className="text-xs text-muted-foreground">{item.barcode}</span>
+					</div>
+				);
+			},
+			sortingFn: (a, b) =>
+				a.original.productName.localeCompare(b.original.productName, "es", {
+					sensitivity: "base",
+				}),
+		},
+		{
+			accessorKey: "warehouseName",
+			header: "Almacén",
+			sortingFn: (a, b) =>
+				a.original.warehouseName.localeCompare(b.original.warehouseName, "es", {
+					sensitivity: "base",
+				}),
+		},
+		{
+			id: "limits",
+			header: "Límites",
+			cell: ({ row }) => {
+				const item = row.original;
+				return (
+					<span>
+						Min {item.minUsage ?? "-"} / Max {item.maxUsage ?? "-"}
+					</span>
+				);
+			},
+			enableSorting: false,
+		},
+		{
+			accessorKey: "currentUsage",
+			header: "Actual",
+		},
+		{
+			id: "status",
+			header: "Estado",
+			cell: ({ row }) => {
+				const item = row.original;
+				const badgeClass =
+					item.status === "within"
+						? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100 hover:bg-emerald-100"
+						: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100 hover:bg-red-100";
+				return (
+					<Badge className={badgeClass} variant="secondary">
+						{item.status === "within" ? "OK" : "Revisar"}
+					</Badge>
+				);
+			},
+			sortingFn: (a, b) =>
+				statusWeight[a.original.status] - statusWeight[b.original.status],
+		},
+	], [statusWeight]);
+
 	const totalUsage = itemsInUse.length;
 	const pendingOrdersCount = pendingOrders.length;
 	const pendingTransfersCount = pendingTransfers.length;
@@ -1314,177 +1541,35 @@ export default function DashboardPageClient({
 							/>
 						</div>
 					</CardHeader>
-					<CardContent className="space-y-3">
-						{totalStockLimits.total > 0 ? (
-							<>
-								{/* Quantity Limits */}
-								{totalStockLimits.quantityGroups.length > 0 && (
-									<div className="space-y-3">
-										<h3 className="text-sm font-semibold text-[#11181C] dark:text-[#ECEDEE]">
-											Límites por cantidad
-										</h3>
-										{totalStockLimits.quantityGroups
-											.filter((group) => {
-												if (!stockLimitSearch.trim()) {
-													return true;
-												}
-												const normalizedSearch = stockLimitSearch
-													.trim()
-													.toLowerCase();
-												return (
-													group.productName
-														.toLowerCase()
-														.includes(normalizedSearch) ||
-													(group.productDescription &&
-														group.productDescription
-															.toLowerCase()
-															.includes(normalizedSearch)) ||
-													group.barcode.toString().includes(normalizedSearch)
-												);
-											})
-											.map((group) => (
-												<div
-													className="rounded-lg border border-[#E5E7EB] p-3 dark:border-[#2D3033]"
-													key={group.barcode}
-												>
-													<p className="text-sm font-semibold text-[#11181C] dark:text-[#ECEDEE]">
-														{group.productDescription ||
-															(group.productName !== `Producto ${group.barcode}`
-																? group.productName
-																: `Barcode: ${group.barcode}`)}
-													</p>
-													{group.productDescription &&
-														group.productName !==
-															`Producto ${group.barcode}` && (
-															<p className="text-xs text-[#687076] dark:text-[#9BA1A6] mt-1">
-																{group.productName}
-															</p>
-														)}
-													<div className="mt-2 space-y-2">
-														{group.entries.map((entry) => {
-															const badgeClass =
-																entry.status === "within"
-																	? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100"
-																	: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100";
-															return (
-																<div
-																	className="flex items-start justify-between rounded-md border border-[#E5E7EB] p-3 dark:border-[#2D3033]"
-																	key={`${entry.warehouseId}-${entry.limit.barcode}`}
-																>
-																	<div>
-																		<p className="text-sm font-medium text-[#11181C] dark:text-[#ECEDEE]">
-																			{entry.warehouseName}
-																		</p>
-																		<p className="text-xs text-[#687076] dark:text-[#9BA1A6]">
-																			Min {entry.limit.minQuantity} / Max{" "}
-																			{entry.limit.maxQuantity}
-																		</p>
-																	</div>
-																	<Badge className={badgeClass}>
-																		Actual {entry.currentQuantity}
-																	</Badge>
-																</div>
-															);
-														})}
-													</div>
-												</div>
-											))}
-									</div>
-								)}
-
-								{/* Usage Limits */}
-								{totalStockLimits.usageGroups.length > 0 && (
-									<div className="space-y-3">
-										<h3 className="text-sm font-semibold text-[#11181C] dark:text-[#ECEDEE]">
-											Límites por uso
-										</h3>
-										{totalStockLimits.usageGroups
-											.filter((group) => {
-												if (!stockLimitSearch.trim()) {
-													return true;
-												}
-												const normalizedSearch = stockLimitSearch
-													.trim()
-													.toLowerCase();
-												return (
-													group.productName
-														.toLowerCase()
-														.includes(normalizedSearch) ||
-													(group.productDescription &&
-														group.productDescription
-															.toLowerCase()
-															.includes(normalizedSearch)) ||
-													group.barcode.toString().includes(normalizedSearch)
-												);
-											})
-											.map((group) => (
-												<div
-													className="rounded-lg border border-[#E5E7EB] p-3 dark:border-[#2D3033]"
-													key={group.barcode}
-												>
-													<p className="text-sm font-semibold text-[#7C3AED] dark:text-[#A78BFA]">
-														{group.productDescription ||
-															(group.productName !== `Producto ${group.barcode}`
-																? group.productName
-																: `Barcode: ${group.barcode}`)}
-													</p>
-													{group.productDescription &&
-														group.productName !==
-															`Producto ${group.barcode}` && (
-															<p className="text-xs text-[#687076] dark:text-[#9BA1A6] mt-1">
-																{group.productName}
-															</p>
-														)}
-													<div className="mt-2 space-y-2">
-														{group.entries.map((entry) => {
-															const badgeClass =
-																entry.status === "within"
-																	? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100"
-																	: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100";
-															return (
-																<div
-																	className="flex items-start justify-between rounded-md border border-[#E5E7EB] p-3 dark:border-[#2D3033]"
-																	key={`${entry.warehouseId}-${entry.limit.barcode}`}
-																>
-																	<div>
-																		<p className="text-sm font-medium text-[#11181C] dark:text-[#ECEDEE]">
-																			{entry.warehouseName}
-																		</p>
-																		<p className="text-xs text-[#687076] dark:text-[#9BA1A6]">
-																			Min{" "}
-																			{entry.limit.minUsage !== null
-																				? `${entry.limit.minUsage} usos`
-																				: "Sin límite"}{" "}
-																			/ Max{" "}
-																			{entry.limit.maxUsage !== null
-																				? `${entry.limit.maxUsage} usos`
-																				: "Sin límite"}
-																		</p>
-																	</div>
-																	<Badge className={badgeClass}>
-																		Actual {entry.currentUsage} usos
-																	</Badge>
-																</div>
-															);
-														})}
-													</div>
-												</div>
-											))}
-									</div>
-								)}
-
-								{totalStockLimits.quantityGroups.length === 0 &&
-									totalStockLimits.usageGroups.length === 0 && (
-										<p className="text-sm text-[#687076] dark:text-[#9BA1A6]">
-											No se encontraron limites que coincidan con la búsqueda.
-										</p>
-									)}
-							</>
-						) : (
-							<p className="text-sm text-[#687076] dark:text-[#9BA1A6]">
-								No se encontraron limites configurados.
-							</p>
-						)}
+					<CardContent>
+						<Tabs defaultValue="quantity" className="w-full">
+							<TabsList className="mb-4">
+								<TabsTrigger value="quantity">
+									Por cantidad ({filteredQuantityGroups.length})
+								</TabsTrigger>
+								<TabsTrigger value="usage">
+									Por uso ({filteredUsageGroups.length})
+								</TabsTrigger>
+							</TabsList>
+							<TabsContent value="quantity">
+								<DataTable
+									columns={quantityColumns}
+									data={quantityRows}
+									enableFiltering={false}
+									globalFilterPlaceholder="Buscar producto o almacén..."
+									pageSizeOptions={[10, 20, 50]}
+								/>
+							</TabsContent>
+							<TabsContent value="usage">
+								<DataTable
+									columns={usageColumns}
+									data={usageRowsTable}
+									enableFiltering={false}
+									globalFilterPlaceholder="Buscar producto o almacén..."
+									pageSizeOptions={[10, 20, 50]}
+								/>
+							</TabsContent>
+						</Tabs>
 					</CardContent>
 				</Card>
 

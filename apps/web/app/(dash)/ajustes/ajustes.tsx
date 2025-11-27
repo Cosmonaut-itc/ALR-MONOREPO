@@ -40,6 +40,14 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from "@/components/ui/dialog";
 import { getAllUsers, getAllWarehouses } from "@/lib/fetch-functions/inventory";
 import {
 	getAllEmployees,
@@ -56,6 +64,7 @@ import {
 import { queryKeys } from "@/lib/query-keys";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth-store";
+import { useDeleteUserMutation } from "@/lib/mutations/auth";
 
 /**
  * Type definition for user data from the API
@@ -182,10 +191,13 @@ export function AjustesPage({ role }: { role: string }) {
 
 	const users =
 		usersResponse && "data" in usersResponse ? usersResponse.data : [];
-	const warehouses =
-		warehousesResponse && "data" in warehousesResponse
-			? warehousesResponse.data
-			: [];
+const warehouses =
+	warehousesResponse && "data" in warehousesResponse
+		? warehousesResponse.data
+		: [];
+
+	const [deleteUserId, setDeleteUserId] = useState<string>("");
+	const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 	const employees = useMemo(() => {
 		if (employeesResponse && "data" in employeesResponse) {
 			return (employeesResponse.data || []).map((item) => ({
@@ -274,6 +286,8 @@ export function AjustesPage({ role }: { role: string }) {
 		useSignUpMutation();
 	const { mutateAsync: updateUser, isPending: isUpdatingUser } =
 		useUpdateUserMutation();
+	const { mutateAsync: deleteUserMutateAsync, isPending: isDeletingUser } =
+		useDeleteUserMutation();
 	const { mutateAsync: createWarehouse, isPending: isCreatingWarehouse } =
 		useCreateWarehouseMutation();
 	const { mutateAsync: createEmployee, isPending: isCreatingEmployee } =
@@ -369,6 +383,23 @@ export function AjustesPage({ role }: { role: string }) {
 			toast.error(errorMessage);
 			// biome-ignore lint/suspicious/noConsole: logging
 			console.error(error);
+		}
+	};
+
+	const handleDeleteUser = async () => {
+		if (!deleteUserId) {
+			toast.error("Selecciona un usuario a borrar.");
+			return;
+		}
+		try {
+			await deleteUserMutateAsync({ userId: deleteUserId });
+			toast.success("Usuario eliminado correctamente");
+			setDeleteUserId("");
+			setIsDeleteDialogOpen(false);
+		} catch (error) {
+			if (error instanceof Error) {
+				toast.error(error.message);
+			}
 		}
 	};
 
@@ -731,8 +762,81 @@ export function AjustesPage({ role }: { role: string }) {
 										</Button>
 									</div>
 								</form>
-							</CardContent>
-						</Card>
+					</CardContent>
+				</Card>
+
+				{/* Delete User Card */}
+				<Card className="card-transition border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
+					<CardHeader>
+						<CardTitle className="text-[#11181C] dark:text-[#ECEDEE]">
+							Borrar usuario
+						</CardTitle>
+						<CardDescription className="text-[#687076] dark:text-[#9BA1A6]">
+							Esta acción es permanente y eliminará al usuario seleccionado.
+						</CardDescription>
+					</CardHeader>
+					<CardContent className="space-y-4">
+						<div className="space-y-2">
+							<Label className="text-[#11181C] dark:text-[#ECEDEE]">
+								Usuario
+							</Label>
+							<Select
+								disabled={isDeletingUser || users.length === 0}
+								onValueChange={(value) => setDeleteUserId(value)}
+								value={deleteUserId}
+							>
+								<SelectTrigger className="w-full">
+									<SelectValue placeholder={users.length === 0 ? "Sin usuarios" : "Selecciona un usuario"} />
+								</SelectTrigger>
+								<SelectContent>
+									{users.length === 0 ? (
+										<SelectItem disabled value="">
+											No hay usuarios disponibles
+										</SelectItem>
+									) : (
+										users.map((u) => (
+											<SelectItem key={u.id} value={u.id}>
+												{u.name || u.email}
+											</SelectItem>
+										))
+									)}
+								</SelectContent>
+							</Select>
+						</div>
+
+					<Button
+						className="bg-red-600 text-white hover:bg-red-700"
+						disabled={!deleteUserId || isDeletingUser}
+						onClick={() => setIsDeleteDialogOpen(true)}
+						type="button"
+					>
+						{isDeletingUser ? "Borrando..." : "Borrar usuario"}
+					</Button>
+
+					<Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+						<DialogContent>
+							<DialogHeader>
+								<DialogTitle>Confirmar eliminación</DialogTitle>
+								<DialogDescription>
+									Esta acción no se puede deshacer. Se eliminará el usuario y se
+									revocará su acceso.
+								</DialogDescription>
+							</DialogHeader>
+							<DialogFooter>
+								<Button onClick={() => setIsDeleteDialogOpen(false)} variant="outline">
+									Cancelar
+								</Button>
+								<Button
+									className="bg-red-600 text-white hover:bg-red-700"
+									onClick={handleDeleteUser}
+								>
+									Eliminar usuario
+								</Button>
+							</DialogFooter>
+						</DialogContent>
+					</Dialog>
+					</CardContent>
+				</Card>
 
 						{/* Update User Card - Only visible to encargados */}
 						{isEncargado ? (

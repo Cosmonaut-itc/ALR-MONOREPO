@@ -7,7 +7,7 @@ import { es } from "date-fns/locale";
 import { ArrowLeft, CheckCircle2, Package } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Fragment, useEffect, useMemo } from "react";
+import { Fragment, useCallback, useEffect, useMemo } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -68,6 +68,19 @@ interface PageProps {
 }
 
 type APIResponse = WarehouseTransferDetails | null;
+
+const parseBarcode = (value: unknown): number | null => {
+	if (typeof value === "number" && Number.isFinite(value)) {
+		return value;
+	}
+	if (typeof value === "string" && value.trim().length > 0) {
+		const parsed = Number.parseInt(value, 10);
+		if (!Number.isNaN(parsed)) {
+			return parsed;
+		}
+	}
+	return null;
+};
 
 /**
  * Renders the reception detail view for a specific transfer, allowing viewing and updating receipt status of items.
@@ -191,19 +204,53 @@ export function ReceptionDetailPage({
 	}, [generalTransferDetails?.id, replenishmentOrdersResponse]);
 
 	// Fetch full order details if linked
-	const { data: fullOrderResponse } = useSuspenseQuery<
-		ReplenishmentOrderDetail | null,
-		Error,
-		ReplenishmentOrderDetail | null
-	>({
+const { data: fullOrderResponse } = useSuspenseQuery<
+	ReplenishmentOrderDetail | null,
+	Error,
+	ReplenishmentOrderDetail | null
+>({
 		queryKey: createQueryKey(queryKeys.replenishmentOrderDetail, [
 			linkedOrderId ?? "none",
 		]),
-		queryFn: () =>
-			linkedOrderId
-				? getReplenishmentOrderById(linkedOrderId)
-				: Promise.resolve(null),
-	});
+	queryFn: () =>
+		linkedOrderId
+			? getReplenishmentOrderById(linkedOrderId)
+			: Promise.resolve(null),
+});
+
+	const productInfoByBarcode = useMemo(() => {
+		const map = new Map<number, { name: string }>();
+		if (
+			productCatalog &&
+			typeof productCatalog === "object" &&
+			"success" in productCatalog &&
+			productCatalog.success &&
+			Array.isArray(productCatalog.data)
+		) {
+			for (const rawProduct of productCatalog.data as ProductCatalogItem[]) {
+				const parsedBarcode =
+					parseBarcode(rawProduct.barcode) ?? parseBarcode(rawProduct.good_id);
+				if (parsedBarcode == null || Number.isNaN(parsedBarcode)) {
+					continue;
+				}
+				const nameCandidate =
+					typeof rawProduct.title === "string" &&
+					rawProduct.title.trim().length > 0
+						? rawProduct.title.trim()
+						: `Producto ${parsedBarcode}`;
+				if (!map.has(parsedBarcode)) {
+					map.set(parsedBarcode, { name: nameCandidate });
+				}
+			}
+		}
+		return map;
+	}, [productCatalog]);
+
+	const resolveProductName = useCallback(
+		(barcode: number) =>
+			productInfoByBarcode.get(barcode)?.name ?? `Producto ${barcode}`,
+		[productInfoByBarcode],
+	);
 
 	// Parse the full replenishment order details
 	const parsedOrder = useMemo(() => {
@@ -318,9 +365,7 @@ export function ReceptionDetailPage({
 			// Create a new group if this barcode hasn't been seen yet
 			if (!groups.has(barcode)) {
 				const productName =
-					productCatalog?.data.find(
-						(product: ProductCatalogItem) => product.good_id === barcode,
-					)?.title || `Producto ${barcode}`;
+					productInfoByBarcode.get(barcode)?.name || `Producto ${barcode}`;
 				groups.set(barcode, {
 					barcode,
 					productName,
@@ -378,20 +423,21 @@ export function ReceptionDetailPage({
 	const handleToggleItem = async (itemId: string, nextReceived: boolean) => {
 		toggleReceived(itemId);
 		try {
-			const payload = {
+			const payload: UpdateTransferItemStatusPayload = {
 				transferDetailId: itemId,
 				isReceived: nextReceived,
 				receivedBy: user?.id,
-			} as UpdateTransferItemStatusPayload;
-			const generalPayload: UpdateTransferStatusPayload = {
-				transferId: String(generalTransferDetails?.id ?? ""),
-				altegioTotals,
-				isCompleted: false,
-				completedBy: user?.id,
-				isPending: true,
 			};
 			await updateItemStatus(payload);
 
+			const allReceived = getReceivedCount() === getTotalCount();
+			const generalPayload: UpdateTransferStatusPayload = {
+				transferId: String(generalTransferDetails?.id ?? ""),
+				altegioTotals,
+				isCompleted: allReceived,
+				completedBy: allReceived ? user?.id : undefined,
+				isPending: !allReceived,
+			};
 			await updateTransferStatus(generalPayload);
 		} catch {
 			toast.error("No se pudo actualizar el estado del ítem");
@@ -612,11 +658,7 @@ export function ReceptionDetailPage({
 												const transferCount =
 													transferBarcodeCounts.get(orderItem.barcode) ?? 0;
 												const isMissing = transferCount < orderItem.quantity;
-												const productName =
-													productCatalog?.data?.find(
-														(product: ProductCatalogItem) =>
-															product.good_id === orderItem.barcode,
-													)?.title ?? `Producto ${orderItem.barcode}`;
+												const productName = resolveProductName(orderItem.barcode);
 
 												return (
 													<TableRow

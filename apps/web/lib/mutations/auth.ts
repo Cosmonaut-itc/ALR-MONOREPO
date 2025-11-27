@@ -199,3 +199,24 @@ export const useUpdateUserMutation = () =>
 			return response.json();
 		},
 	});
+
+export type DeleteUserPayload = {
+	userId: string;
+};
+
+export const useDeleteUserMutation = () =>
+	useMutation<unknown, Error, DeleteUserPayload>({
+		mutationKey: ["delete-user"],
+		mutationFn: async ({ userId }: DeleteUserPayload) => {
+			const response = await fetch("/api/auth/users/delete", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ userId }),
+			});
+			if (!response.ok) {
+				const errorText = await response.text().catch(() => "Error desconocido");
+				throw new Error(`Error al borrar usuario: ${errorText}`);
+			}
+			return response.json();
+		},
+	});

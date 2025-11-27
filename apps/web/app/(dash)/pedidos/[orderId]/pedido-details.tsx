@@ -4,14 +4,7 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { format, formatDistanceToNow } from "date-fns";
 import { es } from "date-fns/locale";
-import {
-	ArrowLeft,
-	ChevronDown,
-	ChevronUp,
-	ExternalLink,
-	Package,
-	Search,
-} from "lucide-react";
+import { ArrowLeft, ExternalLink, Package, Search } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -20,11 +13,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-	Collapsible,
-	CollapsibleContent,
-	CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -126,6 +114,19 @@ type SelectedItemsMap = Record<string, string[]>;
 type PedidoDetailsPageProps = {
 	orderId: string;
 	isEncargado: boolean;
+};
+
+const parseBarcode = (value: unknown): number | null => {
+	if (typeof value === "number" && Number.isFinite(value)) {
+		return value;
+	}
+	if (typeof value === "string" && value.trim().length > 0) {
+		const parsed = Number.parseInt(value, 10);
+		if (!Number.isNaN(parsed)) {
+			return parsed;
+		}
+	}
+	return null;
 };
 
 const STATUS_LABELS: Record<"open" | "sent" | "received", string> = {
@@ -482,9 +483,10 @@ export function PedidoDetailsPage({
 
 	const [selectedItems, setSelectedItems] = useState<SelectedItemsMap>({});
 	const [itemSearch, setItemSearch] = useState("");
-	const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>(
-		{},
+	const [stockDialogDetailId, setStockDialogDetailId] = useState<string | null>(
+		null,
 	);
+	const [stockDialogSearch, setStockDialogSearch] = useState("");
 	const [transferNotes, setTransferNotes] = useState("");
 	const [priority, setPriority] = useState<"normal" | "urgent" | "high">(
 		"normal",
@@ -529,6 +531,23 @@ export function PedidoDetailsPage({
 
 	const productInfoByBarcode = useMemo(() => {
 		const map = new Map<number, { name: string; category: string }>();
+
+		// 1) Prefer inventory descriptions (most up to date on hand)
+		for (const item of inventoryItems) {
+			if (!item.barcode || map.has(item.barcode)) continue;
+			const description =
+				item.description && item.description.trim().length > 0
+					? item.description.trim()
+					: null;
+			if (description) {
+				map.set(item.barcode, {
+					name: description,
+					category: "Sin categoría",
+				});
+			}
+		}
+
+		// 2) Fallback to product catalog (barcode or good_id)
 		if (
 			productCatalog &&
 			typeof productCatalog === "object" &&
@@ -537,30 +556,31 @@ export function PedidoDetailsPage({
 			Array.isArray(productCatalog.data)
 		) {
 			for (const rawProduct of productCatalog.data as ProductCatalogItem[]) {
-				const rawBarcode = rawProduct.barcode;
-				const fallbackBarcode = rawProduct.good_id;
 				const parsedBarcode =
-					typeof rawBarcode === "string" && rawBarcode.trim().length > 0
-						? Number.parseInt(rawBarcode, 10)
-						: typeof rawBarcode === "number"
-							? rawBarcode
-							: fallbackBarcode;
-				if (!parsedBarcode || Number.isNaN(parsedBarcode)) {
+					parseBarcode(rawProduct.barcode) ?? parseBarcode(rawProduct.good_id);
+				if (parsedBarcode == null || Number.isNaN(parsedBarcode)) {
 					continue;
 				}
+				const existing = map.get(parsedBarcode);
 				const nameCandidate =
 					typeof rawProduct.title === "string" &&
 					rawProduct.title.trim().length > 0
 						? rawProduct.title.trim()
-						: typeof rawProduct.title === "string" &&
-								rawProduct.title.trim().length > 0
-							? rawProduct.title.trim()
-							: `Producto ${parsedBarcode}`;
+						: `Producto ${parsedBarcode}`;
 				const categoryCandidate =
 					typeof rawProduct.category === "string" &&
 					rawProduct.category.trim().length > 0
 						? rawProduct.category.trim()
-						: "Sin categoría";
+						: existing?.category ?? "Sin categoría";
+
+				if (existing) {
+					map.set(parsedBarcode, {
+						name: existing.name,
+						category: categoryCandidate,
+					});
+					continue;
+				}
+
 				map.set(parsedBarcode, {
 					name: nameCandidate,
 					category: categoryCandidate,
@@ -568,7 +588,19 @@ export function PedidoDetailsPage({
 			}
 		}
 		return map;
-	}, [productCatalog]);
+	}, [productCatalog, inventoryItems]);
+
+	const resolveProductInfo = useCallback(
+		(barcode: number) => {
+			const info = productInfoByBarcode.get(barcode);
+			if (info) return info;
+			return {
+				name: `Producto ${barcode}`,
+				category: "Sin categoría",
+			};
+		},
+		[productInfoByBarcode],
+	);
 
 	const status = statusFromOrder(parsedOrder);
 
@@ -627,10 +659,10 @@ export function PedidoDetailsPage({
 			return [];
 		}
 
-		return parsedOrder.items.map((item) => {
-			const productInfo = productInfoByBarcode.get(item.barcode);
-			const displayName = productInfo?.name ?? `Producto ${item.barcode}`;
-			const category = productInfo?.category ?? "Sin categoría";
+	return parsedOrder.items.map((item) => {
+		const productInfo = resolveProductInfo(item.barcode);
+		const displayName = productInfo.name;
+		const category = productInfo.category;
 			const availableStocks = inventoryByBarcode.get(item.barcode) ?? [];
 			const selectedForItem = selectedItems[item.id] ?? [];
 			const searchPool = [
@@ -669,53 +701,23 @@ export function PedidoDetailsPage({
 		[enrichedItems],
 	);
 
+	const stockDialogItem = useMemo(() => {
+		if (!stockDialogDetailId) return null;
+		return enrichedItems.find((item) => item.detailId === stockDialogDetailId) ?? null;
+	}, [enrichedItems, stockDialogDetailId]);
+
+	const filteredDialogStocks = useMemo(() => {
+		if (!stockDialogItem) return [];
+		const term = stockDialogSearch.trim().toLowerCase();
+		if (!term) return stockDialogItem.availableStocks;
+		return stockDialogItem.availableStocks.filter((stock) =>
+			stock.id.toLowerCase().includes(term),
+		);
+	}, [stockDialogItem, stockDialogSearch]);
+
 	const hasSearchTerm = normalizedItemSearch.length > 0;
 	const itemsToRender = hasSearchTerm ? filteredItems : enrichedItems;
 	const noItemsMatchSearch = hasSearchTerm && filteredItems.length === 0;
-
-	useEffect(() => {
-		if (!hasSearchTerm) {
-			return;
-		}
-		setExpandedItems((prev) => {
-			const next: Record<string, boolean> = { ...prev };
-			let didChange = false;
-			for (const item of filteredItems) {
-				if (next[item.detailId]) {
-					continue;
-				}
-				next[item.detailId] = true;
-				didChange = true;
-			}
-			return didChange ? next : prev;
-		});
-	}, [filteredItems, hasSearchTerm]);
-
-	const handleExpandAll = useCallback(() => {
-		if (itemsToRender.length === 0) {
-			return;
-		}
-		setExpandedItems((prev) => {
-			const next: Record<string, boolean> = { ...prev };
-			for (const item of itemsToRender) {
-				next[item.detailId] = true;
-			}
-			return next;
-		});
-	}, [itemsToRender]);
-
-	const handleCollapseAll = useCallback(() => {
-		if (itemsToRender.length === 0) {
-			return;
-		}
-		setExpandedItems((prev) => {
-			const next: Record<string, boolean> = { ...prev };
-			for (const item of itemsToRender) {
-				next[item.detailId] = false;
-			}
-			return next;
-		});
-	}, [itemsToRender]);
 
 	const handleSelectAllForItem = useCallback(
 		(detailId: string, requested: number, available: InventoryStockItem[]) => {
@@ -739,6 +741,13 @@ export function PedidoDetailsPage({
 		},
 		[],
 	);
+
+	const handleStockDialogOpenChange = useCallback((open: boolean) => {
+		if (!open) {
+			setStockDialogDetailId(null);
+			setStockDialogSearch("");
+		}
+	}, []);
 
 	const handleClearSelectionForItem = useCallback((detailId: string) => {
 		setSelectedItems((prev) => {
@@ -801,31 +810,29 @@ export function PedidoDetailsPage({
 		if (!parsedOrder) {
 			return [];
 		}
-		return parsedOrder.items
-			.map((item) => {
-				const selectedCount = selectedItems[item.id]?.length ?? 0;
-				if (selectedCount === 0) {
-					const productInfo = productInfoByBarcode.get(item.barcode);
-					const displayName =
-						productInfo?.name ?? `Producto ${item.barcode}`;
-					return {
-						barcode: item.barcode,
-						displayName,
-						requestedQuantity: item.quantity,
-					};
-				}
-				return null;
-			})
-			.filter(
-				(
-					item,
-				): item is {
-					barcode: number;
-					displayName: string;
-					requestedQuantity: number;
-				} => item !== null,
-			);
-	}, [parsedOrder, selectedItems, productInfoByBarcode]);
+	return parsedOrder.items
+		.map((item) => {
+			const selectedCount = selectedItems[item.id]?.length ?? 0;
+			if (selectedCount === 0) {
+				const productInfo = resolveProductInfo(item.barcode);
+				return {
+					barcode: item.barcode,
+					displayName: productInfo.name,
+					requestedQuantity: item.quantity,
+				};
+			}
+			return null;
+		})
+		.filter(
+			(
+				item,
+			): item is {
+				barcode: number;
+				displayName: string;
+				requestedQuantity: number;
+			} => item !== null,
+		);
+	}, [parsedOrder, resolveProductInfo, selectedItems]);
 
 	/**
 	 * Creates the transfer order and updates the replenishment order with sent quantities
@@ -1289,10 +1296,9 @@ export function PedidoDetailsPage({
 									</TableRow>
 								</TableHeader>
 								<TableBody>
-									{parsedOrder.items.map((item) => {
-										const productInfo = productInfoByBarcode.get(item.barcode);
-										const productName =
-											productInfo?.name ?? `Producto ${item.barcode}`;
+							{parsedOrder.items.map((item) => {
+								const productInfo = resolveProductInfo(item.barcode);
+								const productName = productInfo.name;
 										return (
 											<TableRow
 												className="theme-transition border-[#E5E7EB] border-b last:border-b-0 dark:border-[#2D3033]"
@@ -1404,24 +1410,6 @@ export function PedidoDetailsPage({
 												</p>
 											)}
 										</div>
-										<div className="flex flex-wrap items-center gap-2">
-											<Button
-												onClick={handleExpandAll}
-												size="sm"
-												variant="outline"
-												disabled={itemsToRender.length === 0}
-											>
-												Expandir todo
-											</Button>
-											<Button
-												onClick={handleCollapseAll}
-												size="sm"
-												variant="ghost"
-												disabled={itemsToRender.length === 0}
-											>
-												Contraer todo
-											</Button>
-										</div>
 									</div>
 									<div className="rounded-md border border-dashed border-[#E5E7EB] bg-[#F9FAFB] p-3 dark:border-[#2D3033] dark:bg-[#1E1F20]">
 										<p className="text-[#11181C] text-sm dark:text-[#ECEDEE]">
@@ -1450,9 +1438,7 @@ export function PedidoDetailsPage({
 										</p>
 									) : (
 										<div className="space-y-4">
-											{itemsToRender.map((item) => {
-												const isExpanded =
-													expandedItems[item.detailId] ?? false;
+									{itemsToRender.map((item) => {
 												const selectedCount = item.selectedIds.length;
 												const availableCount = item.availableStocks.length;
 												const remainingToSelect = Math.max(
@@ -1462,18 +1448,11 @@ export function PedidoDetailsPage({
 												const disableSelectAll =
 													remainingToSelect === 0 ||
 													availableCount === selectedCount;
-												return (
-													<Collapsible
-														key={item.detailId}
-														onOpenChange={(open) =>
-															setExpandedItems((prev) => ({
-																...prev,
-																[item.detailId]: open,
-															}))
-														}
-														open={isExpanded}
-													>
-														<div className="rounded-lg border border-[#E5E7EB] p-4 dark:border-[#2D3033]">
+									return (
+										<div
+											key={item.detailId}
+											className="rounded-lg border border-[#E5E7EB] p-4 dark:border-[#2D3033]"
+										>
 															<div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
 																<div className="space-y-1">
 																	<p className="font-semibold text-[#11181C] dark:text-[#ECEDEE]">
@@ -1528,85 +1507,22 @@ export function PedidoDetailsPage({
 																		>
 																			Limpiar
 																		</Button>
-																		<CollapsibleTrigger asChild>
-																			<Button
-																				className="gap-1"
-																				size="sm"
-																				variant="ghost"
-																			>
-																				{isExpanded
-																					? "Ocultar"
-																					: "Ver existencias"}
-																				{isExpanded ? (
-																					<ChevronUp className="h-4 w-4" />
-																				) : (
-																					<ChevronDown className="h-4 w-4" />
-																				)}
-																			</Button>
-																		</CollapsibleTrigger>
+											<Button
+												className="gap-1"
+												onClick={() => {
+													setStockDialogDetailId(item.detailId);
+													setStockDialogSearch("");
+												}}
+												size="sm"
+												variant="ghost"
+											>
+												Ver existencias
+											</Button>
 																	</div>
 																</div>
 															</div>
-															<CollapsibleContent>
-																<div className="mt-3">
-																	{item.availableStocks.length === 0 ? (
-																		<p className="rounded-md bg-amber-50 p-3 text-amber-700 text-sm dark:bg-amber-900/20 dark:text-amber-300">
-																			No hay existencias disponibles para este
-																			código en el CEDIS.
-																		</p>
-																	) : (
-																		<ScrollArea className="max-h-60 pr-2">
-																			<div className="space-y-2">
-																				{item.availableStocks.map((stock) => {
-																					const isChecked =
-																						item.selectedIds.includes(stock.id);
-																					const disableCheckbox =
-																						!isChecked &&
-																						item.selectedIds.length >=
-																							item.requestedQuantity;
-																					return (
-																						<label
-																							className="flex items-start justify-between gap-3 rounded-md border border-transparent px-3 py-2 text-[#11181C] hover:bg-[#F3F4F6] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
-																							key={stock.id}
-																						>
-																							<div className="flex items-start gap-3">
-																								<Checkbox
-																									checked={isChecked}
-																									disabled={disableCheckbox}
-																									onCheckedChange={() =>
-																										toggleSelection(
-																											item.detailId,
-																											stock.id,
-																											item.requestedQuantity,
-																										)
-																									}
-																								/>
-																								<div>
-																									<p className="font-mono text-sm text-[#11181C] dark:text-[#ECEDEE]">
-																										{stock.id.slice(0, 12)}
-																									</p>
-																									<p className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-																										{stock.description ||
-																											"Sin descripción"}
-																									</p>
-																								</div>
-																							</div>
-																							{stock.currentWarehouse && (
-																								<span className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-																									Ubicación:{" "}
-																									{stock.currentWarehouse}
-																								</span>
-																							)}
-																						</label>
-																					);
-																				})}
-																			</div>
-																		</ScrollArea>
-																	)}
-																</div>
-															</CollapsibleContent>
 														</div>
-													</Collapsible>
+													
 												);
 											})}
 										</div>
@@ -1652,11 +1568,97 @@ export function PedidoDetailsPage({
 								generar traspasos.
 							</p>
 						)}
-					</CardContent>
-				</Card>
-			</section>
+				</CardContent>
+			</Card>
+		</section>
 
-			<Dialog onOpenChange={setShowZeroQuantityDialog} open={showZeroQuantityDialog}>
+		<Dialog onOpenChange={handleStockDialogOpenChange} open={Boolean(stockDialogDetailId)}>
+			<DialogContent className="flex max-h-[90vh] flex-col sm:max-w-2xl">
+				<DialogHeader className="shrink-0">
+					<DialogTitle className="text-[#11181C] dark:text-[#ECEDEE]">
+						Existencias disponibles
+					</DialogTitle>
+				</DialogHeader>
+				{stockDialogItem ? (
+					<div className="flex min-h-0 flex-col space-y-4">
+						<div className="shrink-0 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+							<div>
+								<p className="font-semibold text-[#11181C] dark:text-[#ECEDEE]">
+									{stockDialogItem.displayName}
+								</p>
+								<p className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+									Código: {stockDialogItem.barcode}
+								</p>
+							</div>
+							<Input
+								className="w-full sm:w-72"
+								onChange={(event) => setStockDialogSearch(event.target.value)}
+								placeholder="Buscar por UUID..."
+								value={stockDialogSearch}
+							/>
+						</div>
+						<div className="min-h-0 flex-1 overflow-hidden rounded-md border border-[#E5E7EB] dark:border-[#2D3033]">
+							{filteredDialogStocks.length === 0 ? (
+								<p className="p-4 text-[#687076] text-sm dark:text-[#9BA1A6]">
+									No hay existencias disponibles para este código en el CEDIS.
+								</p>
+							) : (
+								<ScrollArea className="h-full max-h-[calc(90vh-12rem)]">
+									<div className="space-y-2 p-2">
+										{filteredDialogStocks.map((stock) => {
+											const isChecked = stockDialogItem.selectedIds.includes(stock.id);
+											const disableCheckbox =
+												!isChecked &&
+												stockDialogItem.selectedIds.length >=
+													stockDialogItem.requestedQuantity;
+											return (
+												<label
+													className="flex items-start justify-between gap-3 rounded-md border border-transparent px-3 py-2 text-[#11181C] hover:bg-[#F3F4F6] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
+													key={stock.id}
+												>
+													<div className="flex items-start gap-3">
+														<Checkbox
+															checked={isChecked}
+															disabled={disableCheckbox}
+															onCheckedChange={() =>
+																toggleSelection(
+																	stockDialogItem.detailId,
+																	stock.id,
+																	stockDialogItem.requestedQuantity,
+																)
+															}
+														/>
+														<div>
+															<p className="font-mono text-sm text-[#11181C] dark:text-[#ECEDEE]">
+																{stock.id}
+															</p>
+															<p className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+																{stock.description || "Sin descripción"}
+															</p>
+														</div>
+													</div>
+													{stock.currentWarehouse && (
+														<span className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+															Ubicación: {stock.currentWarehouse}
+														</span>
+													)}
+												</label>
+											);
+										})}
+									</div>
+								</ScrollArea>
+							)}
+						</div>
+					</div>
+				) : (
+					<p className="text-[#687076] text-sm dark:text-[#9BA1A6]">
+						Selecciona un artículo para ver existencias.
+					</p>
+				)}
+			</DialogContent>
+		</Dialog>
+
+		<Dialog onOpenChange={setShowZeroQuantityDialog} open={showZeroQuantityDialog}>
 				<DialogContent className="sm:max-w-md">
 					<DialogHeader>
 						<DialogTitle className="text-[#11181C] dark:text-[#ECEDEE]">
@@ -1698,7 +1700,133 @@ export function PedidoDetailsPage({
 						</Button>
 					</DialogFooter>
 				</DialogContent>
-			</Dialog>
-		</div>
+		</Dialog>
+
+		<Dialog onOpenChange={handleStockDialogOpenChange} open={Boolean(stockDialogDetailId)}>
+			<DialogContent className="flex max-h-[90vh] flex-col sm:max-w-2xl">
+				<DialogHeader className="shrink-0">
+					<DialogTitle className="text-[#11181C] dark:text-[#ECEDEE]">
+						Existencias disponibles
+					</DialogTitle>
+				</DialogHeader>
+				{stockDialogItem ? (
+					<div className="flex min-h-0 flex-col space-y-4">
+						<div className="shrink-0 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+							<div>
+								<p className="font-semibold text-[#11181C] dark:text-[#ECEDEE]">
+									{stockDialogItem.displayName}
+								</p>
+								<p className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+									Código: {stockDialogItem.barcode}
+								</p>
+							</div>
+							<Input
+								className="w-full sm:w-72"
+								onChange={(event) => setStockDialogSearch(event.target.value)}
+								placeholder="Buscar por UUID..."
+								value={stockDialogSearch}
+							/>
+						</div>
+						<div className="min-h-0 flex-1 overflow-hidden rounded-md border border-[#E5E7EB] dark:border-[#2D3033]">
+							{filteredDialogStocks.length === 0 ? (
+								<p className="p-4 text-[#687076] text-sm dark:text-[#9BA1A6]">
+									No hay existencias disponibles para este código en el CEDIS.
+								</p>
+							) : (
+								<ScrollArea className="h-full max-h-[calc(90vh-12rem)]">
+									<div className="space-y-2 p-2">
+										{filteredDialogStocks.map((stock) => {
+											const isChecked = stockDialogItem.selectedIds.includes(stock.id);
+											const disableCheckbox =
+												!isChecked &&
+												stockDialogItem.selectedIds.length >=
+													stockDialogItem.requestedQuantity;
+											return (
+												<label
+													className="flex items-start justify-between gap-3 rounded-md border border-transparent px-3 py-2 text-[#11181C] hover:bg-[#F3F4F6] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
+													key={stock.id}
+												>
+													<div className="flex items-start gap-3">
+														<Checkbox
+															checked={isChecked}
+															disabled={disableCheckbox}
+															onCheckedChange={() =>
+																toggleSelection(
+																	stockDialogItem.detailId,
+																	stock.id,
+																	stockDialogItem.requestedQuantity,
+																)
+															}
+														/>
+														<div>
+															<p className="font-mono text-sm text-[#11181C] dark:text-[#ECEDEE]">
+																{stock.id}
+															</p>
+															<p className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+																{stock.description || "Sin descripción"}
+															</p>
+														</div>
+													</div>
+													{stock.currentWarehouse && (
+														<span className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+															Ubicación: {stock.currentWarehouse}
+														</span>
+													)}
+												</label>
+											);
+										})}
+									</div>
+								</ScrollArea>
+							)}
+						</div>
+					</div>
+				) : (
+					<p className="text-[#687076] text-sm dark:text-[#9BA1A6]">
+						Selecciona un artículo para ver existencias.
+					</p>
+				)}
+			</DialogContent>
+		</Dialog>
+
+		<Dialog onOpenChange={setShowZeroQuantityDialog} open={showZeroQuantityDialog}>
+			<DialogContent className="sm:max-w-md">
+				<DialogHeader>
+					<DialogTitle className="text-[#11181C] dark:text-[#ECEDEE]">
+						Confirmar envío con cantidad cero
+					</DialogTitle>
+					<DialogDescription className="text-[#687076] dark:text-[#9BA1A6]">
+						Algunos productos no tienen artículos seleccionados y se marcarán
+						como enviados con cantidad 0. ¿Deseas continuar?
+					</DialogDescription>
+				</DialogHeader>
+				<div className="max-h-60 space-y-2 overflow-y-auto">
+					{getZeroQuantityItems().map((item) => (
+						<div
+							className="rounded-md border border-[#E5E7EB] bg-[#F9FAFB] p-3 dark:border-[#2D3033] dark:bg-[#1E1F20]"
+							key={item.barcode}
+						>
+							<p className="font-medium text-[#11181C] text-sm dark:text-[#ECEDEE]">
+								{item.displayName}
+							</p>
+							<p className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+								Código: {item.barcode} • Solicitado: {item.requestedQuantity} • Enviado: 0
+							</p>
+						</div>
+					))}
+				</div>
+				<DialogFooter className="gap-2 sm:gap-0">
+					<Button onClick={handleCancelZeroQuantity} variant="outline">
+						Cancelar
+					</Button>
+					<Button
+						className="bg-[#0a7ea4] text-white hover:bg-[#086885] dark:bg-[#0a7ea4] dark:hover:bg-[#0a7ea4]/80"
+						onClick={handleConfirmZeroQuantity}
+					>
+						Confirmar y continuar
+					</Button>
+				</DialogFooter>
+			</DialogContent>
+		</Dialog>
+	</div>
 	);
 }
