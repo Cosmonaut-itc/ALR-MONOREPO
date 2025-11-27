@@ -16,7 +16,6 @@
 /** biome-ignore-all lint/performance/noNamespaceImport: Required for zod */
 
 import { zValidator } from '@hono/zod-validator';
-import { formatInTimeZone } from 'date-fns-tz';
 import { and, desc, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
@@ -25,6 +24,19 @@ import { z } from 'zod';
 import { productStockData, withdrawOrderData } from './constants';
 import { db } from './db/index';
 import * as schemas from './db/schema';
+import {
+	type AggregatedTotals,
+	ALTEGIO_DOCUMENT_TYPE_ARRIVAL,
+	ALTEGIO_DOCUMENT_TYPE_DEPARTURE,
+	ALTEGIO_OPERATION_TYPE_ARRIVAL,
+	ALTEGIO_OPERATION_TYPE_DEPARTURE,
+	type AltegioStockArrivalPayload,
+	createAggregatedOperationRequest,
+	postAltegioStorageDocument,
+	postAltegioStorageOperation,
+	replicateStockCreationToAltegio,
+	resolveAltegioStorageIds,
+} from './lib/altegio-service';
 import { auth } from './lib/auth';
 import { InventorySyncError, syncInventory } from './lib/inventory-sync';
 import type { SessionUser } from './lib/replenishment-orders';
@@ -38,13 +50,7 @@ import {
 	markBuyOrderGenerated,
 	updateReplenishmentOrder,
 } from './lib/replenishment-orders';
-import type {
-	AltegioDocumentTypeId,
-	AltegioOperationTypeId,
-	DataItemArticulosType,
-	SyncOptions,
-	SyncResult,
-} from './types';
+import type { DataItemArticulosType, SyncOptions, SyncResult } from './types';
 import {
 	apiResponseSchema,
 	apiResponseSchemaDocument,
@@ -518,6 +524,46 @@ function buildTransferUpdateValues(
 	return updateValues;
 }
 
+const altegioArrivalPayloadSchema = z.object({
+	amount: z
+		.number()
+		.positive('Altegio amount must be greater than zero')
+		.describe('Quantity received in Altegio'),
+	totalCost: z
+		.number()
+		.nonnegative('Total cost cannot be negative')
+		.optional()
+		.describe('Total cost registered in Altegio'),
+	unitCost: z
+		.number()
+		.nonnegative('Unit cost cannot be negative')
+		.optional()
+		.describe('Cost per unit (optional if total cost provided)'),
+	supplierId: z.number().int().positive().optional().describe('Altegio supplier identifier'),
+	masterId: z.number().int().positive().optional().describe('Master (employee) ID'),
+	clientId: z.number().int().positive().optional().describe('Client ID when applicable'),
+	documentComment: z
+		.string()
+		.min(1)
+		.max(500)
+		.optional()
+		.describe('Custom arrival document comment'),
+	operationComment: z.string().min(1).max(500).optional().describe('Custom operation comment'),
+	transactionComment: z
+		.string()
+		.min(1)
+		.max(500)
+		.optional()
+		.describe('Line-level comment for Altegio goods transaction'),
+	operationUnitType: z
+		.number()
+		.int()
+		.positive()
+		.optional()
+		.describe('Unit type identifier defined in Altegio'),
+	timeZone: z.string().min(1).optional().describe('IANA timezone or offset for Altegio document'),
+});
+
 /**
  * Helper function to validate product stock creation business rules
  * Separated to reduce cognitive complexity in the main endpoint
@@ -580,272 +626,8 @@ function handleProductStockCreationError(
 	return null; // No specific error handling
 }
 
-const ALTEGIO_BASE_URL = 'https://api.alteg.io';
-const ALTEGIO_STORAGE_DOCUMENT_PATH = '/api/v1/storage_operations/documents';
-const ALTEGIO_STORAGE_OPERATION_PATH = '/api/v1/storage_operations/operation';
-const ALTEGIO_DATETIME_FORMAT = "yyyy-MM-dd'T'HH:mm:ss.SSSxxx";
-const DEFAULT_TIME_ZONE = 'UTC';
-const ALTEGIO_DOCUMENT_TYPE_ARRIVAL: AltegioDocumentTypeId = 3;
-const ALTEGIO_DOCUMENT_TYPE_DEPARTURE: AltegioDocumentTypeId = 7;
-const ALTEGIO_OPERATION_TYPE_ARRIVAL: AltegioOperationTypeId = 3;
-const ALTEGIO_OPERATION_TYPE_DEPARTURE: AltegioOperationTypeId = 4;
 // Feature flag to control external Altegio replication flow
 const ENABLE_ALTEGIO_REPLICATION = false;
-
-const altegioCompanyIdSchema = z.number().int().positive();
-const altegioAuthHeadersSchema = z.object({
-	authHeader: z.string().min(1),
-	acceptHeader: z.string().min(1),
-});
-
-const altegioStorageDocumentRequestSchema = z.object({
-	typeId: z.union([
-		z.literal(ALTEGIO_DOCUMENT_TYPE_ARRIVAL),
-		z.literal(ALTEGIO_DOCUMENT_TYPE_DEPARTURE),
-	]),
-	comment: z.string().min(1),
-	storageId: z.number().int().positive(),
-	createDate: z.date(),
-	timeZone: z.string().min(1).optional(),
-});
-
-const altegioStorageOperationTransactionSchema = z.object({
-	documentId: z.number().int().positive(),
-	goodId: z.number().int().positive(),
-	amount: z.number(),
-	costPerUnit: z.number(),
-	discount: z.number(),
-	cost: z.number(),
-	operationUnitType: z.number().int(),
-	masterId: z.number().int().optional(),
-	clientId: z.number().int().optional(),
-	supplierId: z.number().int().optional(),
-	comment: z.string().optional(),
-});
-
-const altegioStorageOperationRequestSchema = z.object({
-	typeId: z.union([
-		z.literal(ALTEGIO_OPERATION_TYPE_ARRIVAL),
-		z.literal(ALTEGIO_OPERATION_TYPE_DEPARTURE),
-	]),
-	comment: z.string().min(1),
-	createDate: z.date(),
-	storageId: z.number().int().positive(),
-	goodsTransactions: z.array(altegioStorageOperationTransactionSchema).min(1),
-	masterId: z.number().int().optional(),
-	timeZone: z.string().min(1).optional(),
-});
-
-export type AltegioAuthHeaders = z.infer<typeof altegioAuthHeadersSchema>;
-export type AltegioStorageDocumentRequest = z.infer<typeof altegioStorageDocumentRequestSchema>;
-export type AltegioStorageOperationTransaction = z.infer<
-	typeof altegioStorageOperationTransactionSchema
->;
-export type AltegioStorageOperationRequest = z.infer<typeof altegioStorageOperationRequestSchema>;
-
-export type AltegioStorageDocumentPayload = {
-	type_id: AltegioDocumentTypeId;
-	comment: string;
-	storage_id: number;
-	create_date: string;
-};
-
-export type AltegioStorageOperationTransactionPayload = {
-	document_id: number;
-	good_id: number;
-	amount: number;
-	cost_per_unit: number;
-	discount: number;
-	cost: number;
-	operation_unit_type: number;
-	master_id?: number;
-	client_id?: number;
-	supplier_id?: number;
-	comment?: string;
-};
-
-export type AltegioStorageOperationPayload = {
-	type_id: AltegioOperationTypeId;
-	comment: string;
-	create_date: string;
-	storage_id: number;
-	master_id?: number;
-	goods_transactions: AltegioStorageOperationTransactionPayload[];
-};
-
-export type AltegioRequestOptions = {
-	baseUrl?: string;
-};
-
-export type AltegioResponseSchema<TResponse> = z.ZodType<TResponse>;
-
-/**
- * Formats a Date instance into the Altegio-compatible timestamp string.
- *
- * @param date - Original JavaScript date value.
- * @param timeZone - Optional IANA time zone identifier (defaults to UTC).
- * @returns A formatted timestamp string accepted by the Altegio API.
- */
-const formatCreateDate = (date: Date, timeZone?: string): string => {
-	return formatInTimeZone(date, timeZone ?? DEFAULT_TIME_ZONE, ALTEGIO_DATETIME_FORMAT);
-};
-
-/**
- * Builds a strongly typed Altegio header object.
- *
- * @param authHeaders - Authorization and content negotiation headers.
- * @returns A HeadersInit object ready for Altegio API calls.
- */
-const createHeaders = ({ authHeader, acceptHeader }: AltegioAuthHeaders): HeadersInit => {
-	return {
-		Authorization: authHeader,
-		Accept: acceptHeader,
-		'Content-Type': 'application/json',
-	};
-};
-
-/**
- * Validates and builds the Altegio header set used for authenticated requests.
- *
- * @param headers - Authorization and accept header values sourced from configuration.
- * @returns A HeadersInit value with the required Altegio headers.
- */
-export const createAltegioHeaders = (headers: AltegioAuthHeaders): HeadersInit => {
-	const parsed = altegioAuthHeadersSchema.parse(headers);
-	return createHeaders(parsed);
-};
-
-/**
- * Creates the JSON payload for the Altegio storage document creation endpoint.
- *
- * @param request - Structured document creation data.
- * @returns The API payload mapped to Altegio field names.
- */
-export const createAltegioStorageDocumentRequestBody = (
-	request: AltegioStorageDocumentRequest,
-): AltegioStorageDocumentPayload => {
-	const parsed = altegioStorageDocumentRequestSchema.parse(request);
-	return {
-		type_id: parsed.typeId,
-		comment: parsed.comment,
-		storage_id: parsed.storageId,
-		create_date: formatCreateDate(parsed.createDate, parsed.timeZone),
-	};
-};
-
-/**
- * Creates the JSON payload for the Altegio storage operation creation endpoint.
- *
- * @param request - Structured inventory operation data.
- * @returns The API payload mapped to Altegio field names.
- */
-export const createAltegioStorageOperationRequestBody = (
-	request: AltegioStorageOperationRequest,
-): AltegioStorageOperationPayload => {
-	const parsed = altegioStorageOperationRequestSchema.parse(request);
-	return {
-		type_id: parsed.typeId,
-		comment: parsed.comment,
-		create_date: formatCreateDate(parsed.createDate, parsed.timeZone),
-		storage_id: parsed.storageId,
-		...(parsed.masterId !== undefined ? { master_id: parsed.masterId } : {}),
-		goods_transactions: parsed.goodsTransactions.map((transaction) => ({
-			document_id: transaction.documentId,
-			good_id: transaction.goodId,
-			amount: transaction.amount,
-			cost_per_unit: transaction.costPerUnit,
-			discount: transaction.discount,
-			cost: transaction.cost,
-			operation_unit_type: transaction.operationUnitType,
-			...(transaction.masterId !== undefined ? { master_id: transaction.masterId } : {}),
-			...(transaction.clientId !== undefined ? { client_id: transaction.clientId } : {}),
-			...(transaction.supplierId !== undefined
-				? { supplier_id: transaction.supplierId }
-				: {}),
-			...(transaction.comment !== undefined ? { comment: transaction.comment } : {}),
-		})),
-	};
-};
-
-/**
- * Executes the Altegio storage document creation request.
- *
- * @param companyId - Target company identifier supplied by Altegio.
- * @param headers - Authorization headers for the request.
- * @param request - Document creation parameters.
- * @param responseSchema - Zod schema describing the expected response payload.
- * @param options - Optional overrides for the request, such as base URL.
- * @returns A parsed and validated response payload.
- * @throws Error when the Altegio API responds with a non-success status code.
- */
-export const postAltegioStorageDocument = async <TResponse>(
-	companyId: number,
-	headers: AltegioAuthHeaders,
-	request: AltegioStorageDocumentRequest,
-	responseSchema: AltegioResponseSchema<TResponse>,
-	options: AltegioRequestOptions = {},
-): Promise<TResponse> => {
-	const validatedCompanyId = altegioCompanyIdSchema.parse(companyId);
-	const requestHeaders = createAltegioHeaders(headers);
-	const payload = createAltegioStorageDocumentRequestBody(request);
-	const baseUrl = options.baseUrl ?? ALTEGIO_BASE_URL;
-
-	const response = await fetch(
-		`${baseUrl}${ALTEGIO_STORAGE_DOCUMENT_PATH}/${validatedCompanyId}`,
-		{
-			method: 'POST',
-			headers: requestHeaders,
-			body: JSON.stringify(payload),
-		},
-	);
-
-	if (!response.ok) {
-		throw new Error(`Altegio storage document creation failed with status ${response.status}`);
-	}
-
-	const json = (await response.json()) as unknown;
-	return responseSchema.parse(json);
-};
-
-/**
- * Executes the Altegio storage operation creation request.
- *
- * @param companyId - Target company identifier supplied by Altegio.
- * @param headers - Authorization headers for the request.
- * @param request - Inventory operation parameters.
- * @param responseSchema - Zod schema describing the expected response payload.
- * @param options - Optional overrides for the request, such as base URL.
- * @returns A parsed and validated response payload.
- * @throws Error when the Altegio API responds with a non-success status code.
- */
-export const postAltegioStorageOperation = async <TResponse>(
-	companyId: number,
-	headers: AltegioAuthHeaders,
-	request: AltegioStorageOperationRequest,
-	responseSchema: AltegioResponseSchema<TResponse>,
-	options: AltegioRequestOptions = {},
-): Promise<TResponse> => {
-	const validatedCompanyId = altegioCompanyIdSchema.parse(companyId);
-	const requestHeaders = createAltegioHeaders(headers);
-	const payload = createAltegioStorageOperationRequestBody(request);
-	const baseUrl = options.baseUrl ?? ALTEGIO_BASE_URL;
-
-	const response = await fetch(
-		`${baseUrl}${ALTEGIO_STORAGE_OPERATION_PATH}/${validatedCompanyId}`,
-		{
-			method: 'POST',
-			headers: requestHeaders,
-			body: JSON.stringify(payload),
-		},
-	);
-
-	if (!response.ok) {
-		throw new Error(`Altegio storage operation creation failed with status ${response.status}`);
-	}
-
-	const json = (await response.json()) as unknown;
-	return responseSchema.parse(json);
-};
 
 /**
  * Initialize Hono application with typed context variables
@@ -2126,6 +1908,7 @@ const route = app
 					.describe('Whether currently being used'),
 				isKit: z.boolean().optional().default(false).describe('Whether it is a kit'),
 				description: z.string().optional().describe('Description'),
+				altegio: altegioArrivalPayloadSchema.optional(),
 			}),
 		),
 		async (c) => {
@@ -2182,6 +1965,25 @@ const route = app
 						usageDate: new Date(),
 						newWarehouseId: requestData.currentWarehouse,
 					});
+				}
+
+				// Replicate to Altegio (Arrival) when clients provide the necessary payload.
+				if (requestData.altegio) {
+					try {
+						const altegioPayload = requestData.altegio as AltegioStockArrivalPayload;
+						const altegioResult = await replicateStockCreationToAltegio(
+							requestData.barcode,
+							requestData.currentWarehouse,
+							altegioPayload,
+						);
+						if (!altegioResult.success) {
+							// biome-ignore lint/suspicious/noConsole: Error logging is essential for monitoring external API syncing
+							console.error(`Altegio replication failed: ${altegioResult.message}`);
+						}
+					} catch (e) {
+						// biome-ignore lint/suspicious/noConsole: Error logging is essential for monitoring external API syncing
+						console.error('Altegio replication error', e);
+					}
 				}
 
 				// Return successful response with the newly created product stock record
@@ -5271,6 +5073,7 @@ const route = app
 									altegioId: schemas.warehouse.altegioId,
 									consumablesId: schemas.warehouse.consumablesId,
 									salesId: schemas.warehouse.salesId,
+									timeZone: schemas.warehouse.timeZone,
 								})
 								.from(schemas.warehouse)
 								.where(
@@ -5278,10 +5081,16 @@ const route = app
 								);
 
 							const destinationWarehouse = destinationWarehouses[0];
+							const destinationStorage = destinationWarehouse?.altegioId
+								? resolveAltegioStorageIds(destinationWarehouse.altegioId, {
+										consumablesId: destinationWarehouse.consumablesId,
+										salesId: destinationWarehouse.salesId,
+									})
+								: undefined;
 							if (
 								!(
 									destinationWarehouse?.altegioId &&
-									destinationWarehouse.consumablesId
+									destinationStorage?.consumablesId
 								)
 							) {
 								// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
@@ -5303,8 +5112,11 @@ const route = app
 								{
 									typeId: ALTEGIO_DOCUMENT_TYPE_ARRIVAL,
 									comment: `Arrival document for transfer ${transferRow.transferNumber}`,
-									storageId: destinationWarehouse.consumablesId,
+									storageId: destinationStorage.consumablesId,
 									createDate: new Date(),
+									...(destinationWarehouse.timeZone
+										? { timeZone: destinationWarehouse.timeZone }
+										: {}),
 								},
 								apiResponseSchemaDocument,
 							);
@@ -5323,10 +5135,13 @@ const route = app
 
 							const arrivalOperationRequest = createAggregatedOperationRequest({
 								documentId: arrivalDocument.data.id,
-								storageId: destinationWarehouse.consumablesId,
+								storageId: destinationStorage.consumablesId,
 								typeId: ALTEGIO_OPERATION_TYPE_ARRIVAL,
 								transferNumber: transferRow.transferNumber,
 								aggregatedTransactions,
+								...(destinationWarehouse.timeZone
+									? { timeZone: destinationWarehouse.timeZone }
+									: {}),
 							});
 
 							const arrivalOperation = await postAltegioStorageOperation(
@@ -5357,12 +5172,19 @@ const route = app
 									altegioId: schemas.warehouse.altegioId,
 									consumablesId: schemas.warehouse.consumablesId,
 									salesId: schemas.warehouse.salesId,
+									timeZone: schemas.warehouse.timeZone,
 								})
 								.from(schemas.warehouse)
 								.where(eq(schemas.warehouse.id, transferRow.sourceWarehouseId));
 
 							const sourceWarehouse = sourceWarehouses[0];
-							if (!(sourceWarehouse?.altegioId && sourceWarehouse.consumablesId)) {
+							const sourceStorage = sourceWarehouse?.altegioId
+								? resolveAltegioStorageIds(sourceWarehouse.altegioId, {
+										consumablesId: sourceWarehouse.consumablesId,
+										salesId: sourceWarehouse.salesId,
+									})
+								: undefined;
+							if (!(sourceWarehouse?.altegioId && sourceStorage?.consumablesId)) {
 								// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
 								console.error(
 									`Source warehouse ${transferRow.sourceWarehouseId} not found`,
@@ -5382,8 +5204,11 @@ const route = app
 								{
 									typeId: ALTEGIO_DOCUMENT_TYPE_DEPARTURE,
 									comment: `Departure document for transfer ${transferRow.transferNumber}`,
-									storageId: sourceWarehouse.consumablesId,
+									storageId: sourceStorage.consumablesId,
 									createDate: new Date(),
+									...(sourceWarehouse.timeZone
+										? { timeZone: sourceWarehouse.timeZone }
+										: {}),
 								},
 								apiResponseSchemaDocument,
 							);
@@ -5402,10 +5227,13 @@ const route = app
 
 							const departureOperationRequest = createAggregatedOperationRequest({
 								documentId: departureDocument.data.id,
-								storageId: sourceWarehouse.consumablesId,
+								storageId: sourceStorage.consumablesId,
 								typeId: ALTEGIO_OPERATION_TYPE_DEPARTURE,
 								transferNumber: transferRow.transferNumber,
 								aggregatedTransactions,
+								...(sourceWarehouse.timeZone
+									? { timeZone: sourceWarehouse.timeZone }
+									: {}),
 							});
 
 							const departureOperation = await postAltegioStorageOperation(
@@ -6852,47 +6680,4 @@ export default {
 } satisfies {
 	port: number;
 	fetch: typeof app.fetch;
-};
-
-/**
- * Builds a typed Altegio operation request payload for aggregated product movements.
- * Ensures quantity and cost totals align with Altegio's expectations without duplicating arithmetic.
- */
-type AggregatedTotals = {
-	totalQuantity: number;
-	totalCost: number;
-};
-
-const createAggregatedOperationRequest = ({
-	documentId,
-	storageId,
-	typeId,
-	transferNumber,
-	aggregatedTransactions,
-}: {
-	documentId: number;
-	storageId: number;
-	typeId: AltegioOperationTypeId;
-	transferNumber: string;
-	aggregatedTransactions: Map<number, AggregatedTotals>;
-}): AltegioStorageOperationRequest => {
-	const goodsTransactions = Array.from(aggregatedTransactions.entries()).map(
-		([goodId, { totalQuantity, totalCost }]) => ({
-			documentId,
-			goodId,
-			amount: totalQuantity,
-			costPerUnit: totalQuantity === 0 ? 0 : totalCost / totalQuantity,
-			discount: 0,
-			cost: totalCost,
-			operationUnitType: 2,
-		}),
-	);
-
-	return {
-		typeId,
-		comment: `Storage operation for transfer ${transferNumber}`,
-		createDate: new Date(),
-		storageId,
-		goodsTransactions,
-	};
 };
