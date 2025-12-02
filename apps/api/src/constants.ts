@@ -1,3 +1,16 @@
+export const authAllowedOrigins = [
+	'http://localhost:3000',
+	'http://localhost:3001',
+	'https://localhost:3000',
+	'http://100.89.145.51:3000',
+	'http://100.111.159.14:3000',
+	'https://v0-alr-manager-dashboard.vercel.app',
+	'https://ns-api-production.up.railway.app',
+	'exp://192.168.15.188:8081',
+	'exp://192.168.0.205:8081',
+	'nsinventorymngmt://',
+];
+
 export const productStockData = [
 	// Barcode 12345 - Multiple units
 	{

@@ -21,7 +21,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
-import { productStockData, withdrawOrderData } from './constants';
+import { authAllowedOrigins, productStockData, withdrawOrderData } from './constants';
 import { db } from './db/index';
 import * as schemas from './db/schema';
 import {
@@ -756,17 +756,23 @@ app.use('*', async (c, next) => {
  * Enables cross-origin requests from specified domains with proper
  * security headers and credential support for authentication flows
  */
+const authAllowedOriginSet = new Set(authAllowedOrigins);
+
 app.use(
 	'/api/auth/*',
 	cors({
-		// Allowed origins for CORS requests
-		origin: [
-			'http://localhost:3000', // Local development
-			'http://localhost:3001', // Local development
-			'http://100.89.145.51:3000', // Development server IP
-			'nsinventorymngmt://', // Mobile app deep link
-			'http://100.111.159.14:3000', // Additional development IP
-		],
+		// Allow native fetch (Origin null/empty) and deep link scheme
+		origin: (origin) => {
+			if (!origin || origin === 'null') {
+				return 'null';
+			}
+
+			if (authAllowedOriginSet.has(origin)) {
+				return origin;
+			}
+
+			return null;
+		},
 		allowHeaders: ['Content-Type', 'Authorization'],
 		allowMethods: ['POST', 'GET', 'OPTIONS'],
 		exposeHeaders: ['Content-Length'],

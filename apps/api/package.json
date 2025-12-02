@@ -5,6 +5,8 @@
 	"types": "dist-types/index.d.ts",
 	"scripts": {
 		"dev": "bun run --hot src/index.ts",
+		"build": "bun build ./src/index.ts --outdir ./dist --target bun",
+		"start": "bun run ./dist/index.js",
 		"build:server-types": "tsc -p tsconfig.server-types.json",
 		"build:types": "bun run scripts/build-and-publish-types.ts --no-publish",
 		"publish:types": "bun run scripts/build-and-publish-types.ts",
