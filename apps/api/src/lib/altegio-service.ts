@@ -8,12 +8,12 @@ import {
 	type AltegioOperationTypeId,
 	type AltegioResponseSchema,
 	apiResponseSchemaDocument,
-	apiResponseSchemaStorageOperation,
+	apiResponseSchemaGoodsTransaction,
 } from '../types';
 
 const ALTEGIO_BASE_URL = 'https://api.alteg.io';
 const ALTEGIO_STORAGE_DOCUMENT_PATH = '/api/v1/storage_operations/documents';
-const ALTEGIO_STORAGE_OPERATION_PATH = '/api/v1/storage_operations/operation';
+const ALTEGIO_GOODS_TRANSACTION_PATH = '/api/v1/storage_operations/goods_transactions';
 const ALTEGIO_DATETIME_FORMAT = 'yyyy-MM-dd HH:mm:ss';
 const DEFAULT_TIME_ZONE = 'UTC';
 const DEFAULT_TIME_ZONE_OFFSET = '+00:00';
@@ -21,6 +21,21 @@ export const ALTEGIO_DOCUMENT_TYPE_ARRIVAL: AltegioDocumentTypeId = 3;
 export const ALTEGIO_DOCUMENT_TYPE_DEPARTURE: AltegioDocumentTypeId = 7;
 export const ALTEGIO_OPERATION_TYPE_ARRIVAL: AltegioOperationTypeId = 3;
 export const ALTEGIO_OPERATION_TYPE_DEPARTURE: AltegioOperationTypeId = 4;
+
+/**
+ * Retrieves the default Altegio master (staff member) ID from environment variable.
+ * Falls back to undefined if not configured.
+ *
+ * @returns The default master ID as a number, or undefined if not set
+ */
+export const getAltegioDefaultMasterId = (): number | undefined => {
+	const envValue = process.env.ALTEGIO_DEFAULT_MASTER_ID;
+	if (!envValue) {
+		return undefined;
+	}
+	const parsed = Number.parseInt(envValue, 10);
+	return Number.isNaN(parsed) ? undefined : parsed;
+};
 
 const HARDCODED_STORAGE_MAP: Record<number, { consumablesId: number; salesId: number }> = {
 	1308654: { consumablesId: 2_624_863, salesId: 2_624_864 },
@@ -55,7 +70,6 @@ const altegioStorageOperationTransactionSchema = z.object({
 	operationUnitType: z.number().int(),
 	masterId: z.number().int().optional(),
 	clientId: z.number().int().optional(),
-	supplierId: z.number().int().optional(),
 	comment: z.string().optional(),
 });
 
@@ -97,7 +111,6 @@ export type AltegioStorageOperationTransactionPayload = {
 	operation_unit_type: number;
 	master_id?: number;
 	client_id?: number;
-	supplier_id?: number;
 	comment?: string;
 };
 
@@ -120,16 +133,30 @@ export type AltegioStorageIds = {
 	salesId?: number;
 };
 
+/**
+ * Payload for Altegio stock arrival operations.
+ * Used to create inventory receipt/arrival records in the Altegio system.
+ *
+ * @property amount - Quantity of items being received (required)
+ * @property masterId - Altegio staff member ID responsible for the operation (required by Altegio API)
+ * @property totalCost - Total cost of the items (optional, calculated from unitCost * amount if not provided)
+ * @property unitCost - Cost per unit (optional, calculated from totalCost / amount if not provided)
+ * @property documentComment - Comment for the storage document
+ * @property operationComment - Comment for the storage operation
+ * @property transactionComment - Comment for individual goods transactions
+ * @property timeZone - Timezone for the operation timestamp (defaults to warehouse timezone or UTC)
+ * @property clientId - Altegio client ID associated with the operation
+ * @property operationUnitType - Unit type identifier for the operation (defaults to 1)
+ */
 export type AltegioStockArrivalPayload = {
 	amount: number;
+	masterId: number;
 	totalCost?: number;
 	unitCost?: number;
 	documentComment?: string;
 	operationComment?: string;
 	transactionComment?: string;
 	timeZone?: string;
-	supplierId?: number;
-	masterId?: number;
 	clientId?: number;
 	operationUnitType?: number;
 };
@@ -268,9 +295,6 @@ export const createAltegioStorageOperationRequestBody = (
 			operation_unit_type: transaction.operationUnitType,
 			...(transaction.masterId !== undefined ? { master_id: transaction.masterId } : {}),
 			...(transaction.clientId !== undefined ? { client_id: transaction.clientId } : {}),
-			...(transaction.supplierId !== undefined
-				? { supplier_id: transaction.supplierId }
-				: {}),
 			...(transaction.comment !== undefined ? { comment: transaction.comment } : {}),
 		})),
 	};
@@ -287,50 +311,95 @@ export const postAltegioStorageDocument = async <TResponse>(
 	const requestHeaders = createAltegioHeaders(headers);
 	const payload = createAltegioStorageDocumentRequestBody(request);
 	const baseUrl = options.baseUrl ?? ALTEGIO_BASE_URL;
+	const url = `${baseUrl}${ALTEGIO_STORAGE_DOCUMENT_PATH}/${validatedCompanyId}`;
 
-	const response = await fetch(
-		`${baseUrl}${ALTEGIO_STORAGE_DOCUMENT_PATH}/${validatedCompanyId}`,
-		{
-			method: 'POST',
-			headers: requestHeaders,
-			body: JSON.stringify(payload),
-		},
-	);
+	// biome-ignore lint/suspicious/noConsole: Debug logging for Altegio API troubleshooting
+	console.log('Altegio storage document request:', {
+		url,
+		companyId: validatedCompanyId,
+		payload: JSON.stringify(payload, null, 2),
+	});
+
+	const response = await fetch(url, {
+		method: 'POST',
+		headers: requestHeaders,
+		body: JSON.stringify(payload),
+	});
 
 	if (!response.ok) {
 		await logFailedResponse(response, 'storage document creation');
 	}
 
 	const json = (await response.json()) as unknown;
+
+	// biome-ignore lint/suspicious/noConsole: Debug logging for Altegio API troubleshooting
+	console.log('Altegio storage document response:', JSON.stringify(json, null, 2));
+
 	return responseSchema.parse(json);
 };
 
-export const postAltegioStorageOperation = async <TResponse>(
+/**
+ * Payload for posting a single goods transaction to Altegio.
+ * Uses the /goods_transactions endpoint which creates individual product transactions.
+ */
+export type AltegioGoodsTransactionPayload = {
+	document_id: number;
+	good_id: number;
+	amount: number;
+	cost_per_unit: number;
+	discount: number;
+	cost: number;
+	operation_unit_type: number;
+	master_id?: number;
+	client_id?: number;
+	comment?: string;
+};
+
+/**
+ * Posts a single goods transaction to Altegio.
+ * Uses the /goods_transactions endpoint which is more reliable than the /operation endpoint.
+ *
+ * @param companyId - The Altegio company ID
+ * @param headers - Authentication headers for the request
+ * @param transaction - The goods transaction payload
+ * @param responseSchema - Zod schema for validating the response
+ * @param options - Optional request configuration
+ * @returns The parsed API response
+ */
+export const postAltegioGoodsTransaction = async <TResponse>(
 	companyId: number,
 	headers: AltegioAuthHeaders,
-	request: AltegioStorageOperationRequest,
+	transaction: AltegioGoodsTransactionPayload,
 	responseSchema: AltegioResponseSchema<TResponse>,
 	options: AltegioRequestOptions = {},
 ): Promise<TResponse> => {
 	const validatedCompanyId = altegioCompanyIdSchema.parse(companyId);
 	const requestHeaders = createAltegioHeaders(headers);
-	const payload = createAltegioStorageOperationRequestBody(request);
 	const baseUrl = options.baseUrl ?? ALTEGIO_BASE_URL;
+	const url = `${baseUrl}${ALTEGIO_GOODS_TRANSACTION_PATH}/${validatedCompanyId}`;
 
-	const response = await fetch(
-		`${baseUrl}${ALTEGIO_STORAGE_OPERATION_PATH}/${validatedCompanyId}`,
-		{
-			method: 'POST',
-			headers: requestHeaders,
-			body: JSON.stringify(payload),
-		},
-	);
+	// biome-ignore lint/suspicious/noConsole: Debug logging for Altegio API troubleshooting
+	console.log('Altegio goods transaction request:', {
+		url,
+		companyId: validatedCompanyId,
+		payload: JSON.stringify(transaction, null, 2),
+	});
+
+	const response = await fetch(url, {
+		method: 'POST',
+		headers: requestHeaders,
+		body: JSON.stringify(transaction),
+	});
 
 	if (!response.ok) {
-		await logFailedResponse(response, 'storage operation creation');
+		await logFailedResponse(response, 'goods transaction creation');
 	}
 
 	const json = (await response.json()) as unknown;
+
+	// biome-ignore lint/suspicious/noConsole: Debug logging for Altegio API troubleshooting
+	console.log('Altegio goods transaction response:', JSON.stringify(json, null, 2));
+
 	return responseSchema.parse(json);
 };
 
@@ -349,6 +418,14 @@ type ArrivalValidationResult =
 			normalizedUnitCost: number;
 	  };
 
+/**
+ * Validates an Altegio arrival request before processing.
+ * Checks for required fields and normalizes cost values.
+ *
+ * @param barcode - The product barcode to validate
+ * @param arrivalDetails - The arrival payload containing amount, masterId, and cost information
+ * @returns Validation result with either skip, error, or ok status
+ */
 const validateArrivalRequest = (
 	barcode: number,
 	arrivalDetails?: AltegioStockArrivalPayload,
@@ -374,7 +451,19 @@ const validateArrivalRequest = (
 		};
 	}
 
-	const { amount, totalCost, unitCost } = arrivalDetails;
+	const { amount, totalCost, unitCost, masterId } = arrivalDetails;
+
+	// Altegio API requires master_id (staff member) for storage operations
+	if (!(masterId && masterId > 0)) {
+		return {
+			kind: 'error',
+			response: {
+				success: false,
+				message: 'Altegio masterId (staff member ID) is required for storage operations',
+			},
+		};
+	}
+
 	if (!(amount && amount > 0)) {
 		return {
 			kind: 'error',
@@ -502,39 +591,29 @@ const executeAltegioArrival = async ({
 			return { success: false, message: 'Failed to create Altegio document' };
 		}
 
-		const operationRequest: AltegioStorageOperationRequest = {
-			typeId: ALTEGIO_OPERATION_TYPE_ARRIVAL,
-			comment: operationComment,
-			storageId: storageIds.consumablesId,
-			createDate: new Date(),
-			timeZone: resolvedTimeZone,
-			goodsTransactions: [
-				{
-					documentId: documentResponse.data.id,
-					goodId: barcode,
-					amount: details.amount,
-					costPerUnit: normalizedUnitCost,
-					discount: 0,
-					cost: normalizedTotalCost,
-					operationUnitType: details.operationUnitType ?? 1,
-					// Altegio error "Staff member required": supply masterId when available.
-					...(details.masterId ? { masterId: details.masterId } : {}),
-					...(details.clientId ? { clientId: details.clientId } : {}),
-					...(details.supplierId ? { supplierId: details.supplierId } : {}),
-					...(details.transactionComment ? { comment: details.transactionComment } : {}),
-				},
-			],
+		// Create goods transaction using the /goods_transactions endpoint
+		const transactionPayload: AltegioGoodsTransactionPayload = {
+			document_id: documentResponse.data.id,
+			good_id: barcode,
+			amount: details.amount,
+			cost_per_unit: normalizedUnitCost,
+			discount: 0,
+			cost: normalizedTotalCost,
+			operation_unit_type: details.operationUnitType ?? 2,
+			...(details.masterId ? { master_id: details.masterId } : {}),
+			...(details.clientId ? { client_id: details.clientId } : {}),
+			...(details.transactionComment ? { comment: details.transactionComment } : {}),
 		};
 
-		const operationResponse = await postAltegioStorageOperation(
+		const transactionResponse = await postAltegioGoodsTransaction(
 			warehouse.altegioId,
 			headers,
-			operationRequest,
-			apiResponseSchemaStorageOperation,
+			transactionPayload,
+			apiResponseSchemaGoodsTransaction,
 		);
 
-		if (!operationResponse.success) {
-			return { success: false, message: 'Failed to create Altegio operation' };
+		if (!transactionResponse.success) {
+			return { success: false, message: 'Failed to create Altegio goods transaction' };
 		}
 
 		return { success: true, message: 'Altegio replication successful' };
@@ -550,19 +629,37 @@ const executeAltegioArrival = async ({
 };
 
 /**
+ * Payload type for arrival details that may omit masterId (will use env fallback).
+ * Used internally before merging with default master ID.
+ */
+type AltegioStockArrivalInput = Omit<AltegioStockArrivalPayload, 'masterId'> & {
+	masterId?: number;
+};
+
+/**
  * Replicates a local stock creation (Arrival) to Altegio.
  * Creates a Storage Document (Arrival) and then a Storage Operation (Arrival).
  *
  * @param barcode - The barcode of the product (assumed to be Good ID).
  * @param warehouseId - The local UUID of the warehouse.
  * @param arrivalDetails - Optional Altegio arrival payload supplied by the caller.
+ *                         If masterId is not provided, falls back to ALTEGIO_DEFAULT_MASTER_ID env var.
  */
 export const replicateStockCreationToAltegio = async (
 	barcode: number,
 	warehouseId: string,
-	arrivalDetails?: AltegioStockArrivalPayload,
+	arrivalDetails?: AltegioStockArrivalInput,
 ): Promise<{ success: boolean; message: string; skipped?: boolean }> => {
-	const validation = validateArrivalRequest(barcode, arrivalDetails);
+	// Merge default master ID from environment if not provided in payload
+	const defaultMasterId = getAltegioDefaultMasterId();
+	const mergedDetails: AltegioStockArrivalPayload | undefined = arrivalDetails
+		? {
+				...arrivalDetails,
+				masterId: arrivalDetails.masterId ?? defaultMasterId ?? 0,
+			}
+		: undefined;
+
+	const validation = validateArrivalRequest(barcode, mergedDetails);
 	if (validation.kind !== 'ok') {
 		return validation.response;
 	}
@@ -591,6 +688,15 @@ export const replicateStockCreationToAltegio = async (
 /**
  * Builds a typed Altegio operation request payload for aggregated product movements.
  * Ensures quantity and cost totals align with Altegio's expectations without duplicating arithmetic.
+ *
+ * @param documentId - The Altegio document ID to associate the operation with
+ * @param storageId - The Altegio storage ID for the operation
+ * @param typeId - The operation type (arrival or departure)
+ * @param transferNumber - The transfer reference number for comments
+ * @param aggregatedTransactions - Map of good IDs to their aggregated quantity and cost totals
+ * @param timeZone - Optional timezone for the operation timestamp
+ * @param masterId - Required Altegio staff member ID for the operation
+ * @returns Typed storage operation request payload
  */
 export type AggregatedTotals = {
 	totalQuantity: number;
@@ -604,6 +710,7 @@ export const createAggregatedOperationRequest = ({
 	transferNumber,
 	aggregatedTransactions,
 	timeZone,
+	masterId,
 }: {
 	documentId: number;
 	storageId: number;
@@ -611,6 +718,7 @@ export const createAggregatedOperationRequest = ({
 	transferNumber: string;
 	aggregatedTransactions: Map<number, AggregatedTotals>;
 	timeZone?: string;
+	masterId: number;
 }): AltegioStorageOperationRequest => {
 	const goodsTransactions = Array.from(aggregatedTransactions.entries()).map(
 		([goodId, { totalQuantity, totalCost }]) => ({
@@ -631,5 +739,6 @@ export const createAggregatedOperationRequest = ({
 		storageId,
 		goodsTransactions,
 		timeZone,
+		masterId,
 	};
 };

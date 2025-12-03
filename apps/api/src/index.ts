@@ -28,12 +28,11 @@ import {
 	type AggregatedTotals,
 	ALTEGIO_DOCUMENT_TYPE_ARRIVAL,
 	ALTEGIO_DOCUMENT_TYPE_DEPARTURE,
-	ALTEGIO_OPERATION_TYPE_ARRIVAL,
-	ALTEGIO_OPERATION_TYPE_DEPARTURE,
+	type AltegioGoodsTransactionPayload,
 	type AltegioStockArrivalPayload,
-	createAggregatedOperationRequest,
+	getAltegioDefaultMasterId,
+	postAltegioGoodsTransaction,
 	postAltegioStorageDocument,
-	postAltegioStorageOperation,
 	replicateStockCreationToAltegio,
 	resolveAltegioStorageIds,
 } from './lib/altegio-service';
@@ -54,7 +53,7 @@ import type { DataItemArticulosType, SyncOptions, SyncResult } from './types';
 import {
 	apiResponseSchema,
 	apiResponseSchemaDocument,
-	apiResponseSchemaStorageOperation,
+	apiResponseSchemaGoodsTransaction,
 	DistributionCenterId,
 	replenishmentOrderCreateSchema,
 	replenishmentOrderLinkTransferSchema,
@@ -539,7 +538,6 @@ const altegioArrivalPayloadSchema = z.object({
 		.nonnegative('Unit cost cannot be negative')
 		.optional()
 		.describe('Cost per unit (optional if total cost provided)'),
-	supplierId: z.number().int().positive().optional().describe('Altegio supplier identifier'),
 	masterId: z.number().int().positive().optional().describe('Master (employee) ID'),
 	clientId: z.number().int().positive().optional().describe('Client ID when applicable'),
 	documentComment: z
@@ -5139,34 +5137,54 @@ const route = app
 								);
 							}
 
-							const arrivalOperationRequest = createAggregatedOperationRequest({
-								documentId: arrivalDocument.data.id,
-								storageId: destinationStorage.consumablesId,
-								typeId: ALTEGIO_OPERATION_TYPE_ARRIVAL,
-								transferNumber: transferRow.transferNumber,
-								aggregatedTransactions,
-								...(destinationWarehouse.timeZone
-									? { timeZone: destinationWarehouse.timeZone }
-									: {}),
-							});
-
-							const arrivalOperation = await postAltegioStorageOperation(
-								destinationWarehouse.altegioId,
-								altegioHeaders,
-								arrivalOperationRequest,
-								apiResponseSchemaStorageOperation,
-							);
-
-							if (!arrivalOperation.success) {
+							const altegioMasterId = getAltegioDefaultMasterId();
+							if (!altegioMasterId) {
 								// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
-								console.error('Failed to create storage operation');
+								console.error(
+									'Missing required environment variable: ALTEGIO_DEFAULT_MASTER_ID',
+								);
 								return c.json(
 									{
 										success: false,
-										message: 'Failed to create storage operation',
+										message:
+											'Altegio integration requires ALTEGIO_DEFAULT_MASTER_ID to be configured',
 									} satisfies ApiResponse,
 									500,
 								);
+							}
+
+							// Create goods transactions for each product in the transfer
+							for (const [goodId, { totalQuantity, totalCost }] of aggregatedTransactions) {
+								const transactionPayload: AltegioGoodsTransactionPayload = {
+									document_id: arrivalDocument.data.id,
+									good_id: goodId,
+									amount: totalQuantity,
+									cost_per_unit: totalQuantity === 0 ? 0 : totalCost / totalQuantity,
+									discount: 0,
+									cost: totalCost,
+									operation_unit_type: 2,
+									master_id: altegioMasterId,
+									comment: `Arrival for transfer ${transferRow.transferNumber}`,
+								};
+
+								const transactionResult = await postAltegioGoodsTransaction(
+									destinationWarehouse.altegioId,
+									altegioHeaders,
+									transactionPayload,
+									apiResponseSchemaGoodsTransaction,
+								);
+
+								if (!transactionResult.success) {
+									// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
+									console.error(`Failed to create goods transaction for good_id ${goodId}`);
+									return c.json(
+										{
+											success: false,
+											message: `Failed to create goods transaction for good_id ${goodId}`,
+										} satisfies ApiResponse,
+										500,
+									);
+								}
 							}
 						}
 
@@ -5231,34 +5249,54 @@ const route = app
 								);
 							}
 
-							const departureOperationRequest = createAggregatedOperationRequest({
-								documentId: departureDocument.data.id,
-								storageId: sourceStorage.consumablesId,
-								typeId: ALTEGIO_OPERATION_TYPE_DEPARTURE,
-								transferNumber: transferRow.transferNumber,
-								aggregatedTransactions,
-								...(sourceWarehouse.timeZone
-									? { timeZone: sourceWarehouse.timeZone }
-									: {}),
-							});
-
-							const departureOperation = await postAltegioStorageOperation(
-								sourceWarehouse.altegioId,
-								altegioHeaders,
-								departureOperationRequest,
-								apiResponseSchemaStorageOperation,
-							);
-
-							if (!departureOperation.success) {
+							const departureMasterId = getAltegioDefaultMasterId();
+							if (!departureMasterId) {
 								// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
-								console.error('Failed to create departure storage operation');
+								console.error(
+									'Missing required environment variable: ALTEGIO_DEFAULT_MASTER_ID',
+								);
 								return c.json(
 									{
 										success: false,
-										message: 'Failed to create departure storage operation',
+										message:
+											'Altegio integration requires ALTEGIO_DEFAULT_MASTER_ID to be configured',
 									} satisfies ApiResponse,
 									500,
 								);
+							}
+
+							// Create goods transactions for each product in the transfer (departure)
+							for (const [goodId, { totalQuantity, totalCost }] of aggregatedTransactions) {
+								const transactionPayload: AltegioGoodsTransactionPayload = {
+									document_id: departureDocument.data.id,
+									good_id: goodId,
+									amount: totalQuantity,
+									cost_per_unit: totalQuantity === 0 ? 0 : totalCost / totalQuantity,
+									discount: 0,
+									cost: totalCost,
+									operation_unit_type: 2,
+									master_id: departureMasterId,
+									comment: `Departure for transfer ${transferRow.transferNumber}`,
+								};
+
+								const transactionResult = await postAltegioGoodsTransaction(
+									sourceWarehouse.altegioId,
+									altegioHeaders,
+									transactionPayload,
+									apiResponseSchemaGoodsTransaction,
+								);
+
+								if (!transactionResult.success) {
+									// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
+									console.error(`Failed to create departure goods transaction for good_id ${goodId}`);
+									return c.json(
+										{
+											success: false,
+											message: `Failed to create departure goods transaction for good_id ${goodId}`,
+										} satisfies ApiResponse,
+										500,
+									);
+								}
 							}
 						}
 					}

@@ -207,6 +207,17 @@ export const apiResponseSchemaStorageOperation = z.object({
 	meta: z.array(z.unknown()),
 });
 
+/**
+ * Response schema for the /goods_transactions endpoint.
+ * This endpoint returns a single transaction object directly in data,
+ * unlike the /operation endpoint which returns document + transactions array.
+ */
+export const apiResponseSchemaGoodsTransaction = z.object({
+	success: z.boolean(),
+	data: storageOperationTransactionSchema,
+	meta: z.array(z.unknown()),
+});
+
 export type AltegioGood = z.infer<typeof dataItemSchema>;
 export type AltegioDocumentTypeId = 3 | 7; // 3 = Arrival, 7 = Departure
 export type AltegioOperationTypeId = 3 | 4; // 3 = Arrival, 4 = Departure
