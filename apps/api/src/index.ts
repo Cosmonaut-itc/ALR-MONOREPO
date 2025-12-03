@@ -28,6 +28,7 @@ import {
 	type AggregatedTotals,
 	ALTEGIO_DOCUMENT_TYPE_ARRIVAL,
 	ALTEGIO_DOCUMENT_TYPE_DEPARTURE,
+	createProductsInAltegio,
 	type AltegioGoodsTransactionPayload,
 	type AltegioStockArrivalPayload,
 	getAltegioDefaultMasterId,
@@ -560,6 +561,32 @@ const altegioArrivalPayloadSchema = z.object({
 		.optional()
 		.describe('Unit type identifier defined in Altegio'),
 	timeZone: z.string().min(1).optional().describe('IANA timezone or offset for Altegio document'),
+});
+
+const altegioCreateProductRequestSchema = z.object({
+	locationIds: z
+		.string()
+		.min(1, 'At least one Altegio location ID is required')
+		.describe('Comma-separated Altegio location IDs'),
+	product: z.object({
+		title: z.string().min(1),
+		print_title: z.string().min(1),
+		article: z.string().min(1),
+		barcode: z.string().min(1),
+		category_id: z.number().int().positive(),
+		cost: z.number().nonnegative(),
+		actual_cost: z.number().nonnegative(),
+		sale_unit_id: z.number().int().positive(),
+		service_unit_id: z.number().int().positive(),
+		unit_equals: z.number().positive(),
+		critical_amount: z.number().nonnegative(),
+		desired_amount: z.number().nonnegative(),
+		netto: z.number().nonnegative(),
+		brutto: z.number().nonnegative(),
+		comment: z.string().optional(),
+		tax_variant: z.number().int().nonnegative(),
+		vat_id: z.number().int().positive(),
+	}),
 });
 
 /**
@@ -1142,6 +1169,75 @@ const route = app
 			);
 		}
 	})
+	.post(
+		'/api/auth/create-product-in-altegio',
+		zValidator('json', altegioCreateProductRequestSchema),
+		async (c) => {
+			try {
+				const { locationIds, product } = c.req.valid('json');
+
+				const authHeader = process.env.AUTH_HEADER;
+				const acceptHeader = process.env.ACCEPT_HEADER;
+
+				if (!(authHeader && acceptHeader)) {
+					// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
+					console.error('Missing required Altegio authentication configuration');
+					return c.json(
+						{
+							success: false,
+							message: 'Missing required Altegio authentication configuration',
+						} satisfies ApiResponse,
+						400,
+					);
+				}
+
+				const parsedLocationIds = locationIds
+					.split(',')
+					.map((value) => Number.parseInt(value.trim(), 10))
+					.filter((value) => Number.isInteger(value) && value > 0);
+
+				if (parsedLocationIds.length === 0) {
+					return c.json(
+						{
+							success: false,
+							message: 'No valid Altegio location IDs provided',
+						} satisfies ApiResponse,
+						400,
+					);
+				}
+
+				const results = await createProductsInAltegio(
+					parsedLocationIds,
+					{ authHeader, acceptHeader },
+					product,
+				);
+
+				return c.json(
+					{
+						success: true,
+						message: `Product created in Altegio for locations: ${parsedLocationIds.join(
+							', ',
+						)}`,
+						data: results,
+					} satisfies ApiResponse,
+					200,
+				);
+			} catch (error) {
+				// biome-ignore lint/suspicious/noConsole: External API diagnostics are required for supportability
+				console.error('Failed to create product in Altegio:', error);
+				return c.json(
+					{
+						success: false,
+						message: 'Failed to create product in Altegio',
+						...(process.env.NODE_ENV === 'development' && {
+							error: error instanceof Error ? error.message : 'Unknown error',
+						}),
+					} satisfies ApiResponse,
+					500,
+				);
+			}
+		},
+	)
 	.post('/api/auth/inventory/sync', zValidator('json', inventorySyncRequestSchema), async (c) => {
 		const { warehouseId, dryRun = false } = c.req.valid('json');
 

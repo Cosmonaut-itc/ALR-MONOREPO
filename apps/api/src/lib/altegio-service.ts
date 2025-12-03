@@ -14,6 +14,7 @@ import {
 const ALTEGIO_BASE_URL = 'https://api.alteg.io';
 const ALTEGIO_STORAGE_DOCUMENT_PATH = '/api/v1/storage_operations/documents';
 const ALTEGIO_GOODS_TRANSACTION_PATH = '/api/v1/storage_operations/goods_transactions';
+const ALTEGIO_GOODS_PATH = '/api/v1/goods';
 const ALTEGIO_DATETIME_FORMAT = 'yyyy-MM-dd HH:mm:ss';
 const DEFAULT_TIME_ZONE = 'UTC';
 const DEFAULT_TIME_ZONE_OFFSET = '+00:00';
@@ -86,12 +87,33 @@ const altegioStorageOperationRequestSchema = z.object({
 	timeZone: z.string().min(1).optional(),
 });
 
+const altegioCreateProductPayloadSchema = z.object({
+	title: z.string().min(1),
+	print_title: z.string().min(1),
+	article: z.string().min(1),
+	barcode: z.string().min(1),
+	category_id: z.number().int().positive(),
+	cost: z.number().nonnegative(),
+	actual_cost: z.number().nonnegative(),
+	sale_unit_id: z.number().int().positive(),
+	service_unit_id: z.number().int().positive(),
+	unit_equals: z.number().positive(),
+	critical_amount: z.number().nonnegative(),
+	desired_amount: z.number().nonnegative(),
+	netto: z.number().nonnegative(),
+	brutto: z.number().nonnegative(),
+	comment: z.string().optional(),
+	tax_variant: z.number().int().nonnegative(),
+	vat_id: z.number().int().positive(),
+});
+
 export type AltegioAuthHeaders = z.infer<typeof altegioAuthHeadersSchema>;
 export type AltegioStorageDocumentRequest = z.infer<typeof altegioStorageDocumentRequestSchema>;
 export type AltegioStorageOperationTransaction = z.infer<
 	typeof altegioStorageOperationTransactionSchema
 >;
 export type AltegioStorageOperationRequest = z.infer<typeof altegioStorageOperationRequestSchema>;
+export type AltegioCreateProductPayload = z.infer<typeof altegioCreateProductPayloadSchema>;
 
 export type AltegioStorageDocumentPayload = {
 	type_id: AltegioDocumentTypeId;
@@ -403,6 +425,54 @@ export const postAltegioGoodsTransaction = async <TResponse>(
 	return responseSchema.parse(json);
 };
 
+const altegioGenericApiResponseSchema = z.object({
+	success: z.boolean(),
+	data: z.unknown(),
+	meta: z.unknown().optional(),
+});
+
+const altegioLocationIdArraySchema = z.array(z.number().int().positive()).nonempty();
+
+/**
+ * Creates a product in Altegio across one or more locations.
+ *
+ * @param locationIds - Array of Altegio location IDs (salon IDs)
+ * @param headers - Authentication headers
+ * @param payload - Product payload to create
+ * @param options - Optional request configuration
+ * @returns Array of responses keyed by locationId
+ */
+export const createProductsInAltegio = async (
+	locationIds: number[],
+	headers: AltegioAuthHeaders,
+	payload: AltegioCreateProductPayload,
+	options: AltegioRequestOptions = {},
+): Promise<Array<{ locationId: number; response: unknown }>> => {
+	const validatedLocations = altegioLocationIdArraySchema.parse(locationIds);
+	const validatedPayload = altegioCreateProductPayloadSchema.parse(payload);
+	const requestHeaders = createAltegioHeaders(headers);
+	const baseUrl = options.baseUrl ?? ALTEGIO_BASE_URL;
+	const results: Array<{ locationId: number; response: unknown }> = [];
+
+	for (const locationId of validatedLocations) {
+		const url = `${baseUrl}${ALTEGIO_GOODS_PATH}/${locationId}`;
+		const response = await fetch(url, {
+			method: 'POST',
+			headers: requestHeaders,
+			body: JSON.stringify(validatedPayload),
+		});
+
+		if (!response.ok) {
+			await logFailedResponse(response, 'product creation');
+		}
+
+		const json = (await response.json()) as unknown;
+		results.push({ locationId, response: altegioGenericApiResponseSchema.parse(json) });
+	}
+
+	return results;
+};
+
 // --- Helper Function ---
 
 type ArrivalValidationResult =
@@ -430,17 +500,6 @@ const validateArrivalRequest = (
 	barcode: number,
 	arrivalDetails?: AltegioStockArrivalPayload,
 ): ArrivalValidationResult => {
-	if (barcode !== 24_849_114) {
-		return {
-			kind: 'skip',
-			response: {
-				success: true,
-				message: 'Skipped: Barcode not targeted for Altegio replication test',
-				skipped: true,
-			},
-		};
-	}
-
 	if (!arrivalDetails) {
 		return {
 			kind: 'error',
