@@ -1379,6 +1379,20 @@ export function InventarioPage({
 		return mappingInfo?.cabinetId ?? warehouseId;
 	}, [warehouseCabinetMap, warehouseId]);
 
+	const visibleWarehouseIds = useMemo(() => {
+		if (isEncargado) {
+			return undefined;
+		}
+		const ids = new Set<string>();
+		if (warehouseId) {
+			ids.add(warehouseId);
+		}
+		if (cabinetWarehouseId) {
+			ids.add(cabinetWarehouseId);
+		}
+		return ids;
+	}, [cabinetWarehouseId, isEncargado, warehouseId]);
+
 	const cabinetFilter: string | undefined = isEncargado
 		? "all"
 		: cabinetWarehouseId || undefined;
@@ -2656,6 +2670,7 @@ export function InventarioPage({
 						stockLimitsMap={stockLimitsMap}
 						warehouse={warehouseFilter}
 						warehouseMap={cabinetWarehouse}
+						visibleWarehouseIds={visibleWarehouseIds}
 					/>
 				</TabsContent>
 
@@ -2707,6 +2722,7 @@ export function InventarioPage({
 						stockLimitsMap={stockLimitsMap}
 						warehouse={cabinetFilter}
 						warehouseMap={cabinetWarehouse}
+						visibleWarehouseIds={visibleWarehouseIds}
 					/>
 				</TabsContent>
 			</Tabs>

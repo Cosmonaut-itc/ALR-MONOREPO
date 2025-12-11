@@ -152,6 +152,8 @@ interface ProductCatalogTableProps {
 	canEditLimits?: boolean;
 	/** Whether the current user can toggle kit state for inventory items */
 	canManageKits?: boolean;
+	/** Limit visible warehouses/cabinets to this set (used for non-encargado users) */
+	visibleWarehouseIds?: Set<string>;
 }
 
 type WarehouseMappingEntry = {
@@ -601,6 +603,7 @@ export function ProductCatalogTable({
 	stockLimitsMap,
 	canEditLimits = false,
 	canManageKits = false,
+	visibleWarehouseIds,
 }: ProductCatalogTableProps) {
 	// Disposal store for dispose dialog
 	const { show: showDisposeDialog } = useDisposalStore();
@@ -619,13 +622,22 @@ export function ProductCatalogTable({
 		useUpdateInventoryIsEmpty();
 
 	const warehouseEntries = useMemo<WarehouseMappingEntry[]>(() => {
-		if (isWarehouseMapSuccess(warehouseMap)) {
-			return Array.isArray(warehouseMap.data)
-				? (warehouseMap.data as WarehouseMappingEntry[])
-				: [];
+		if (!isWarehouseMapSuccess(warehouseMap)) {
+			return [];
 		}
-		return [];
-	}, [warehouseMap]);
+		const entries = Array.isArray(warehouseMap.data)
+			? (warehouseMap.data as WarehouseMappingEntry[])
+			: [];
+		if (!visibleWarehouseIds || visibleWarehouseIds.size === 0) {
+			return entries;
+		}
+		return entries.filter((entry) => {
+			return (
+				(entry.warehouseId && visibleWarehouseIds.has(entry.warehouseId)) ||
+				(entry.cabinetId && visibleWarehouseIds.has(entry.cabinetId))
+			);
+		});
+	}, [warehouseMap, visibleWarehouseIds]);
 
 	const warehouseNameLookup = useMemo(() => {
 		const lookup = new Map<string, string>();
@@ -697,6 +709,20 @@ export function ProductCatalogTable({
 				: baseName;
 		},
 		[distributionCenterIds, warehouseNameLookup],
+	);
+
+	const isWarehouseVisible = useCallback(
+		(id?: string | null) => {
+			const normalized = id?.toString().trim();
+			if (!visibleWarehouseIds || visibleWarehouseIds.size === 0) {
+				return true;
+			}
+			if (!normalized || normalized.length === 0) {
+				return false;
+			}
+			return visibleWarehouseIds.has(normalized);
+		},
+		[visibleWarehouseIds],
 	);
 
 	const { mutateAsync: createStockLimit, isPending: isCreatingStockLimit } =
@@ -1129,6 +1155,11 @@ export function ProductCatalogTable({
 			if (!id) {
 				return;
 			}
+			if (visibleWarehouseIds && visibleWarehouseIds.size > 0) {
+				if (!visibleWarehouseIds.has(id)) {
+					return;
+				}
+			}
 			if (id === "unassigned") {
 				hasUnassigned = true;
 				return;
@@ -1186,6 +1217,7 @@ export function ProductCatalogTable({
 		products,
 		resolveWarehouseIdForLimit,
 		resolveWarehouseName,
+		visibleWarehouseIds,
 	]);
 
 	/**
@@ -1521,14 +1553,24 @@ export function ProductCatalogTable({
 					data: InventoryItemDisplay;
 				};
 
-				const displayItems: DisplayItem[] = product.inventoryItems.map(
-					(item) => {
+				const displayItems: DisplayItem[] = product.inventoryItems
+					.map((item) => {
 						const data = extractInventoryItemData(item);
 						const key = data.uuid || data.id || "";
 						const warehouseKey = getInventoryLocationKey(data);
 						return { data, key, warehouseKey };
-					},
-				);
+					})
+					.filter((item) => {
+						if (!visibleWarehouseIds || visibleWarehouseIds.size === 0) {
+							return true;
+						}
+						return (
+							isWarehouseVisible(item.warehouseKey) ||
+							isWarehouseVisible(item.data.currentWarehouse) ||
+							isWarehouseVisible(item.data.currentCabinet) ||
+							isWarehouseVisible(item.data.homeWarehouseId)
+						);
+					});
 
 				const selectedCount = displayItems.reduce((acc, item) => {
 					return item.key && productSelection.has(item.key) ? acc + 1 : acc;
@@ -1721,20 +1763,31 @@ export function ProductCatalogTable({
 				const groupedByWarehouse = displayItems.reduce(
 					(acc, item) => {
 						const locationKey = item.warehouseKey || "unassigned";
+						const labelSource =
+							item.data.currentWarehouse ??
+							item.data.currentCabinet ??
+							item.data.homeWarehouseId ??
+							undefined;
+						const effectiveWarehouseId =
+							resolveWarehouseIdForLimit(labelSource);
+
+						if (
+							visibleWarehouseIds &&
+							visibleWarehouseIds.size > 0 &&
+							!isWarehouseVisible(locationKey) &&
+							!isWarehouseVisible(labelSource) &&
+							!isWarehouseVisible(effectiveWarehouseId)
+						) {
+							return acc;
+						}
+
 						const bucket = acc.get(locationKey);
 						if (bucket) {
 							bucket.items.push(item);
 						} else {
-							const labelSource =
-								item.data.currentWarehouse ??
-								item.data.currentCabinet ??
-								item.data.homeWarehouseId ??
-								undefined;
 							const isDistributionCenter = labelSource
 								? distributionCenterIds.has(labelSource)
 								: false;
-							const effectiveWarehouseId =
-								resolveWarehouseIdForLimit(labelSource);
 							acc.set(locationKey, {
 								label: resolveWarehouseName(labelSource),
 								items: [item],
@@ -1755,21 +1808,21 @@ export function ProductCatalogTable({
 					>(),
 				);
 
-				// Ensure all available warehouses are included, even if they have no stock
-				for (const warehouseOption of warehouseFilterOptions) {
-					const warehouseId = warehouseOption.value;
-					if (!groupedByWarehouse.has(warehouseId)) {
-						const isDistributionCenter = distributionCenterIds.has(warehouseId);
-						const effectiveWarehouseId =
-							resolveWarehouseIdForLimit(warehouseId);
-						groupedByWarehouse.set(warehouseId, {
-							label: warehouseOption.label,
-							items: [],
-							isDistributionCenter,
-							effectiveWarehouseId,
-						});
-					}
-				}
+		// Ensure all available warehouses are included, even if they have no stock
+		for (const warehouseOption of warehouseFilterOptions) {
+			const warehouseId = warehouseOption.value;
+			if (!groupedByWarehouse.has(warehouseId)) {
+				const isDistributionCenter = distributionCenterIds.has(warehouseId);
+				const effectiveWarehouseId =
+					resolveWarehouseIdForLimit(warehouseId);
+				groupedByWarehouse.set(warehouseId, {
+					label: warehouseOption.label,
+					items: [],
+					isDistributionCenter,
+					effectiveWarehouseId,
+				});
+			}
+		}
 
 				const warehouseGroups = Array.from(groupedByWarehouse.entries());
 
@@ -2996,7 +3049,8 @@ export function ProductCatalogTable({
 					</div>
 
 					{/* Warehouse Filter */}
-					{warehouseFilterOptions.length > 0 && (
+					{warehouseFilterOptions.length > 0 &&
+						(!visibleWarehouseIds || visibleWarehouseIds.size > 1) && (
 						<div className="min-w-[200px]">
 							<Select
 								onValueChange={setWarehouseFilter}
