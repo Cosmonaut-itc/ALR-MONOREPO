@@ -985,7 +985,7 @@ export function InventarioPage({
 		})();
 		const baseAltegioPayload = buildAltegioPayload({
 			catalogItem: selectedProduct.catalogItem ?? null,
-			quantity: 1,
+			quantity,
 			warehouseTimeZone: selectedWarehouseMeta?.timeZone,
 		});
 		// Override operationUnitType to 2 when adding products
@@ -1001,28 +1001,39 @@ export function InventarioPage({
 			isBeingUsed: false,
 			numberOfUses: 0,
 			altegio: baseAltegioPayloadWithUnitType,
+			quantity,
 		};
-		const labels: QrLabelPayload[] = [];
+		let labels: QrLabelPayload[] = [];
 		try {
-			for (let index = 0; index < quantity; index += 1) {
-				const result = await createInventoryItem({
-					...basePayload,
-					altegio: { ...baseAltegioPayloadWithUnitType },
-				});
-				const createdId =
-					result && typeof result === "object" && "data" in result
-						? ((result as { data?: { id?: string } }).data?.id ?? null)
-						: null;
-				const uuid =
-					createdId && typeof createdId === "string" && createdId.length > 0
-						? createdId
-						: uuidv4();
-				labels.push({
-					barcode: selectedProduct.barcode,
-					uuid,
-					productName: selectedProduct.name,
-				});
-			}
+			const result = await createInventoryItem({
+				...basePayload,
+				altegio: { ...baseAltegioPayloadWithUnitType },
+			});
+			const createdItems =
+				result &&
+				typeof result === "object" &&
+				"data" in result &&
+				Array.isArray((result as { data?: unknown }).data)
+					? ((result as { data?: Array<{ id?: string }> }).data ?? [])
+					: [];
+			labels =
+				createdItems.length > 0
+					? createdItems.map((item) => {
+							const createdId =
+								item && typeof item.id === "string" && item.id.trim().length > 0
+									? item.id
+									: uuidv4();
+							return {
+								barcode: selectedProduct.barcode,
+								uuid: createdId,
+								productName: selectedProduct.name,
+							};
+						})
+					: Array.from({ length: quantity }, () => ({
+							barcode: selectedProduct.barcode,
+							uuid: uuidv4(),
+							productName: selectedProduct.name,
+						}));
 		} catch (error) {
 			// Mutation already surfaced the error via toast; stop the flow silently.
 			return;

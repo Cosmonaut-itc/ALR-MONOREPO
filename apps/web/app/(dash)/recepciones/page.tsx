@@ -11,6 +11,7 @@ import {
 	fetchAllProductStockServer,
 	fetchAllProductsServer,
 	fetchCabinetWarehouseServer,
+	fetchStockByWarehouseServer,
 } from "@/lib/server-functions/inventory";
 import {
 	fetchWarehouseTransferByWarehouseIdServer,
@@ -40,16 +41,26 @@ export default async function Page() {
 	const role = auth.user?.role ?? "";
 	const isEncargado = role === "encargado";
 	const transferKeyParam = isEncargado ? "all" : (warehouseId as string);
+	const inventoryScope = isEncargado ? "all" : (warehouseId ?? "unknown");
+
 	try {
 		const transferPrefetchFn = isEncargado
 			? () => fetchWarehouseTrasnferAll()
 			: () => fetchWarehouseTransferByWarehouseIdServer(warehouseId as string);
 
-		// Prefetch inventory data so the client query hydrates
-		queryClient.prefetchQuery({
-			queryKey: createQueryKey(queryKeys.inventory, ["all"]),
-			queryFn: () => fetchAllProductStockServer(),
-		});
+		const inventoryPrefetchFn = isEncargado
+			? () => fetchAllProductStockServer()
+			: warehouseId
+				? () => fetchStockByWarehouseServer(warehouseId as string)
+				: undefined;
+
+		if (inventoryPrefetchFn) {
+			// Prefetch inventory data so the client query hydrates with the correct scope
+			queryClient.prefetchQuery({
+				queryKey: createQueryKey(queryKeys.inventory, [inventoryScope]),
+				queryFn: inventoryPrefetchFn,
+			});
+		}
 
 		// Prefetch transfer/reception data
 		queryClient.prefetchQuery({

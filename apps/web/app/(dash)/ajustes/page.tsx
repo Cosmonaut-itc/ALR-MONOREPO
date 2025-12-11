@@ -1,7 +1,7 @@
 /** biome-ignore-all lint/suspicious/useAwait: Needed for hydration */
 /** biome-ignore-all lint/suspicious/noConsole: Needed for error logging */
 
-'use memo';
+"use memo";
 import { dehydrate, HydrationBoundary } from "@tanstack/react-query";
 import { getQueryClient } from "@/app/get-query-client";
 import { GenericBoundaryWrapper } from "@/components/suspense-generics/general-wrapper";

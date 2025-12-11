@@ -78,6 +78,7 @@ import {
 	getAllProductStock,
 	getAllProducts,
 	getCabinetWarehouse,
+	getInventoryByWarehouse,
 } from "@/lib/fetch-functions/inventory";
 import {
 	getWarehouseTransferAll,
@@ -109,7 +110,11 @@ import type {
 } from "@/types";
 
 type APIResponse = WarehouseTransfer | null;
-type InventoryAPIResponse = ProductStockWithEmployee | null;
+type InventoryAPIResponse =
+	| Awaited<ReturnType<typeof getAllProductStock>>
+	| Awaited<ReturnType<typeof getInventoryByWarehouse>>
+	| ProductStockWithEmployee
+	| null;
 type UnknownRecord = Record<string, unknown>;
 
 type WarehouseOption = {
@@ -702,13 +707,23 @@ export function RecepcionesPage({
 		},
 	);
 
+	const scopedWarehouseId =
+		typeof warehouseId === "string" && warehouseId.trim().length > 0
+			? warehouseId
+			: "unknown";
+	const inventoryScope = isEncargado ? "all" : scopedWarehouseId;
+	const inventoryQueryFn = isEncargado
+		? getAllProductStock
+		: warehouseId
+			? () => getInventoryByWarehouse(warehouseId)
+			: () => Promise.resolve(null);
 	const { data: inventory } = useSuspenseQuery<
 		InventoryAPIResponse,
 		Error,
 		InventoryAPIResponse
 	>({
-		queryKey: createQueryKey(queryKeys.inventory, ["all"]),
-		queryFn: getAllProductStock,
+		queryKey: createQueryKey(queryKeys.inventory, [inventoryScope]),
+		queryFn: inventoryQueryFn,
 	});
 	const { data: productCatalog } = useSuspenseQuery<
 		ProductCatalogResponse | null,

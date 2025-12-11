@@ -232,6 +232,28 @@ const warehouses =
 	const [altegioWarehouseComboboxOpen, setAltegioWarehouseComboboxOpen] =
 		useState(false);
 
+	const ForbiddenCard = ({
+		title,
+		description,
+	}: {
+		title: string;
+		description: string;
+	}) => (
+		<Card className="card-transition border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
+			<CardContent className="px-6 flex flex-col items-center justify-center py-12">
+				<div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/20">
+					<ShieldAlert className="h-8 w-8 text-amber-600 dark:text-amber-400" />
+				</div>
+				<h3 className="mb-2 font-semibold text-[#11181C] text-lg dark:text-[#ECEDEE]">
+					{title}
+				</h3>
+				<p className="max-w-md text-center text-[#687076] text-sm dark:text-[#9BA1A6]">
+					{description}
+				</p>
+			</CardContent>
+		</Card>
+	);
+
 	// Form instances for user management
 	const userForm = useForm({
 		defaultValues: {
@@ -628,6 +650,8 @@ const warehouses =
 
 					{/* Users Tab */}
 					<TabsContent className="space-y-6" value="users">
+						{isEncargado ? (
+							<>
 						{/* Create User Card */}
 						<Card className="card-transition border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
 							<CardHeader>
@@ -839,8 +863,7 @@ const warehouses =
 				</Card>
 
 						{/* Update User Card - Only visible to encargados */}
-						{isEncargado ? (
-							<Card className="card-transition border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
+						<Card className="card-transition border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
 								<CardHeader>
 									<CardTitle className="text-[#11181C] dark:text-[#ECEDEE]">
 										Actualizar usuario
@@ -1074,27 +1097,19 @@ const warehouses =
 									</form>
 								</CardContent>
 							</Card>
-						) : (
-							/* Empty state for non-encargado users */
-							<Card className="card-transition border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
-								<CardContent className="flex flex-col items-center justify-center py-12">
-									<div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/20">
-										<ShieldAlert className="h-8 w-8 text-amber-600 dark:text-amber-400" />
-									</div>
-									<h3 className="mb-2 font-semibold text-[#11181C] text-lg dark:text-[#ECEDEE]">
-										Permisos insuficientes
-									</h3>
-									<p className="max-w-md text-center text-[#687076] text-sm dark:text-[#9BA1A6]">
-										Solo los usuarios con rol de <strong>encargado</strong>{" "}
-										pueden actualizar información de usuarios.
-									</p>
-								</CardContent>
-							</Card>
-						)}
+						</>
+					) : (
+						<ForbiddenCard
+							description="Solo los usuarios con rol de encargado pueden gestionar usuarios."
+							title="Permisos insuficientes"
+						/>
+					)}
 					</TabsContent>
 
 					{/* Warehouses Tab */}
 					<TabsContent className="space-y-6" value="warehouses">
+						{isEncargado ? (
+							<>
 						<Card className="card-transition border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
 							<CardHeader>
 								<CardTitle className="text-[#11181C] dark:text-[#ECEDEE]">
@@ -1481,6 +1496,13 @@ const warehouses =
 								</form>
 							</CardContent>
 						</Card>
+					</>
+				) : (
+					<ForbiddenCard
+						description="Solo los usuarios con rol de encargado pueden gestionar bodegas."
+						title="Permisos insuficientes"
+					/>
+				)}
 					</TabsContent>
 
 					{/* Employees Tab */}
