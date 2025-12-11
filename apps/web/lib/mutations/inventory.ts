@@ -9,6 +9,10 @@ type CreateProductStockPostOptions = Parameters<
 	(typeof client.api.auth)["product-stock"]["create"]["$post"]
 >[0];
 
+type CreateAltegioProductPostOptions = Parameters<
+	(typeof client.api.auth)["create-product-in-altegio"]["$post"]
+>[0];
+
 export type CreateProductStockPayload = CreateProductStockPostOptions extends {
 	json: infer J;
 }
@@ -20,6 +24,54 @@ export type CreateProductStockPayload = CreateProductStockPostOptions extends {
  * Represents the optional altegio field structure for product stock creation.
  */
 export type AltegioPayload = NonNullable<CreateProductStockPayload["altegio"]>;
+
+export type CreateProductInAltegioPayload =
+	CreateAltegioProductPostOptions extends {
+		json: infer J;
+	}
+		? J
+		: never;
+
+export const useCreateAltegioProduct = () =>
+	useMutation({
+		mutationKey: ["create-product-in-altegio"],
+		mutationFn: async (data: CreateProductInAltegioPayload) => {
+			const response = await client.api.auth["create-product-in-altegio"].$post(
+				{
+					json: data,
+				},
+			);
+			const result = await response.json();
+			if (!result?.success) {
+				throw new Error(
+					result?.message ||
+						"La API devolvi� �xito=false al crear el producto en Altegio",
+				);
+			}
+			return result;
+		},
+		onMutate: () => {
+			toast.loading("Creando producto en Altegio...", {
+				id: "create-product-in-altegio",
+			});
+		},
+		onSuccess: () => {
+			toast.success("Producto creado en Altegio", {
+				id: "create-product-in-altegio",
+			});
+			const queryClient = getQueryClient();
+			queryClient.invalidateQueries({
+				queryKey: queryKeys.productCatalog,
+			});
+		},
+		onError: (error) => {
+			toast.error("Error al crear producto en Altegio", {
+				id: "create-product-in-altegio",
+			});
+			// biome-ignore lint/suspicious/noConsole: Needed for debugging
+			console.error(error);
+		},
+	});
 
 export const useCreateInventoryItem = () =>
 	useMutation({

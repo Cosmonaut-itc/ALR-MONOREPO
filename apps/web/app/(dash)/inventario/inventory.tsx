@@ -1,8 +1,10 @@
 "use memo";
 "use client";
 
-import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
+import { useForm } from "@tanstack/react-form";
+import { useSuspenseQuery } from "@tanstack/react-query";
 import { useCallback, useMemo, useState } from "react";
+import { Check, ChevronsUpDown, X } from "lucide-react";
 import { toast } from "sonner";
 import { v4 as uuidv4 } from "uuid";
 import { RoleGuard } from "@/components/auth-guard";
@@ -11,6 +13,14 @@ import { ProductCombobox } from "@/components/inventory/ProductCombobox";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+	Command,
+	CommandEmpty,
+	CommandGroup,
+	CommandInput,
+	CommandItem,
+	CommandList,
+} from "@/components/ui/command";
 import {
 	Dialog,
 	DialogContent,
@@ -22,6 +32,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+	Popover,
+	PopoverContent,
+	PopoverTrigger,
+} from "@/components/ui/popover";
 import {
 	Select,
 	SelectContent,
@@ -43,10 +58,12 @@ import {
 	TooltipContent,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { Textarea } from "@/components/ui/textarea";
 import {
 	getAllProductStock,
 	getAllProducts,
 	getCabinetWarehouse,
+	getAllWarehouses,
 	getInventoryByWarehouse,
 } from "@/lib/fetch-functions/inventory";
 import {
@@ -57,7 +74,9 @@ import { createQueryKey } from "@/lib/helpers";
 import {
 	type AltegioPayload,
 	type CreateProductStockPayload,
+	type CreateProductInAltegioPayload,
 	useCreateInventoryItem,
+	useCreateAltegioProduct,
 	useSyncInventory,
 } from "@/lib/mutations/inventory";
 import { useCreateTransferOrder } from "@/lib/mutations/transfers";
@@ -89,6 +108,20 @@ type WarehouseOption = {
 	name: string;
 };
 
+type WarehouseWithAltegio = {
+	id?: string;
+	name?: string;
+	code?: string;
+	altegioId?: number;
+};
+
+type AltegioLocationOption = {
+	value: string;
+	label: string;
+	code?: string;
+	warehouseId?: string;
+};
+
 type WarehouseCabinetMapping = {
 	cabinetId: string | null;
 	cabinetName: string | null;
@@ -102,6 +135,27 @@ type QrLabelPayload = {
 	barcode: number;
 	uuid: string;
 	productName: string;
+};
+
+type CreateAltegioProductFormValues = {
+	title: string;
+	printTitle: string;
+	article: string;
+	barcode: string;
+	categoryId: string;
+	cost: string;
+	actualCost: string;
+	saleUnitId: string;
+	serviceUnitId: string;
+	unitEquals: string;
+	criticalAmount: string;
+	desiredAmount: string;
+	netto: string;
+	brutto: string;
+	taxVariant: string;
+	vatId: string;
+	comment: string;
+	locationIds: string[];
 };
 
 const DEFAULT_ALTEGIO_TIME_ZONE = "America/Mexico_City";
@@ -379,6 +433,15 @@ export function InventarioPage({
 		queryFn: getAllProducts,
 	});
 
+	const { data: warehousesResponse } = useSuspenseQuery<
+		Awaited<ReturnType<typeof getAllWarehouses>>,
+		Error,
+		Awaited<ReturnType<typeof getAllWarehouses>>
+	>({
+		queryKey: queryKeys.warehouses,
+		queryFn: getAllWarehouses,
+	});
+
 	const stockLimitsScope = isEncargado ? "all" : warehouseId;
 	const stockLimitsQueryFn = isEncargado
 		? getAllStockLimits
@@ -401,11 +464,17 @@ export function InventarioPage({
 		isPending: isCreatingInventoryItem,
 		isSuccess: isCreatingInventoryItemSuccess,
 	} = useCreateInventoryItem();
+	const {
+		mutateAsync: createAltegioProduct,
+		isPending: isCreatingAltegioProduct,
+	} = useCreateAltegioProduct();
 
 	const { addToTransfer, transferList, removeFromTransfer, approveTransfer } =
 		useTransferStore();
 	const [isListOpen, setIsListOpen] = useState(false);
 	const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+	const [isCreateAltegioDialogOpen, setIsCreateAltegioDialogOpen] =
+		useState(false);
 	const [selectedProductValue, setSelectedProductValue] = useState("");
 	const [selectedWarehouseId, setSelectedWarehouseId] = useState("");
 	const [qrQuantity, setQrQuantity] = useState(1);
@@ -414,6 +483,7 @@ export function InventarioPage({
 	const [currentTab, setCurrentTab] = useState<"general" | "gabinete">(
 		"general",
 	);
+	const [isLocationPopoverOpen, setIsLocationPopoverOpen] = useState(false);
 
 	const resetAddProductForm = useCallback(() => {
 		setSelectedProductValue("");
@@ -486,6 +556,102 @@ export function InventarioPage({
 		}
 		return options;
 	}, [productCatalog]);
+
+	const warehouses = useMemo<WarehouseWithAltegio[]>(() => {
+		if (
+			!warehousesResponse ||
+			typeof warehousesResponse !== "object" ||
+			!("success" in warehousesResponse) ||
+			!warehousesResponse.success ||
+			!Array.isArray(warehousesResponse.data)
+		) {
+			return [];
+		}
+		return warehousesResponse.data as WarehouseWithAltegio[];
+	}, [warehousesResponse]);
+
+	const altegioLocationOptions = useMemo<AltegioLocationOption[]>(() => {
+		const options: AltegioLocationOption[] = [];
+		const seen = new Set<string>();
+		for (const warehouse of warehouses) {
+			if (!warehouse || typeof warehouse !== "object") {
+				continue;
+			}
+			const rawAltegioId =
+				typeof warehouse.altegioId === "number"
+					? warehouse.altegioId
+					: Number.parseInt(
+							String((warehouse as { altegioId?: unknown }).altegioId ?? ""),
+							10,
+						);
+			if (!Number.isFinite(rawAltegioId) || rawAltegioId <= 0) {
+				continue;
+			}
+			const value = String(rawAltegioId);
+			if (seen.has(value)) {
+				continue;
+			}
+			const label =
+				typeof warehouse.name === "string" && warehouse.name.trim().length > 0
+					? warehouse.name.trim()
+					: `Almacen ${value}`;
+			options.push({
+				value,
+				label,
+				code:
+					typeof warehouse.code === "string" && warehouse.code.trim().length > 0
+						? warehouse.code.trim()
+						: undefined,
+				warehouseId:
+					typeof warehouse.id === "string" && warehouse.id.trim().length > 0
+						? warehouse.id.trim()
+						: undefined,
+			});
+			seen.add(value);
+		}
+		return options.sort((a, b) =>
+			a.label.localeCompare(b.label, "es", { sensitivity: "base" }),
+		);
+	}, [warehouses]);
+
+	const altegioLocationMap = useMemo(
+		() => new Map(altegioLocationOptions.map((option) => [option.value, option])),
+		[altegioLocationOptions],
+	);
+
+	const defaultLocationSelection = useMemo(() => {
+		if (!warehouseId) {
+			return [];
+		}
+		const match = altegioLocationOptions.find(
+			(option) => option.warehouseId === warehouseId,
+		);
+		return match ? [match.value] : [];
+	}, [altegioLocationOptions, warehouseId]);
+
+	const createAltegioProductForm =
+		useForm<CreateAltegioProductFormValues>({
+			defaultValues: {
+				title: "",
+				printTitle: "",
+				article: "",
+				barcode: "",
+				categoryId: "",
+				cost: "",
+				actualCost: "",
+				saleUnitId: "1",
+				serviceUnitId: "1",
+				unitEquals: "1",
+				criticalAmount: "",
+				desiredAmount: "",
+				netto: "",
+				brutto: "",
+				taxVariant: "0",
+				vatId: "",
+				comment: "",
+				locationIds: defaultLocationSelection,
+			},
+		});
 
 	const stockLimitsMap = useMemo(() => {
 		const map = new Map<string, StockLimit>();
@@ -564,6 +730,17 @@ export function InventarioPage({
 			}
 		},
 		[resetAddProductForm],
+	);
+
+	const handleCreateAltegioDialogChange = useCallback(
+		(open: boolean) => {
+			setIsCreateAltegioDialogOpen(open);
+			if (!open) {
+				createAltegioProductForm.reset();
+				setIsLocationPopoverOpen(false);
+			}
+		},
+		[createAltegioProductForm],
 	);
 
 	/**
@@ -657,11 +834,129 @@ export function InventarioPage({
 
 	const isAddSubmitting =
 		isCreatingInventoryItem || isPrintingLabels || isSyncingInventory;
+	const validateRequiredText = (value: string) =>
+		value.trim().length > 0 ? undefined : "Requerido";
+	const validateRequiredNumber = (value: string) => {
+		const normalized = value.trim().replace(",", ".");
+		if (!normalized) {
+			return "Requerido";
+		}
+		return Number.isFinite(Number.parseFloat(normalized))
+			? undefined
+			: "Numero invalido";
+	};
 	const isAddSubmitDisabled =
 		!selectedProduct ||
 		!selectedWarehouseId ||
 		isAddSubmitting ||
 		(!canManageKits && distributionCenterIds.has(selectedWarehouseId));
+
+	const handleCreateAltegioProductSubmit = async (
+		event: React.FormEvent<HTMLFormElement>,
+	) => {
+		event.preventDefault();
+		const {
+			title,
+			printTitle,
+			article,
+			barcode,
+			categoryId,
+			cost,
+			actualCost,
+			saleUnitId,
+			serviceUnitId,
+			unitEquals,
+			criticalAmount,
+			desiredAmount,
+			netto,
+			brutto,
+			taxVariant,
+			vatId,
+			comment,
+			locationIds,
+		} = createAltegioProductForm.state.values;
+
+		const trimmedTitle = title.trim();
+		const trimmedPrintTitle = printTitle.trim();
+		const trimmedArticle = article.trim();
+		const trimmedBarcode = barcode.trim();
+		const filteredLocations = Array.from(new Set(locationIds.filter(Boolean)));
+
+		if (
+			!trimmedTitle ||
+			!trimmedPrintTitle ||
+			!trimmedArticle ||
+			!trimmedBarcode
+		) {
+			toast.error("Completa los campos de texto requeridos.");
+			return;
+		}
+
+		if (filteredLocations.length === 0) {
+			toast.error("Selecciona al menos una ubicacion de Altegio.");
+			return;
+		}
+
+		const parseNumericField = (value: string, label: string): number => {
+			const normalized = value.trim().replace(",", ".");
+			const parsed = Number.parseFloat(normalized);
+			if (!Number.isFinite(parsed)) {
+				throw new Error(`${label} debe ser un numero valido`);
+			}
+			return parsed;
+		};
+
+		let payload: CreateProductInAltegioPayload;
+		try {
+			payload = {
+				locationIds: filteredLocations.join(","),
+				product: {
+					title: trimmedTitle,
+					print_title: trimmedPrintTitle,
+					article: trimmedArticle,
+					barcode: trimmedBarcode,
+					category_id: parseNumericField(categoryId, "Categoria"),
+					cost: parseNumericField(cost, "Costo"),
+					actual_cost: parseNumericField(actualCost, "Costo actual"),
+					sale_unit_id: parseNumericField(saleUnitId, "Unidad de venta"),
+					service_unit_id: parseNumericField(
+						serviceUnitId,
+						"Unidad de servicio",
+					),
+					unit_equals: parseNumericField(unitEquals, "Equivalencia de unidad"),
+					critical_amount: parseNumericField(
+						criticalAmount,
+						"Cantidad critica",
+					),
+					desired_amount: parseNumericField(
+						desiredAmount,
+						"Cantidad deseada",
+					),
+					netto: parseNumericField(netto, "Precio neto"),
+					brutto: parseNumericField(brutto, "Precio bruto"),
+					tax_variant: parseNumericField(taxVariant, "Impuesto"),
+					vat_id: parseNumericField(vatId, "IVA"),
+					...(comment.trim() ? { comment: comment.trim() } : {}),
+				},
+			};
+		} catch (error) {
+			const message =
+				error instanceof Error && error.message
+					? error.message
+					: "Revisa los campos numericos.";
+			toast.error(message);
+			return;
+		}
+
+		try {
+			await createAltegioProduct(payload);
+			createAltegioProductForm.reset();
+			setIsCreateAltegioDialogOpen(false);
+			setIsLocationPopoverOpen(false);
+		} catch {
+			// Errores ya gestionados por la mutacion
+		}
+	};
 
 	const handleAddProductSubmit = useCallback(async () => {
 		if (!selectedProduct) {
@@ -1215,6 +1510,762 @@ export function InventarioPage({
 									los códigos únicos para cada producto
 								</TooltipContent>
 							</Tooltip>
+						</RoleGuard>
+						<RoleGuard
+							allowedRoles={["admin", "encargado"]}
+							userRole={role as unknown as UserRole["role"]}
+						>
+							<Dialog
+								onOpenChange={handleCreateAltegioDialogChange}
+								open={isCreateAltegioDialogOpen}
+							>
+								<DialogTrigger asChild>
+									<Button
+										className="whitespace-nowrap"
+										disabled={altegioLocationOptions.length === 0}
+										variant="outline"
+									>
+										{altegioLocationOptions.length === 0
+											? "Configura Altegio"
+											: "Crear en Altegio"}
+									</Button>
+								</DialogTrigger>
+								<DialogContent className="w-full max-w-4xl">
+									<DialogHeader>
+										<DialogTitle>Crear producto en Altegio</DialogTitle>
+										<DialogDescription>
+											Envia un producto nuevo a las ubicaciones seleccionadas en Altegio.
+										</DialogDescription>
+									</DialogHeader>
+									<form
+										className="space-y-6"
+										onSubmit={handleCreateAltegioProductSubmit}
+									>
+										<createAltegioProductForm.Field
+											name="locationIds"
+											validators={{
+												onChange: ({ value }) =>
+													value.length === 0
+														? "Selecciona al menos una ubicacion"
+														: undefined,
+											}}
+										>
+											{(field) => (
+												<div className="space-y-2">
+													<Label className="text-[#11181C] dark:text-[#ECEDEE]">
+														Ubicaciones en Altegio
+													</Label>
+													<Popover
+														onOpenChange={setIsLocationPopoverOpen}
+														open={isLocationPopoverOpen}
+													>
+														<PopoverTrigger asChild>
+															<Button
+																className="input-transition h-10 w-full justify-between border-[#E5E7EB] bg-white text-[#11181C] hover:bg-white hover:text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:hover:bg-[#151718] dark:hover:text-[#ECEDEE]"
+																disabled={
+																	isCreatingAltegioProduct ||
+																	altegioLocationOptions.length === 0
+																}
+																type="button"
+																variant="outline"
+															>
+																{field.state.value.length > 0
+																	? `${field.state.value.length} ubicacion(es)`
+																	: altegioLocationOptions.length === 0
+																		? "No hay ubicaciones disponibles"
+																		: "Selecciona ubicaciones"}
+																<ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+															</Button>
+														</PopoverTrigger>
+														<PopoverContent className="w-full max-w-[520px] p-0">
+															<Command>
+																<CommandInput placeholder="Buscar ubicacion..." />
+																<CommandList>
+																	<CommandEmpty>
+																		No se encontraron ubicaciones.
+																	</CommandEmpty>
+																	<CommandGroup>
+																		{altegioLocationOptions.map((option) => {
+																			const isSelected =
+																				field.state.value.includes(option.value);
+																			return (
+																				<CommandItem
+																					key={option.value}
+																					onSelect={() => {
+																						const nextSelection = isSelected
+																							? field.state.value.filter(
+																									(value) => value !== option.value,
+																								)
+																							: [...field.state.value, option.value];
+																						field.handleChange(nextSelection);
+																					}}
+																					value={`${option.label} ${option.value} ${option.code ?? ""}`}
+																				>
+																					<div className="mr-2 flex h-4 w-4 items-center justify-center rounded border border-[#E5E7EB] dark:border-[#2D3033]">
+																						{isSelected ? (
+																							<Check className="h-3 w-3" />
+																						) : null}
+																					</div>
+																					<div className="flex flex-col">
+																						<span className="font-medium">
+																							{option.label}
+																						</span>
+																						<span className="text-muted-foreground text-xs">
+																							Altegio ID: {option.value}
+																							{option.code
+																								? ` - Codigo ${option.code}`
+																								: ""}
+																						</span>
+																					</div>
+																				</CommandItem>
+																			);
+																		})}
+																	</CommandGroup>
+																</CommandList>
+															</Command>
+														</PopoverContent>
+													</Popover>
+													{field.state.value.length > 0 ? (
+														<div className="flex flex-wrap gap-2">
+															{field.state.value.map((value) => {
+																const option = altegioLocationMap.get(value);
+																return (
+																	<Badge
+																		className="flex items-center gap-1 bg-[#F3F4F6] text-[#11181C] dark:bg-[#2D3033] dark:text-[#ECEDEE]"
+																		key={value}
+																	>
+																		{option?.label ?? `ID ${value}`}
+																		<button
+																			aria-label="Eliminar ubicacion"
+																			className="ml-1 rounded p-0.5 hover:bg-black/5 dark:hover:bg-white/10"
+																			onClick={() =>
+																				field.handleChange(
+																					field.state.value.filter(
+																						(item) => item !== value,
+																					),
+																				)
+																			}
+																			type="button"
+																		>
+																			<X className="h-3 w-3" />
+																		</button>
+																	</Badge>
+																);
+															})}
+														</div>
+													) : (
+														<p className="text-[#9BA1A6] text-xs">
+															Selecciona al menos una ubicacion para crear el
+															producto.
+														</p>
+													)}
+													{!field.state.meta.isValid && (
+														<em className="text-red-500 text-xs">
+															{field.state.meta.errors.join(",")}
+														</em>
+													)}
+												</div>
+											)}
+										</createAltegioProductForm.Field>
+										<div className="grid gap-4 md:grid-cols-2">
+											<createAltegioProductForm.Field
+												name="title"
+												validators={{
+													onChange: ({ value }) => validateRequiredText(value),
+												}}
+											>
+												{(field) => (
+													<div className="space-y-2">
+														<Label
+															className="text-[#11181C] dark:text-[#ECEDEE]"
+															htmlFor="altegio-title"
+														>
+															Titulo
+														</Label>
+														<Input
+															className="input-transition border-[#E5E7EB] bg-white text-[#11181C] placeholder:text-[#687076] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:placeholder:text-[#9BA1A6]"
+															id="altegio-title"
+															name={field.name}
+															onBlur={field.handleBlur}
+															onChange={(event) =>
+																field.handleChange(event.target.value)
+															}
+															placeholder="Nombre interno del producto"
+															value={field.state.value}
+														/>
+														{!field.state.meta.isValid && (
+															<em className="text-red-500 text-xs">
+																{field.state.meta.errors.join(",")}
+															</em>
+														)}
+													</div>
+												)}
+											</createAltegioProductForm.Field>
+											<createAltegioProductForm.Field
+												name="printTitle"
+												validators={{
+													onChange: ({ value }) => validateRequiredText(value),
+												}}
+											>
+												{(field) => (
+													<div className="space-y-2">
+														<Label
+															className="text-[#11181C] dark:text-[#ECEDEE]"
+															htmlFor="altegio-print-title"
+														>
+															Titulo impreso
+														</Label>
+														<Input
+															className="input-transition border-[#E5E7EB] bg-white text-[#11181C] placeholder:text-[#687076] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:placeholder:text-[#9BA1A6]"
+															id="altegio-print-title"
+															name={field.name}
+															onBlur={field.handleBlur}
+															onChange={(event) =>
+																field.handleChange(event.target.value)
+															}
+															placeholder="Texto que se imprime o muestra"
+															value={field.state.value}
+														/>
+														{!field.state.meta.isValid && (
+															<em className="text-red-500 text-xs">
+																{field.state.meta.errors.join(",")}
+															</em>
+														)}
+													</div>
+												)}
+											</createAltegioProductForm.Field>
+											<createAltegioProductForm.Field
+												name="article"
+												validators={{
+													onChange: ({ value }) => validateRequiredText(value),
+												}}
+											>
+												{(field) => (
+													<div className="space-y-2">
+														<Label
+															className="text-[#11181C] dark:text-[#ECEDEE]"
+															htmlFor="altegio-article"
+														>
+															Articulo
+														</Label>
+														<Input
+															className="input-transition border-[#E5E7EB] bg-white text-[#11181C] placeholder:text-[#687076] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:placeholder:text-[#9BA1A6]"
+															id="altegio-article"
+															name={field.name}
+															onBlur={field.handleBlur}
+															onChange={(event) =>
+																field.handleChange(event.target.value)
+															}
+															placeholder="Clave o SKU"
+															value={field.state.value}
+														/>
+														{!field.state.meta.isValid && (
+															<em className="text-red-500 text-xs">
+																{field.state.meta.errors.join(",")}
+															</em>
+														)}
+													</div>
+												)}
+											</createAltegioProductForm.Field>
+											<createAltegioProductForm.Field
+												name="barcode"
+												validators={{
+													onChange: ({ value }) => validateRequiredText(value),
+												}}
+											>
+												{(field) => (
+													<div className="space-y-2">
+														<Label
+															className="text-[#11181C] dark:text-[#ECEDEE]"
+															htmlFor="altegio-barcode"
+														>
+															Codigo de barras
+														</Label>
+														<Input
+															className="input-transition border-[#E5E7EB] bg-white text-[#11181C] placeholder:text-[#687076] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:placeholder:text-[#9BA1A6]"
+															id="altegio-barcode"
+															name={field.name}
+															onBlur={field.handleBlur}
+															onChange={(event) =>
+																field.handleChange(event.target.value)
+															}
+															placeholder="Codigo interno o EAN"
+															value={field.state.value}
+														/>
+														{!field.state.meta.isValid && (
+															<em className="text-red-500 text-xs">
+																{field.state.meta.errors.join(",")}
+															</em>
+														)}
+													</div>
+												)}
+											</createAltegioProductForm.Field>
+											<createAltegioProductForm.Field
+												name="categoryId"
+												validators={{
+													onChange: ({ value }) => validateRequiredNumber(value),
+												}}
+											>
+												{(field) => (
+													<div className="space-y-2">
+														<Label
+															className="text-[#11181C] dark:text-[#ECEDEE]"
+															htmlFor="altegio-category-id"
+														>
+															ID de categoria
+														</Label>
+														<Input
+															className="input-transition border-[#E5E7EB] bg-white text-[#11181C] placeholder:text-[#687076] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:placeholder:text-[#9BA1A6]"
+															id="altegio-category-id"
+															inputMode="numeric"
+															name={field.name}
+															onBlur={field.handleBlur}
+															onChange={(event) =>
+																field.handleChange(event.target.value)
+															}
+															placeholder="Ej. 935209"
+															type="number"
+															value={field.state.value}
+														/>
+														{!field.state.meta.isValid && (
+															<em className="text-red-500 text-xs">
+																{field.state.meta.errors.join(",")}
+															</em>
+														)}
+													</div>
+												)}
+											</createAltegioProductForm.Field>
+											<createAltegioProductForm.Field
+												name="vatId"
+												validators={{
+													onChange: ({ value }) => validateRequiredNumber(value),
+												}}
+											>
+												{(field) => (
+													<div className="space-y-2">
+														<Label
+															className="text-[#11181C] dark:text-[#ECEDEE]"
+															htmlFor="altegio-vat-id"
+														>
+															ID de IVA
+														</Label>
+														<Input
+															className="input-transition border-[#E5E7EB] bg-white text-[#11181C] placeholder:text-[#687076] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:placeholder:text-[#9BA1A6]"
+															id="altegio-vat-id"
+															inputMode="numeric"
+															name={field.name}
+															onBlur={field.handleBlur}
+															onChange={(event) =>
+																field.handleChange(event.target.value)
+															}
+															placeholder="Ej. 3"
+															type="number"
+															value={field.state.value}
+														/>
+														{!field.state.meta.isValid && (
+															<em className="text-red-500 text-xs">
+																{field.state.meta.errors.join(",")}
+															</em>
+														)}
+													</div>
+												)}
+											</createAltegioProductForm.Field>
+											<createAltegioProductForm.Field
+												name="cost"
+												validators={{
+													onChange: ({ value }) => validateRequiredNumber(value),
+												}}
+											>
+												{(field) => (
+													<div className="space-y-2">
+														<Label
+															className="text-[#11181C] dark:text-[#ECEDEE]"
+															htmlFor="altegio-cost"
+														>
+															Costo
+														</Label>
+														<Input
+															className="input-transition border-[#E5E7EB] bg-white text-[#11181C] placeholder:text-[#687076] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:placeholder:text-[#9BA1A6]"
+															id="altegio-cost"
+															inputMode="decimal"
+															name={field.name}
+															onBlur={field.handleBlur}
+															onChange={(event) =>
+																field.handleChange(event.target.value)
+															}
+															placeholder="Costo base"
+															type="number"
+															value={field.state.value}
+														/>
+														{!field.state.meta.isValid && (
+															<em className="text-red-500 text-xs">
+																{field.state.meta.errors.join(",")}
+															</em>
+														)}
+													</div>
+												)}
+											</createAltegioProductForm.Field>
+											<createAltegioProductForm.Field
+												name="actualCost"
+												validators={{
+													onChange: ({ value }) => validateRequiredNumber(value),
+												}}
+											>
+												{(field) => (
+													<div className="space-y-2">
+														<Label
+															className="text-[#11181C] dark:text-[#ECEDEE]"
+															htmlFor="altegio-actual-cost"
+														>
+															Costo actual
+														</Label>
+														<Input
+															className="input-transition border-[#E5E7EB] bg-white text-[#11181C] placeholder:text-[#687076] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:placeholder:text-[#9BA1A6]"
+															id="altegio-actual-cost"
+															inputMode="decimal"
+															name={field.name}
+															onBlur={field.handleBlur}
+															onChange={(event) =>
+																field.handleChange(event.target.value)
+															}
+															placeholder="Costo unitario actual"
+															type="number"
+															value={field.state.value}
+														/>
+														{!field.state.meta.isValid && (
+															<em className="text-red-500 text-xs">
+																{field.state.meta.errors.join(",")}
+															</em>
+														)}
+													</div>
+												)}
+											</createAltegioProductForm.Field>
+											<createAltegioProductForm.Field
+												name="saleUnitId"
+												validators={{
+													onChange: ({ value }) => validateRequiredNumber(value),
+												}}
+											>
+												{(field) => (
+													<div className="space-y-2">
+														<Label
+															className="text-[#11181C] dark:text-[#ECEDEE]"
+															htmlFor="altegio-sale-unit"
+														>
+															Unidad de venta ID
+														</Label>
+														<Input
+															className="input-transition border-[#E5E7EB] bg-white text-[#11181C] placeholder:text-[#687076] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:placeholder:text-[#9BA1A6]"
+															id="altegio-sale-unit"
+															inputMode="numeric"
+															name={field.name}
+															onBlur={field.handleBlur}
+															onChange={(event) =>
+																field.handleChange(event.target.value)
+															}
+															placeholder="Ej. 1"
+															type="number"
+															value={field.state.value}
+														/>
+														{!field.state.meta.isValid && (
+															<em className="text-red-500 text-xs">
+																{field.state.meta.errors.join(",")}
+															</em>
+														)}
+													</div>
+												)}
+											</createAltegioProductForm.Field>
+											<createAltegioProductForm.Field
+												name="serviceUnitId"
+												validators={{
+													onChange: ({ value }) => validateRequiredNumber(value),
+												}}
+											>
+												{(field) => (
+													<div className="space-y-2">
+														<Label
+															className="text-[#11181C] dark:text-[#ECEDEE]"
+															htmlFor="altegio-service-unit"
+														>
+															Unidad de servicio ID
+														</Label>
+														<Input
+															className="input-transition border-[#E5E7EB] bg-white text-[#11181C] placeholder:text-[#687076] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:placeholder:text-[#9BA1A6]"
+															id="altegio-service-unit"
+															inputMode="numeric"
+															name={field.name}
+															onBlur={field.handleBlur}
+															onChange={(event) =>
+																field.handleChange(event.target.value)
+															}
+															placeholder="Ej. 1"
+															type="number"
+															value={field.state.value}
+														/>
+														{!field.state.meta.isValid && (
+															<em className="text-red-500 text-xs">
+																{field.state.meta.errors.join(",")}
+															</em>
+														)}
+													</div>
+												)}
+											</createAltegioProductForm.Field>
+											<createAltegioProductForm.Field
+												name="unitEquals"
+												validators={{
+													onChange: ({ value }) => validateRequiredNumber(value),
+												}}
+											>
+												{(field) => (
+													<div className="space-y-2">
+														<Label
+															className="text-[#11181C] dark:text-[#ECEDEE]"
+															htmlFor="altegio-unit-equals"
+														>
+															Equivalencia de unidad
+														</Label>
+														<Input
+															className="input-transition border-[#E5E7EB] bg-white text-[#11181C] placeholder:text-[#687076] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:placeholder:text-[#9BA1A6]"
+															id="altegio-unit-equals"
+															inputMode="decimal"
+															name={field.name}
+															onBlur={field.handleBlur}
+															onChange={(event) =>
+																field.handleChange(event.target.value)
+															}
+															placeholder="Ej. 1"
+															type="number"
+															value={field.state.value}
+														/>
+														{!field.state.meta.isValid && (
+															<em className="text-red-500 text-xs">
+																{field.state.meta.errors.join(",")}
+															</em>
+														)}
+													</div>
+												)}
+											</createAltegioProductForm.Field>
+											<createAltegioProductForm.Field
+												name="taxVariant"
+												validators={{
+													onChange: ({ value }) => validateRequiredNumber(value),
+												}}
+											>
+												{(field) => (
+													<div className="space-y-2">
+														<Label
+															className="text-[#11181C] dark:text-[#ECEDEE]"
+															htmlFor="altegio-tax-variant"
+														>
+															Variante de impuesto
+														</Label>
+														<Input
+															className="input-transition border-[#E5E7EB] bg-white text-[#11181C] placeholder:text-[#687076] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:placeholder:text-[#9BA1A6]"
+															id="altegio-tax-variant"
+															inputMode="numeric"
+															name={field.name}
+															onBlur={field.handleBlur}
+															onChange={(event) =>
+																field.handleChange(event.target.value)
+															}
+															placeholder="Ej. 0"
+															type="number"
+															value={field.state.value}
+														/>
+														{!field.state.meta.isValid && (
+															<em className="text-red-500 text-xs">
+																{field.state.meta.errors.join(",")}
+															</em>
+														)}
+													</div>
+												)}
+											</createAltegioProductForm.Field>
+											<createAltegioProductForm.Field
+												name="criticalAmount"
+												validators={{
+													onChange: ({ value }) => validateRequiredNumber(value),
+												}}
+											>
+												{(field) => (
+													<div className="space-y-2">
+														<Label
+															className="text-[#11181C] dark:text-[#ECEDEE]"
+															htmlFor="altegio-critical-amount"
+														>
+															Cantidad critica
+														</Label>
+														<Input
+															className="input-transition border-[#E5E7EB] bg-white text-[#11181C] placeholder:text-[#687076] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:placeholder:text-[#9BA1A6]"
+															id="altegio-critical-amount"
+															inputMode="decimal"
+															name={field.name}
+															onBlur={field.handleBlur}
+															onChange={(event) =>
+																field.handleChange(event.target.value)
+															}
+															placeholder="Ej. 1"
+															type="number"
+															value={field.state.value}
+														/>
+														{!field.state.meta.isValid && (
+															<em className="text-red-500 text-xs">
+																{field.state.meta.errors.join(",")}
+															</em>
+														)}
+													</div>
+												)}
+											</createAltegioProductForm.Field>
+											<createAltegioProductForm.Field
+												name="desiredAmount"
+												validators={{
+													onChange: ({ value }) => validateRequiredNumber(value),
+												}}
+											>
+												{(field) => (
+													<div className="space-y-2">
+														<Label
+															className="text-[#11181C] dark:text-[#ECEDEE]"
+															htmlFor="altegio-desired-amount"
+														>
+															Cantidad deseada
+														</Label>
+														<Input
+															className="input-transition border-[#E5E7EB] bg-white text-[#11181C] placeholder:text-[#687076] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:placeholder:text-[#9BA1A6]"
+															id="altegio-desired-amount"
+															inputMode="decimal"
+															name={field.name}
+															onBlur={field.handleBlur}
+															onChange={(event) =>
+																field.handleChange(event.target.value)
+															}
+															placeholder="Ej. 1"
+															type="number"
+															value={field.state.value}
+														/>
+														{!field.state.meta.isValid && (
+															<em className="text-red-500 text-xs">
+																{field.state.meta.errors.join(",")}
+															</em>
+														)}
+													</div>
+												)}
+											</createAltegioProductForm.Field>
+											<createAltegioProductForm.Field
+												name="netto"
+												validators={{
+													onChange: ({ value }) => validateRequiredNumber(value),
+												}}
+											>
+												{(field) => (
+													<div className="space-y-2">
+														<Label
+															className="text-[#11181C] dark:text-[#ECEDEE]"
+															htmlFor="altegio-netto"
+														>
+															Precio neto
+														</Label>
+														<Input
+															className="input-transition border-[#E5E7EB] bg-white text-[#11181C] placeholder:text-[#687076] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:placeholder:text-[#9BA1A6]"
+															id="altegio-netto"
+															inputMode="decimal"
+															name={field.name}
+															onBlur={field.handleBlur}
+															onChange={(event) =>
+																field.handleChange(event.target.value)
+															}
+															placeholder="Ej. 200"
+															type="number"
+															value={field.state.value}
+														/>
+														{!field.state.meta.isValid && (
+															<em className="text-red-500 text-xs">
+																{field.state.meta.errors.join(",")}
+															</em>
+														)}
+													</div>
+												)}
+											</createAltegioProductForm.Field>
+											<createAltegioProductForm.Field
+												name="brutto"
+												validators={{
+													onChange: ({ value }) => validateRequiredNumber(value),
+												}}
+											>
+												{(field) => (
+													<div className="space-y-2">
+														<Label
+															className="text-[#11181C] dark:text-[#ECEDEE]"
+															htmlFor="altegio-brutto"
+														>
+															Precio bruto
+														</Label>
+														<Input
+															className="input-transition border-[#E5E7EB] bg-white text-[#11181C] placeholder:text-[#687076] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:placeholder:text-[#9BA1A6]"
+															id="altegio-brutto"
+															inputMode="decimal"
+															name={field.name}
+															onBlur={field.handleBlur}
+															onChange={(event) =>
+																field.handleChange(event.target.value)
+															}
+															placeholder="Ej. 250"
+															type="number"
+															value={field.state.value}
+														/>
+														{!field.state.meta.isValid && (
+															<em className="text-red-500 text-xs">
+																{field.state.meta.errors.join(",")}
+															</em>
+														)}
+													</div>
+												)}
+											</createAltegioProductForm.Field>
+										</div>
+										<div className="space-y-2">
+											<Label className="text-[#11181C] dark:text-[#ECEDEE]">
+												Comentario
+											</Label>
+											<createAltegioProductForm.Field name="comment">
+												{(field) => (
+													<>
+														<Textarea
+															className="input-transition border-[#E5E7EB] bg-white text-[#11181C] placeholder:text-[#687076] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:placeholder:text-[#9BA1A6]"
+															id="altegio-comment"
+															name={field.name}
+															onBlur={field.handleBlur}
+															onChange={(event) =>
+																field.handleChange(event.target.value)
+															}
+															placeholder="Notas opcionales para el producto"
+															value={field.state.value}
+														/>
+													</>
+												)}
+											</createAltegioProductForm.Field>
+										</div>
+										<DialogFooter className="gap-2">
+											<Button
+												onClick={() => handleCreateAltegioDialogChange(false)}
+												type="button"
+												variant="outline"
+											>
+												Cancelar
+											</Button>
+											<Button
+												disabled={
+													isCreatingAltegioProduct ||
+													altegioLocationOptions.length === 0
+												}
+												type="submit"
+											>
+												{isCreatingAltegioProduct
+													? "Creando..."
+													: "Crear producto"}
+											</Button>
+										</DialogFooter>
+									</form>
+								</DialogContent>
+							</Dialog>
 						</RoleGuard>
 						<Dialog onOpenChange={handleAddDialogChange} open={isAddDialogOpen}>
 							<DialogTrigger asChild>

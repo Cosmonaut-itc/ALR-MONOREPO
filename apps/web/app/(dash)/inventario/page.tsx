@@ -11,6 +11,7 @@ import {
 	fetchAllProductStockServer,
 	fetchAllProductsServer,
 	fetchCabinetWarehouseServer,
+	fetchAllWarehousesServer,
 	fetchStockByWarehouseServer,
 } from "@/lib/server-functions/inventory";
 import { getServerAuth } from "@/lib/server-functions/server-auth";
@@ -68,6 +69,11 @@ export default async function AbastecimientoPage() {
 		queryClient.prefetchQuery({
 			queryKey: createQueryKey(queryKeys.stockLimits, [stockLimitsScope]),
 			queryFn: stockLimitsPrefetchFn,
+		});
+		// Prefetch warehouses (needed for Altegio location selection)
+		queryClient.prefetchQuery({
+			queryKey: queryKeys.warehouses,
+			queryFn: () => fetchAllWarehousesServer(),
 		});
 		return (
 			<HydrationBoundary state={dehydrate(queryClient)}>
