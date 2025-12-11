@@ -629,29 +629,30 @@ export function InventarioPage({
 		return match ? [match.value] : [];
 	}, [altegioLocationOptions, warehouseId]);
 
-	const createAltegioProductForm =
-		useForm<CreateAltegioProductFormValues>({
-			defaultValues: {
-				title: "",
-				printTitle: "",
-				article: "",
-				barcode: "",
-				categoryId: "",
-				cost: "",
-				actualCost: "",
-				saleUnitId: "1",
-				serviceUnitId: "1",
-				unitEquals: "1",
-				criticalAmount: "",
-				desiredAmount: "",
-				netto: "",
-				brutto: "",
-				taxVariant: "0",
-				vatId: "",
-				comment: "",
-				locationIds: defaultLocationSelection,
-			},
-		});
+	const createAltegioProductDefaultValues: CreateAltegioProductFormValues = {
+		title: "",
+		printTitle: "",
+		article: "",
+		barcode: "",
+		categoryId: "",
+		cost: "",
+		actualCost: "",
+		saleUnitId: "1",
+		serviceUnitId: "1",
+		unitEquals: "1",
+		criticalAmount: "",
+		desiredAmount: "",
+		netto: "",
+		brutto: "",
+		taxVariant: "0",
+		vatId: "",
+		comment: "",
+		locationIds: defaultLocationSelection,
+	};
+
+	const createAltegioProductForm = useForm({
+		defaultValues: createAltegioProductDefaultValues,
+	});
 
 	const stockLimitsMap = useMemo(() => {
 		const map = new Map<string, StockLimit>();
