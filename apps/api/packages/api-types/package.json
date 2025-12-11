@@ -1,6 +1,6 @@
 {
   "name": "ns-inventory-api-types",
-  "version": "1.0.78",
+  "version": "1.0.80",
   "description": "Types-only package that re-exports the Hono AppType for RPC clients.",
   "type": "module",
   "sideEffects": false,
@@ -37,7 +37,7 @@
   "author": "NS-TEAM",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Cosmonaut-itc/NS-API.git",
+    "url": "git+https://github.com/Cosmonaut-itc/NS-API.git",
     "directory": "packages/api-types"
   }
 }
