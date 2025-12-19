@@ -1,5 +1,5 @@
 import { formatInTimeZone } from 'date-fns-tz';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../db/index';
 import { warehouse as warehouseTable } from '../db/schema';
@@ -742,6 +742,295 @@ export const replicateStockCreationToAltegio = async (
 		normalizedUnitCost,
 		barcode,
 	});
+};
+
+export type AltegioTransferTotal = {
+	goodId: number;
+	totalQuantity: number;
+	totalCost: number;
+};
+
+export type ReplicateWarehouseTransferResult = {
+	success: boolean;
+	message: string;
+	data?: {
+		departureDocumentId?: number;
+		arrivalDocumentId?: number;
+		transactionCount: number;
+	};
+	skipped?: boolean;
+};
+
+export type ReplicateWarehouseTransferParams = {
+	transferId?: string;
+	transferNumber: string;
+	sourceWarehouseId: string;
+	destinationWarehouseId: string;
+	altegioTotals: AltegioTransferTotal[];
+	headers: AltegioAuthHeaders;
+};
+
+const altegioTransferTotalsSchema = z
+	.array(
+		z.object({
+			goodId: z.number().int().positive(),
+			totalQuantity: z.number().int().nonnegative(),
+			totalCost: z.number().min(0),
+		}),
+	)
+	.nonempty();
+
+/**
+ * Creates Altegio goods transactions for a transfer document.
+ *
+ * @param companyId - Altegio company ID
+ * @param headers - Authentication headers for Altegio API
+ * @param documentId - Altegio document ID associated with the transactions
+ * @param totals - Aggregated transfer totals per good
+ * @param masterId - Required Altegio staff member ID
+ * @param comment - Comment to attach to each transaction
+ * @returns Number of transactions created
+ */
+const postTransferGoodsTransactions = async ({
+	companyId,
+	headers,
+	documentId,
+	totals,
+	masterId,
+	comment,
+}: {
+	companyId: number;
+	headers: AltegioAuthHeaders;
+	documentId: number;
+	totals: AltegioTransferTotal[];
+	masterId: number;
+	comment: string;
+}): Promise<number> => {
+	let transactionCount = 0;
+
+	for (const total of totals) {
+		const costPerUnit =
+			total.totalQuantity === 0 ? 0 : total.totalCost / total.totalQuantity;
+		const transactionPayload: AltegioGoodsTransactionPayload = {
+			document_id: documentId,
+			good_id: total.goodId,
+			amount: total.totalQuantity,
+			cost_per_unit: costPerUnit,
+			discount: 0,
+			cost: total.totalCost,
+			operation_unit_type: 2,
+			master_id: masterId,
+			comment,
+		};
+
+		const transactionResponse = await postAltegioGoodsTransaction(
+			companyId,
+			headers,
+			transactionPayload,
+			apiResponseSchemaGoodsTransaction,
+		);
+
+		if (!transactionResponse.success) {
+			throw new Error(`Failed to create goods transaction for good_id ${total.goodId}`);
+		}
+
+		transactionCount += 1;
+	}
+
+	return transactionCount;
+};
+
+/**
+ * Replicates a completed external warehouse transfer to Altegio.
+ * Creates both departure and arrival documents with corresponding goods transactions.
+ *
+ * @param params - Transfer replication parameters
+ * @returns Result including created document IDs and transaction count
+ */
+export const replicateWarehouseTransferToAltegio = async ({
+	transferId,
+	transferNumber,
+	sourceWarehouseId,
+	destinationWarehouseId,
+	altegioTotals,
+	headers,
+}: ReplicateWarehouseTransferParams): Promise<ReplicateWarehouseTransferResult> => {
+	const logFailure = (message: string, error?: unknown): void => {
+		// biome-ignore lint/suspicious/noConsole: External API diagnostics are required for supportability
+		console.error('Altegio transfer replication failed', {
+			transferId,
+			transferNumber,
+			sourceWarehouseId,
+			destinationWarehouseId,
+			error: error ?? message,
+		});
+	};
+
+	try {
+		const warehouses = await db
+			.select({
+				id: warehouseTable.id,
+				isCedis: warehouseTable.isCedis,
+				altegioId: warehouseTable.altegioId,
+				consumablesId: warehouseTable.consumablesId,
+				salesId: warehouseTable.salesId,
+				timeZone: warehouseTable.timeZone,
+			})
+			.from(warehouseTable)
+			.where(inArray(warehouseTable.id, [sourceWarehouseId, destinationWarehouseId]));
+
+		const sourceWarehouse = warehouses.find(
+			(warehouse) => warehouse.id === sourceWarehouseId,
+		);
+		const destinationWarehouse = warehouses.find(
+			(warehouse) => warehouse.id === destinationWarehouseId,
+		);
+
+		if (!sourceWarehouse || !destinationWarehouse) {
+			const missingWarehouse = sourceWarehouse ? destinationWarehouseId : sourceWarehouseId;
+			const message = `Warehouse ${missingWarehouse} not found`;
+			logFailure(message);
+			return { success: false, message };
+		}
+
+		if (sourceWarehouse.isCedis === destinationWarehouse.isCedis) {
+			return {
+				success: true,
+				skipped: true,
+				message:
+					'Transfer is not between CEDIS and non-CEDIS warehouses; skipping Altegio replication',
+			};
+		}
+
+		const totalsValidation = altegioTransferTotalsSchema.safeParse(altegioTotals);
+		if (!totalsValidation.success) {
+			const message = 'Altegio totals are required to replicate warehouse transfers';
+			logFailure(message, totalsValidation.error);
+			return { success: false, message };
+		}
+
+		const sourceStorage = sourceWarehouse.altegioId
+			? resolveAltegioStorageIds(sourceWarehouse.altegioId, {
+					consumablesId: sourceWarehouse.consumablesId,
+					salesId: sourceWarehouse.salesId,
+				})
+			: undefined;
+		if (!(sourceWarehouse.altegioId && sourceStorage?.consumablesId)) {
+			const message = `Source warehouse ${sourceWarehouseId} missing Altegio configuration`;
+			logFailure(message);
+			return { success: false, message };
+		}
+
+		const destinationStorage = destinationWarehouse.altegioId
+			? resolveAltegioStorageIds(destinationWarehouse.altegioId, {
+					consumablesId: destinationWarehouse.consumablesId,
+					salesId: destinationWarehouse.salesId,
+				})
+			: undefined;
+		if (!(destinationWarehouse.altegioId && destinationStorage?.consumablesId)) {
+			const message = `Destination warehouse ${destinationWarehouseId} missing Altegio configuration`;
+			logFailure(message);
+			return { success: false, message };
+		}
+
+		const masterId = getAltegioDefaultMasterId();
+		if (!masterId) {
+			const message =
+				'Altegio integration requires ALTEGIO_DEFAULT_MASTER_ID to be configured';
+			logFailure(message);
+			return { success: false, message };
+		}
+
+		const totals = totalsValidation.data;
+
+		// Create arrival first to avoid removing stock if destination creation fails.
+		const arrivalDocument = await postAltegioStorageDocument(
+			destinationWarehouse.altegioId,
+			headers,
+			{
+				typeId: ALTEGIO_DOCUMENT_TYPE_ARRIVAL,
+				comment: `Arrival document for transfer ${transferNumber}`,
+				storageId: destinationStorage.consumablesId,
+				createDate: new Date(),
+				...(destinationWarehouse.timeZone
+					? { timeZone: destinationWarehouse.timeZone }
+					: {}),
+			},
+			apiResponseSchemaDocument,
+		);
+
+		if (!arrivalDocument.success) {
+			const message = 'Failed to create arrival document';
+			logFailure(message);
+			return { success: false, message };
+		}
+
+		const arrivalTransactions = await postTransferGoodsTransactions({
+			companyId: destinationWarehouse.altegioId,
+			headers,
+			documentId: arrivalDocument.data.id,
+			totals,
+			masterId,
+			comment: `Arrival for transfer ${transferNumber}`,
+		});
+
+		const departureDocument = await postAltegioStorageDocument(
+			sourceWarehouse.altegioId,
+			headers,
+			{
+				typeId: ALTEGIO_DOCUMENT_TYPE_DEPARTURE,
+				comment: `Departure document for transfer ${transferNumber}`,
+				storageId: sourceStorage.consumablesId,
+				createDate: new Date(),
+				...(sourceWarehouse.timeZone ? { timeZone: sourceWarehouse.timeZone } : {}),
+			},
+			apiResponseSchemaDocument,
+		);
+
+		if (!departureDocument.success) {
+			const message = 'Failed to create departure document';
+			logFailure(message);
+			return { success: false, message };
+		}
+
+		const departureTransactions = await postTransferGoodsTransactions({
+			companyId: sourceWarehouse.altegioId,
+			headers,
+			documentId: departureDocument.data.id,
+			totals,
+			masterId,
+			comment: `Departure for transfer ${transferNumber}`,
+		});
+
+		const transactionCount = arrivalTransactions + departureTransactions;
+		// biome-ignore lint/suspicious/noConsole: External API diagnostics are required for supportability
+		console.log('Altegio transfer replication succeeded', {
+			transferId,
+			transferNumber,
+			departureDocumentId: departureDocument.data.id,
+			arrivalDocumentId: arrivalDocument.data.id,
+			transactionCount,
+		});
+
+		return {
+			success: true,
+			message: 'Altegio transfer replication successful',
+			data: {
+				departureDocumentId: departureDocument.data.id,
+				arrivalDocumentId: arrivalDocument.data.id,
+				transactionCount,
+			},
+		};
+	} catch (error) {
+		logFailure('Unexpected error during Altegio transfer replication', error);
+		return {
+			success: false,
+			message:
+				error instanceof Error
+					? error.message
+					: 'Unknown error during Altegio transfer replication',
+		};
+	}
 };
 
 /**

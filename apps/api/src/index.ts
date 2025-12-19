@@ -29,17 +29,10 @@ import {
 import { db } from "./db/index";
 import * as schemas from "./db/schema";
 import {
-	type AggregatedTotals,
-	ALTEGIO_DOCUMENT_TYPE_ARRIVAL,
-	ALTEGIO_DOCUMENT_TYPE_DEPARTURE,
-	type AltegioGoodsTransactionPayload,
 	type AltegioStockArrivalPayload,
 	createProductsInAltegio,
-	getAltegioDefaultMasterId,
-	postAltegioGoodsTransaction,
-	postAltegioStorageDocument,
 	replicateStockCreationToAltegio,
-	resolveAltegioStorageIds,
+	replicateWarehouseTransferToAltegio,
 } from "./lib/altegio-service";
 import { auth } from "./lib/auth";
 import { InventorySyncError, syncInventory } from "./lib/inventory-sync";
@@ -57,8 +50,6 @@ import {
 import type { DataItemArticulosType, SyncOptions, SyncResult } from "./types";
 import {
 	apiResponseSchema,
-	apiResponseSchemaDocument,
-	apiResponseSchemaGoodsTransaction,
 	DistributionCenterId,
 	replenishmentOrderCreateSchema,
 	replenishmentOrderLinkTransferSchema,
@@ -5326,16 +5317,18 @@ const route = app
 				completedBy: z.string().optional(),
 				notes: z.string().max(1000, "Notes too long").optional(),
 				replicateToAltegio: z.boolean().optional(),
-				altegioTotals: z.array(
-					z.object({
-						goodId: z.number().int().positive("Good ID must be positive"),
-						totalQuantity: z
-							.number()
-							.int()
-							.nonnegative("Quantity must be 0 or greater"),
-						totalCost: z.number().min(0, "Total cost must be 0 or greater"),
-					}),
-				),
+				altegioTotals: z
+					.array(
+						z.object({
+							goodId: z.number().int().positive("Good ID must be positive"),
+							totalQuantity: z
+								.number()
+								.int()
+								.nonnegative("Quantity must be 0 or greater"),
+							totalCost: z.number().min(0, "Total cost must be 0 or greater"),
+						}),
+					)
+					.optional(),
 			}),
 		),
 		async (c) => {
@@ -5371,6 +5364,27 @@ const route = app
 					notes,
 				);
 
+				const existingTransfer = await db
+					.select({
+						id: schemas.warehouseTransfer.id,
+						isCompleted: schemas.warehouseTransfer.isCompleted,
+					})
+					.from(schemas.warehouseTransfer)
+					.where(eq(schemas.warehouseTransfer.id, transferId))
+					.limit(1);
+
+				if (existingTransfer.length === 0) {
+					return c.json(
+						{
+							success: false,
+							message: "Warehouse transfer not found",
+						} satisfies ApiResponse,
+						404,
+					);
+				}
+
+				const wasCompleted = existingTransfer[0].isCompleted;
+
 				// Update the warehouse transfer
 				const updatedTransfer = await db
 					.update(schemas.warehouseTransfer)
@@ -5388,295 +5402,92 @@ const route = app
 					);
 				}
 
+				const transferRow = updatedTransfer[0];
+				const transitionedToCompleted =
+					wasCompleted === false && transferRow.isCompleted === true;
+
 				// After successful status update, optionally replicate to Altegio when completed
 				if (
 					ENABLE_ALTEGIO_REPLICATION &&
 					replicateToAltegio === true &&
-					isCompleted === true
+					transitionedToCompleted &&
+					transferRow.transferType === "external"
 				) {
-					const transferRow = updatedTransfer[0];
-					if (transferRow.transferType === "external") {
-						const authHeader = process.env.AUTH_HEADER;
-						const acceptHeader = process.env.ACCEPT_HEADER;
+					const authHeader = process.env.AUTH_HEADER;
+					const acceptHeader = process.env.ACCEPT_HEADER;
 
-						if (!(authHeader && acceptHeader)) {
-							// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
-							console.error("Missing required authentication configuration");
-							return c.json(
-								{
-									success: false,
-									message: "Missing required authentication configuration",
-								} satisfies ApiResponse,
-								400,
-							);
-						}
+					if (!(authHeader && acceptHeader)) {
+						// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
+						console.error("Missing required authentication configuration");
+						return c.json(
+							{
+								success: false,
+								message: "Missing required authentication configuration",
+							} satisfies ApiResponse,
+							400,
+						);
+					}
 
-						if (!altegioTotals || altegioTotals.length === 0) {
-							return c.json(
-								{
-									success: false,
-									message:
-										"When replicateToAltegio is true, altegioTotals must be provided",
-								} satisfies ApiResponse,
-								400,
-							);
-						}
+					if (!altegioTotals || altegioTotals.length === 0) {
+						return c.json(
+							{
+								success: false,
+								message:
+									"When replicateToAltegio is true, altegioTotals must be provided",
+							} satisfies ApiResponse,
+							400,
+						);
+					}
 
-						const altegioHeaders = { authHeader, acceptHeader };
-						const aggregatedTransactions = altegioTotals.reduce<
-							Map<number, AggregatedTotals>
-						>((accumulator, item) => {
-							accumulator.set(item.goodId, {
-								totalQuantity: item.totalQuantity,
-								totalCost: item.totalCost,
-							});
-							return accumulator;
-						}, new Map());
+					// biome-ignore lint/suspicious/noConsole: Logging provides replication visibility
+					console.log("Altegio transfer replication started", {
+						transferId: transferRow.id,
+						transferNumber: transferRow.transferNumber,
+						sourceWarehouseId: transferRow.sourceWarehouseId,
+						destinationWarehouseId: transferRow.destinationWarehouseId,
+						totalsCount: altegioTotals.length,
+					});
 
-						// Destination arrival (if not DC)
-						if (transferRow.destinationWarehouseId !== DistributionCenterId) {
-							const destinationWarehouses = await db
-								.select({
-									id: schemas.warehouse.id,
-									altegioId: schemas.warehouse.altegioId,
-									consumablesId: schemas.warehouse.consumablesId,
-									salesId: schemas.warehouse.salesId,
-									timeZone: schemas.warehouse.timeZone,
-								})
-								.from(schemas.warehouse)
-								.where(
-									eq(schemas.warehouse.id, transferRow.destinationWarehouseId),
-								);
+					const replicationResult = await replicateWarehouseTransferToAltegio({
+						transferId: transferRow.id,
+						transferNumber: transferRow.transferNumber,
+						sourceWarehouseId: transferRow.sourceWarehouseId,
+						destinationWarehouseId: transferRow.destinationWarehouseId,
+						altegioTotals,
+						headers: { authHeader, acceptHeader },
+					});
 
-							const destinationWarehouse = destinationWarehouses[0];
-							const destinationStorage = destinationWarehouse?.altegioId
-								? resolveAltegioStorageIds(destinationWarehouse.altegioId, {
-										consumablesId: destinationWarehouse.consumablesId,
-										salesId: destinationWarehouse.salesId,
-									})
-								: undefined;
-							if (
-								!(
-									destinationWarehouse?.altegioId &&
-									destinationStorage?.consumablesId
-								)
-							) {
-								// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
-								console.error(
-									`Destination warehouse ${transferRow.destinationWarehouseId} not found`,
-								);
-								return c.json(
-									{
-										success: false,
-										message: `Destination warehouse ${transferRow.destinationWarehouseId} not found`,
-									} satisfies ApiResponse,
-									404,
-								);
-							}
+					if (!replicationResult.success) {
+						// biome-ignore lint/suspicious/noConsole: Logging provides replication visibility
+						console.error("Altegio transfer replication failed", {
+							transferId: transferRow.id,
+							error: replicationResult.message,
+						});
+						return c.json(
+							{
+								success: false,
+								message: replicationResult.message,
+							} satisfies ApiResponse,
+							500,
+						);
+					}
 
-							const arrivalDocument = await postAltegioStorageDocument(
-								destinationWarehouse.altegioId,
-								altegioHeaders,
-								{
-									typeId: ALTEGIO_DOCUMENT_TYPE_ARRIVAL,
-									comment: `Arrival document for transfer ${transferRow.transferNumber}`,
-									storageId: destinationStorage.consumablesId,
-									createDate: new Date(),
-									...(destinationWarehouse.timeZone
-										? { timeZone: destinationWarehouse.timeZone }
-										: {}),
-								},
-								apiResponseSchemaDocument,
-							);
-
-							if (!arrivalDocument.success) {
-								// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
-								console.error("Failed to create arrival document");
-								return c.json(
-									{
-										success: false,
-										message: "Failed to create arrival document",
-									} satisfies ApiResponse,
-									500,
-								);
-							}
-
-							const altegioMasterId = getAltegioDefaultMasterId();
-							if (!altegioMasterId) {
-								// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
-								console.error(
-									"Missing required environment variable: ALTEGIO_DEFAULT_MASTER_ID",
-								);
-								return c.json(
-									{
-										success: false,
-										message:
-											"Altegio integration requires ALTEGIO_DEFAULT_MASTER_ID to be configured",
-									} satisfies ApiResponse,
-									500,
-								);
-							}
-
-							// Create goods transactions for each product in the transfer
-							for (const [
-								goodId,
-								{ totalQuantity, totalCost },
-							] of aggregatedTransactions) {
-								const transactionPayload: AltegioGoodsTransactionPayload = {
-									document_id: arrivalDocument.data.id,
-									good_id: goodId,
-									amount: totalQuantity,
-									cost_per_unit:
-										totalQuantity === 0 ? 0 : totalCost / totalQuantity,
-									discount: 0,
-									cost: totalCost,
-									operation_unit_type: 2,
-									master_id: altegioMasterId,
-									comment: `Arrival for transfer ${transferRow.transferNumber}`,
-								};
-
-								const transactionResult = await postAltegioGoodsTransaction(
-									destinationWarehouse.altegioId,
-									altegioHeaders,
-									transactionPayload,
-									apiResponseSchemaGoodsTransaction,
-								);
-
-								if (!transactionResult.success) {
-									// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
-									console.error(
-										`Failed to create goods transaction for good_id ${goodId}`,
-									);
-									return c.json(
-										{
-											success: false,
-											message: `Failed to create goods transaction for good_id ${goodId}`,
-										} satisfies ApiResponse,
-										500,
-									);
-								}
-							}
-						}
-
-						// Source departure (if not DC)
-						if (transferRow.sourceWarehouseId !== DistributionCenterId) {
-							const sourceWarehouses = await db
-								.select({
-									id: schemas.warehouse.id,
-									altegioId: schemas.warehouse.altegioId,
-									consumablesId: schemas.warehouse.consumablesId,
-									salesId: schemas.warehouse.salesId,
-									timeZone: schemas.warehouse.timeZone,
-								})
-								.from(schemas.warehouse)
-								.where(eq(schemas.warehouse.id, transferRow.sourceWarehouseId));
-
-							const sourceWarehouse = sourceWarehouses[0];
-							const sourceStorage = sourceWarehouse?.altegioId
-								? resolveAltegioStorageIds(sourceWarehouse.altegioId, {
-										consumablesId: sourceWarehouse.consumablesId,
-										salesId: sourceWarehouse.salesId,
-									})
-								: undefined;
-							if (
-								!(sourceWarehouse?.altegioId && sourceStorage?.consumablesId)
-							) {
-								// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
-								console.error(
-									`Source warehouse ${transferRow.sourceWarehouseId} not found`,
-								);
-								return c.json(
-									{
-										success: false,
-										message: `Source warehouse ${transferRow.sourceWarehouseId} not found`,
-									} satisfies ApiResponse,
-									404,
-								);
-							}
-
-							const departureDocument = await postAltegioStorageDocument(
-								sourceWarehouse.altegioId,
-								altegioHeaders,
-								{
-									typeId: ALTEGIO_DOCUMENT_TYPE_DEPARTURE,
-									comment: `Departure document for transfer ${transferRow.transferNumber}`,
-									storageId: sourceStorage.consumablesId,
-									createDate: new Date(),
-									...(sourceWarehouse.timeZone
-										? { timeZone: sourceWarehouse.timeZone }
-										: {}),
-								},
-								apiResponseSchemaDocument,
-							);
-
-							if (!departureDocument.success) {
-								// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
-								console.error("Failed to create departure document");
-								return c.json(
-									{
-										success: false,
-										message: "Failed to create departure document",
-									} satisfies ApiResponse,
-									500,
-								);
-							}
-
-							const departureMasterId = getAltegioDefaultMasterId();
-							if (!departureMasterId) {
-								// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
-								console.error(
-									"Missing required environment variable: ALTEGIO_DEFAULT_MASTER_ID",
-								);
-								return c.json(
-									{
-										success: false,
-										message:
-											"Altegio integration requires ALTEGIO_DEFAULT_MASTER_ID to be configured",
-									} satisfies ApiResponse,
-									500,
-								);
-							}
-
-							// Create goods transactions for each product in the transfer (departure)
-							for (const [
-								goodId,
-								{ totalQuantity, totalCost },
-							] of aggregatedTransactions) {
-								const transactionPayload: AltegioGoodsTransactionPayload = {
-									document_id: departureDocument.data.id,
-									good_id: goodId,
-									amount: totalQuantity,
-									cost_per_unit:
-										totalQuantity === 0 ? 0 : totalCost / totalQuantity,
-									discount: 0,
-									cost: totalCost,
-									operation_unit_type: 2,
-									master_id: departureMasterId,
-									comment: `Departure for transfer ${transferRow.transferNumber}`,
-								};
-
-								const transactionResult = await postAltegioGoodsTransaction(
-									sourceWarehouse.altegioId,
-									altegioHeaders,
-									transactionPayload,
-									apiResponseSchemaGoodsTransaction,
-								);
-
-								if (!transactionResult.success) {
-									// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
-									console.error(
-										`Failed to create departure goods transaction for good_id ${goodId}`,
-									);
-									return c.json(
-										{
-											success: false,
-											message: `Failed to create departure goods transaction for good_id ${goodId}`,
-										} satisfies ApiResponse,
-										500,
-									);
-								}
-							}
-						}
+					if (replicationResult.skipped) {
+						// biome-ignore lint/suspicious/noConsole: Logging provides replication visibility
+						console.log("Altegio transfer replication skipped", {
+							transferId: transferRow.id,
+							transferNumber: transferRow.transferNumber,
+							reason: replicationResult.message,
+						});
+					} else {
+						// biome-ignore lint/suspicious/noConsole: Logging provides replication visibility
+						console.log("Altegio transfer replication success", {
+							transferId: transferRow.id,
+							transferNumber: transferRow.transferNumber,
+							departureDocumentId:
+								replicationResult.data?.departureDocumentId,
+							arrivalDocumentId: replicationResult.data?.arrivalDocumentId,
+						});
 					}
 				}
 
