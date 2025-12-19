@@ -12,7 +12,7 @@ export const fetchWarehouseTransferByWarehouseId = async (
 
 	// Resolve a trusted origin and forward cookies safely using shared utilities
 	const origin = resolveTrustedOrigin();
-	const url = new URL("/api/auth/warehouse-transfers/external", origin);
+	const url = new URL("/api/auth/warehouse-transfers/by-warehouse", origin);
 	url.searchParams.set("warehouseId", warehouseId);
 	const headers = await buildCookieHeader(origin);
 
@@ -85,7 +85,7 @@ export const fetchWarehouseTransferByWarehouseIdServer = async (
 	}
 
 	const origin = resolveTrustedOrigin();
-	const url = new URL("/api/auth/warehouse-transfers/external", origin);
+	const url = new URL("/api/auth/warehouse-transfers/by-warehouse", origin);
 	const headers = await buildCookieHeader(origin);
 	url.searchParams.set("warehouseId", warehouseId);
 

@@ -179,10 +179,16 @@ const isTransferDetailArray = (
 const isTransferListItem = (value: unknown): value is TransferListItemShape =>
 	value !== null && typeof value === "object";
 
-const isArrayOfTransferListItem = (
+const filterTransferListItems = (
 	value: unknown,
-): value is TransferListItemShape[] =>
-	Array.isArray(value) && value.every((v) => isTransferListItem(v));
+): TransferListItemShape[] => {
+	if (!Array.isArray(value)) {
+		return [];
+	}
+	return value.filter((item): item is TransferListItemShape =>
+		isTransferListItem(item),
+	);
+};
 
 const toNumberIfNumber = (value: unknown): number | undefined =>
 	typeof value === "number" && Number.isFinite(value) ? value : undefined;
@@ -620,27 +626,25 @@ const createProductOptions = (
  */
 function extractTransferItems(root: APIResponse): TransferListItemShape[] {
 	const unknownRoot: unknown = root ?? [];
-	let list: unknown = [] as unknown[];
+	let list: TransferListItemShape[] = [];
 
 	if (Array.isArray(unknownRoot)) {
-		list = unknownRoot;
+		list = filterTransferListItems(unknownRoot);
 	} else {
 		const withData = unknownRoot as { data?: unknown };
 		const withTransfers = unknownRoot as { transfers?: unknown };
-		if (isArrayOfTransferListItem(withData?.data)) {
-			list = withData.data as unknown;
-		} else if (isArrayOfTransferListItem(withTransfers?.transfers)) {
-			list = withTransfers.transfers as unknown;
-		} else {
+		list = filterTransferListItems(withData?.data);
+		if (list.length === 0) {
+			list = filterTransferListItems(withTransfers?.transfers);
+		}
+		if (list.length === 0) {
 			const maybeData = (unknownRoot as { data?: { transfers?: unknown } })
 				?.data;
-			if (maybeData && isArrayOfTransferListItem(maybeData.transfers)) {
-				list = maybeData.transfers as unknown;
-			}
+			list = filterTransferListItems(maybeData?.transfers);
 		}
 	}
 
-	return isArrayOfTransferListItem(list) ? list : [];
+	return list;
 }
 
 /**
@@ -1022,6 +1026,7 @@ export function RecepcionesPage({
 		arrivalDate: string;
 		sourceWarehouseName: string | undefined;
 		destinationWarehouseName: string | undefined;
+		destinationWarehouseId: string | undefined;
 		totalItems: number;
 		isCompleted: boolean;
 		isPending: boolean;
@@ -1104,6 +1109,7 @@ export function RecepcionesPage({
 				shipmentId,
 				sourceWarehouseName,
 				destinationWarehouseName,
+				destinationWarehouseId,
 				arrivalDate,
 				totalItems,
 				isCompleted,
@@ -1355,7 +1361,27 @@ export function RecepcionesPage({
 					cellClassName: "text-[#687076] text-transition dark:text-[#9BA1A6]",
 				} satisfies ColumnMeta,
 				cell: ({ row }) => {
-					const { isCompleted, transferId } = row.original;
+					const { isCompleted, transferId, destinationWarehouseId } =
+						row.original;
+					const isNotReceivingWarehouse =
+						!isEncargado &&
+						destinationWarehouseId &&
+						destinationWarehouseId !== warehouseId;
+					if (isNotReceivingWarehouse) {
+						return (
+							<Button
+								asChild
+								className="theme-transition border-[#E5E7EB] text-[#11181C] hover:bg-[#F9FAFB] dark:border-[#2D3033] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
+								size="sm"
+								variant="secondary"
+							>
+								<Link href={`/recepciones/${transferId}`}>
+									<ArrowRight className="mr-1 h-4 w-4" />
+									Ver pedido
+								</Link>
+							</Button>
+						);
+					}
 					if (!isCompleted) {
 						return (
 							<Button
@@ -1385,7 +1411,7 @@ export function RecepcionesPage({
 				},
 			},
 		],
-		[formatDate],
+		[formatDate, isEncargado, warehouseId],
 	);
 
 	const statusFilterOptions = useMemo(

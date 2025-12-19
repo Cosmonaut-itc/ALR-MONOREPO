@@ -800,7 +800,7 @@ export function PedidosPage({
 						Visualiza y administra las solicitudes de reabastecimiento.
 					</p>
 				</div>
-				{canManageAllWarehouses && (
+			
 					<Dialog onOpenChange={setIsDialogOpen} open={isDialogOpen}>
 						<DialogTrigger asChild>
 							<Button className="bg-[#0a7ea4] text-white hover:bg-[#086885] dark:bg-[#0a7ea4] dark:hover:bg-[#0a7ea4]/80">
@@ -1014,7 +1014,7 @@ export function PedidosPage({
 							</form>
 						</DialogContent>
 					</Dialog>
-				)}
+				
 			</div>
 
 			<Card className="card-transition border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">

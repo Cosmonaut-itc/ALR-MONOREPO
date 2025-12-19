@@ -166,6 +166,10 @@ export function ReceptionDetailPage({
 			? transferDetails.data.transfer
 			: null;
 	}, [transferDetails]);
+	const canReceiveTransfer =
+		isEncargado ||
+		(warehouseId &&
+			generalTransferDetails?.destinationWarehouseId === warehouseId);
 
 	// Find the replenishment order ID linked to this transfer
 	const linkedOrderId = useMemo(() => {
@@ -402,6 +406,9 @@ const { data: fullOrderResponse } = useSuspenseQuery<
 	);
 
 	const handleMarkAllReceived = async () => {
+		if (!canReceiveTransfer) {
+			return;
+		}
 		markAllReceived();
 		try {
 			const payload: UpdateTransferStatusPayload = {
@@ -421,6 +428,9 @@ const { data: fullOrderResponse } = useSuspenseQuery<
 	};
 
 	const handleToggleItem = async (itemId: string, nextReceived: boolean) => {
+		if (!canReceiveTransfer) {
+			return;
+		}
 		toggleReceived(itemId);
 		try {
 			const payload: UpdateTransferItemStatusPayload = {
@@ -497,7 +507,7 @@ const { data: fullOrderResponse } = useSuspenseQuery<
 
 				<Button
 					className="theme-transition bg-[#0a7ea4] text-white hover:bg-[#0a7ea4]/90 disabled:opacity-50"
-					disabled={isAllReceived()}
+					disabled={isAllReceived() || !canReceiveTransfer}
 					onClick={handleMarkAllReceived}
 				>
 					<CheckCircle2 className="mr-2 h-4 w-4" />
@@ -800,7 +810,8 @@ const { data: fullOrderResponse } = useSuspenseQuery<
 																}
 																disabled={
 																	generalTransferDetails?.isCompleted ||
-																	(item.isReceived as boolean)
+																	(item.isReceived as boolean) ||
+																	!canReceiveTransfer
 																}
 																className="h-5 w-5 data-[state=checked]:border-[#0a7ea4] data-[state=checked]:bg-[#0a7ea4]"
 																onCheckedChange={(checked) =>
