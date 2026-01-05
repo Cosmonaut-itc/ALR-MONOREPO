@@ -712,8 +712,12 @@ function handleProductStockCreationError(
 	return null; // No specific error handling
 }
 
-// Feature flag to control external Altegio replication flow
-const ENABLE_ALTEGIO_REPLICATION = false;
+// Feature flag to control external Altegio replication flow (env-driven, defaults to enabled)
+const ENABLE_ALTEGIO_REPLICATION =
+	process.env.ENABLE_ALTEGIO_REPLICATION === undefined
+		? true
+		: process.env.ENABLE_ALTEGIO_REPLICATION.toLowerCase() === 'true' ||
+			process.env.ENABLE_ALTEGIO_REPLICATION === '1';
 
 /**
  * Initialize Hono application with typed context variables
@@ -5316,7 +5320,6 @@ const route = app
 				isCancelled: z.boolean().optional(),
 				completedBy: z.string().optional(),
 				notes: z.string().max(1000, "Notes too long").optional(),
-				replicateToAltegio: z.boolean().optional(),
 				altegioTotals: z
 					.array(
 						z.object({
@@ -5340,7 +5343,6 @@ const route = app
 					isCancelled,
 					completedBy,
 					notes,
-					replicateToAltegio,
 					altegioTotals,
 				} = c.req.valid("json");
 
@@ -5409,7 +5411,6 @@ const route = app
 				// After successful status update, optionally replicate to Altegio when completed
 				if (
 					ENABLE_ALTEGIO_REPLICATION &&
-					replicateToAltegio === true &&
 					transitionedToCompleted &&
 					transferRow.transferType === "external"
 				) {
@@ -5433,7 +5434,7 @@ const route = app
 							{
 								success: false,
 								message:
-									"When replicateToAltegio is true, altegioTotals must be provided",
+									"altegioTotals must be provided to replicate completed transfers",
 							} satisfies ApiResponse,
 							400,
 						);

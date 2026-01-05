@@ -915,7 +915,8 @@ export const replicateWarehouseTransferToAltegio = async ({
 					salesId: sourceWarehouse.salesId,
 				})
 			: undefined;
-		if (!(sourceWarehouse.altegioId && sourceStorage?.consumablesId)) {
+		const sourceHasConfig = Boolean(sourceWarehouse.altegioId && sourceStorage?.consumablesId);
+		if (!sourceHasConfig && !sourceWarehouse.isCedis) {
 			const message = `Source warehouse ${sourceWarehouseId} missing Altegio configuration`;
 			logFailure(message);
 			return { success: false, message };
@@ -927,7 +928,10 @@ export const replicateWarehouseTransferToAltegio = async ({
 					salesId: destinationWarehouse.salesId,
 				})
 			: undefined;
-		if (!(destinationWarehouse.altegioId && destinationStorage?.consumablesId)) {
+		const destinationHasConfig = Boolean(
+			destinationWarehouse.altegioId && destinationStorage?.consumablesId,
+		);
+		if (!destinationHasConfig && !destinationWarehouse.isCedis) {
 			const message = `Destination warehouse ${destinationWarehouseId} missing Altegio configuration`;
 			logFailure(message);
 			return { success: false, message };
@@ -942,73 +946,86 @@ export const replicateWarehouseTransferToAltegio = async ({
 		}
 
 		const totals = totalsValidation.data;
+		let arrivalDocumentId: number | undefined;
+		let departureDocumentId: number | undefined;
+		let transactionCount = 0;
 
 		// Create arrival first to avoid removing stock if destination creation fails.
-		const arrivalDocument = await postAltegioStorageDocument(
-			destinationWarehouse.altegioId,
-			headers,
-			{
-				typeId: ALTEGIO_DOCUMENT_TYPE_ARRIVAL,
-				comment: `Arrival document for transfer ${transferNumber}`,
-				storageId: destinationStorage.consumablesId,
-				createDate: new Date(),
-				...(destinationWarehouse.timeZone
-					? { timeZone: destinationWarehouse.timeZone }
-					: {}),
-			},
-			apiResponseSchemaDocument,
-		);
+		if (destinationHasConfig && destinationStorage) {
+			const arrivalDocument = await postAltegioStorageDocument(
+				destinationWarehouse.altegioId as number,
+				headers,
+				{
+					typeId: ALTEGIO_DOCUMENT_TYPE_ARRIVAL,
+					comment: `Arrival document for transfer ${transferNumber}`,
+					storageId: destinationStorage.consumablesId,
+					createDate: new Date(),
+					...(destinationWarehouse.timeZone
+						? { timeZone: destinationWarehouse.timeZone }
+						: {}),
+				},
+				apiResponseSchemaDocument,
+			);
 
-		if (!arrivalDocument.success) {
-			const message = 'Failed to create arrival document';
-			logFailure(message);
-			return { success: false, message };
+			if (!arrivalDocument.success) {
+				const message = 'Failed to create arrival document';
+				logFailure(message);
+				return { success: false, message };
+			}
+
+			const arrivalTransactions = await postTransferGoodsTransactions({
+				companyId: destinationWarehouse.altegioId as number,
+				headers,
+				documentId: arrivalDocument.data.id,
+				totals,
+				masterId,
+				comment: `Arrival for transfer ${transferNumber}`,
+			});
+
+			arrivalDocumentId = arrivalDocument.data.id;
+			transactionCount += arrivalTransactions;
 		}
 
-		const arrivalTransactions = await postTransferGoodsTransactions({
-			companyId: destinationWarehouse.altegioId,
-			headers,
-			documentId: arrivalDocument.data.id,
-			totals,
-			masterId,
-			comment: `Arrival for transfer ${transferNumber}`,
-		});
+		if (sourceHasConfig && sourceStorage) {
+			const departureDocument = await postAltegioStorageDocument(
+				sourceWarehouse.altegioId as number,
+				headers,
+				{
+					typeId: ALTEGIO_DOCUMENT_TYPE_DEPARTURE,
+					comment: `Departure document for transfer ${transferNumber}`,
+					storageId: sourceStorage.consumablesId,
+					createDate: new Date(),
+					...(sourceWarehouse.timeZone
+						? { timeZone: sourceWarehouse.timeZone }
+						: {}),
+				},
+				apiResponseSchemaDocument,
+			);
 
-		const departureDocument = await postAltegioStorageDocument(
-			sourceWarehouse.altegioId,
-			headers,
-			{
-				typeId: ALTEGIO_DOCUMENT_TYPE_DEPARTURE,
-				comment: `Departure document for transfer ${transferNumber}`,
-				storageId: sourceStorage.consumablesId,
-				createDate: new Date(),
-				...(sourceWarehouse.timeZone ? { timeZone: sourceWarehouse.timeZone } : {}),
-			},
-			apiResponseSchemaDocument,
-		);
+			if (!departureDocument.success) {
+				const message = 'Failed to create departure document';
+				logFailure(message);
+				return { success: false, message };
+			}
 
-		if (!departureDocument.success) {
-			const message = 'Failed to create departure document';
-			logFailure(message);
-			return { success: false, message };
+			const departureTransactions = await postTransferGoodsTransactions({
+				companyId: sourceWarehouse.altegioId as number,
+				headers,
+				documentId: departureDocument.data.id,
+				totals,
+				masterId,
+				comment: `Departure for transfer ${transferNumber}`,
+			});
+
+			departureDocumentId = departureDocument.data.id;
+			transactionCount += departureTransactions;
 		}
-
-		const departureTransactions = await postTransferGoodsTransactions({
-			companyId: sourceWarehouse.altegioId,
-			headers,
-			documentId: departureDocument.data.id,
-			totals,
-			masterId,
-			comment: `Departure for transfer ${transferNumber}`,
-		});
-
-		const transactionCount = arrivalTransactions + departureTransactions;
 		// biome-ignore lint/suspicious/noConsole: External API diagnostics are required for supportability
 		console.log('Altegio transfer replication succeeded', {
 			transferId,
 			transferNumber,
-			departureDocumentId: departureDocument.data.id,
-			arrivalDocumentId: arrivalDocument.data.id,
+			departureDocumentId,
+			arrivalDocumentId,
 			transactionCount,
 		});
 
@@ -1016,8 +1033,8 @@ export const replicateWarehouseTransferToAltegio = async ({
 			success: true,
 			message: 'Altegio transfer replication successful',
 			data: {
-				departureDocumentId: departureDocument.data.id,
-				arrivalDocumentId: arrivalDocument.data.id,
+				departureDocumentId,
+				arrivalDocumentId,
 				transactionCount,
 			},
 		};

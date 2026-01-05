@@ -59,5 +59,3 @@ When an **external** warehouse transfer is **completed** (`isCompleted=true`) an
     - Call `replicateWarehouseTransferToAltegio(...)`
     - `console.log` “replication success” with `{ transferId, departureDocumentId, arrivalDocumentId }`
     - `console.error` “replication failed” with `{ transferId, error }`
-
-## Notes / constraints
