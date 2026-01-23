@@ -4631,16 +4631,18 @@ const route = app
 				completedBy: z.string().optional(),
 				notes: z.string().max(1000, 'Notes too long').optional(),
 				replicateToAltegio: z.boolean().optional(),
-				altegioTotals: z.array(
-					z.object({
-						goodId: z.number().int().positive('Good ID must be positive'),
-						totalQuantity: z
-							.number()
-							.int()
-							.nonnegative('Quantity must be 0 or greater'),
-						totalCost: z.number().min(0, 'Total cost must be 0 or greater'),
-					}),
-				),
+				altegioTotals: z
+					.array(
+						z.object({
+							goodId: z.number().int().positive('Good ID must be positive'),
+							totalQuantity: z
+								.number()
+								.int()
+								.nonnegative('Quantity must be 0 or greater'),
+							totalCost: z.number().min(0, 'Total cost must be 0 or greater'),
+						}),
+					)
+					.optional(),
 			}),
 		),
 		async (c) => {
@@ -4716,27 +4718,86 @@ const route = app
 							);
 						}
 
-						if (!altegioTotals || altegioTotals.length === 0) {
+						const receivedTotals = await db
+							.select({
+								goodId: schemas.productStock.barcode,
+								totalQuantity: sql<number>`SUM(${schemas.warehouseTransferDetails.quantityTransferred})`,
+							})
+							.from(schemas.warehouseTransferDetails)
+							.innerJoin(
+								schemas.productStock,
+								eq(
+									schemas.productStock.id,
+									schemas.warehouseTransferDetails.productStockId,
+								),
+							)
+							.where(
+								and(
+									eq(schemas.warehouseTransferDetails.transferId, transferId),
+									eq(schemas.warehouseTransferDetails.isReceived, true),
+								),
+							)
+							.groupBy(schemas.productStock.barcode);
+
+						if (receivedTotals.length === 0) {
+							return c.json(
+								{
+									success: false,
+									message: 'No received items found to replicate to Altegio',
+								} satisfies ApiResponse,
+								400,
+							);
+						}
+
+						const invalidGoodIds = receivedTotals.filter((row) => row.goodId <= 0);
+						if (invalidGoodIds.length > 0) {
 							return c.json(
 								{
 									success: false,
 									message:
-										'When replicateToAltegio is true, altegioTotals must be provided',
+										'One or more received items are missing a valid barcode for Altegio replication',
 								} satisfies ApiResponse,
 								400,
 							);
 						}
 
 						const altegioHeaders = { authHeader, acceptHeader };
-						const aggregatedTransactions = altegioTotals.reduce<
+						const costPerUnitByGoodId = new Map<number, number>();
+						if (altegioTotals && altegioTotals.length > 0) {
+							for (const item of altegioTotals) {
+								const unitCost =
+									item.totalQuantity > 0
+										? item.totalCost / item.totalQuantity
+										: 0;
+								costPerUnitByGoodId.set(item.goodId, unitCost);
+							}
+						}
+
+						const aggregatedTransactions = receivedTotals.reduce<
 							Map<number, AggregatedTotals>
 						>((accumulator, item) => {
+							const totalQuantity = Number(item.totalQuantity ?? 0);
+							if (totalQuantity <= 0) {
+								return accumulator;
+							}
+							const costPerUnit = costPerUnitByGoodId.get(item.goodId) ?? 0;
 							accumulator.set(item.goodId, {
-								totalQuantity: item.totalQuantity,
-								totalCost: item.totalCost,
+								totalQuantity,
+								totalCost: costPerUnit * totalQuantity,
 							});
 							return accumulator;
 						}, new Map());
+
+						if (aggregatedTransactions.size === 0) {
+							return c.json(
+								{
+									success: false,
+									message:
+										'No received item quantities available for Altegio sync',
+								} satisfies ApiResponse,
+								400,
+							);
+						}
 
 						// Destination arrival (if not DC)
 						if (transferRow.destinationWarehouseId !== DistributionCenterId) {
