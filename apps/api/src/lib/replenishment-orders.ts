@@ -468,16 +468,12 @@ export async function linkReplenishmentOrderToTransfer({
 			user.role === 'encargado' ||
 			(user.warehouseId && user.warehouseId === order.cedisWarehouseId);
 
-		if (isAuthorized) {
-			// User is authorized, continue with the operation
-		} else {
-			let reason: string;
+		if (!isAuthorized) {
+			let reason = 'Insufficient permissions to link transfer to this order';
 			if (!user.warehouseId) {
 				reason = 'User is not assigned to a warehouse';
 			} else if (user.warehouseId !== order.cedisWarehouseId) {
 				reason = `User warehouse (${user.warehouseId}) does not match order CEDIS warehouse (${order.cedisWarehouseId})`;
-			} else {
-				reason = 'Insufficient permissions to link transfer to this order';
 			}
 
 			throw new HTTPException(403, {

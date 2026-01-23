@@ -4,8 +4,8 @@ import { expo } from '@better-auth/expo';
 import { type BetterAuthOptions, betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { apiKey, customSession } from 'better-auth/plugins';
-import { db } from '../db/index'; // your drizzle instance
 import { authAllowedOrigins } from '../constants';
+import { db } from '../db/index'; // your drizzle instance
 
 // Define the options to ensure proper type inference
 const options = {
