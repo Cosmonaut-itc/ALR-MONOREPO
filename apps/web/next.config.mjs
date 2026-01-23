@@ -7,7 +7,6 @@ const nextConfig = {
 		unoptimized: true,
 	},
 	reactCompiler: true,
-	// biome-ignore lint/suspicious/useAwait: we need to use await here
 	async rewrites() {
 		return [
 			{

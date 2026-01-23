@@ -33,7 +33,7 @@ const parseStockLimitResponse = async (response: Response) => {
 	let result: StockLimitResponse | null = null;
 	try {
 		result = (await response.json()) as StockLimitResponse;
-	} catch (error) {
+	} catch (_error) {
 		// Ignore JSON parse errors; we'll handle below
 	}
 

@@ -25,9 +25,7 @@ export const useAuthStore = create<AuthState>()(
 							user,
 							isAuthenticated: true,
 						});
-					} catch (error) {
-						// biome-ignore lint/suspicious/noConsole: Needed for error logging
-						console.error('Error al iniciar sesión:', error);
+					} catch (error) {						console.error('Error al iniciar sesión:', error);
 					}
 				},
 

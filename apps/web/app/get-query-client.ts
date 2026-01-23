@@ -24,7 +24,6 @@ export function getQueryClient() {
 	if (isServer) {
 		// Server: always make a new query client
 		return makeQueryClient();
-		// biome-ignore lint/style/noUselessElse: Needed for server side rendering
 	} else {
 		// Browser: make a new query client if we don't already have one
 		// This is very important, so we don't re-make a new client if React

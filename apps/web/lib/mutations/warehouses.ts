@@ -90,9 +90,7 @@ export const useUpdateWarehouseAltegioConfigMutation = () =>
 					: 'Error al actualizar configuración de Altegio';
 			toast.error(errorMessage, {
 				id: 'update-warehouse-altegio-config',
-			});
-			// biome-ignore lint/suspicious/noConsole: logging
-			console.error(error);
+			});			console.error(error);
 		},
 	});
 
@@ -127,8 +125,6 @@ export const useCreateWarehouseMutation = () =>
 		onError: (error) => {
 			toast.error('Error al crear bodega', {
 				id: 'create-warehouse',
-			});
-			// biome-ignore lint/suspicious/noConsole: logging
-			console.error(error);
+			});			console.error(error);
 		},
 	});

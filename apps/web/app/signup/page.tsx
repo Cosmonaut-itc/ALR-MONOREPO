@@ -1,4 +1,3 @@
-/** biome-ignore-all lint/correctness/noChildrenProp: Needed for form usage */
 'use memo';
 'use client';
 
@@ -80,7 +79,6 @@ export default function SignUpPage() {
 					? error.message
 					: 'Error al crear la cuenta. Intenta de nuevo.';
 			toast.error(errorMessage);
-			// biome-ignore lint/suspicious/noConsole: Needed for error logging in development
 			console.error(error);
 		}
 	};
@@ -133,7 +131,20 @@ export default function SignUpPage() {
 								</Label>
 								<div className="relative">
 									<form.Field
-										children={(field) => (
+										name="name"
+										validators={{
+											onChange: ({ value }) => {
+												if (value.length === 0) {
+													return 'El nombre es requerido';
+												}
+												if (value.length < 3) {
+													return 'El nombre debe tener al menos 3 caracteres';
+												}
+												return undefined;
+											},
+										}}
+									>
+										{(field) => (
 											<>
 												<Input
 													className="input-transition border-[#E5E7EB] bg-white text-[#11181C] placeholder:text-[#687076] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:placeholder:text-[#9BA1A6]"
@@ -154,19 +165,7 @@ export default function SignUpPage() {
 												)}
 											</>
 										)}
-										name="name"
-										validators={{
-											onChange: ({ value }) => {
-												if (value.length === 0) {
-													return 'El nombre es requerido';
-												}
-												if (value.length < 3) {
-													return 'El nombre debe tener al menos 3 caracteres';
-												}
-												return undefined;
-											},
-										}}
-									/>
+									</form.Field>
 								</div>
 							</div>
 
@@ -180,7 +179,22 @@ export default function SignUpPage() {
 								</Label>
 								<div className="relative">
 									<form.Field
-										children={(field) => (
+										name="email"
+										validators={{
+											onChange: ({ value }) => {
+												if (value.length === 0) {
+													return 'El correo electrónico es requerido';
+												}
+												// Basic email validation
+												const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+												if (!emailRegex.test(value)) {
+													return 'Correo electrónico inválido';
+												}
+												return undefined;
+											},
+										}}
+									>
+										{(field) => (
 											<>
 												<Input
 													className="input-transition border-[#E5E7EB] bg-white text-[#11181C] placeholder:text-[#687076] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:placeholder:text-[#9BA1A6]"
@@ -201,21 +215,7 @@ export default function SignUpPage() {
 												)}
 											</>
 										)}
-										name="email"
-										validators={{
-											onChange: ({ value }) => {
-												if (value.length === 0) {
-													return 'El correo electrónico es requerido';
-												}
-												// Basic email validation
-												const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-												if (!emailRegex.test(value)) {
-													return 'Correo electrónico inválido';
-												}
-												return undefined;
-											},
-										}}
-									/>
+									</form.Field>
 								</div>
 							</div>
 
@@ -229,7 +229,20 @@ export default function SignUpPage() {
 								</Label>
 								<div className="relative">
 									<form.Field
-										children={(field) => (
+										name="password"
+										validators={{
+											onChange: ({ value }) => {
+												if (value.length === 0) {
+													return 'La contraseña es requerida';
+												}
+												if (value.length < 8) {
+													return 'La contraseña debe tener al menos 8 caracteres';
+												}
+												return undefined;
+											},
+										}}
+									>
+										{(field) => (
 											<>
 												<Input
 													className="input-transition border-[#E5E7EB] bg-white text-[#11181C] placeholder:text-[#687076] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:placeholder:text-[#9BA1A6]"
@@ -250,19 +263,7 @@ export default function SignUpPage() {
 												)}
 											</>
 										)}
-										name="password"
-										validators={{
-											onChange: ({ value }) => {
-												if (value.length === 0) {
-													return 'La contraseña es requerida';
-												}
-												if (value.length < 8) {
-													return 'La contraseña debe tener al menos 8 caracteres';
-												}
-												return undefined;
-											},
-										}}
-									/>
+									</form.Field>
 									<Button
 										className="theme-transition absolute top-0 right-0 h-full px-3 py-2 hover:bg-transparent"
 										disabled={isPending}
@@ -295,7 +296,24 @@ export default function SignUpPage() {
 								</Label>
 								<div className="relative">
 									<form.Field
-										children={(field) => (
+										name="confirmPassword"
+										validators={{
+											onChange: ({ value }) => {
+												if (value.length === 0) {
+													return 'Debes confirmar la contraseña';
+												}
+												// Check if passwords match
+												if (
+													form.state.values.password &&
+													value !== form.state.values.password
+												) {
+													return 'Las contraseñas no coinciden';
+												}
+												return undefined;
+											},
+										}}
+									>
+										{(field) => (
 											<>
 												<Input
 													className="input-transition border-[#E5E7EB] bg-white text-[#11181C] placeholder:text-[#687076] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:placeholder:text-[#9BA1A6]"
@@ -316,23 +334,7 @@ export default function SignUpPage() {
 												)}
 											</>
 										)}
-										name="confirmPassword"
-										validators={{
-											onChange: ({ value }) => {
-												if (value.length === 0) {
-													return 'Debes confirmar la contraseña';
-												}
-												// Check if passwords match
-												if (
-													form.state.values.password &&
-													value !== form.state.values.password
-												) {
-													return 'Las contraseñas no coinciden';
-												}
-												return undefined;
-											},
-										}}
-									/>
+									</form.Field>
 									<Button
 										className="theme-transition absolute top-0 right-0 h-full px-3 py-2 hover:bg-transparent"
 										disabled={isPending}

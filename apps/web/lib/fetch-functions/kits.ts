@@ -11,7 +11,6 @@ export const getAllKits = async () => {
 		const response = await client.api.auth.kits.all.$get();
 		return response.json();
 	} catch (error) {
-		// biome-ignore lint/suspicious/noConsole: Needed for debugging
 		console.error(error);
 		return null;
 	}
@@ -30,7 +29,6 @@ export const getKitsByEmployee = async (employeeId: string) => {
 		});
 		return response.json();
 	} catch (error) {
-		// biome-ignore lint/suspicious/noConsole: Needed for debugging
 		console.error(error);
 		return null;
 	}
@@ -49,7 +47,6 @@ export const getKitDetails = async (kitId: string) => {
 		});
 		return response.json();
 	} catch (error) {
-		// biome-ignore lint/suspicious/noConsole: Needed for debugging
 		console.error(error);
 		return null;
 	}
@@ -68,7 +65,6 @@ export const getAllEmployees = async () => {
 		const response = await client.api.auth.employee.all.$get();
 		return response.json();
 	} catch (error) {
-		// biome-ignore lint/suspicious/noConsole: Needed for debugging
 		console.error(error);
 		return null;
 	}
@@ -90,7 +86,6 @@ export const getEmployeesByUserId = async (userId: string) => {
 		});
 		return response.json();
 	} catch (error) {
-		// biome-ignore lint/suspicious/noConsole: Needed for debugging
 		console.error(error);
 		return null;
 	}
@@ -113,7 +108,6 @@ export const getEmployeesByWarehouseId = async (warehouseId: string) => {
 		});
 		return response.json();
 	} catch (error) {
-		// biome-ignore lint/suspicious/noConsole: Needed for debugging
 		console.error(error);
 		return null;
 	}
@@ -132,7 +126,6 @@ export const getAllPermissions = async () => {
 		const response = await client.api.auth.permissions.all.$get();
 		return response.json();
 	} catch (error) {
-		// biome-ignore lint/suspicious/noConsole: Needed for debugging
 		console.error(error);
 		return null;
 	}

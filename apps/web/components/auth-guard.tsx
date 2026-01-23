@@ -34,7 +34,7 @@ export const RoleGuard: React.FC<RoleGuardProps> = ({
 		value === "employee" || value === "encargado" || value === "admin";
 
 	const derivedRole: RoleName | null = isRoleName(storeUser?.role)
-		? storeUser!.role
+		? storeUser?.role ?? null
 		: null;
 
 	const effectiveRole: RoleName | null = userRole ?? derivedRole ?? null;

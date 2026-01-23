@@ -503,7 +503,6 @@ export function AssignKitModal({
 						});
 					} catch (error) {
 						// Log error but don't fail the entire kit creation
-						// biome-ignore lint/suspicious/noConsole: Needed for debugging
 						console.error(
 							`Error updating usage for product ${product.productId}:`,
 							error,

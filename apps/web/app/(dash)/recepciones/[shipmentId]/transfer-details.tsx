@@ -159,7 +159,7 @@ export function ReceptionDetailPage({
 				? transferDetails.data.details
 				: [],
 		);
-	}, [transferDetails]);
+	}, [setItems, transferDetails]);
 
 	const generalTransferDetails = useMemo(() => {
 		return transferDetails && "data" in transferDetails
@@ -381,7 +381,7 @@ const { data: fullOrderResponse } = useSuspenseQuery<
 		}
 
 		return Array.from(groups.values());
-	}, [items, productCatalog]);
+	}, [items, productInfoByBarcode]);
 
 	const altegioTotals = useMemo(() => {
 		const totals = new Map<number, { qty: number; unitCost: number }>();

@@ -46,7 +46,6 @@ export function DisposeItemDialog() {
 			toast.success('Artículo dado de baja exitosamente');
 		} catch (error) {
 			toast.error('Error al dar de baja el artículo');
-			// biome-ignore lint/suspicious/noConsole: Needed for error logging
 			console.error(error);
 		}
 	};

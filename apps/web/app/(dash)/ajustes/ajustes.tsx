@@ -5,7 +5,7 @@ import { useForm } from "@tanstack/react-form";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { Check, ChevronsUpDown, ShieldAlert, Users } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -141,9 +141,13 @@ type PermissionsResponse = Awaited<ReturnType<typeof getAllPermissions>>;
  */
 export function AjustesPage({ role }: { role: string }) {
 	const router = useRouter();
-	const isEncargado = role === "encargado";
+	const normalizedRole =
+		typeof role === "string" ? role.toLowerCase() : String(role ?? "");
+	const isEncargado = normalizedRole === "encargado";
+	const isEmployee = normalizedRole === "employee";
 	const user = useAuthStore((s) => s.user);
 	const warehouseId = user?.warehouseId ?? "";
+	const employeeWarehouseId = isEmployee ? warehouseId.trim() : "";
 
 	// Fetch users and warehouses data
 	const { data: usersResponse } = useSuspenseQuery<
@@ -212,6 +216,15 @@ const warehouses =
 		}
 		return [];
 	}, [employeesResponse]);
+	const scopedEmployees = useMemo(() => {
+		if (isEncargado) {
+			return employees;
+		}
+		if (!warehouseId) {
+			return [];
+		}
+		return employees.filter((employee) => employee.warehouseId === warehouseId);
+	}, [employees, isEncargado, warehouseId]);
 
 	const permissions =
 		permissionsResponse && "data" in permissionsResponse
@@ -231,6 +244,7 @@ const warehouses =
 	const [permissionComboboxOpen, setPermissionComboboxOpen] = useState(false);
 	const [altegioWarehouseComboboxOpen, setAltegioWarehouseComboboxOpen] =
 		useState(false);
+	const isEmployeeWarehouseLocked = isEmployee;
 
 	const ForbiddenCard = ({
 		title,
@@ -285,12 +299,21 @@ const warehouses =
 		defaultValues: {
 			name: "",
 			surname: "",
-			warehouseId: "",
+			warehouseId: employeeWarehouseId,
 			passcode: "",
 			userId: "",
 			permissions: "",
 		},
 	});
+
+	useEffect(() => {
+		if (!isEmployee || !employeeWarehouseId) {
+			return;
+		}
+		if (employeeForm.state.values.warehouseId !== employeeWarehouseId) {
+			employeeForm.setFieldValue("warehouseId", employeeWarehouseId);
+		}
+	}, [employeeForm, employeeWarehouseId, isEmployee]);
 
 	// Form instance for warehouse Altegio config
 	const altegioConfigForm = useForm({
@@ -341,7 +364,6 @@ const warehouses =
 			}
 		} catch (error) {
 			toast.error("No se pudo crear el usuario");
-			// biome-ignore lint/suspicious/noConsole: logging
 			console.error(error);
 		}
 	};
@@ -403,7 +425,6 @@ const warehouses =
 					? error.message
 					: "No se pudo actualizar el usuario";
 			toast.error(errorMessage);
-			// biome-ignore lint/suspicious/noConsole: logging
 			console.error(error);
 		}
 	};
@@ -478,7 +499,7 @@ const warehouses =
 		}
 
 		// Check if employee already exists (by name and surname combination)
-		const existingEmployee = employees.find(
+		const existingEmployee = scopedEmployees.find(
 			(emp) =>
 				emp.name.toLowerCase() === name.trim().toLowerCase() &&
 				emp.surname.toLowerCase() === surname.trim().toLowerCase(),
@@ -533,7 +554,6 @@ const warehouses =
 			router.refresh();
 		} catch (error) {
 			// Error handling is done in the mutation hook
-			// biome-ignore lint/suspicious/noConsole: Needed for debugging
 			console.error(error);
 		}
 	};
@@ -624,7 +644,6 @@ const warehouses =
 			router.refresh();
 		} catch (error) {
 			// Error handling is done in the mutation hook
-			// biome-ignore lint/suspicious/noConsole: Needed for debugging
 			console.error(error);
 		}
 	};
@@ -901,7 +920,6 @@ const warehouses =
 																	aria-expanded={userComboboxOpen}
 																	className="input-transition h-10 w-full justify-between border-[#E5E7EB] bg-white text-[#11181C] hover:bg-white hover:text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:hover:bg-[#151718] dark:hover:text-[#ECEDEE]"
 																	disabled={isUpdatingUser}
-																	role="combobox"
 																	type="button"
 																	variant="outline"
 																>
@@ -1018,7 +1036,6 @@ const warehouses =
 																aria-expanded={warehouseComboboxOpen}
 																className="input-transition h-10 w-full justify-between border-[#E5E7EB] bg-white text-[#11181C] hover:bg-white hover:text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:hover:bg-[#151718] dark:hover:text-[#ECEDEE]"
 																disabled={isUpdatingUser}
-																role="combobox"
 																type="button"
 																variant="outline"
 															>
@@ -1267,7 +1284,6 @@ const warehouses =
 																aria-expanded={altegioWarehouseComboboxOpen}
 																className="input-transition h-10 w-full justify-between border-[#E5E7EB] bg-white text-[#11181C] hover:bg-white hover:text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:hover:bg-[#151718] dark:hover:text-[#ECEDEE]"
 																disabled={isUpdatingAltegioConfig}
-																role="combobox"
 																type="button"
 																variant="outline"
 															>
@@ -1609,15 +1625,23 @@ const warehouses =
 											{(field) => (
 												<>
 													<Popover
-														onOpenChange={setEmployeeWarehouseComboboxOpen}
+														onOpenChange={(open) => {
+															if (isEmployeeWarehouseLocked) {
+																setEmployeeWarehouseComboboxOpen(false);
+																return;
+															}
+															setEmployeeWarehouseComboboxOpen(open);
+														}}
 														open={employeeWarehouseComboboxOpen}
 													>
 														<PopoverTrigger asChild>
 															<Button
 																aria-expanded={employeeWarehouseComboboxOpen}
 																className="input-transition h-10 w-full justify-between border-[#E5E7EB] bg-white text-[#11181C] hover:bg-white hover:text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:hover:bg-[#151718] dark:hover:text-[#ECEDEE]"
-																disabled={isCreatingEmployee}
-																role="combobox"
+																disabled={
+																	isCreatingEmployee ||
+																	isEmployeeWarehouseLocked
+																}
 																type="button"
 																variant="outline"
 															>
@@ -1726,7 +1750,6 @@ const warehouses =
 															aria-expanded={employeeUserComboboxOpen}
 															className="input-transition h-10 w-full justify-between border-[#E5E7EB] bg-white text-[#11181C] hover:bg-white hover:text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:hover:bg-[#151718] dark:hover:text-[#ECEDEE]"
 															disabled={isCreatingEmployee}
-															role="combobox"
 															type="button"
 															variant="outline"
 														>
@@ -1800,7 +1823,6 @@ const warehouses =
 															aria-expanded={permissionComboboxOpen}
 															className="input-transition h-10 w-full justify-between border-[#E5E7EB] bg-white text-[#11181C] hover:bg-white hover:text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:hover:bg-[#151718] dark:hover:text-[#ECEDEE]"
 															disabled={isCreatingEmployee}
-															role="combobox"
 															type="button"
 															variant="outline"
 														>
@@ -1877,14 +1899,15 @@ const warehouses =
 									Empleadas registradas
 								</CardTitle>
 								<CardDescription className="text-[#687076] dark:text-[#9BA1A6]">
-									Total: {employees.length} emplead@(s) en el sistema
-									{!isEncargado && ` (bodega actual: ${employees.length})`}
+									Total: {scopedEmployees.length} emplead@(s) en el sistema
+									{!isEncargado &&
+										` (bodega actual: ${scopedEmployees.length})`}
 								</CardDescription>
 							</CardHeader>
 							<CardContent>
-								{employees.length > 0 ? (
+								{scopedEmployees.length > 0 ? (
 									<div className="space-y-2">
-										{employees.map((emp) => (
+										{scopedEmployees.map((emp) => (
 											<div
 												className="flex items-center justify-between rounded-lg border border-[#E5E7EB] p-3 dark:border-[#2D3033]"
 												key={emp.id}

@@ -34,12 +34,7 @@ import { useUpdateKit, useUpdateKitItemStatus } from "@/lib/mutations/kits";
 import { queryKeys } from "@/lib/query-keys";
 import { cn } from "@/lib/utils";
 import { useKitsStore } from "@/stores/kits-store";
-import type {
-	KitDetails,
-	KitDetailsResponse,
-	KitItem,
-	KitSummary,
-} from "@/types";
+import type { KitDetailsResponse } from "@/types";
 import { SkeletonKitInspectionGroup } from "@/ui/skeletons/Skeleton.KitInspectionGroup";
 
 interface PageProps {

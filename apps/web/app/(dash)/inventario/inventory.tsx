@@ -3,7 +3,7 @@
 
 import { useForm } from "@tanstack/react-form";
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Check, ChevronsUpDown, X } from "lucide-react";
 import { toast } from "sonner";
 import { v4 as uuidv4 } from "uuid";
@@ -291,7 +291,9 @@ export function InventarioPage({
 	const normalizedRole =
 		typeof role === "string" ? role.toLowerCase() : String(role ?? "");
 	const isEncargado = normalizedRole === "encargado";
+	const isEmployee = normalizedRole === "employee";
 	const canManageKits = isEncargado || normalizedRole === "admin";
+	const employeeWarehouseId = isEmployee ? warehouseId.trim() : "";
 	const inventoryQueryParams = [isEncargado ? "all" : warehouseId];
 	const inventoryQueryFn = isEncargado
 		? getAllProductStock
@@ -462,7 +464,6 @@ export function InventarioPage({
 	const {
 		mutateAsync: createInventoryItem,
 		isPending: isCreatingInventoryItem,
-		isSuccess: isCreatingInventoryItemSuccess,
 	} = useCreateInventoryItem();
 	const {
 		mutateAsync: createAltegioProduct,
@@ -476,7 +477,8 @@ export function InventarioPage({
 	const [isCreateAltegioDialogOpen, setIsCreateAltegioDialogOpen] =
 		useState(false);
 	const [selectedProductValue, setSelectedProductValue] = useState("");
-	const [selectedWarehouseId, setSelectedWarehouseId] = useState("");
+	const [selectedWarehouseId, setSelectedWarehouseId] =
+		useState(employeeWarehouseId);
 	const [qrQuantity, setQrQuantity] = useState(1);
 	const [isKit, setIsKit] = useState(false);
 	const [isPrintingLabels, setIsPrintingLabels] = useState(false);
@@ -484,13 +486,14 @@ export function InventarioPage({
 		"general",
 	);
 	const [isLocationPopoverOpen, setIsLocationPopoverOpen] = useState(false);
+	const isWarehouseSelectLocked = isEmployee && employeeWarehouseId.length > 0;
 
-	const resetAddProductForm = useCallback(() => {
+	const resetAddProductForm = useCallback((nextWarehouseId: string) => {
 		setSelectedProductValue("");
-		setSelectedWarehouseId("");
+		setSelectedWarehouseId(nextWarehouseId);
 		setQrQuantity(1);
 		setIsKit(false);
-	}, [isCreatingInventoryItemSuccess]);
+	}, []);
 
 	const productOptions = useMemo<CatalogProductOption[]>(() => {
 		if (
@@ -723,14 +726,25 @@ export function InventarioPage({
 			);
 	}, [warehouseCabinetMap]);
 
+	useEffect(() => {
+		if (!isWarehouseSelectLocked) {
+			return;
+		}
+		setSelectedWarehouseId(employeeWarehouseId);
+	}, [employeeWarehouseId, isWarehouseSelectLocked]);
+
 	const handleAddDialogChange = useCallback(
 		(open: boolean) => {
 			setIsAddDialogOpen(open);
 			if (!open) {
-				resetAddProductForm();
+				resetAddProductForm(employeeWarehouseId);
+				return;
+			}
+			if (isWarehouseSelectLocked) {
+				setSelectedWarehouseId(employeeWarehouseId);
 			}
 		},
-		[resetAddProductForm],
+		[employeeWarehouseId, isWarehouseSelectLocked, resetAddProductForm],
 	);
 
 	const handleCreateAltegioDialogChange = useCallback(
@@ -1034,7 +1048,7 @@ export function InventarioPage({
 							uuid: uuidv4(),
 							productName: selectedProduct.name,
 						}));
-		} catch (error) {
+		} catch (_error) {
 			// Mutation already surfaced the error via toast; stop the flow silently.
 			return;
 		}
@@ -1052,7 +1066,7 @@ export function InventarioPage({
 				},
 			);
 			setIsAddDialogOpen(false);
-			resetAddProductForm();
+			resetAddProductForm(employeeWarehouseId);
 		} catch (error) {
 			const message =
 				error instanceof Error && error.message
@@ -1068,6 +1082,7 @@ export function InventarioPage({
 		distributionCenterIds,
 		handlePrintQrLabels,
 		qrQuantity,
+		employeeWarehouseId,
 		resetAddProductForm,
 		selectedProduct,
 		selectedWarehouseId,
@@ -1090,7 +1105,7 @@ export function InventarioPage({
 					},
 				]);
 				toast.success("Código QR generado nuevamente.", { duration: 2000 });
-			} catch (error) {
+			} catch (_error) {
 				toast.error("No se pudo generar el código QR.");
 			}
 		},
@@ -2353,8 +2368,15 @@ export function InventarioPage({
 												Almacén destino
 											</Label>
 											<Select
-												disabled={warehouseOptions.length === 0}
-												onValueChange={setSelectedWarehouseId}
+												disabled={
+													warehouseOptions.length === 0 || isWarehouseSelectLocked
+												}
+												onValueChange={(value) => {
+													if (isWarehouseSelectLocked) {
+														return;
+													}
+													setSelectedWarehouseId(value);
+												}}
 												value={selectedWarehouseId}
 											>
 												<SelectTrigger className="w-full" id="warehouse-select">
@@ -2475,6 +2497,7 @@ export function InventarioPage({
 											</div>
 											<div className="px-4">
 												<svg
+													aria-hidden="true"
 													className="h-6 w-6 text-[#0a7ea4]"
 													fill="none"
 													stroke="currentColor"

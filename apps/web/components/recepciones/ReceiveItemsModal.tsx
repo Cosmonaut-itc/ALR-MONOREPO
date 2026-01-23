@@ -15,7 +15,6 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import type { Reception } from '@/lib/schemas';
 import { SkeletonReceiveForm } from '@/ui/skeletons/Skeleton.ReceiveForm';
 
 interface ReceiveItemsModalProps {

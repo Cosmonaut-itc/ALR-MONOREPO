@@ -1,7 +1,9 @@
 'use memo';
 
 import { Skeleton } from "@/components/ui/skeleton"
-import { Card, CardContent, CardHeader } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
+
+const SKELETON_LINES = ["line-1", "line-2"]
 
 export function SkeletonReceiveForm() {
   return (
@@ -23,8 +25,8 @@ export function SkeletonReceiveForm() {
         <Skeleton className="h-4 w-24 theme-transition" />
         
         {/* Mock lines */}
-        {Array.from({ length: 2 }).map((_, index) => (
-          <Card key={index} className="border-[#E5E7EB] dark:border-[#2D3033] bg-[#F9FAFB] dark:bg-[#1E1F20] card-transition">
+        {SKELETON_LINES.map((lineKey) => (
+          <Card key={lineKey} className="border-[#E5E7EB] dark:border-[#2D3033] bg-[#F9FAFB] dark:bg-[#1E1F20] card-transition">
             <CardContent className="p-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">

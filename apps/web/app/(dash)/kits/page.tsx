@@ -15,7 +15,6 @@ import {
 import {
 	fetchAllEmployeesServer,
 	fetchAllKitsServer,
-	fetchEmployeesByUserIdServer,
 	fetchEmployeesByWarehouseIdServer,
 } from "@/lib/server-functions/kits";
 import { getServerAuth } from "@/lib/server-functions/server-auth";
@@ -30,13 +29,11 @@ export default async function Page() {
 	const warehouseId = auth.user?.warehouseId ?? "";
 	const role = auth.user?.role ?? "";
 	const isEncargado = role === "encargado";
-	const kitKeyParam = isEncargado ? "all" : warehouseId;
 	const employeesKeyParam = isEncargado ? "all" : warehouseId;
 	const inventoryKeyParam = isEncargado ? "all" : warehouseId;
 	const employeesPrefetchFn = isEncargado
 		? fetchAllEmployeesServer
 		: () => fetchEmployeesByWarehouseIdServer(warehouseId);
-	const kitsPrefetchFn = isEncargado ? fetchAllKitsServer : fetchAllKitsServer;
 	const inventoryPrefetchFn = isEncargado
 		? fetchAllProductStockServer
 		: () => fetchStockByWarehouseServer(warehouseId);

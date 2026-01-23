@@ -133,9 +133,7 @@ export const useCreateReplenishmentOrder = () =>
 		onError: (error) => {
 			toast.error("Error al crear pedido", {
 				id: "create-replenishment-order",
-			});
-			// biome-ignore lint/suspicious/noConsole: Needed for debugging
-			console.error(error);
+			});			console.error(error);
 		},
 	});
 
@@ -169,9 +167,7 @@ export const useUpdateReplenishmentOrder = () =>
 		onError: (error) => {
 			toast.error("Error al actualizar pedido", {
 				id: "update-replenishment-order",
-			});
-			// biome-ignore lint/suspicious/noConsole: Needed for debugging
-			console.error(error);
+			});			console.error(error);
 		},
 	});
 
@@ -207,9 +203,7 @@ export const useLinkTransferToReplenishmentOrder = () =>
 		onError: (error) => {
 			toast.error("Error al vincular traspaso", {
 				id: "link-transfer-to-replenishment-order",
-			});
-			// biome-ignore lint/suspicious/noConsole: Needed for debugging
-			console.error(error);
+			});			console.error(error);
 		},
 	});
 
@@ -263,8 +257,6 @@ export const useMarkBuyOrderGenerated = () =>
 		onError: (error) => {
 			toast.error("Error al marcar pedidos de compra", {
 				id: "mark-buy-order-generated",
-			});
-			// biome-ignore lint/suspicious/noConsole: Needed for debugging
-			console.error(error);
+			});			console.error(error);
 		},
 	});

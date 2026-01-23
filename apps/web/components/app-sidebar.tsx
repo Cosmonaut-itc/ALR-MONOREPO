@@ -83,6 +83,12 @@ const navigationItems = [
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 	const router = useRouter();
 	const { user, logout } = useAuthStore();
+	const normalizedRole =
+		typeof user?.role === "string" ? user.role.toLowerCase() : "";
+	const isEmployee = normalizedRole === "employee";
+	const visibleNavigationItems = isEmployee
+		? navigationItems.filter((item) => item.url !== "/estadisticas")
+		: navigationItems;
 
 	const { mutateAsync } = useLogoutMutation();
 
@@ -96,7 +102,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 			}
 		} catch (error) {
 			toast.error("Error al cerrar sesión");
-			// biome-ignore lint/suspicious/noConsole: Needed for error logging
 			console.error(error);
 		}
 	};
@@ -122,10 +127,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 				<SidebarGroup>
 					<SidebarGroupLabel className="text-[#687076] dark:text-[#9BA1A6]">
 						Navegación Principal
-					</SidebarGroupLabel>
+						</SidebarGroupLabel>
 					<SidebarGroupContent>
 						<SidebarMenu>
-							{navigationItems.map((item) => (
+							{visibleNavigationItems.map((item) => (
 								<SidebarMenuItem key={item.title}>
 									<SidebarMenuButton
 										asChild
