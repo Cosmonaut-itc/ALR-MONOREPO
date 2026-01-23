@@ -3,6 +3,7 @@
 
 'use memo';
 import { dehydrate, HydrationBoundary } from '@tanstack/react-query';
+import { notFound } from "next/navigation";
 import { getQueryClient } from '@/app/get-query-client';
 import { GenericBoundaryWrapper } from '@/components/suspense-generics/general-wrapper';
 import { createQueryKey } from '@/lib/helpers';
@@ -26,6 +27,20 @@ type RecepcionesRouteParams = {
 	shipmentId: string;
 };
 
+/**
+ * Normalizes a warehouse identifier from transfer detail payloads.
+ */
+const readWarehouseId = (value: unknown): string | null => {
+	if (typeof value === "string") {
+		const trimmed = value.trim();
+		return trimmed.length > 0 ? trimmed : null;
+	}
+	if (typeof value === "number" && Number.isFinite(value)) {
+		return String(value);
+	}
+	return null;
+};
+
 export default async function Page({
 	params,
 }: {
@@ -33,16 +48,54 @@ export default async function Page({
 }) {
 	const queryClient = getQueryClient();
 	const auth = await getServerAuth();
-	const warehouseId = auth.user?.warehouseId;
+	const warehouseId = auth.user?.warehouseId ?? "";
 	const role = auth.user?.role ?? "";
-	const isEncargado = role === "encargado" || role === "admin";
+	const normalizedRole =
+		typeof role === "string" ? role.toLowerCase() : String(role ?? "");
+	const isEncargado =
+		normalizedRole === "encargado" || normalizedRole === "admin";
 	const { shipmentId } = await params;
 
 	// Prefetch transfer details
-	queryClient.prefetchQuery({
-		queryKey: createQueryKey(queryKeys.recepcionDetail, [shipmentId]),
-		queryFn: () => fetchTransferDetailsById(shipmentId),
-	});
+	let sourceWarehouseId: string | null = null;
+	let destinationWarehouseId: string | null = null;
+	try {
+		const transferDetail = await queryClient.fetchQuery({
+			queryKey: createQueryKey(queryKeys.recepcionDetail, [shipmentId]),
+			queryFn: () => fetchTransferDetailsById(shipmentId),
+		});
+		if (transferDetail && typeof transferDetail === "object") {
+			const detailData = (transferDetail as { data?: unknown }).data;
+			if (detailData && typeof detailData === "object") {
+				const transfer = (detailData as { transfer?: unknown }).transfer;
+				if (transfer && typeof transfer === "object") {
+					const record = transfer as Record<string, unknown>;
+					sourceWarehouseId = readWarehouseId(record.sourceWarehouseId);
+					destinationWarehouseId = readWarehouseId(
+						record.destinationWarehouseId,
+					);
+				}
+			}
+		}
+	} catch (error) {
+		console.error(error);
+		console.error("Error prefetching transfer details");
+		if (!isEncargado) {
+			notFound();
+		}
+	}
+	if (!isEncargado) {
+		const scopedWarehouseId = warehouseId.trim();
+		if (!scopedWarehouseId) {
+			notFound();
+		}
+		const isInScope =
+			sourceWarehouseId === scopedWarehouseId ||
+			destinationWarehouseId === scopedWarehouseId;
+		if (!isInScope) {
+			notFound();
+		}
+	}
 
 	// Prefetch product catalog
 	queryClient.prefetchQuery({

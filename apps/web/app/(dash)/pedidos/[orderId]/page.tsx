@@ -27,6 +27,20 @@ type RouteProps = {
 	}>;
 };
 
+/**
+ * Normalizes a warehouse identifier from API payloads.
+ */
+const readWarehouseId = (value: unknown): string | null => {
+	if (typeof value === "string") {
+		const trimmed = value.trim();
+		return trimmed.length > 0 ? trimmed : null;
+	}
+	if (typeof value === "number" && Number.isFinite(value)) {
+		return String(value);
+	}
+	return null;
+};
+
 export default async function PedidoDetailRoute({ params }: RouteProps) {
 	const { orderId } = await params;
 	if (!orderId) {
@@ -36,43 +50,62 @@ export default async function PedidoDetailRoute({ params }: RouteProps) {
 	const queryClient = getQueryClient();
 	const auth = await getServerAuth();
 	const role = auth.user?.role ?? "";
-	const isEncargado = role === "encargado";
+	const normalizedRole =
+		typeof role === "string" ? role.toLowerCase() : String(role ?? "");
+	const isEncargado = normalizedRole === "encargado";
+	const canManageAllWarehouses =
+		normalizedRole === "encargado" || normalizedRole === "admin";
+	const warehouseId = auth.user?.warehouseId ?? "";
 
 	const detailKey = createQueryKey(queryKeys.replenishmentOrderDetail, [
 		orderId,
 	]);
 
 	let cedisWarehouseId: string | undefined;
+	let sourceWarehouseId: string | null = null;
 
 	try {
 		const detail = await queryClient.fetchQuery({
 			queryKey: detailKey,
 			queryFn: () => fetchReplenishmentOrderByIdServer(orderId),
 		});
-		if (
-			detail &&
-			typeof detail === "object" &&
-			"data" in detail &&
-			detail.data &&
-			typeof detail.data === "object" &&
-			"cedisWarehouseId" in detail.data
-		) {
-			const rawCedis = (detail.data as { cedisWarehouseId?: unknown })
-				.cedisWarehouseId;
-			if (typeof rawCedis === "string" && rawCedis.trim().length > 0) {
-				cedisWarehouseId = rawCedis;
+		if (detail && typeof detail === "object" && "data" in detail) {
+			const detailRecord = (detail as { data?: unknown }).data;
+			if (detailRecord && typeof detailRecord === "object") {
+				const data = detailRecord as Record<string, unknown>;
+				sourceWarehouseId = readWarehouseId(data.sourceWarehouseId);
+				const rawCedis = readWarehouseId(data.cedisWarehouseId);
+				if (rawCedis) {
+					cedisWarehouseId = rawCedis;
+				}
 			}
 		}
 	} catch (error) {
 		console.error(error);
 		console.error(`Error prefetching pedido ${orderId}`);
+		if (!canManageAllWarehouses) {
+			notFound();
+		}
+	}
+
+	if (!canManageAllWarehouses) {
+		const scopedWarehouseId = warehouseId.trim();
+		if (!scopedWarehouseId) {
+			notFound();
+		}
+		const isInScope =
+			sourceWarehouseId === scopedWarehouseId ||
+			cedisWarehouseId === scopedWarehouseId;
+		if (!isInScope) {
+			notFound();
+		}
 	}
 
 	if (cedisWarehouseId) {
 		try {
 			queryClient.prefetchQuery({
 				queryKey: createQueryKey(queryKeys.inventory, [cedisWarehouseId]),
-				queryFn: () => fetchStockByWarehouseServer(cedisWarehouseId!),
+				queryFn: () => fetchStockByWarehouseServer(cedisWarehouseId),
 			});
 		} catch (error) {
 			console.error(error);

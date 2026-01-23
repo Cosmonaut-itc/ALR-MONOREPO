@@ -117,12 +117,6 @@ type InventoryAPIResponse =
 	| null;
 type UnknownRecord = Record<string, unknown>;
 
-type WarehouseOption = {
-	id: string;
-	name: string;
-	detail?: string;
-};
-
 type ProductGroupOption = {
 	barcode: number;
 	description: string;
@@ -141,9 +135,6 @@ type ColumnMeta = {
 	headerClassName?: string;
 	cellClassName?: string;
 };
-
-// Pre-declare regex to comply with lint rule (top-level declaration)
-const completeRegex = /complete/i;
 
 // Narrowed item interface based on expected transfer fields
 interface TransferDetailItem {
@@ -762,6 +753,11 @@ export function RecepcionesPage({
 	});
 
 	const currentUser = useAuthStore((state) => state.user);
+	const normalizedRole =
+		typeof currentUser?.role === "string"
+			? currentUser.role.toLowerCase()
+			: "";
+	const isEmployee = normalizedRole === "employee";
 	const {
 		transferDraft,
 		updateTransferDraft,
@@ -878,10 +874,35 @@ export function RecepcionesPage({
 	};
 
 	useEffect(() => {
-		if (!transferDraft.sourceWarehouseId && warehouseId) {
-			updateTransferDraft({ sourceWarehouseId: warehouseId });
+		const normalizedWarehouseId =
+			typeof warehouseId === "string" ? warehouseId.trim() : "";
+		if (!normalizedWarehouseId) {
+			return;
 		}
-	}, [transferDraft.sourceWarehouseId, warehouseId, updateTransferDraft]);
+		if (isEmployee) {
+			if (
+				transferDraft.sourceWarehouseId &&
+				transferDraft.sourceWarehouseId !== normalizedWarehouseId
+			) {
+				resetTransferDraft();
+				updateTransferDraft({ sourceWarehouseId: normalizedWarehouseId });
+				return;
+			}
+			if (!transferDraft.sourceWarehouseId) {
+				updateTransferDraft({ sourceWarehouseId: normalizedWarehouseId });
+			}
+			return;
+		}
+		if (!transferDraft.sourceWarehouseId) {
+			updateTransferDraft({ sourceWarehouseId: normalizedWarehouseId });
+		}
+	}, [
+		isEmployee,
+		resetTransferDraft,
+		transferDraft.sourceWarehouseId,
+		updateTransferDraft,
+		warehouseId,
+	]);
 
 	useEffect(() => {
 		if (!selectedProductStockId) {
@@ -1529,6 +1550,7 @@ export function RecepcionesPage({
 											Almacén origen *
 										</Label>
 										<Select
+											disabled={isEmployee}
 											onValueChange={(value) =>
 												updateTransferDraft({ sourceWarehouseId: value })
 											}

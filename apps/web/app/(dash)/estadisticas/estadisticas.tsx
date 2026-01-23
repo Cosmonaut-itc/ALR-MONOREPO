@@ -285,6 +285,47 @@ const normalizeUnfulfilledProducts = (
 const formatDateVerbose = (date: Date) =>
 	format(date, "dd 'de' MMMM yyyy", { locale: es });
 
+const matchesWarehouse = (
+	sourceId: string | undefined,
+	destId: string | undefined,
+	selected: string | null,
+): boolean => {
+	if (!selected) {
+		return true;
+	}
+	return sourceId === selected || destId === selected;
+};
+
+const isWithinRange = (
+	value: string | undefined,
+	rangeStart: Date,
+	rangeEnd: Date,
+): boolean => {
+	if (!value) {
+		return false;
+	}
+	const parsed = parseISO(value);
+	if (Number.isNaN(parsed.getTime())) {
+		return false;
+	}
+	const start = startOfDay(rangeStart);
+	const end = endOfDay(rangeEnd);
+	return parsed >= start && parsed <= end;
+};
+
+const isToday = (value: string | undefined): boolean => {
+	if (!value) {
+		return false;
+	}
+	const parsed = parseISO(value);
+	if (Number.isNaN(parsed.getTime())) {
+		return false;
+	}
+	const today = startOfDay(new Date());
+	const valueDay = startOfDay(parsed);
+	return valueDay.getTime() === today.getTime();
+};
+
 /**
  * Escapes a CSV field value by wrapping it in quotes if it contains commas, quotes, or newlines.
  *
@@ -438,8 +479,8 @@ const normalizeWarehouses = (
 					: code
 						? `${code} (${id.slice(0, 6)})`
 						: `Almacén ${id.slice(0, 6)}`;
-			const rawIsCedis = record["isCedis"];
-			const rawLegacyIsCedis = record["is_cedis"];
+			const rawIsCedis = record.isCedis;
+			const rawLegacyIsCedis = record.is_cedis;
 			const isCedis =
 				typeof rawIsCedis === "boolean"
 					? rawIsCedis
@@ -782,33 +823,8 @@ const PendingReceptionsDialog = ({
 	effectiveWarehouseId: string | null;
 }) => {
 	const router = useRouter();
-
-	const matchesWarehouse = (
-		sourceId: string | undefined,
-		destId: string | undefined,
-		selected: string | null,
-	): boolean => {
-		if (!selected) {
-			return true;
-		}
-		return sourceId === selected || destId === selected;
-	};
-
-	const isWithinRange = (
-		value: string | undefined,
-		range: DateRange,
-	): boolean => {
-		if (!value) {
-			return false;
-		}
-		const parsed = parseISO(value);
-		if (Number.isNaN(parsed.getTime())) {
-			return false;
-		}
-		const start = startOfDay(range.start);
-		const end = endOfDay(range.end);
-		return parsed >= start && parsed <= end;
-	};
+	const rangeStart = effectiveRange.start;
+	const rangeEnd = effectiveRange.end;
 
 	const pendingTransfers = useMemo(() => {
 		return transfers
@@ -827,10 +843,10 @@ const PendingReceptionsDialog = ({
 				}
 				const referenceDate =
 					transfer.createdAt ?? transfer.scheduledDate ?? transfer.receivedAt;
-				return isWithinRange(referenceDate, effectiveRange);
+				return isWithinRange(referenceDate, rangeStart, rangeEnd);
 			})
 			.slice(0, 7);
-	}, [transfers, effectiveRange, effectiveWarehouseId]);
+	}, [transfers, rangeStart, rangeEnd, effectiveWarehouseId]);
 
 	const formatTransferDate = (dateStr: string | undefined): string => {
 		if (!dateStr) {
@@ -944,33 +960,8 @@ const CompletedReceptionsDialog = ({
 	effectiveWarehouseId: string | null;
 }) => {
 	const router = useRouter();
-
-	const matchesWarehouse = (
-		sourceId: string | undefined,
-		destId: string | undefined,
-		selected: string | null,
-	): boolean => {
-		if (!selected) {
-			return true;
-		}
-		return sourceId === selected || destId === selected;
-	};
-
-	const isWithinRange = (
-		value: string | undefined,
-		range: DateRange,
-	): boolean => {
-		if (!value) {
-			return false;
-		}
-		const parsed = parseISO(value);
-		if (Number.isNaN(parsed.getTime())) {
-			return false;
-		}
-		const start = startOfDay(range.start);
-		const end = endOfDay(range.end);
-		return parsed >= start && parsed <= end;
-	};
+	const rangeStart = effectiveRange.start;
+	const rangeEnd = effectiveRange.end;
 
 	const completedTransfers = useMemo(() => {
 		return transfers
@@ -989,10 +980,10 @@ const CompletedReceptionsDialog = ({
 				}
 				const referenceDate =
 					transfer.createdAt ?? transfer.scheduledDate ?? transfer.receivedAt;
-				return isWithinRange(referenceDate, effectiveRange);
+				return isWithinRange(referenceDate, rangeStart, rangeEnd);
 			})
 			.slice(0, 7);
-	}, [transfers, effectiveRange, effectiveWarehouseId]);
+	}, [transfers, rangeStart, rangeEnd, effectiveWarehouseId]);
 
 	const formatTransferDate = (dateStr: string | undefined): string => {
 		if (!dateStr) {
@@ -1095,41 +1086,15 @@ const TodayReceptionsDialog = ({
 	onOpenChange,
 	transfers,
 	warehouseNameMap,
-	effectiveRange,
 	effectiveWarehouseId,
 }: {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	transfers: TransferListItem[];
 	warehouseNameMap: Map<string, string>;
-	effectiveRange: DateRange;
 	effectiveWarehouseId: string | null;
 }) => {
 	const router = useRouter();
-
-	const matchesWarehouse = (
-		sourceId: string | undefined,
-		destId: string | undefined,
-		selected: string | null,
-	): boolean => {
-		if (!selected) {
-			return true;
-		}
-		return sourceId === selected || destId === selected;
-	};
-
-	const isToday = (value: string | undefined): boolean => {
-		if (!value) {
-			return false;
-		}
-		const parsed = parseISO(value);
-		if (Number.isNaN(parsed.getTime())) {
-			return false;
-		}
-		const today = startOfDay(new Date());
-		const valueDay = startOfDay(parsed);
-		return valueDay.getTime() === today.getTime();
-	};
 
 	const todayTransfers = useMemo(() => {
 		return transfers
@@ -1683,7 +1648,6 @@ export function EstadisticasPage({
 	warehouseId,
 	isEncargado,
 }: EstadisticasPageProps) {
-	const [isMounted, setIsMounted] = useState(false);
 	const [scope, setScope] = useState<ScopeOption>(
 		isEncargado ? "global" : "warehouse",
 	);
@@ -1701,7 +1665,6 @@ export function EstadisticasPage({
 	>(null);
 
 	useEffect(() => {
-		setIsMounted(true);
 		// Update date range after mount to use actual current date
 		const actualToday = new Date();
 		setDateRange(
@@ -2213,7 +2176,6 @@ export function EstadisticasPage({
 					onOpenChange={(open) => setDialogType(open ? "today" : null)}
 					transfers={transferItems}
 					warehouseNameMap={warehouseNameMap}
-					effectiveRange={effectiveRange}
 					effectiveWarehouseId={effectiveWarehouseId}
 				/>
 

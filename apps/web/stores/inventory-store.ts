@@ -190,7 +190,6 @@ export const useInventoryStore = create<InventoryStore>()(
 				const normalizedSearch = searchTerm.trim().toLowerCase();
 
 				// Helper to extract inventory item data
-				// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: No need
 				const extractInventoryData = (item: StockItemWithEmployee) => {
 					if (item && typeof item === 'object' && 'productStock' in item) {
 						const stock = (item as { productStock: StockItem }).productStock;

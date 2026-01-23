@@ -7,7 +7,7 @@ import { es } from "date-fns/locale";
 import { ArrowLeft, ExternalLink, Package, Search } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -659,10 +659,10 @@ export function PedidoDetailsPage({
 			return [];
 		}
 
-	return parsedOrder.items.map((item) => {
-		const productInfo = resolveProductInfo(item.barcode);
-		const displayName = productInfo.name;
-		const category = productInfo.category;
+		return parsedOrder.items.map((item) => {
+			const productInfo = resolveProductInfo(item.barcode);
+			const displayName = productInfo.name;
+			const category = productInfo.category;
 			const availableStocks = inventoryByBarcode.get(item.barcode) ?? [];
 			const selectedForItem = selectedItems[item.id] ?? [];
 			const searchPool = [
@@ -692,7 +692,7 @@ export function PedidoDetailsPage({
 		inventoryByBarcode,
 		normalizedItemSearch,
 		parsedOrder,
-		productInfoByBarcode,
+		resolveProductInfo,
 		selectedItems,
 	]);
 
@@ -798,7 +798,6 @@ export function PedidoDetailsPage({
 		};
 	}, [parsedOrder, selectedItems]);
 
-	const isTransferReady = Boolean(parsedOrder);
 	const hasCompleteFulfillment = fulfillmentProgress.complete;
 	const pendingPieces = fulfillmentProgress.missing;
 
@@ -1612,7 +1611,7 @@ export function PedidoDetailsPage({
 												stockDialogItem.selectedIds.length >=
 													stockDialogItem.requestedQuantity;
 											return (
-												<label
+												<div
 													className="flex items-start justify-between gap-3 rounded-md border border-transparent px-3 py-2 text-[#11181C] hover:bg-[#F3F4F6] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
 													key={stock.id}
 												>
@@ -1642,7 +1641,7 @@ export function PedidoDetailsPage({
 															Ubicación: {stock.currentWarehouse}
 														</span>
 													)}
-												</label>
+												</div>
 											);
 										})}
 									</div>
@@ -1742,7 +1741,7 @@ export function PedidoDetailsPage({
 												stockDialogItem.selectedIds.length >=
 													stockDialogItem.requestedQuantity;
 											return (
-												<label
+												<div
 													className="flex items-start justify-between gap-3 rounded-md border border-transparent px-3 py-2 text-[#11181C] hover:bg-[#F3F4F6] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
 													key={stock.id}
 												>
@@ -1772,7 +1771,7 @@ export function PedidoDetailsPage({
 															Ubicación: {stock.currentWarehouse}
 														</span>
 													)}
-												</label>
+												</div>
 											);
 										})}
 									</div>

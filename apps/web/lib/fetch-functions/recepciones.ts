@@ -9,7 +9,6 @@ export const getWarehouseTransferById = async (warehouseId: string) => {
 		);
 		return response.json();
 	} catch (error) {
-		// biome-ignore lint/suspicious/noConsole: Needed for debugging
 		console.error(error);
 		return null;
 	}
@@ -20,7 +19,6 @@ export const getWarehouseTransferAll = async () => {
 		const response = await client.api.auth["warehouse-transfers"].all.$get();
 		return response.json();
 	} catch (error) {
-		// biome-ignore lint/suspicious/noConsole: Needed for debugging
 		console.error(error);
 		return null;
 	}
@@ -38,7 +36,6 @@ export const getWarehouseTransferAllByWarehouseId = async (
 		});
 		return response.json();
 	} catch (error) {
-		// biome-ignore lint/suspicious/noConsole: Needed for debugging
 		console.error(error);
 		return null;
 	}
@@ -51,7 +48,6 @@ export const getTransferDetailsById = async (transferId: string) => {
 		});
 		return response.json();
 	} catch (error) {
-		// biome-ignore lint/suspicious/noConsole: Needed for debugging
 		console.error(error);
 		return null;
 	}

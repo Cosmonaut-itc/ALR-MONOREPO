@@ -281,10 +281,10 @@ const normalizeEmployees = (response: EmployeesResponse) => {
 				name: displayName || name || "Empleado",
 				warehouseId,
 			} as NormalizedEmployee;
-		})
-		.filter((employee): employee is NormalizedEmployee =>
-			Boolean(employee && employee.id),
-		);
+	})
+	.filter((employee): employee is NormalizedEmployee =>
+		Boolean(employee?.id),
+	);
 };
 
 const normalizeWarehouses = (response: WarehousesResponse) => {
@@ -310,10 +310,10 @@ const normalizeWarehouses = (response: WarehousesResponse) => {
 					? `${toStringSafe(record.code)} (${id.slice(0, 6)})`
 					: `Almacen ${id.slice(0, 6)}`);
 			return { id, name } as NormalizedWarehouse;
-		})
-		.filter((item): item is NormalizedWarehouse =>
-			Boolean(item && item.id && item.name),
-		);
+	})
+	.filter((item): item is NormalizedWarehouse =>
+		Boolean(item?.id && item.name),
+	);
 };
 
 const extractBarcodeNumbers = (value: unknown): number[] => {
@@ -495,10 +495,10 @@ const extractTransfers = (response: TransfersResponse): TransferSummary[] => {
 				scheduledDate: toStringSafe(record.scheduledDate),
 				createdAt: toStringSafe(record.createdAt),
 			} as TransferSummary;
-		})
-		.filter((item): item is TransferSummary =>
-			Boolean(item && item.linkId && !item.isCancelled),
-		);
+	})
+	.filter((item): item is TransferSummary =>
+		Boolean(item?.linkId && !item.isCancelled),
+	);
 };
 
 const getStockQuantityKey = (warehouseId: string, barcode: number) =>
@@ -1022,14 +1022,6 @@ export default function DashboardPageClient({
 			// Get product name from catalog
 			const productNameFromCatalog =
 				productNameByBarcode.get(limit.barcode) ?? null;
-			// For display name: use description if available, otherwise catalog name, otherwise fallback
-			// But keep productName separate for subtitle display
-			const displayName =
-				productDescription ||
-				productNameFromCatalog ||
-				`Producto ${limit.barcode}`;
-			// Store the catalog name separately (not the fallback) for subtitle
-			const productName = productNameFromCatalog || `Producto ${limit.barcode}`;
 			const warehouseName =
 				warehouseNameById.get(limit.warehouseId) ??
 				(limit.warehouseId
@@ -1252,8 +1244,9 @@ export default function DashboardPageClient({
 		return totalStockLimits.quantityGroups.filter(
 			(group) =>
 				group.productName.toLowerCase().includes(normalizedSearch) ||
-				(group.productDescription &&
-					group.productDescription.toLowerCase().includes(normalizedSearch)) ||
+				group.productDescription
+					?.toLowerCase()
+					.includes(normalizedSearch) ||
 				group.barcode.toString().includes(normalizedSearch),
 		);
 	}, [totalStockLimits.quantityGroups, stockLimitSearch]);
@@ -1266,8 +1259,9 @@ export default function DashboardPageClient({
 		return totalStockLimits.usageGroups.filter(
 			(group) =>
 				group.productName.toLowerCase().includes(normalizedSearch) ||
-				(group.productDescription &&
-					group.productDescription.toLowerCase().includes(normalizedSearch)) ||
+				group.productDescription
+					?.toLowerCase()
+					.includes(normalizedSearch) ||
 				group.barcode.toString().includes(normalizedSearch),
 		);
 	}, [totalStockLimits.usageGroups, stockLimitSearch]);

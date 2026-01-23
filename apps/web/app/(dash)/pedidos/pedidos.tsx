@@ -7,8 +7,6 @@ import type {
 	PaginationState,
 	SortingState,
 } from "@tanstack/react-table";
-import { format } from "date-fns";
-import { es } from "date-fns/locale";
 import Link from "next/link";
 import {
 	type FormEvent,
@@ -67,14 +65,13 @@ import {
 import { createQueryKey } from "@/lib/helpers";
 import { useCreateReplenishmentOrder } from "@/lib/mutations/replenishment-orders";
 import { queryKeys } from "@/lib/query-keys";
+import { useAuthStore } from "@/stores/auth-store";
 import type {
 	ProductCatalogResponse,
 	ReplenishmentOrdersResponse,
 } from "@/types";
 
 type WarehousesResponse = Awaited<ReturnType<typeof getAllWarehouses>>;
-
-type StatusFilter = "all" | "open" | "sent" | "received";
 
 type OrderListResponse = ReplenishmentOrdersResponse | null;
 
@@ -147,17 +144,6 @@ function isSuccessResponse(
 	);
 }
 
-function formatDate(value: string | null | undefined) {
-	if (!value) {
-		return "Sin fecha";
-	}
-	const date = new Date(value);
-	if (Number.isNaN(date.getTime())) {
-		return "Sin fecha";
-	}
-	return format(date, "dd MMM yyyy", { locale: es });
-}
-
 function statusFromOrder(order: OrderSummary): "open" | "sent" | "received" {
 	if (order.isReceived) {
 		return "received";
@@ -166,10 +152,6 @@ function statusFromOrder(order: OrderSummary): "open" | "sent" | "received" {
 		return "sent";
 	}
 	return "open";
-}
-
-function getOrderIdentifier(order: OrderSummary) {
-	return order.orderNumber || order.id;
 }
 
 type PedidosPageProps = {
@@ -181,6 +163,10 @@ export function PedidosPage({
 	warehouseId,
 	canManageAllWarehouses,
 }: PedidosPageProps) {
+	const userRole = useAuthStore((state) => state.user?.role ?? "");
+	const normalizedRole =
+		typeof userRole === "string" ? userRole.toLowerCase() : "";
+	const isEmployee = normalizedRole === "employee";
 	const [isDialogOpen, setIsDialogOpen] = useState(false);
 	const [cedisWarehouseId, setCedisWarehouseId] = useState("");
 	const [notes, setNotes] = useState("");
@@ -289,8 +275,8 @@ export function PedidosPage({
 					typeof rawCode === "string" && rawCode.length > 0
 						? rawCode
 						: undefined;
-				const rawIsCedis = record["isCedis"];
-				const rawLegacyIsCedis = record["is_cedis"];
+				const rawIsCedis = record.isCedis;
+				const rawLegacyIsCedis = record.is_cedis;
 				const isCedis =
 					typeof rawIsCedis === "boolean"
 						? rawIsCedis
@@ -524,6 +510,10 @@ export function PedidosPage({
 			`Bodega ${sourceWarehouseId.slice(0, 6)}`
 		);
 	}, [sourceWarehouseId, warehouseNameMap]);
+
+	const requesterWarehouseLabel =
+		selectedRequesterName ||
+		(warehouseId ? `Bodega ${warehouseId.slice(0, 6)}` : "Sin bodega asignada");
 
 	const ordersTableData = useMemo<OrderRow[]>(() => {
 		return filteredOrders.map((order) => {
@@ -844,7 +834,7 @@ export function PedidosPage({
 											</p>
 										)}
 									</div>
-									{canManageAllWarehouses && (
+									{canManageAllWarehouses ? (
 										<div className="space-y-2">
 											<Label className="text-[#11181C] dark:text-[#ECEDEE]">
 												Bodega solicitante
@@ -875,7 +865,22 @@ export function PedidosPage({
 												</p>
 											)}
 										</div>
-									)}
+									) : isEmployee ? (
+										<div className="space-y-2">
+											<Label className="text-[#11181C] dark:text-[#ECEDEE]">
+												Bodega solicitante
+											</Label>
+											<div className="input-transition flex min-h-[40px] items-center rounded-md border border-[#E5E7EB] bg-[#F9FAFB] px-3 text-sm text-[#11181C] dark:border-[#2D3033] dark:bg-[#1E1F20] dark:text-[#ECEDEE]">
+												{requesterWarehouseLabel}
+											</div>
+											<p className="text-[#687076] text-sm dark:text-[#9BA1A6]">
+												Creando pedido desde:{" "}
+												<span className="font-medium">
+													{requesterWarehouseLabel}
+												</span>
+											</p>
+										</div>
+									) : null}
 									<div className="space-y-3">
 										<Label className="text-[#11181C] dark:text-[#ECEDEE]">
 											Artículos

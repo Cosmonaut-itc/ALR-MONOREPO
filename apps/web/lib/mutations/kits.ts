@@ -62,9 +62,7 @@ export const useUpdateKit = () =>
 			qc.invalidateQueries({ queryKey: queryKeys.kits });
 		},
 		onError: (error) => {
-			toast.error("Error al actualizar kit", { id: "update-kit" });
-			// biome-ignore lint/suspicious/noConsole: Needed for debugging
-			console.error(error);
+			toast.error("Error al actualizar kit", { id: "update-kit" });			console.error(error);
 		},
 	});
 
@@ -132,9 +130,7 @@ export const useUpdateKitItemStatus = () =>
 		onError: (error) => {
 			toast.error("Error al actualizar estado del artículo", {
 				id: "update-kit-item-status",
-			});
-			// biome-ignore lint/suspicious/noConsole: Needed for debugging
-			console.error(error);
+			});			console.error(error);
 		},
 	});
 
@@ -185,9 +181,7 @@ export const useCreateKit = () =>
 			qc.invalidateQueries({ queryKey: queryKeys.kits });
 		},
 		onError: (error) => {
-			toast.error("Error al crear kit", { id: "create-kit" });
-			// biome-ignore lint/suspicious/noConsole: Needed for debugging
-			console.error(error);
+			toast.error("Error al crear kit", { id: "create-kit" });			console.error(error);
 		},
 	});
 
@@ -257,9 +251,7 @@ export const useUpdateProductStockUsage = () =>
 				queryKey: createQueryKey(queryKeys.inventory, ["all"]),
 			});
 		},
-		onError: (error) => {
-			// biome-ignore lint/suspicious/noConsole: Needed for debugging
-			console.error("Error updating product stock usage:", error);
+		onError: (error) => {			console.error("Error updating product stock usage:", error);
 		},
 	});
 
@@ -303,8 +295,6 @@ export const useCreateEmployee = () =>
 			qc.invalidateQueries({ queryKey: ["employees"] });
 		},
 		onError: (error) => {
-			toast.error("Error al crear empleado", { id: "create-employee" });
-			// biome-ignore lint/suspicious/noConsole: Needed for debugging
-			console.error(error);
+			toast.error("Error al crear empleado", { id: "create-employee" });			console.error(error);
 		},
 	});

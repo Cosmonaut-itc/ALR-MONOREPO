@@ -1525,9 +1525,7 @@ export function ProductCatalogTable({
 					description: `${text.slice(0, 8)}... ha sido copiado exitosamente`,
 					duration: 2000,
 				});
-			} catch (error) {
-				// biome-ignore lint/suspicious/noConsole: Used for debugging
-				console.error("Error copying to clipboard:", error);
+			} catch (error) {				console.error("Error copying to clipboard:", error);
 				toast.error("Error al copiar UUID", {
 					description: "No se pudo copiar el UUID al portapapeles",
 					duration: 3000,
@@ -1689,9 +1687,7 @@ export function ProductCatalogTable({
 								invalidateContexts: update.contexts,
 							});
 						}
-					} catch (error) {
-						// biome-ignore lint/suspicious/noConsole: diagnostics for failed updates
-						console.error(error);
+					} catch (error) {						console.error(error);
 					}
 				};
 
@@ -1754,9 +1750,7 @@ export function ProductCatalogTable({
 							...prev,
 							[productKey]: new Set<string>(),
 						}));
-					} catch (error) {
-						// biome-ignore lint/suspicious/noConsole: diagnostics for failed updates
-						console.error(error);
+					} catch (error) {						console.error(error);
 					}
 				};
 
@@ -2168,22 +2162,21 @@ export function ProductCatalogTable({
 														<div id={`wg-${productKey}-${group.key}`} />
 													</TableCell>
 												</TableRow>
-												{isExpanded && (
-													<React.Fragment>
-														{group.items
-															.filter((item) => {
-																if (isEmptyFilter === "all") {
-																	return true;
-																}
-																if (isEmptyFilter === "yes") {
-																	return item.data.isEmpty === true;
-																}
-																if (isEmptyFilter === "no") {
-																	return item.data.isEmpty === false;
-																}
+												{isExpanded &&
+													group.items
+														.filter((item) => {
+															if (isEmptyFilter === "all") {
 																return true;
-															})
-															.map((item) => {
+															}
+															if (isEmptyFilter === "yes") {
+																return item.data.isEmpty === true;
+															}
+															if (isEmptyFilter === "no") {
+																return item.data.isEmpty === false;
+															}
+															return true;
+														})
+														.map((item) => {
 																const { data, key: selectionKey } = item;
 																const isSelected = selectionKey
 																	? productSelection.has(selectionKey)
@@ -2362,9 +2355,7 @@ export function ProductCatalogTable({
 																		</TableCell>
 																	</TableRow>
 																);
-															})}
-													</React.Fragment>
-												)}
+														})}
 											</React.Fragment>
 										);
 									})}
@@ -2399,6 +2390,9 @@ export function ProductCatalogTable({
 			warehouse,
 			isEmptyFilter,
 			warehouseFilterOptions,
+			isWarehouseVisible,
+			visibleWarehouseIds,
+			visibleWarehouseIds?.size,
 		],
 	);
 

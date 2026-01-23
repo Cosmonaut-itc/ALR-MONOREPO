@@ -3,6 +3,8 @@
 import { Skeleton } from "@/components/ui/skeleton"
 import { TableCell, TableRow } from "@/components/ui/table"
 
+const SKELETON_ROWS = ["row-1", "row-2", "row-3"]
+
 export function SkeletonReceptionGroup() {
   return (
     <>
@@ -17,8 +19,8 @@ export function SkeletonReceptionGroup() {
       </TableRow>
       
       {/* Group items */}
-      {Array.from({ length: 3 }).map((_, index) => (
-        <TableRow key={index} className="border-b border-[#E5E7EB] dark:border-[#2D3033] theme-transition">
+      {SKELETON_ROWS.map((rowKey) => (
+        <TableRow key={rowKey} className="border-b border-[#E5E7EB] dark:border-[#2D3033] theme-transition">
           <TableCell className="pl-8">
             <Skeleton className="h-4 w-24 theme-transition" />
           </TableCell>

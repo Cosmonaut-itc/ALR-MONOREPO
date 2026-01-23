@@ -26,9 +26,6 @@ type DateFilterProps = {
 	onChange: (value: DateFilterValue | null) => void;
 };
 
-const normalizeDate = (value: string | undefined): string | undefined =>
-	value ? value.slice(0, 10) : undefined;
-
 const toISO = (date: Date | undefined | null): string | undefined =>
 	date ? date.toISOString().slice(0, 10) : undefined;
 

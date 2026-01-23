@@ -62,7 +62,6 @@ export default function LoginPage() {
 			toast.error(
 				"Error de autenticación: Credenciales inválidas. Intenta de nuevo.",
 			);
-			// biome-ignore lint/suspicious/noConsole: Needed for error logging
 			console.error(error);
 		}
 	};

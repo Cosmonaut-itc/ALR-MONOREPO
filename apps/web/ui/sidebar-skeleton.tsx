@@ -2,6 +2,15 @@
 
 import { Skeleton } from "@/components/ui/skeleton"
 
+const SKELETON_ITEMS = [
+  "nav-1",
+  "nav-2",
+  "nav-3",
+  "nav-4",
+  "nav-5",
+  "nav-6",
+]
+
 export function SidebarSkeleton() {
   return (
     <div className="flex h-full w-64 flex-col bg-[#F9FAFB] dark:bg-[#1E1F20] border-r border-[#E5E7EB] dark:border-[#2D3033] theme-transition">
@@ -18,8 +27,8 @@ export function SidebarSkeleton() {
       <div className="flex-1 p-4">
         <div className="space-y-2">
           <Skeleton className="h-4 w-32 mb-4 theme-transition" />
-          {Array.from({ length: 6 }).map((_, index) => (
-            <div key={index} className="flex items-center gap-2 p-2">
+          {SKELETON_ITEMS.map((key) => (
+            <div key={key} className="flex items-center gap-2 p-2">
               <Skeleton className="h-4 w-4 theme-transition" />
               <Skeleton className="h-4 w-20 theme-transition" />
             </div>

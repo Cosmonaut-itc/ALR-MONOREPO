@@ -22,7 +22,7 @@ export const getReplenishmentOrders = async (
 
 export const getReplenishmentOrdersByWarehouse = async (warehouseId: string) => {
 	try {
-		const response = await client.api.auth["replenishment-orders"]["warehouse"][
+		const response = await client.api.auth["replenishment-orders"].warehouse[
 			":warehouseId"
 		].$get({
 			param: { warehouseId },

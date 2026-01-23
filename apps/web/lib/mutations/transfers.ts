@@ -57,7 +57,6 @@ export const useCreateTransferOrder = () =>
 			toast.error("Error al crear traspaso", {
 				id: "create-transfer-order",
 			});
-			// biome-ignore lint/suspicious/noConsole: Needed for debugging
 			console.error(error);
 		},
 	});
@@ -123,7 +122,6 @@ export const useUpdateTransferStatus = () =>
 			toast.error("Error al actualizar estado del traspaso", {
 				id: "update-transfer-status",
 			});
-			// biome-ignore lint/suspicious/noConsole: Needed for debugging
 			console.error(error);
 		},
 	});
@@ -181,7 +179,6 @@ export const useUpdateTransferItemStatus = () =>
 			toast.error("Error al actualizar estado del ítem", {
 				id: "update-transfer-item-status",
 			});
-			// biome-ignore lint/suspicious/noConsole: Needed for debugging
 			console.error(error);
 		},
 	});

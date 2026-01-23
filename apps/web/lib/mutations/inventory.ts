@@ -67,9 +67,7 @@ export const useCreateAltegioProduct = () =>
 		onError: (error) => {
 			toast.error("Error al crear producto en Altegio", {
 				id: "create-product-in-altegio",
-			});
-			// biome-ignore lint/suspicious/noConsole: Needed for debugging
-			console.error(error);
+			});			console.error(error);
 		},
 	});
 
@@ -112,9 +110,7 @@ export const useCreateInventoryItem = () =>
 		onError: (error) => {
 			toast.error("Error al crear inventario", {
 				id: "create-inventory-item",
-			});
-			// biome-ignore lint/suspicious/noConsole: Needed for debugging
-			console.error(error);
+			});			console.error(error);
 		},
 	});
 
@@ -160,9 +156,7 @@ export const useDeleteInventoryItem = () =>
 		onError: (error) => {
 			toast.error("Error al eliminar inventario", {
 				id: "delete-inventory-item",
-			});
-			// biome-ignore lint/suspicious/noConsole: Needed for debugging
-			console.error(error);
+			});			console.error(error);
 		},
 	});
 
@@ -201,9 +195,7 @@ export const useSyncInventory = () =>
 		onError: (error) => {
 			toast.error("Error al sincronizar inventario", {
 				id: "sync-inventory",
-			});
-			// biome-ignore lint/suspicious/noConsole: Needed for debugging
-			console.error(error);
+			});			console.error(error);
 		},
 	});
 
@@ -259,9 +251,7 @@ export const useToggleInventoryKit = () =>
 		onError: (error) => {
 			toast.error("Error al actualizar el estado de kit", {
 				id: "toggle-inventory-kit",
-			});
-			// biome-ignore lint/suspicious/noConsole: Needed para depuración
-			console.error(error);
+			});			console.error(error);
 		},
 	});
 
@@ -321,8 +311,6 @@ export const useUpdateInventoryIsEmpty = () =>
 		onError: (error) => {
 			toast.error("Error al actualizar el estado vacío", {
 				id: "update-inventory-is-empty",
-			});
-			// biome-ignore lint/suspicious/noConsole: Needed para depuración
-			console.error(error);
+			});			console.error(error);
 		},
 	});

@@ -75,8 +75,8 @@ export default async function Page() {
 					continue;
 				}
 				const record = warehouse as Record<string, unknown>;
-				const rawIsCedis = record["isCedis"];
-				const rawLegacyIsCedis = record["is_cedis"];
+				const rawIsCedis = record.isCedis;
+				const rawLegacyIsCedis = record.is_cedis;
 				const isCedis =
 					typeof rawIsCedis === "boolean"
 						? rawIsCedis

@@ -2,8 +2,7 @@
 "use client";
 
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { addDays, format } from "date-fns";
-import { es } from "date-fns/locale";
+import { addDays } from "date-fns";
 import {
 	Check,
 	ChevronsUpDown,
@@ -194,6 +193,15 @@ export default function KitsPageClient({
 		const candidate = root.data ?? root.json ?? [];
 		return toArray(candidate).map(normalizeEmployee);
 	}, [employeesResponse, toArray, normalizeEmployee]);
+	const scopedEmployees = useMemo(() => {
+		if (isEncargado) {
+			return employees;
+		}
+		if (!warehouseId) {
+			return [];
+		}
+		return employees.filter((employee) => employee.warehouseId === warehouseId);
+	}, [employees, isEncargado, warehouseId]);
 
 	// Normalize warehouses response
 	const warehouses = useMemo(() => {
@@ -221,7 +229,7 @@ export default function KitsPageClient({
 
 	// Filter employees by selected warehouse and search query
 	const filteredEmployees = useMemo(() => {
-		let filtered = employees;
+		let filtered = scopedEmployees;
 
 		// Filter by warehouse
 		if (selectedWarehouseFilter !== "all") {
@@ -239,7 +247,7 @@ export default function KitsPageClient({
 		}
 
 		return filtered;
-	}, [employees, selectedWarehouseFilter, searchQuery]);
+	}, [scopedEmployees, selectedWarehouseFilter, searchQuery]);
 
 	// Create a map of employees with their kits
 	const employeesWithKits = useMemo(() => {
@@ -266,7 +274,7 @@ export default function KitsPageClient({
 				warehouseName: warehouse?.name || "Sin bodega",
 			};
 		});
-	}, [filteredEmployees, kits, todayKits, warehouses]);
+	}, [filteredEmployees, kits, todayKits, warehouses, productsBeingUsed]);
 
 	// Calculate statistics based on filtered employees
 	const filteredTodayKits = todayKits.filter((kit) =>
@@ -324,7 +332,6 @@ export default function KitsPageClient({
 						<PopoverTrigger asChild>
 							<Button
 								className="w-full md:w-[280px] justify-between"
-								role="combobox"
 								variant="outline"
 							>
 								<div className="flex items-center gap-2">
