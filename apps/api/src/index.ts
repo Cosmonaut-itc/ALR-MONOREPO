@@ -5475,16 +5475,55 @@ const route = app
 							);
 						}
 
+						if (!altegioTotals || altegioTotals.length === 0) {
+							return c.json(
+								{
+									success: false,
+									message:
+										'Altegio totals must include costs for every received item',
+								} satisfies ApiResponse,
+								400,
+							);
+						}
+
 						const altegioHeaders = { authHeader, acceptHeader };
 						const costPerUnitByGoodId = new Map<number, number>();
-						if (altegioTotals && altegioTotals.length > 0) {
-							for (const item of altegioTotals) {
-								const unitCost =
-									item.totalQuantity > 0
-										? item.totalCost / item.totalQuantity
-										: 0;
-								costPerUnitByGoodId.set(item.goodId, unitCost);
+						const invalidCostTotals: number[] = [];
+						for (const item of altegioTotals) {
+							if (item.totalQuantity <= 0) {
+								if (item.totalCost > 0) {
+									invalidCostTotals.push(item.goodId);
+								}
+								continue;
 							}
+							costPerUnitByGoodId.set(
+								item.goodId,
+								item.totalCost / item.totalQuantity,
+							);
+						}
+
+						if (invalidCostTotals.length > 0) {
+							return c.json(
+								{
+									success: false,
+									message:
+										'Altegio totals must include a positive quantity when a cost is provided',
+								} satisfies ApiResponse,
+								400,
+							);
+						}
+
+						const missingCostIds = receivedTotals
+							.filter((row) => !costPerUnitByGoodId.has(row.goodId))
+							.map((row) => row.goodId);
+						if (missingCostIds.length > 0) {
+							return c.json(
+								{
+									success: false,
+									message: `Missing Altegio costs for received goods: ${missingCostIds.join(', ')}`,
+								} satisfies ApiResponse,
+								400,
+							);
 						}
 
 						const aggregatedTransactions = receivedTotals.reduce<
