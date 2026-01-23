@@ -5137,7 +5137,7 @@ const route = app
 				const wasCompleted = existingTransfer[0].isCompleted;
 				const shouldReplicateToAltegio =
 					ENABLE_ALTEGIO_REPLICATION &&
-					replicateToAltegio === true &&
+					replicateToAltegio !== false &&
 					isCompleted === true &&
 					wasCompleted === false &&
 					existingTransfer[0].transferType === 'external';
