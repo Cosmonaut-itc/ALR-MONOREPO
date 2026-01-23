@@ -66,6 +66,10 @@ const documentStorageSchema = z.object({
 	title: z.string(),
 });
 
+const coordinateStringSchema = z
+	.union([z.string(), z.number()])
+	.transform((value) => value.toString());
+
 const documentCompanySchema = z.object({
 	id: z.number(),
 	title: z.string(),
@@ -73,8 +77,9 @@ const documentCompanySchema = z.object({
 	city_id: z.number(),
 	timezone: z.number(),
 	address: z.string(),
-	ccoordinate_lat: z.string(),
-	coordinate_lon: z.string(),
+	coordinate_lat: coordinateStringSchema.optional(),
+	ccoordinate_lat: coordinateStringSchema.optional(),
+	coordinate_lon: coordinateStringSchema.optional(),
 	logo: z.string(),
 	zip: z.string(),
 	phones: z.array(z.unknown()),
@@ -82,7 +87,7 @@ const documentCompanySchema = z.object({
 });
 
 const documentUserSchema = z.object({
-	id: z.string(),
+	id: z.coerce.string(),
 	name: z.string(),
 	phone: z.string(),
 });
@@ -202,10 +207,23 @@ export const apiResponseSchemaStorageOperation = z.object({
 	meta: z.array(z.unknown()),
 });
 
-export type DataItemArticulosType = z.infer<typeof dataItemSchema>;
+/**
+ * Response schema for the /goods_transactions endpoint.
+ * This endpoint returns a single transaction object directly in data,
+ * unlike the /operation endpoint which returns document + transactions array.
+ */
+export const apiResponseSchemaGoodsTransaction = z.object({
+	success: z.boolean(),
+	data: storageOperationTransactionSchema,
+	meta: z.array(z.unknown()),
+});
 
-export type AltegioGood = DataItemArticulosType;
+export type AltegioGood = z.infer<typeof dataItemSchema>;
+export type AltegioDocumentTypeId = 3 | 7; // 3 = Arrival, 7 = Departure
+export type AltegioOperationTypeId = 3 | 4; // 3 = Arrival, 4 = Departure
+export type AltegioOperationUnitType = 1 | 2; // 1 = Unit, 2 = Unknown
 
+// Sync Types
 export type SyncOptions = {
 	warehouseId?: string;
 	dryRun?: boolean;
@@ -230,20 +248,18 @@ export type SyncWarehouseSummary = {
 	}>;
 };
 
-export type SyncTotals = {
-	warehouses: number;
-	productsProcessed: number;
-	fetched: number;
-	existing: number;
-	toInsert: number;
-	inserted: number;
-	skippedInvalid: number;
-	overTargetExisting: number;
-};
-
 export type SyncResult = {
 	warehouses: SyncWarehouseSummary[];
-	totals: SyncTotals;
+	totals: {
+		warehouses: number;
+		productsProcessed: number;
+		fetched: number;
+		existing: number;
+		toInsert: number;
+		inserted: number;
+		skippedInvalid: number;
+		overTargetExisting: number;
+	};
 	meta: {
 		dryRun: boolean;
 		fetchedAt: string;
@@ -253,46 +269,27 @@ export type SyncResult = {
 	};
 };
 
-export const articulosAllParamsSchema = z.object({
-	company_id: z.string(),
-});
+export type DataItemArticulosType = z.infer<typeof dataItemSchema>;
 
-// --- Generate the Mock Data using the correct library ---
+// Replenishment Orders Types
 
-export type SucursalBosqueStorage = {
-	id: 1308654;
-	consumables: 2624863;
-	sales: 2624864;
-};
-export type SucursalValleRealStorage = {
-	id: 729299;
-	consumables: 1460023;
-	sales: 1460024;
-};
-export type SucursalProvidenciaStorage = {
-	id: 706097;
-	consumables: 1412069;
-	sales: 1412070;
-};
-export type AltegioDocumentTypeId = 3 | 7;
-export type AltegioOperationTypeId = 3 | 4;
-export const DistributionCenterId = '4818f28e-daf8-42f4-8d55-088d260b118d';
-
-// Replenishment orders
 export const replenishmentOrderItemSchema = z.object({
-	barcode: z.number().int().positive('Barcode must be a positive integer'),
-	quantity: z.number().int().positive('Quantity must be greater than zero'),
+	barcode: z.number().int().nonnegative(),
+	quantity: z.number().int().positive(),
+	notes: z.string().trim().max(2000, 'Notes must be 2000 characters or fewer').optional(),
+	sentQuantity: z.number().int().nonnegative().optional(),
+	buyOrderGenerated: z.boolean().optional(),
 });
 
 export const replenishmentOrderCreateSchema = z.object({
 	sourceWarehouseId: z
 		.string()
 		.uuid('Invalid source warehouse ID')
-		.describe('Warehouse that needs replenishment'),
+		.describe('Warehouse sending inventory'),
 	cedisWarehouseId: z
 		.string()
 		.uuid('Invalid CEDIS warehouse ID')
-		.describe('Distribution center fulfilling the order'),
+		.describe('CEDIS warehouse receiving inventory'),
 	items: z
 		.array(replenishmentOrderItemSchema)
 		.min(1, 'At least one item is required for a replenishment order'),
@@ -339,3 +336,7 @@ export type ReplenishmentOrderStatusFilter = z.infer<
 	typeof replenishmentOrderStatusQuerySchema
 >['status'];
 export type ReplenishmentOrderLinkTransfer = z.infer<typeof replenishmentOrderLinkTransferSchema>;
+
+export const DistributionCenterId = '4818f28e-daf8-42f4-8d55-088d260b118d';
+
+export type AltegioResponseSchema<TResponse> = z.ZodType<TResponse>;

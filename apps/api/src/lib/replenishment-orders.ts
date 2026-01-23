@@ -1,6 +1,6 @@
 /** biome-ignore-all lint/complexity/noExcessiveCognitiveComplexity: Needed for the code to be readable */
 import { format } from 'date-fns';
-import { and, desc, eq, type SQL, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, type SQL, sql } from 'drizzle-orm';
 import { HTTPException } from 'hono/http-exception';
 import { db } from '../db/index';
 // biome-ignore lint/performance/noNamespaceImport: Drizzle schema
@@ -31,7 +31,7 @@ type OrderDetailRow = typeof schemas.replenishmentOrderDetails.$inferSelect;
 
 export type ReplenishmentOrderDetail = Pick<
 	OrderDetailRow,
-	'id' | 'barcode' | 'quantity' | 'notes'
+	'id' | 'barcode' | 'quantity' | 'notes' | 'sentQuantity'
 >;
 
 export type ReplenishmentOrderFull = OrderRow & {
@@ -139,6 +139,7 @@ async function fetchOrderWithDetails(
 			barcode: schemas.replenishmentOrderDetails.barcode,
 			quantity: schemas.replenishmentOrderDetails.quantity,
 			notes: schemas.replenishmentOrderDetails.notes,
+			sentQuantity: schemas.replenishmentOrderDetails.sentQuantity,
 		})
 		.from(schemas.replenishmentOrderDetails)
 		.where(eq(schemas.replenishmentOrderDetails.replenishmentOrderId, id))
@@ -200,6 +201,9 @@ export async function createReplenishmentOrder({
 				replenishmentOrderId: inserted[0].id,
 				barcode: item.barcode,
 				quantity: item.quantity,
+				notes: item.notes ?? null,
+				sentQuantity: item.sentQuantity ?? 0, // Initialize sent quantity to 0 for new orders if not provided
+				buyOrderGenerated: item.buyOrderGenerated ?? false, // Initialize buy order generated flag to false if not provided
 			})),
 		);
 
@@ -284,17 +288,44 @@ export async function updateReplenishmentOrder({
 			.where(eq(schemas.replenishmentOrder.id, id));
 
 		if (input.items) {
-			await tx
-				.delete(schemas.replenishmentOrderDetails)
-				.where(eq(schemas.replenishmentOrderDetails.replenishmentOrderId, id));
+			/**
+			 * Update detail items based on barcode.
+			 * This preserves the original quantity while allowing updates to sentQuantity, notes, and buyOrderGenerated.
+			 * If sentQuantity is provided, use it; otherwise, use quantity for backward compatibility.
+			 */
+			const updatePromises = input.items.map((item) => {
+				const updateData: Partial<typeof schemas.replenishmentOrderDetails.$inferInsert> =
+					{};
 
-			await tx.insert(schemas.replenishmentOrderDetails).values(
-				input.items.map((item) => ({
-					replenishmentOrderId: id,
-					barcode: item.barcode,
-					quantity: item.quantity,
-				})),
-			);
+				// Update sentQuantity if provided, otherwise use quantity for backward compatibility
+				if (item.sentQuantity !== undefined) {
+					updateData.sentQuantity = item.sentQuantity;
+				} else {
+					updateData.sentQuantity = item.quantity;
+				}
+
+				// Update notes if provided
+				if (item.notes !== undefined) {
+					updateData.notes = item.notes;
+				}
+
+				// Update buyOrderGenerated if provided
+				if (item.buyOrderGenerated !== undefined) {
+					updateData.buyOrderGenerated = item.buyOrderGenerated;
+				}
+
+				return tx
+					.update(schemas.replenishmentOrderDetails)
+					.set(updateData)
+					.where(
+						and(
+							eq(schemas.replenishmentOrderDetails.replenishmentOrderId, id),
+							eq(schemas.replenishmentOrderDetails.barcode, item.barcode),
+						),
+					);
+			});
+
+			await Promise.all(updatePromises);
 		}
 
 		return fetchOrderWithDetails(tx, id);
@@ -439,10 +470,16 @@ export async function linkReplenishmentOrderToTransfer({
 
 		if (!isAuthorized) {
 			let reason = 'Insufficient permissions to link transfer to this order';
+		if (isAuthorized) {
+			// User is authorized, continue with the operation
+		} else {
+			let reason: string;
 			if (!user.warehouseId) {
 				reason = 'User is not assigned to a warehouse';
 			} else if (user.warehouseId !== order.cedisWarehouseId) {
 				reason = `User warehouse (${user.warehouseId}) does not match order CEDIS warehouse (${order.cedisWarehouseId})`;
+			} else {
+				reason = 'Insufficient permissions to link transfer to this order';
 			}
 
 			throw new HTTPException(403, {
@@ -486,4 +523,113 @@ export async function linkReplenishmentOrderToTransfer({
 
 		return fetchOrderWithDetails(tx, id);
 	});
+}
+
+/**
+ * Type definition for unfulfilled product items.
+ * Represents products that were not fully fulfilled in received replenishment orders.
+ */
+export type UnfulfilledProduct = {
+	barcode: number;
+	quantity: number;
+	sentQuantity: number;
+	unfulfilledQuantity: number;
+	replenishmentOrderId: string;
+	orderNumber: string;
+	sourceWarehouseId: string;
+	cedisWarehouseId: string;
+	notes: string | null;
+};
+
+/**
+ * Fetches products that were not fully fulfilled from received replenishment orders.
+ * Only includes products where:
+ * - The replenishment order is received (isReceived = true)
+ * - The buy order has not been generated yet (buyOrderGenerated = false)
+ * - The sent quantity is less than the requested quantity (sentQuantity < quantity)
+ *
+ * @param user - Authenticated user (required)
+ * @returns Array of unfulfilled products with their details
+ */
+export async function getUnfulfilledProducts({
+	user,
+}: {
+	user: SessionUser | null | undefined;
+}): Promise<UnfulfilledProduct[]> {
+	assertAuthenticated(user);
+
+	const unfulfilledItems = await db
+		.select({
+			id: schemas.replenishmentOrderDetails.id,
+			barcode: schemas.replenishmentOrderDetails.barcode,
+			quantity: schemas.replenishmentOrderDetails.quantity,
+			sentQuantity: schemas.replenishmentOrderDetails.sentQuantity,
+			replenishmentOrderId: schemas.replenishmentOrderDetails.replenishmentOrderId,
+			orderNumber: schemas.replenishmentOrder.orderNumber,
+			sourceWarehouseId: schemas.replenishmentOrder.sourceWarehouseId,
+			cedisWarehouseId: schemas.replenishmentOrder.cedisWarehouseId,
+			notes: schemas.replenishmentOrderDetails.notes,
+		})
+		.from(schemas.replenishmentOrderDetails)
+		.innerJoin(
+			schemas.replenishmentOrder,
+			eq(
+				schemas.replenishmentOrderDetails.replenishmentOrderId,
+				schemas.replenishmentOrder.id,
+			),
+		)
+		.where(
+			and(
+				eq(schemas.replenishmentOrder.isSent, true),
+				eq(schemas.replenishmentOrderDetails.buyOrderGenerated, false),
+				sql`${schemas.replenishmentOrderDetails.sentQuantity} < ${schemas.replenishmentOrderDetails.quantity}`,
+			),
+		)
+		.orderBy(schemas.replenishmentOrderDetails.barcode);
+
+	return unfulfilledItems.map((item) => ({
+		id: item.id,
+		barcode: item.barcode,
+		quantity: item.quantity,
+		sentQuantity: item.sentQuantity,
+		unfulfilledQuantity: item.quantity - item.sentQuantity,
+		replenishmentOrderId: item.replenishmentOrderId,
+		orderNumber: item.orderNumber,
+		sourceWarehouseId: item.sourceWarehouseId,
+		cedisWarehouseId: item.cedisWarehouseId,
+		notes: item.notes,
+	}));
+}
+
+/**
+ * Updates the buyOrderGenerated flag for multiple replenishment order detail items.
+ * Marks the specified detail items as having had their buy order generated.
+ *
+ * @param detailIds - Array of detail item IDs to update
+ * @param user - Authenticated user (required)
+ * @returns Number of rows updated
+ */
+export async function markBuyOrderGenerated({
+	detailIds,
+	user,
+}: {
+	detailIds: string[];
+	user: SessionUser | null | undefined;
+}): Promise<number> {
+	assertAuthenticated(user);
+
+	if (detailIds.length === 0) {
+		throw new HTTPException(400, {
+			message: 'At least one detail ID is required',
+		});
+	}
+
+	const result = await db
+		.update(schemas.replenishmentOrderDetails)
+		.set({
+			buyOrderGenerated: true,
+		})
+		.where(inArray(schemas.replenishmentOrderDetails.id, detailIds));
+
+	return result.rowCount ?? 0;
 }

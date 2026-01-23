@@ -38,3 +38,7 @@
 - Generate migrations with `npm run db:generate` and vet SQL diffs before merging.
 - Use `npm run db:studio` for local schema QA; never point it at production.
 - After schema-breaking changes, rebuild and version `packages/api-types` so clients stay aligned.
+
+# Additional Agent Requirements
+- When working on a branch, create a new file under `documentation/` named after the branch to capture context (not required for the current session).
+- Prefer JSDoc for new exported functions and complex helpers.

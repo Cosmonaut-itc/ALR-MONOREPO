@@ -114,6 +114,7 @@ export const productStock = pgTable('product_stock', {
 	lastUsedBy: uuid('last_used_by').references(() => employee.id),
 	numberOfUses: integer('number_of_uses').default(0).notNull(),
 	isDeleted: boolean('is_deleted').default(false).notNull(),
+	isEmpty: boolean('is_empty').default(false).notNull(),
 	currentWarehouse: uuid('current_warehouse')
 		.notNull()
 		.references(() => warehouse.id, {
@@ -127,6 +128,12 @@ export const productStock = pgTable('product_stock', {
 	firstUsed: date('first_used'),
 });
 
+/**
+ * Stock limit table for tracking minimum and maximum thresholds for products
+ * Supports two limit types:
+ * - 'quantity': Limits based on physical quantity in stock (minQuantity/maxQuantity)
+ * - 'usage': Limits based on number of times a product has been used (minUsage/maxUsage)
+ */
 export const stockLimit = pgTable(
 	'stock_limit',
 	{
@@ -138,8 +145,13 @@ export const stockLimit = pgTable(
 				onDelete: 'restrict',
 			}),
 		barcode: integer('barcode').notNull(),
+		limitType: text('limit_type').default('quantity').notNull(), // 'quantity' or 'usage'
+		// Quantity-based limits (used when limitType is 'quantity')
 		minQuantity: integer('min_quantity').default(0).notNull(),
 		maxQuantity: integer('max_quantity').default(0).notNull(),
+		// Usage-based limits (used when limitType is 'usage')
+		minUsage: integer('min_usage'),
+		maxUsage: integer('max_usage'),
 		notes: text('notes'),
 		createdAt: timestamp('created_at').defaultNow().notNull(),
 		updatedAt: timestamp('updated_at').defaultNow().notNull(),
@@ -403,6 +415,8 @@ export const replenishmentOrderDetails = pgTable(
 		barcode: integer('barcode').notNull(),
 		quantity: integer('quantity').notNull(),
 		notes: text('notes'),
+		sentQuantity: integer('sent_quantity').default(0).notNull(),
+		buyOrderGenerated: boolean('buy_order_generated').default(false).notNull(),
 	},
 	(table) => ({
 		orderBarcodeUnique: uniqueIndex('replenishment_order_details_order_barcode_key').on(

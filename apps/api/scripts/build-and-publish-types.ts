@@ -4,17 +4,35 @@
 /** biome-ignore-all lint/suspicious/noConsole: we're using console.log */
 
 import { execSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const TYPES_DIR = 'packages/api-types';
 const PACKAGE_JSON_PATH = join(TYPES_DIR, 'package.json');
+const PACKAGE_LOCK_PATH = join(TYPES_DIR, 'package-lock.json');
 
 interface PackageJson {
 	name: string;
 	version: string;
 	// biome-ignore lint/suspicious/noExplicitAny: we're using any
 	[key: string]: any;
+}
+
+function ensureNpmAuth() {
+	try {
+		// NOTE: npm will sometimes return 404s for unauthenticated requests;
+		// a quick whoami check gives a clearer error before we bump versions.
+		execSync('npm whoami', { cwd: TYPES_DIR, stdio: 'inherit' });
+	} catch {
+		throw new Error(
+			[
+				'npm authentication failed.',
+				'Run one of the following, then retry:',
+				'  - npm login',
+				'  - or set a valid NPM_TOKEN in your environment/CI',
+			].join('\n'),
+		);
+	}
 }
 
 /**
@@ -36,11 +54,22 @@ function incrementPatchVersion(version: string): string {
 async function buildAndPublishTypes() {
 	console.log('🚀 Starting automated build and publish process...');
 
+	let originalPackageJsonContent: string | null = null;
+	let originalPackageLockContent: string | null = null;
+
 	try {
 		// Read current package.json
 		console.log('📖 Reading package configuration...');
-		const packageJsonContent = readFileSync(PACKAGE_JSON_PATH, 'utf-8');
-		const packageJson: PackageJson = JSON.parse(packageJsonContent);
+		originalPackageJsonContent = readFileSync(PACKAGE_JSON_PATH, 'utf-8');
+		const packageJson: PackageJson = JSON.parse(originalPackageJsonContent);
+
+		if (existsSync(PACKAGE_LOCK_PATH)) {
+			originalPackageLockContent = readFileSync(PACKAGE_LOCK_PATH, 'utf-8');
+		}
+
+		// Fail fast before bumping versions / running builds
+		console.log('🔐 Checking npm authentication...');
+		ensureNpmAuth();
 
 		const currentVersion = packageJson.version;
 		const newVersion = incrementPatchVersion(currentVersion);
@@ -63,7 +92,7 @@ async function buildAndPublishTypes() {
 
 		// Publish to npm (or your private registry)
 		console.log('📡 Publishing to npm...');
-		execSync('npm publish', { cwd: TYPES_DIR, stdio: 'inherit' });
+		execSync('npm publish --access public', { cwd: TYPES_DIR, stdio: 'inherit' });
 
 		console.log(`🎉 Successfully published ${packageJson.name}@${newVersion}`);
 		console.log('');
@@ -74,17 +103,17 @@ async function buildAndPublishTypes() {
 	} catch (error) {
 		console.error('❌ Build and publish failed:', error);
 
-		// Try to restore the original version if we changed it
+		// Restore exact original files to avoid leaving the repo in a half-updated state.
 		try {
-			const packageJsonContent = readFileSync(PACKAGE_JSON_PATH, 'utf-8');
-			const packageJson: PackageJson = JSON.parse(packageJsonContent);
-			const parts = packageJson.version.split('.').map(Number);
-			parts[2]--; // Decrement back
-			packageJson.version = parts.join('.');
-			writeFileSync(PACKAGE_JSON_PATH, JSON.stringify(packageJson, null, 2));
-			console.log('🔄 Restored original version due to failure');
+			if (originalPackageJsonContent != null) {
+				writeFileSync(PACKAGE_JSON_PATH, originalPackageJsonContent);
+			}
+			if (originalPackageLockContent != null) {
+				writeFileSync(PACKAGE_LOCK_PATH, originalPackageLockContent);
+			}
+			console.log('🔄 Restored original files due to failure');
 		} catch (restoreError) {
-			console.error('⚠️ Could not restore original version:', restoreError);
+			console.error('⚠️ Could not restore original files:', restoreError);
 		}
 
 		process.exit(1);
