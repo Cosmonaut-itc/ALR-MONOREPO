@@ -178,7 +178,13 @@ beforeAll(async () => {
 		updatedAt: now,
 	};
 
-	auth.api.getSession = (async ({ asResponse, returnHeaders }) => {
+	auth.api.getSession = (({
+		asResponse,
+		returnHeaders,
+	}: {
+		asResponse?: boolean;
+		returnHeaders?: boolean;
+	}) => {
 		const sessionPayload = {
 			user: mockSessionUser,
 			session: {
@@ -194,9 +200,7 @@ beforeAll(async () => {
 		};
 
 		if (asResponse) {
-			return new Response(JSON.stringify(sessionPayload), {
-				headers: { 'Content-Type': 'application/json' },
-			});
+			return Response.json(sessionPayload);
 		}
 
 		if (returnHeaders) {
@@ -207,7 +211,7 @@ beforeAll(async () => {
 		}
 
 		return sessionPayload;
-	}) as typeof auth.api.getSession;
+	}) as unknown as typeof auth.api.getSession;
 });
 
 beforeEach(async () => {

@@ -117,7 +117,6 @@ async function fetchGoods(altegioId: number, headers: HeadersInit): Promise<Alte
 				});
 			}
 
-
 			const validated = apiResponseSchema.parse(json);
 			if (!validated.success) {
 				throw new InventorySyncError('Altegio API responded with success=false', 502, {
