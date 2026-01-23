@@ -438,11 +438,12 @@ export async function linkReplenishmentOrderToTransfer({
 			(user.warehouseId && user.warehouseId === order.cedisWarehouseId);
 
 		if (!isAuthorized) {
-			const reason = !user.warehouseId
-				? 'User is not assigned to a warehouse'
-				: user.warehouseId !== order.cedisWarehouseId
-					? `User warehouse (${user.warehouseId}) does not match order CEDIS warehouse (${order.cedisWarehouseId})`
-					: 'Insufficient permissions to link transfer to this order';
+			let reason = 'Insufficient permissions to link transfer to this order';
+			if (!user.warehouseId) {
+				reason = 'User is not assigned to a warehouse';
+			} else if (user.warehouseId !== order.cedisWarehouseId) {
+				reason = `User warehouse (${user.warehouseId}) does not match order CEDIS warehouse (${order.cedisWarehouseId})`;
+			}
 
 			throw new HTTPException(403, {
 				message: `Forbidden: ${reason}. Only users assigned to the CEDIS warehouse or users with 'encargado' role can link transfers to replenishment orders.`,

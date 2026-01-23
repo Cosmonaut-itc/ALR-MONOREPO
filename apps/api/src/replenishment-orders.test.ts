@@ -12,7 +12,6 @@ import {
 	warehouseTransfer,
 } from './db/schema';
 import { auth } from './lib/auth';
-import type { SessionUser } from './lib/replenishment-orders';
 
 const createdTransferIds: string[] = [];
 
@@ -21,7 +20,7 @@ let cedisWarehouseId: string;
 let nonCedisWarehouseId: string;
 let testUserId: string;
 let employeeId: string;
-let mockSessionUser: SessionUser;
+let mockSessionUser: typeof auth.$Infer.Session.user;
 let originalGetSession: typeof auth.api.getSession;
 
 const TEST_EMAIL_DOMAIN = 'replenishment-suite.dev';
@@ -169,23 +168,46 @@ beforeAll(async () => {
 
 	mockSessionUser = {
 		id: testUserId,
+		name: 'Replenishment Test User',
+		email,
+		emailVerified: false,
+		image: null,
 		role: 'manager',
 		warehouseId: sourceWarehouseId,
+		createdAt: now,
+		updatedAt: now,
 	};
 
-	auth.api.getSession = async () => ({
-		user: mockSessionUser,
-		session: {
-			id: 'test-session',
-			expiresAt: new Date(Date.now() + 60 * 60 * 1000),
-			token: 'test-token',
-			createdAt: now,
-			updatedAt: now,
-			ipAddress: null,
-			userAgent: null,
-			userId: testUserId,
-		},
-	});
+	auth.api.getSession = (async ({ asResponse, returnHeaders }) => {
+		const sessionPayload = {
+			user: mockSessionUser,
+			session: {
+				id: 'test-session',
+				expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+				token: 'test-token',
+				createdAt: now,
+				updatedAt: now,
+				ipAddress: null,
+				userAgent: null,
+				userId: testUserId,
+			},
+		};
+
+		if (asResponse) {
+			return new Response(JSON.stringify(sessionPayload), {
+				headers: { 'Content-Type': 'application/json' },
+			});
+		}
+
+		if (returnHeaders) {
+			return {
+				headers: new Headers(),
+				response: sessionPayload,
+			};
+		}
+
+		return sessionPayload;
+	}) as typeof auth.api.getSession;
 });
 
 beforeEach(async () => {
