@@ -5090,6 +5090,7 @@ const route = app
 					isCancelled,
 					completedBy,
 					notes,
+					replicateToAltegio,
 					altegioTotals,
 				} = c.req.valid('json');
 
@@ -5117,6 +5118,7 @@ const route = app
 					.select({
 						id: schemas.warehouseTransfer.id,
 						isCompleted: schemas.warehouseTransfer.isCompleted,
+						transferType: schemas.warehouseTransfer.transferType,
 					})
 					.from(schemas.warehouseTransfer)
 					.where(eq(schemas.warehouseTransfer.id, transferId))
@@ -5133,49 +5135,18 @@ const route = app
 				}
 
 				const wasCompleted = existingTransfer[0].isCompleted;
-
-				// Update the warehouse transfer
-				const updatedTransfer = await db
-					.update(schemas.warehouseTransfer)
-					.set(updateValues)
-					.where(eq(schemas.warehouseTransfer.id, transferId))
-					.returning();
-
-				if (updatedTransfer.length === 0) {
-					return c.json(
-						{
-							success: false,
-							message: 'Warehouse transfer not found',
-						} satisfies ApiResponse,
-						404,
-					);
-				}
-
-				const transferRow = updatedTransfer[0];
-				const transitionedToCompleted =
-					wasCompleted === false && transferRow.isCompleted === true;
-
-				// After successful status update, optionally replicate to Altegio when completed
-				if (
+				const shouldReplicateToAltegio =
 					ENABLE_ALTEGIO_REPLICATION &&
-					transitionedToCompleted &&
-					transferRow.transferType === 'external'
-				) {
-					const authHeader = process.env.AUTH_HEADER;
-					const acceptHeader = process.env.ACCEPT_HEADER;
+					replicateToAltegio === true &&
+					isCompleted === true &&
+					wasCompleted === false &&
+					existingTransfer[0].transferType === 'external';
 
-					if (!(authHeader && acceptHeader)) {
-						// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
-						console.error('Missing required authentication configuration');
-						return c.json(
-							{
-								success: false,
-								message: 'Missing required authentication configuration',
-							} satisfies ApiResponse,
-							400,
-						);
-					}
+				let replicationTotals:
+					| { goodId: number; totalQuantity: number; totalCost: number }[]
+					| null = null;
 
+				if (shouldReplicateToAltegio) {
 					const receivedTotals = await db
 						.select({
 							goodId: schemas.productStock.barcode,
@@ -5266,7 +5237,7 @@ const route = app
 						);
 					}
 
-					const aggregatedTotals = receivedTotals.reduce<
+					replicationTotals = receivedTotals.reduce<
 						{ goodId: number; totalQuantity: number; totalCost: number }[]
 					>((accumulator, item) => {
 						const totalQuantity = Number(item.totalQuantity ?? 0);
@@ -5282,11 +5253,60 @@ const route = app
 						return accumulator;
 					}, []);
 
-					if (aggregatedTotals.length === 0) {
+					if (replicationTotals.length === 0) {
 						return c.json(
 							{
 								success: false,
 								message: 'No received item quantities available for Altegio sync',
+							} satisfies ApiResponse,
+							400,
+						);
+					}
+				}
+
+				// Update the warehouse transfer
+				const updatedTransfer = await db
+					.update(schemas.warehouseTransfer)
+					.set(updateValues)
+					.where(eq(schemas.warehouseTransfer.id, transferId))
+					.returning();
+
+				if (updatedTransfer.length === 0) {
+					return c.json(
+						{
+							success: false,
+							message: 'Warehouse transfer not found',
+						} satisfies ApiResponse,
+						404,
+					);
+				}
+
+				const transferRow = updatedTransfer[0];
+				const transitionedToCompleted =
+					wasCompleted === false && transferRow.isCompleted === true;
+
+				// After successful status update, optionally replicate to Altegio when completed
+				if (shouldReplicateToAltegio && transitionedToCompleted) {
+					const authHeader = process.env.AUTH_HEADER;
+					const acceptHeader = process.env.ACCEPT_HEADER;
+
+					if (!(authHeader && acceptHeader)) {
+						// biome-ignore lint/suspicious/noConsole: Environment variable validation logging is essential
+						console.error('Missing required authentication configuration');
+						return c.json(
+							{
+								success: false,
+								message: 'Missing required authentication configuration',
+							} satisfies ApiResponse,
+							400,
+						);
+					}
+
+					if (!replicationTotals) {
+						return c.json(
+							{
+								success: false,
+								message: 'Missing validated received totals for Altegio sync',
 							} satisfies ApiResponse,
 							400,
 						);
@@ -5298,7 +5318,7 @@ const route = app
 						transferNumber: transferRow.transferNumber,
 						sourceWarehouseId: transferRow.sourceWarehouseId,
 						destinationWarehouseId: transferRow.destinationWarehouseId,
-						totalsCount: aggregatedTotals.length,
+						totalsCount: replicationTotals.length,
 					});
 
 					const replicationResult = await replicateWarehouseTransferToAltegio({
@@ -5306,7 +5326,7 @@ const route = app
 						transferNumber: transferRow.transferNumber,
 						sourceWarehouseId: transferRow.sourceWarehouseId,
 						destinationWarehouseId: transferRow.destinationWarehouseId,
-						altegioTotals: aggregatedTotals,
+						altegioTotals: replicationTotals,
 						headers: { authHeader, acceptHeader },
 					});
 
