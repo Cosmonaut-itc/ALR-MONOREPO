@@ -159,6 +159,7 @@ type CreateAltegioProductFormValues = {
 };
 
 const DEFAULT_ALTEGIO_TIME_ZONE = "America/Mexico_City";
+const MAX_QR_QUANTITY = 1000;
 
 const toPositiveNumber = (value: unknown): number | null => {
 	if (typeof value === "number" && Number.isFinite(value) && value > 0) {
@@ -987,7 +988,7 @@ export function InventarioPage({
 			return;
 		}
 		const quantity = Number.isFinite(qrQuantity)
-			? Math.max(1, Math.min(50, Math.floor(qrQuantity)))
+			? Math.max(1, Math.min(MAX_QR_QUANTITY, Math.floor(qrQuantity)))
 			: 1;
 		const selectedWarehouseMeta = warehouseCabinetMap.get(selectedWarehouseId);
 		const normalizedDescription = (() => {
@@ -2415,7 +2416,7 @@ export function InventarioPage({
 												id="qr-quantity"
 												inputMode="numeric"
 												min={1}
-												max={50}
+												max={MAX_QR_QUANTITY}
 												onChange={(event) => {
 													const nextValue = Number.parseInt(
 														event.target.value,
@@ -2425,7 +2426,9 @@ export function InventarioPage({
 														setQrQuantity(1);
 														return;
 													}
-													setQrQuantity(Math.max(1, Math.min(nextValue, 50)));
+													setQrQuantity(
+														Math.max(1, Math.min(nextValue, MAX_QR_QUANTITY)),
+													);
 												}}
 												type="number"
 												value={qrQuantity}
