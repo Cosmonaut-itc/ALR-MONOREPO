@@ -16,8 +16,6 @@ bun install
 # Start the development server with hot reload
 bun run dev
 
-# Start development server with concurrent type watching
-bun run dev:with-types
 ```
 
 ### Database Management
@@ -30,21 +28,6 @@ bun run db:studio
 
 # Generate new database migrations
 bun run db:generate
-```
-
-### Type Management
-```sh
-# Build server TypeScript types
-bun run build:server-types
-
-# Build API types package (without publishing)
-bun run build:types
-
-# Build and publish API types package
-bun run publish:types
-
-# Install dependencies for the API types package
-bun run install:types
 ```
 
 ## Usage

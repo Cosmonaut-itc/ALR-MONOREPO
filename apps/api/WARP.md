@@ -4,7 +4,7 @@ This file provides guidance to WARP (warp.dev) when working with code in this re
 
 Project overview
 - Runtime/tooling: Bun + TypeScript, Hono web framework, Drizzle ORM (PostgreSQL), Better Auth, Biome (lint/format), Bun test.
-- Packages: root API server and a types-only package in packages/api-types that re-exports the server’s AppType for typed RPC clients.
+- Packages: root API server for typed RPC clients.
 
 Common commands
 - Install dependencies
@@ -19,17 +19,12 @@ Common commands
 - Lint/format (Biome)
   - Lint check: bunx @biomejs/biome check .
   - Auto-fix & format: bunx @biomejs/biome check --write . && bunx @biomejs/biome format --write .
-- Type checking and type builds
+- Type checking
   - Type-check the project: bunx tsc -p tsconfig.json --noEmit
-  - Emit server d.ts (dist-types): bun run build:server-types
 - Tests (Bun)
   - Run all tests: bun test
   - Run a single file: bun test src/index.test.ts
   - Filter by name: bun test --filter "Auth test"
-- API types package (for typed clients)
-  - Build types (no publish): bun run build:types
-  - Publish types to npm: bun run publish:types (requires npm auth; runs scripts/build-and-publish-types.ts)
-
 Environment configuration
 - Required
   - DATABASE_URL: PostgreSQL connection string used by Drizzle and drizzle-kit.
@@ -60,8 +55,7 @@ High-level architecture
   - zod schemas in src/types.ts define external Altegio payloads; apiResponseSchema validates responses.
   - src/constants.ts provides in-memory mock datasets used as fallbacks when tables are empty.
   - src/lib/insert-mock-data.ts exports insertMockData() helper that inserts coherent mock rows into productStock, withdrawOrder, and withdrawOrderDetails.
-- API type distribution for clients
-  - packages/api-types re-exports type AppType from the server and ships d.ts only (see packages/api-types/package.json). build-and-publish-types.ts automates extract/build/publish.
+ 
 
 Useful development workflows
 - Seed development data (one-off)
@@ -69,9 +63,6 @@ Useful development workflows
     - bunx tsx -e "import('./src/lib/insert-mock-data.ts').then(m => m.insertMockData())"
 - Regenerate and inspect DB migrations
   - bun run db:generate && bun run db:studio
-- Build and use API types locally without publishing
-  - bun run build:types
-  - The script runs scripts/extract-app-type.ts, installs and builds packages/api-types, and emits dist types for editors/clients.
 
 Notes on repository rules
 - Cursor rules: see .cursor/rules/ultracite.mdc. They encode extensive accessibility and TypeScript/JS best practices. Highlights to keep in mind when modifying code:
