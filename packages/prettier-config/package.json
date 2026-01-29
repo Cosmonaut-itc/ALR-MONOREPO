@@ -1,0 +1,11 @@
+{
+  "name": "@alr/prettier-config",
+  "version": "0.0.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "index.cjs",
+  "exports": "./index.cjs",
+  "peerDependencies": {
+    "prettier": "^3.8.1"
+  }
+}
