@@ -139,7 +139,10 @@ export function DataTable<TData extends RowData, TValue>({
 				</div>
 			)}
 
-			<div className="rounded-md border border-[#E5E7EB] dark:border-[#2D3033]">
+			<div
+				className="rounded-md border border-[#E5E7EB] dark:border-[#2D3033]"
+				style={{ contentVisibility: "auto", containIntrinsicSize: "800px 600px" }}
+			>
 				<Table>
 					<TableHeader>
 						{table.getHeaderGroups().map((headerGroup) => (

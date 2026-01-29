@@ -4,6 +4,7 @@
 import { AlertTriangle, Loader2 } from 'lucide-react';
 import { useEffect } from 'react';
 import { toast } from 'sonner';
+import { useShallow } from 'zustand/shallow';
 import { Button } from '@/components/ui/button';
 import {
 	Dialog,
@@ -26,7 +27,18 @@ import { useDeleteInventoryItem } from '@/lib/mutations/inventory';
 import { type DisposalReason, useDisposalStore } from '@/stores/disposal-store';
 
 export function DisposeItemDialog() {
-	const { current, reason, open, isLoading, hide, setReason, confirm } = useDisposalStore();
+	const { current, reason, open, isLoading, hide, setReason, confirm } =
+		useDisposalStore(
+			useShallow((state) => ({
+				current: state.current,
+				reason: state.reason,
+				open: state.open,
+				isLoading: state.isLoading,
+				hide: state.hide,
+				setReason: state.setReason,
+				confirm: state.confirm,
+			})),
+		);
 	const { mutateAsync } = useDeleteInventoryItem();
 
 	const handleConfirm = async () => {

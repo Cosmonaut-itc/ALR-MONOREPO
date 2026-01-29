@@ -43,29 +43,41 @@ export default async function SettingsPage() {
 		: () => fetchEmployeesByWarehouseIdServer(warehouseId as string);
 
 	try {
+		const prefetches: Array<Promise<unknown>> = [];
+
 		// Prefetch users data so the client query hydrates
-		queryClient.prefetchQuery({
-			queryKey: queryKeys.users,
-			queryFn: () => fetchAllUsersServer(),
-		});
+		prefetches.push(
+			queryClient.prefetchQuery({
+				queryKey: queryKeys.users,
+				queryFn: () => fetchAllUsersServer(),
+			}),
+		);
 
 		// Prefetch warehouses data so the client query hydrates
-		queryClient.prefetchQuery({
-			queryKey: queryKeys.warehouses,
-			queryFn: () => fetchAllWarehousesServer(),
-		});
+		prefetches.push(
+			queryClient.prefetchQuery({
+				queryKey: queryKeys.warehouses,
+				queryFn: () => fetchAllWarehousesServer(),
+			}),
+		);
 
 		// Prefetch employees data so the client query hydrates
-		queryClient.prefetchQuery({
-			queryKey: createQueryKey(["employees"], employeesQueryParams as string[]),
-			queryFn: employeesPrefetchFn,
-		});
+		prefetches.push(
+			queryClient.prefetchQuery({
+				queryKey: createQueryKey(["employees"], employeesQueryParams as string[]),
+				queryFn: employeesPrefetchFn,
+			}),
+		);
 
 		// Prefetch permissions data so the client query hydrates
-		queryClient.prefetchQuery({
-			queryKey: createQueryKey(["permissions"], []),
-			queryFn: () => fetchAllPermissionsServer(),
-		});
+		prefetches.push(
+			queryClient.prefetchQuery({
+				queryKey: createQueryKey(["permissions"], []),
+				queryFn: () => fetchAllPermissionsServer(),
+			}),
+		);
+
+		await Promise.all(prefetches);
 
 		return (
 			<HydrationBoundary state={dehydrate(queryClient)}>

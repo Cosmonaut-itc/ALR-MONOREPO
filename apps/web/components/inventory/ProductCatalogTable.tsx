@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { useShallow } from "zustand/shallow";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -606,7 +607,7 @@ export function ProductCatalogTable({
 	visibleWarehouseIds,
 }: ProductCatalogTableProps) {
 	// Disposal store for dispose dialog
-	const { show: showDisposeDialog } = useDisposalStore();
+	const showDisposeDialog = useDisposalStore((state) => state.show);
 
 	// Inventory store for setting global state
 	const {
@@ -615,7 +616,15 @@ export function ProductCatalogTable({
 		setCategories,
 		productCatalog: storedProductCatalog,
 		inventoryData: storedInventoryData,
-	} = useInventoryStore();
+	} = useInventoryStore(
+		useShallow((state) => ({
+			setProductCatalog: state.setProductCatalog,
+			setInventoryData: state.setInventoryData,
+			setCategories: state.setCategories,
+			productCatalog: state.productCatalog,
+			inventoryData: state.inventoryData,
+		})),
+	);
 	const { mutateAsync: toggleKitAsync, isPending: isTogglingKit } =
 		useToggleInventoryKit();
 	const { mutateAsync: updateIsEmptyAsync, isPending: isUpdatingIsEmpty } =
@@ -2030,7 +2039,10 @@ export function ProductCatalogTable({
 								))}
 							</div>
 						)}
-						<div className="overflow-x-auto">
+						<div
+							className="overflow-x-auto"
+							style={{ contentVisibility: "auto", containIntrinsicSize: "1000px 700px" }}
+						>
 							<Table>
 								<TableHeader>
 									<TableRow className="border-[#E5E7EB] border-b dark:border-[#374151]">

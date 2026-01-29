@@ -35,7 +35,7 @@ interface InventoryCatalogTableProps {
 }
 
 export function InventoryCatalogTable({ catalog, inventory }: InventoryCatalogTableProps) {
-	const { show: showDisposeDialog } = useDisposalStore();
+	const showDisposeDialog = useDisposalStore((state) => state.show);
 	const [expanded, setExpanded] = useState<Set<number>>(new Set());
 
 	const toggleExpanded = (barcode: number) => {

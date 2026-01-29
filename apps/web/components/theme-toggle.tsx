@@ -5,9 +5,15 @@ import { Moon, Sun } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useThemeStore } from "@/stores/theme-store"
 import { useEffect, useState } from "react"
+import { useShallow } from "zustand/shallow"
 
 export function ThemeToggle() {
-  const { isDark, toggleTheme } = useThemeStore()
+  const { isDark, toggleTheme } = useThemeStore(
+    useShallow((state) => ({
+      isDark: state.isDark,
+      toggleTheme: state.toggleTheme,
+    }))
+  )
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {

@@ -9,13 +9,19 @@ import { Package, Calendar, Eye } from 'lucide-react'
 import { useKitsStore } from "@/stores/kits-store"
 import Link from 'next/link'
 import type { Kit } from "@/lib/schemas"
+import { useShallow } from "zustand/shallow"
 
 interface KitCardProps {
   kit: Kit
 }
 
 export function KitCard({ kit }: KitCardProps) {
-  const { employees, products } = useKitsStore()
+  const { employees, products } = useKitsStore(
+    useShallow((state) => ({
+      employees: state.employees,
+      products: state.products,
+    }))
+  )
   
   const employee = employees.find(emp => emp.id === kit.employeeId)
   const totalProducts = kit.items.reduce((sum, item) => sum + item.qty, 0)

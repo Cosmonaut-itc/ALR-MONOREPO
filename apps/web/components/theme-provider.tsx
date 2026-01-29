@@ -4,9 +4,15 @@
 import type React from "react"
 import { useEffect } from "react"
 import { useThemeStore } from "@/stores/theme-store"
+import { useShallow } from "zustand/shallow"
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const { isDark, initializeTheme } = useThemeStore()
+  const { isDark, initializeTheme } = useThemeStore(
+    useShallow((state) => ({
+      isDark: state.isDark,
+      initializeTheme: state.initializeTheme,
+    }))
+  )
 
   useEffect(() => {
     initializeTheme()

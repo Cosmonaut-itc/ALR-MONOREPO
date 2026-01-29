@@ -39,27 +39,39 @@ export default async function Page() {
 		: () => fetchStockByWarehouseServer(warehouseId);
 
 	try {
-		queryClient.prefetchQuery({
-			queryKey: createQueryKey(queryKeys.kits, []),
-			queryFn: () => fetchAllKitsServer(),
-		});
+		const prefetches: Array<Promise<unknown>> = [];
 
-		queryClient.prefetchQuery({
-			queryKey: createQueryKey(["employees"], [employeesKeyParam as string]),
-			queryFn: employeesPrefetchFn,
-		});
+		prefetches.push(
+			queryClient.prefetchQuery({
+				queryKey: createQueryKey(queryKeys.kits, []),
+				queryFn: () => fetchAllKitsServer(),
+			}),
+		);
+
+		prefetches.push(
+			queryClient.prefetchQuery({
+				queryKey: createQueryKey(["employees"], [employeesKeyParam as string]),
+				queryFn: employeesPrefetchFn,
+			}),
+		);
 
 		// Prefetch inventory data so the client query hydrates
-		queryClient.prefetchQuery({
-			queryKey: createQueryKey(queryKeys.inventory, [inventoryKeyParam]),
-			queryFn: inventoryPrefetchFn,
-		});
+		prefetches.push(
+			queryClient.prefetchQuery({
+				queryKey: createQueryKey(queryKeys.inventory, [inventoryKeyParam]),
+				queryFn: inventoryPrefetchFn,
+			}),
+		);
 
 		// Prefetch warehouses data so the client query hydrates
-		queryClient.prefetchQuery({
-			queryKey: queryKeys.warehouses,
-			queryFn: () => fetchAllWarehousesServer(),
-		});
+		prefetches.push(
+			queryClient.prefetchQuery({
+				queryKey: queryKeys.warehouses,
+				queryFn: () => fetchAllWarehousesServer(),
+			}),
+		);
+
+		await Promise.all(prefetches);
 
 		const currentDate = new Date().toISOString();
 

@@ -53,22 +53,28 @@ export default async function DashboardPage() {
 	const currentDate = new Date().toISOString();
 
 	try {
+		const prefetches: Array<Promise<unknown>> = [];
+
 		const inventoryPrefetchFn = isEncargado
 			? fetchAllProductStockServer
 			: warehouseId
 				? () => fetchStockByWarehouseServer(warehouseId)
 				: undefined;
 		if (inventoryPrefetchFn) {
-			await queryClient.prefetchQuery({
-				queryKey: createQueryKey(queryKeys.inventory, [scopeKey]),
-				queryFn: inventoryPrefetchFn,
-			});
+			prefetches.push(
+				queryClient.prefetchQuery({
+					queryKey: createQueryKey(queryKeys.inventory, [scopeKey]),
+					queryFn: inventoryPrefetchFn,
+				}),
+			);
 		}
 
-		await queryClient.prefetchQuery({
-			queryKey: queryKeys.cabinetWarehouse,
-			queryFn: () => fetchCabinetWarehouseServer(),
-		});
+		prefetches.push(
+			queryClient.prefetchQuery({
+				queryKey: queryKeys.cabinetWarehouse,
+				queryFn: () => fetchCabinetWarehouseServer(),
+			}),
+		);
 
 		const stockLimitsPrefetchFn = isEncargado
 			? fetchAllStockLimitsServer
@@ -76,16 +82,20 @@ export default async function DashboardPage() {
 				? () => fetchStockLimitsByWarehouseServer(warehouseId)
 				: undefined;
 		if (stockLimitsPrefetchFn) {
-			await queryClient.prefetchQuery({
-				queryKey: createQueryKey(queryKeys.stockLimits, [stockLimitsScope]),
-				queryFn: stockLimitsPrefetchFn,
-			});
+			prefetches.push(
+				queryClient.prefetchQuery({
+					queryKey: createQueryKey(queryKeys.stockLimits, [stockLimitsScope]),
+					queryFn: stockLimitsPrefetchFn,
+				}),
+			);
 		}
 
-		await queryClient.prefetchQuery({
-			queryKey: createQueryKey(queryKeys.kits, []),
-			queryFn: () => fetchAllKitsServer(),
-		});
+		prefetches.push(
+			queryClient.prefetchQuery({
+				queryKey: createQueryKey(queryKeys.kits, []),
+				queryFn: () => fetchAllKitsServer(),
+			}),
+		);
 
 		const employeesPrefetchFn = isEncargado
 			? fetchAllEmployeesServer
@@ -93,21 +103,27 @@ export default async function DashboardPage() {
 				? () => fetchEmployeesByWarehouseIdServer(warehouseId)
 				: undefined;
 		if (employeesPrefetchFn) {
-			await queryClient.prefetchQuery({
-				queryKey: createQueryKey(["employees"], [employeeScope]),
-				queryFn: employeesPrefetchFn,
-			});
+			prefetches.push(
+				queryClient.prefetchQuery({
+					queryKey: createQueryKey(["employees"], [employeeScope]),
+					queryFn: employeesPrefetchFn,
+				}),
+			);
 		}
 
-		await queryClient.prefetchQuery({
-			queryKey: queryKeys.productCatalog,
-			queryFn: () => fetchAllProductsServer(),
-		});
+		prefetches.push(
+			queryClient.prefetchQuery({
+				queryKey: queryKeys.productCatalog,
+				queryFn: () => fetchAllProductsServer(),
+			}),
+		);
 
-		await queryClient.prefetchQuery({
-			queryKey: queryKeys.warehouses,
-			queryFn: () => fetchAllWarehousesServer(),
-		});
+		prefetches.push(
+			queryClient.prefetchQuery({
+				queryKey: queryKeys.warehouses,
+				queryFn: () => fetchAllWarehousesServer(),
+			}),
+		);
 
 		const ordersPrefetchFn = canManageAllWarehouses
 			? () => fetchReplenishmentOrdersServer()
@@ -118,10 +134,12 @@ export default async function DashboardPage() {
 			const ordersKey = canManageAllWarehouses
 				? createQueryKey(queryKeys.replenishmentOrders, [scopeKey, "all"])
 				: createQueryKey(queryKeys.replenishmentOrders, [scopeKey]);
-			await queryClient.prefetchQuery({
-				queryKey: ordersKey,
-				queryFn: ordersPrefetchFn,
-			});
+			prefetches.push(
+				queryClient.prefetchQuery({
+					queryKey: ordersKey,
+					queryFn: ordersPrefetchFn,
+				}),
+			);
 		}
 
 		const recepcionesPrefetchFn = isEncargado
@@ -130,11 +148,15 @@ export default async function DashboardPage() {
 				? () => fetchWarehouseTransferByWarehouseIdServer(warehouseId)
 				: undefined;
 		if (recepcionesPrefetchFn) {
-			await queryClient.prefetchQuery({
-				queryKey: createQueryKey(queryKeys.receptions, [scopeKey]),
-				queryFn: recepcionesPrefetchFn,
-			});
+			prefetches.push(
+				queryClient.prefetchQuery({
+					queryKey: createQueryKey(queryKeys.receptions, [scopeKey]),
+					queryFn: recepcionesPrefetchFn,
+				}),
+			);
 		}
+
+		await Promise.all(prefetches);
 	} catch (error) {
 		console.error(error);
 		console.error("Error prefetching dashboard data");

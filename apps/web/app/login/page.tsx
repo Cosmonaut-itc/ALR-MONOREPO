@@ -39,7 +39,7 @@ export default function LoginPage() {
 			password: "",
 		},
 	});
-	const { login } = useAuthStore();
+	const login = useAuthStore((state) => state.login);
 	const { mutateAsync, isPending } = useLoginMutation();
 
 	const [showPassword, setShowPassword] = useState(false);

@@ -48,6 +48,7 @@ import type { getEmployeesByUserId } from "@/lib/fetch-functions/kits";
 import { useCreateKit, useUpdateProductStockUsage } from "@/lib/mutations/kits";
 import { cn } from "@/lib/utils";
 import { useKitsStore } from "@/stores/kits-store";
+import { useShallow } from "zustand/shallow";
 
 type EmployeesResponse = Awaited<
 	ReturnType<typeof getEmployeesByUserId>
@@ -98,7 +99,13 @@ export function AssignKitModal({
 	kitProducts,
 	todayKits = [],
 }: AssignKitModalProps) {
-	const { draft, setDraft, clearDraft } = useKitsStore();
+	const { draft, setDraft, clearDraft } = useKitsStore(
+		useShallow((state) => ({
+			draft: state.draft,
+			setDraft: state.setDraft,
+			clearDraft: state.clearDraft,
+		})),
+	);
 	const [employeeOpen, setEmployeeOpen] = useState(false);
 	const [kitId, setKitId] = useState("");
 	const [selectedProducts, setSelectedProducts] = useState<
