@@ -1,0 +1,14 @@
+{
+  "name": "@ns-inventory/api-contract",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/noop.js"
+    }
+  }
+}

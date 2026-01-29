@@ -135,9 +135,9 @@ type EmployeeData = {
 	name: string;
 	surname: string;
 	warehouseId: string;
-	passcode?: number;
-	userId?: string;
-	permissions?: string;
+	passcode?: number | null;
+	userId?: string | null;
+	permissions?: string | null;
 };
 
 type PermissionData = {

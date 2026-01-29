@@ -1,5 +1,5 @@
 import { hc } from 'hono/client';
-import type { AppType } from 'ns-inventory-api-types/dist/packages/api-types/src';
+import type { AppType } from '@ns-inventory/api-contract';
 import { authClient } from './auth';
 
 /**

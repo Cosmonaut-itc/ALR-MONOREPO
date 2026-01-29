@@ -11,8 +11,8 @@ import {
 	Users,
 	Warehouse,
 } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
-import { AssignKitModal } from "@/components/kits/AssignKitModal";
 import { EmployeeKitCard } from "@/components/kits/EmployeeKitCard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -44,6 +44,14 @@ import { createQueryKey } from "@/lib/helpers";
 import { queryKeys } from "@/lib/query-keys";
 import { cn } from "@/lib/utils";
 import type { EmployeesResponse, KitData, KitsResponse } from "@/types";
+
+const AssignKitModal = dynamic(
+	() =>
+		import("@/components/kits/AssignKitModal").then(
+			(mod) => mod.AssignKitModal,
+		),
+	{ ssr: false },
+);
 
 type APIResponse = KitsResponse;
 type InventoryResponse =
@@ -254,7 +262,7 @@ export default function KitsPageClient({
 		return filteredEmployees.map((employee) => {
 			// Get all products being used by this employee
 			const employeeProducts = productsBeingUsed.filter(
-				(product: { employee?: { id?: string } }) => product.employee?.id === employee.id,
+				(product) => product.employee?.id === employee.id,
 			);
 			// Get all kits for this employee
 			const employeeKits = kits.filter(
@@ -519,13 +527,15 @@ export default function KitsPageClient({
 			)}
 
 			{/* Assign Kit Modal */}
-			<AssignKitModal
-				employeesData={employeesResponse}
-				kitProducts={kitProducts}
-				onOpenChange={setModalOpen}
-				open={modalOpen}
-				todayKits={todayKits}
-			/>
+			{modalOpen && (
+				<AssignKitModal
+					employeesData={employeesResponse}
+					kitProducts={kitProducts}
+					onOpenChange={setModalOpen}
+					open={modalOpen}
+					todayKits={todayKits}
+				/>
+			)}
 		</div>
 	);
 }

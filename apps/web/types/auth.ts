@@ -18,12 +18,12 @@ export interface ExtendedUser extends BetterAuthUser {
 	/**
 	 * Display name for the user.
 	 */
-	name?: string | null;
+	name: string;
 
 	/**
 	 * Email address for the user.
 	 */
-	email?: string | null;
+	email: string;
 
 	/**
 	 * User role - matches your Drizzle schema
