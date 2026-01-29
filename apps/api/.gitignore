@@ -1,0 +1,25 @@
+# deps
+node_modules/
+
+# env
+.env
+.env.local
+
+# TypeScript compilation artifacts  
+*.js
+*.d.ts
+*.d.ts.map
+
+# But allow the types package dist
+!packages/*/dist/**/*
+
+# Build outputs
+dist/
+build/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
