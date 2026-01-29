@@ -130,6 +130,21 @@ type EmployeesResponse = Awaited<
  */
 type PermissionsResponse = Awaited<ReturnType<typeof getAllPermissions>>;
 
+type EmployeeData = {
+	id: string;
+	name: string;
+	surname: string;
+	warehouseId: string;
+	passcode?: number;
+	userId?: string;
+	permissions?: string;
+};
+
+type PermissionData = {
+	id: string;
+	name: string;
+};
+
 /**
  * Render the settings page with tabs for managing users (create and, for encargados, update) and warehouses.
  *
@@ -202,17 +217,19 @@ const warehouses =
 
 	const [deleteUserId, setDeleteUserId] = useState<string>("");
 	const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-	const employees = useMemo(() => {
+	const employees = useMemo<EmployeeData[]>(() => {
 		if (employeesResponse && "data" in employeesResponse) {
-			return (employeesResponse.data || []).map((item) => ({
-				id: item.employee.id,
-				name: item.employee.name,
-				surname: item.employee.surname,
-				warehouseId: item.employee.warehouseId,
-				passcode: item.employee.passcode,
-				userId: item.employee.userId,
-				permissions: item.employee.permissions,
-			}));
+			return (employeesResponse.data || []).map(
+				(item: { employee: EmployeeData }) => ({
+					id: item.employee.id,
+					name: item.employee.name,
+					surname: item.employee.surname,
+					warehouseId: item.employee.warehouseId,
+					passcode: item.employee.passcode,
+					userId: item.employee.userId,
+					permissions: item.employee.permissions,
+				}),
+			);
 		}
 		return [];
 	}, [employeesResponse]);
@@ -226,9 +243,9 @@ const warehouses =
 		return employees.filter((employee) => employee.warehouseId === warehouseId);
 	}, [employees, isEncargado, warehouseId]);
 
-	const permissions =
+	const permissions: PermissionData[] =
 		permissionsResponse && "data" in permissionsResponse
-			? permissionsResponse.data.map((p) => ({
+			? permissionsResponse.data.map((p: { id: string; permission: string }) => ({
 					id: p.id,
 					name: p.permission,
 				}))

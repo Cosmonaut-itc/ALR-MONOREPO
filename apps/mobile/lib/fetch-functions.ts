@@ -178,7 +178,7 @@ export const getCabinetWarehouses = async (): Promise<CabinetWarehouseMapEntry[]
  */
 export const checkDatabaseHealth = async (): Promise<ApiResponse> => {
 	try {
-		const response = await client.index.$get();
+		const response = await client.index.$get({});
 
 		if (!response.ok) {
 			throw new Error(`Health check failed with status: ${response.status}`);

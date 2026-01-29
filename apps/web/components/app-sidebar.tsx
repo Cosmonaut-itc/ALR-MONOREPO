@@ -158,12 +158,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 									size="lg"
 								>
 									<Avatar className="h-8 w-8 rounded-lg">
-										<AvatarImage alt={user?.name} src="/placeholder-user.jpg" />
+										<AvatarImage alt={user?.name ?? "Usuario"} src="/placeholder-user.jpg" />
 										<AvatarFallback className="rounded-lg bg-[#0a7ea4] text-white">
 											{user?.name
-												?.split(" ")
-												.map((n) => n[0])
-												.join("") || "U"}
+											?.split(" ")
+											.map((n: string) => n[0])
+											.join("") || "U"}
 										</AvatarFallback>
 									</Avatar>
 									<div className="grid flex-1 text-left text-sm leading-tight">

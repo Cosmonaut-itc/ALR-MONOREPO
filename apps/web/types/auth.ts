@@ -11,6 +11,21 @@ import type { User as BetterAuthUser } from 'better-auth/types';
  */
 export interface ExtendedUser extends BetterAuthUser {
 	/**
+	 * Primary user identifier.
+	 */
+	id: string;
+
+	/**
+	 * Display name for the user.
+	 */
+	name?: string | null;
+
+	/**
+	 * Email address for the user.
+	 */
+	email?: string | null;
+
+	/**
 	 * User role - matches your Drizzle schema
 	 */
 	role: string;

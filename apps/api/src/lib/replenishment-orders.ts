@@ -197,7 +197,7 @@ export async function createReplenishmentOrder({
 		}
 
 		await tx.insert(schemas.replenishmentOrderDetails).values(
-			input.items.map((item) => ({
+			input.items.map((item: ReplenishmentOrderItem) => ({
 				replenishmentOrderId: inserted[0].id,
 				barcode: item.barcode,
 				quantity: item.quantity,
@@ -293,7 +293,7 @@ export async function updateReplenishmentOrder({
 			 * This preserves the original quantity while allowing updates to sentQuantity, notes, and buyOrderGenerated.
 			 * If sentQuantity is provided, use it; otherwise, use quantity for backward compatibility.
 			 */
-			const updatePromises = input.items.map((item) => {
+			const updatePromises = input.items.map((item: ReplenishmentOrderItem) => {
 				const updateData: Partial<typeof schemas.replenishmentOrderDetails.$inferInsert> =
 					{};
 

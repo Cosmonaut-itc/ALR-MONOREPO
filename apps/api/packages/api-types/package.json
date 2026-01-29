@@ -6,6 +6,7 @@
   "sideEffects": false,
   "main": "dist/packages/api-types/src/noop.js",
   "types": "dist/packages/api-types/src/index.d.ts",
+  "packageManager": "bun@1.3.8",
   "exports": {
     "./dist/packages/api-types/src": {
       "types": "./dist/packages/api-types/src/index.d.ts",
@@ -20,7 +21,7 @@
   "scripts": {
     "clean": "rimraf dist",
     "build": "tsc -p tsconfig.json",
-    "prepublishOnly": "npm run clean && npm run build"
+    "prepublishOnly": "bun run clean && bun run build"
   },
   "peerDependencies": {
     "hono": ">=4.0.0"

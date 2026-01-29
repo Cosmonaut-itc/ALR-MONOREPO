@@ -11,6 +11,9 @@ import {
 	apiResponseSchemaGoodsTransaction,
 } from '../types';
 
+type AltegioDocumentResponse = z.infer<typeof apiResponseSchemaDocument>;
+type AltegioGoodsTransactionResponse = z.infer<typeof apiResponseSchemaGoodsTransaction>;
+
 const ALTEGIO_BASE_URL = 'https://api.alteg.io';
 const ALTEGIO_STORAGE_DOCUMENT_PATH = '/api/v1/storage_operations/documents';
 const ALTEGIO_GOODS_TRANSACTION_PATH = '/api/v1/storage_operations/goods_transactions';
@@ -307,7 +310,8 @@ export const createAltegioStorageOperationRequestBody = (
 		storage_id: parsed.storageId,
 		time_zone: formatTimeZoneOffset(resolvedTimeZone, parsed.createDate),
 		...(parsed.masterId !== undefined ? { master_id: parsed.masterId } : {}),
-		goods_transactions: parsed.goodsTransactions.map((transaction) => ({
+		goods_transactions: parsed.goodsTransactions.map(
+			(transaction: AltegioStorageOperationRequest['goodsTransactions'][number]) => ({
 			document_id: transaction.documentId,
 			good_id: transaction.goodId,
 			amount: transaction.amount,
@@ -318,7 +322,8 @@ export const createAltegioStorageOperationRequestBody = (
 			...(transaction.masterId !== undefined ? { master_id: transaction.masterId } : {}),
 			...(transaction.clientId !== undefined ? { client_id: transaction.clientId } : {}),
 			...(transaction.comment !== undefined ? { comment: transaction.comment } : {}),
-		})),
+		}),
+		),
 	};
 };
 
@@ -640,7 +645,7 @@ const executeAltegioArrival = async ({
 			timeZone: resolvedTimeZone,
 		};
 
-		const documentResponse = await postAltegioStorageDocument(
+		const documentResponse = await postAltegioStorageDocument<AltegioDocumentResponse>(
 			warehouse.altegioId,
 			headers,
 			documentRequest,
@@ -665,7 +670,7 @@ const executeAltegioArrival = async ({
 			...(details.transactionComment ? { comment: details.transactionComment } : {}),
 		};
 
-		const transactionResponse = await postAltegioGoodsTransaction(
+		const transactionResponse = await postAltegioGoodsTransaction<AltegioGoodsTransactionResponse>(
 			warehouse.altegioId,
 			headers,
 			transactionPayload,
@@ -824,7 +829,7 @@ const postTransferGoodsTransactions = async ({
 		};
 
 		// biome-ignore lint/nursery/noAwaitInLoop: Transactions must be created in sequence for traceability.
-		const transactionResponse = await postAltegioGoodsTransaction(
+		const transactionResponse = await postAltegioGoodsTransaction<AltegioGoodsTransactionResponse>(
 			companyId,
 			headers,
 			transactionPayload,
@@ -959,8 +964,8 @@ const resolveTransferStorageConfig = ({
 
 	return {
 		kind: 'ok',
-		sourceStorage,
-		destinationStorage,
+		...(sourceStorage ? { sourceStorage } : {}),
+		...(destinationStorage ? { destinationStorage } : {}),
 		sourceHasConfig,
 		destinationHasConfig,
 	};
@@ -1036,10 +1041,10 @@ const createTransferDocument = async ({
 	masterId: number;
 }): Promise<DocumentCreationResult> => {
 	if (!(shouldCreate && storage)) {
-		return { kind: 'ok', documentId: undefined, transactionCount: 0 };
+		return { kind: 'ok', transactionCount: 0 };
 	}
 
-	const document = await postAltegioStorageDocument(
+	const document = await postAltegioStorageDocument<AltegioDocumentResponse>(
 		warehouse.altegioId as number,
 		headers,
 		{
@@ -1142,7 +1147,7 @@ export const replicateWarehouseTransferToAltegio = async ({
 
 		const arrivalResult = await createTransferDocument({
 			warehouse: destinationWarehouse,
-			storage: destinationStorage,
+			...(destinationStorage ? { storage: destinationStorage } : {}),
 			shouldCreate: destinationHasConfig,
 			typeId: ALTEGIO_DOCUMENT_TYPE_ARRIVAL,
 			documentComment: `Arrival document for transfer ${transferNumber}`,
@@ -1162,7 +1167,7 @@ export const replicateWarehouseTransferToAltegio = async ({
 
 		const departureResult = await createTransferDocument({
 			warehouse: sourceWarehouse,
-			storage: sourceStorage,
+			...(sourceStorage ? { storage: sourceStorage } : {}),
 			shouldCreate: sourceHasConfig,
 			typeId: ALTEGIO_DOCUMENT_TYPE_DEPARTURE,
 			documentComment: `Departure document for transfer ${transferNumber}`,
@@ -1194,8 +1199,10 @@ export const replicateWarehouseTransferToAltegio = async ({
 			success: true,
 			message: 'Altegio transfer replication successful',
 			data: {
-				departureDocumentId,
-				arrivalDocumentId,
+				...(departureDocumentId !== undefined
+					? { departureDocumentId }
+					: {}),
+				...(arrivalDocumentId !== undefined ? { arrivalDocumentId } : {}),
 				transactionCount,
 			},
 		};

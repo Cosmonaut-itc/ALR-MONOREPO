@@ -144,7 +144,7 @@ export default function KitsPageClient({
 	const kitProducts = useMemo(() => {
 		return inventoryResponse && "data" in inventoryResponse
 			? inventoryResponse.data.warehouse.filter(
-					(product) =>
+					(product: { productStock?: { isKit?: boolean; isBeingUsed?: boolean } }) =>
 						product.productStock?.isKit && !product.productStock?.isBeingUsed,
 				)
 			: [];
@@ -153,7 +153,7 @@ export default function KitsPageClient({
 	const productsBeingUsed = useMemo(() => {
 		return inventoryResponse && "data" in inventoryResponse
 			? inventoryResponse.data.warehouse.filter(
-					(product) =>
+					(product: { productStock?: { isKit?: boolean; isBeingUsed?: boolean } }) =>
 						product.productStock?.isBeingUsed && !product.productStock?.isKit,
 				)
 			: [];
@@ -254,7 +254,7 @@ export default function KitsPageClient({
 		return filteredEmployees.map((employee) => {
 			// Get all products being used by this employee
 			const employeeProducts = productsBeingUsed.filter(
-				(product) => product.employee?.id === employee.id,
+				(product: { employee?: { id?: string } }) => product.employee?.id === employee.id,
 			);
 			// Get all kits for this employee
 			const employeeKits = kits.filter(

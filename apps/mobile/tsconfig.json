@@ -5,7 +5,10 @@
 		"skipLibCheck": true,
 		"exactOptionalPropertyTypes": true,
 		"paths": {
-			"@/*": ["./*"]
+			"@/*": ["./*"],
+			"ns-inventory-api-types/dist/packages/api-types/src": [
+				"../api/packages/api-types/src"
+			]
 		}
 	},
 	"include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts"]

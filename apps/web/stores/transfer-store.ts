@@ -160,7 +160,7 @@ export const useTransferStore = create<TransferState>()(
 				}
 
 				const product = productCatalog.data.find(
-					(p) => {
+					(p: unknown) => {
 						if (typeof p !== "object" || p === null) {
 							return false;
 						}

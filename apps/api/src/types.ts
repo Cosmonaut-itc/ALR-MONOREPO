@@ -35,7 +35,7 @@ export const dataItemSchema = z.object({
 	desired_amount: z.number(),
 	actual_amounts: z.array(actualAmountSchema),
 	last_change_date: z.string().refine(
-		(val) => {
+		(val: string) => {
 			// More flexible date validation - accept various date formats
 			try {
 				const date = new Date(val);
@@ -68,7 +68,7 @@ const documentStorageSchema = z.object({
 
 const coordinateStringSchema = z
 	.union([z.string(), z.number()])
-	.transform((value) => value.toString());
+	.transform((value: string | number) => value.toString());
 
 const documentCompanySchema = z.object({
 	id: z.number(),
@@ -307,7 +307,12 @@ export const replenishmentOrderUpdateSchema = z
 			.optional(),
 	})
 	.refine(
-		(value) =>
+		(value: {
+			isSent?: boolean;
+			isReceived?: boolean;
+			notes?: string;
+			items?: unknown[];
+		}) =>
 			value.isSent !== undefined ||
 			value.isReceived !== undefined ||
 			value.notes !== undefined ||

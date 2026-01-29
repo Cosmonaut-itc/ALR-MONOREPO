@@ -178,7 +178,9 @@ function resolveBarcode(good: AltegioGood): number | null {
  * Derives the consumables count for a warehouse from Altegio stock data.
  */
 function extractTargetCount(good: AltegioGood, consumablesId: number): number {
-	const match = good.actual_amounts.find((entry) => entry.storage_id === consumablesId);
+	const match = good.actual_amounts.find(
+		(entry: { storage_id: number; amount: number }) => entry.storage_id === consumablesId,
+	);
 	if (!match) {
 		return 0;
 	}

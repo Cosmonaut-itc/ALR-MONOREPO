@@ -86,6 +86,26 @@ type CabinetWarehouseMapEntry = {
  * - 'quantity': Requires minQuantity and maxQuantity
  * - 'usage': Requires minUsage and maxUsage
  */
+type StockLimitCreateInput = {
+	warehouseId: string;
+	barcode: number;
+	limitType: 'quantity' | 'usage';
+	minQuantity?: number;
+	maxQuantity?: number;
+	minUsage?: number;
+	maxUsage?: number;
+	notes?: string;
+};
+
+type StockLimitUpdateInput = {
+	limitType?: 'quantity' | 'usage';
+	minQuantity?: number;
+	maxQuantity?: number;
+	minUsage?: number;
+	maxUsage?: number;
+	notes?: string;
+};
+
 const stockLimitCreateSchema = z
 	.object({
 		warehouseId: z.string().uuid('Invalid warehouse ID'),
@@ -100,7 +120,7 @@ const stockLimitCreateSchema = z
 		notes: z.string().max(1000, 'Notes must be 1000 characters or less').optional(),
 	})
 	.refine(
-		(data) => {
+		(data: StockLimitCreateInput) => {
 			if (data.limitType === 'quantity') {
 				return (
 					data.minQuantity !== undefined &&
@@ -116,7 +136,7 @@ const stockLimitCreateSchema = z
 		},
 	)
 	.refine(
-		(data) => {
+		(data: StockLimitCreateInput) => {
 			if (data.limitType === 'usage') {
 				return (
 					data.minUsage !== undefined &&
@@ -132,7 +152,7 @@ const stockLimitCreateSchema = z
 		},
 	)
 	.refine(
-		(data) => {
+		(data: StockLimitCreateInput) => {
 			if (data.limitType === 'quantity') {
 				return data.minQuantity !== undefined && data.maxQuantity !== undefined;
 			}
@@ -144,7 +164,7 @@ const stockLimitCreateSchema = z
 		},
 	)
 	.refine(
-		(data) => {
+		(data: StockLimitCreateInput) => {
 			if (data.limitType === 'usage') {
 				return data.minUsage !== undefined && data.maxUsage !== undefined;
 			}
@@ -170,7 +190,7 @@ const stockLimitUpdateSchema = z
 		notes: z.string().max(1000, 'Notes must be 1000 characters or less').optional(),
 	})
 	.refine(
-		(data) => {
+		(data: StockLimitUpdateInput) => {
 			// If updating quantity fields, ensure min <= max
 			if (
 				data.minQuantity !== undefined &&
@@ -187,7 +207,7 @@ const stockLimitUpdateSchema = z
 		},
 	)
 	.refine(
-		(data) => {
+		(data: StockLimitUpdateInput) => {
 			// If updating usage fields, ensure min <= max
 			if (
 				data.minUsage !== undefined &&
@@ -1169,7 +1189,9 @@ const route = app
 		zValidator('json', altegioCreateProductRequestSchema),
 		async (c) => {
 			try {
-				const { locationIds, product } = c.req.valid('json');
+				const { locationIds, product } = c.req.valid('json') as z.infer<
+					typeof altegioCreateProductRequestSchema
+				>;
 
 				const authHeader = process.env.AUTH_HEADER;
 				const acceptHeader = process.env.ACCEPT_HEADER;
@@ -1188,8 +1210,8 @@ const route = app
 
 				const parsedLocationIds = locationIds
 					.split(',')
-					.map((value) => Number.parseInt(value.trim(), 10))
-					.filter((value) => Number.isInteger(value) && value > 0);
+					.map((value: string) => Number.parseInt(value.trim(), 10))
+					.filter((value: number) => Number.isInteger(value) && value > 0);
 
 				if (parsedLocationIds.length === 0) {
 					return c.json(
@@ -3609,7 +3631,13 @@ const route = app
 		async (c) => {
 			try {
 				const { dateWithdraw, employeeId, numItems, products, isComplete } =
-					c.req.valid('json');
+					c.req.valid('json') as {
+						dateWithdraw: string;
+						employeeId: string;
+						numItems: number;
+						products: string[];
+						isComplete?: boolean;
+					};
 
 				// Validate that numItems matches the number of products
 				if (numItems !== products.length) {
@@ -3862,7 +3890,13 @@ const route = app
 		),
 		async (c) => {
 			try {
-				const { dateReturn, orders } = c.req.valid('json');
+				const { dateReturn, orders } = c.req.valid('json') as {
+					dateReturn: string;
+					orders: Array<{
+						withdrawOrderId: string;
+						productStockIds: string[];
+					}>;
+				};
 
 				if (orders.length === 0) {
 					return c.json(
@@ -4399,7 +4433,12 @@ const route = app
 					isCedis: z.boolean().optional(),
 				})
 				.refine(
-					(data) =>
+					(data: {
+						altegioId?: number;
+						consumablesId?: number;
+						salesId?: number;
+						isCedis?: boolean;
+					}) =>
 						data.altegioId !== undefined ||
 						data.consumablesId !== undefined ||
 						data.salesId !== undefined ||
@@ -4847,7 +4886,26 @@ const route = app
 					priority,
 					transferDetails,
 					isCabinetToWarehouse,
-				} = c.req.valid('json');
+				} = c.req.valid('json') as {
+					transferNumber: string;
+					transferType: 'external' | 'internal';
+					sourceWarehouseId: string;
+					destinationWarehouseId: string;
+					cabinetId?: string;
+					initiatedBy: string;
+					transferReason?: string;
+					notes?: string;
+					priority?: 'normal' | 'high' | 'urgent';
+					transferDetails: Array<{
+						productStockId: string;
+						quantityTransferred: number;
+						itemCondition?: 'good' | 'damaged' | 'needs_inspection';
+						itemNotes?: string;
+						goodId: number;
+						costPerUnit: number;
+					}>;
+					isCabinetToWarehouse?: boolean;
+				};
 
 				// Validate that source and destination warehouses are different
 				if (sourceWarehouseId === destinationWarehouseId && transferType === 'external') {
@@ -5874,7 +5932,14 @@ const route = app
 		),
 		async (c) => {
 			try {
-				const { assignedEmployee, observations, kitItems } = c.req.valid('json');
+				const { assignedEmployee, observations, kitItems } = c.req.valid('json') as {
+					assignedEmployee: string;
+					observations?: string;
+					kitItems: Array<{
+						productId: string;
+						observations?: string;
+					}>;
+				};
 
 				// Get the product stock IDs for validation
 				const productStockIds = kitItems.map((item) => item.productId);
