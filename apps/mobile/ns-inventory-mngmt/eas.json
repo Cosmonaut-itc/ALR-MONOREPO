@@ -1,0 +1,31 @@
+{
+  "cli": {
+    "version": ">= 13.0.0"
+  },
+  "build": {
+    "preview": {
+      "channel": "preview",
+      "distribution": "internal",
+      "developmentClient": false,
+      "env": {
+        "BETTER_AUTH_SECRET": "${BETTER_AUTH_SECRET}",
+        "BETTER_AUTH_URL": "${BETTER_AUTH_URL}",
+        "EXPO_PUBLIC_API_URL": "${EXPO_PUBLIC_API_URL}"
+      }
+    },
+    "production": {
+      "channel": "production",
+      "env": {
+        "BETTER_AUTH_SECRET": "${BETTER_AUTH_SECRET}",
+        "BETTER_AUTH_URL": "${BETTER_AUTH_URL}",
+        "EXPO_PUBLIC_API_URL": "${EXPO_PUBLIC_API_URL}"
+      }
+    }
+  },
+  "submit": {
+    "production": {},
+    "preview": {
+      "extends": "production"
+    }
+  }
+}
