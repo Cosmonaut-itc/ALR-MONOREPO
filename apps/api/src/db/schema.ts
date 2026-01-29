@@ -1,6 +1,7 @@
 import { relations, sql } from 'drizzle-orm';
 import {
 	type AnyPgColumn,
+	bigint,
 	boolean,
 	date,
 	index,
@@ -108,7 +109,7 @@ export const healthCheck = pgTable('health_check', {
 
 export const productStock = pgTable('product_stock', {
 	id: uuid('id').defaultRandom().primaryKey().notNull(),
-	barcode: integer('barcode').default(0).notNull(),
+	barcode: bigint('barcode', { mode: 'number' }).default(0).notNull(),
 	description: text('description'),
 	lastUsed: date('last_used'),
 	lastUsedBy: uuid('last_used_by').references(() => employee.id),
@@ -144,7 +145,7 @@ export const stockLimit = pgTable(
 				onUpdate: 'cascade',
 				onDelete: 'restrict',
 			}),
-		barcode: integer('barcode').notNull(),
+		barcode: bigint('barcode', { mode: 'number' }).notNull(),
 		limitType: text('limit_type').default('quantity').notNull(), // 'quantity' or 'usage'
 		// Quantity-based limits (used when limitType is 'quantity')
 		minQuantity: integer('min_quantity').default(0).notNull(),
@@ -412,7 +413,7 @@ export const replenishmentOrderDetails = pgTable(
 				onUpdate: 'cascade',
 				onDelete: 'cascade',
 			}),
-		barcode: integer('barcode').notNull(),
+		barcode: bigint('barcode', { mode: 'number' }).notNull(),
 		quantity: integer('quantity').notNull(),
 		notes: text('notes'),
 		sentQuantity: integer('sent_quantity').default(0).notNull(),

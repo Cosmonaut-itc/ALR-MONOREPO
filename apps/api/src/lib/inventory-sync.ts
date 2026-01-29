@@ -13,7 +13,7 @@ import {
 const PAGE_SIZE = 100;
 const INSERT_CHUNK_SIZE = 500;
 const MAX_INSERT_PER_PRODUCT = 2000;
-const INT32_MAX = 2_147_483_647;
+const MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER;
 
 type ProductStockInsert = typeof schema.productStock.$inferInsert;
 
@@ -153,17 +153,21 @@ async function fetchGoods(altegioId: number, headers: HeadersInit): Promise<Alte
 }
 
 /**
- * Normalises an Altegio goods barcode to a 32-bit integer if possible.
+ * Normalises an Altegio goods barcode to a safe integer if possible.
  */
 function resolveBarcode(good: AltegioGood): number | null {
 	if (typeof good.barcode === 'string' && good.barcode.trim().length > 0) {
 		const parsed = Number.parseInt(good.barcode.trim(), 10);
-		if (Number.isInteger(parsed) && parsed >= 0 && parsed <= INT32_MAX) {
+		if (Number.isInteger(parsed) && parsed >= 0 && parsed <= MAX_SAFE_INTEGER) {
 			return parsed;
 		}
 	}
 
-	if (Number.isInteger(good.good_id) && good.good_id >= 0 && good.good_id <= INT32_MAX) {
+	if (
+		Number.isInteger(good.good_id) &&
+		good.good_id >= 0 &&
+		good.good_id <= MAX_SAFE_INTEGER
+	) {
 		return good.good_id;
 	}
 

@@ -246,6 +246,13 @@
       "when": 1763066067689,
       "tag": "0034_stiff_the_renegades",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1769649660937,
+      "tag": "0035_mute_fat_cobra",
+      "breakpoints": true
     }
   ]
 }
