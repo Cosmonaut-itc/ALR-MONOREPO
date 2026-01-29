@@ -1,0 +1,2254 @@
+"use memo";
+"use client";
+
+import { useSuspenseQuery } from "@tanstack/react-query";
+import type { ColumnDef, ColumnFiltersState } from "@tanstack/react-table";
+import {
+	flexRender,
+	getCoreRowModel,
+	getFacetedRowModel,
+	getFacetedUniqueValues,
+	getFilteredRowModel,
+	getPaginationRowModel,
+	getSortedRowModel,
+	useReactTable,
+} from "@tanstack/react-table";
+import { addDays, format, formatISO } from "date-fns";
+import { es } from "date-fns/locale";
+import {
+	ArrowRight,
+	Calendar,
+	CalendarIcon,
+	CheckCircle,
+	Clock,
+	Package,
+	Plus,
+	Trash2,
+} from "lucide-react";
+import Link from "next/link";
+import {
+	type FormEvent,
+	useCallback,
+	useEffect,
+	useMemo,
+	useState,
+} from "react";
+import { toast } from "sonner";
+import { useShallow } from "zustand/shallow";
+import { GroupedProductCombobox } from "@/components/recepciones/GroupedProductCombobox";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Calendar as CalendarPicker } from "@/components/ui/calendar";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+	DialogTrigger,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+	Popover,
+	PopoverContent,
+	PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+	Select,
+	SelectContent,
+	SelectGroup,
+	SelectItem,
+	SelectLabel,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+} from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
+import {
+	getAllProductStock,
+	getAllProducts,
+	getCabinetWarehouse,
+	getInventoryByWarehouse,
+} from "@/lib/fetch-functions/inventory";
+import {
+	getWarehouseTransferAll,
+	getWarehouseTransferAllByWarehouseId,
+} from "@/lib/fetch-functions/recepciones";
+import {
+	getReplenishmentOrders,
+	getReplenishmentOrdersByWarehouse,
+} from "@/lib/fetch-functions/replenishment-orders";
+import { createQueryKey } from "@/lib/helpers";
+import { useCreateTransferOrder } from "@/lib/mutations/transfers";
+import { queryKeys } from "@/lib/query-keys";
+import {
+	cn,
+	createWarehouseOptions,
+	isRecord,
+	toRecord,
+	toStringIfString,
+} from "@/lib/utils";
+import { useAuthStore } from "@/stores/auth-store";
+import { useReceptionStore } from "@/stores/reception-store";
+import type {
+	ProductCatalogItem,
+	ProductCatalogResponse,
+	ProductStockWithEmployee,
+	ReplenishmentOrdersResponse,
+	WarehouseMap,
+	WarehouseTransfer,
+} from "@/types";
+
+type APIResponse = WarehouseTransfer | null;
+type InventoryAPIResponse =
+	| Awaited<ReturnType<typeof getAllProductStock>>
+	| Awaited<ReturnType<typeof getInventoryByWarehouse>>
+	| ProductStockWithEmployee
+	| null;
+type UnknownRecord = Record<string, unknown>;
+
+type ProductGroupOption = {
+	barcode: number;
+	description: string;
+	name: string;
+	items: ProductItemOption[];
+};
+
+type ProductItemOption = {
+	productStockId: string;
+	productName: string;
+	barcode: number;
+	description: string;
+};
+
+type ColumnMeta = {
+	headerClassName?: string;
+	cellClassName?: string;
+};
+
+// Narrowed item interface based on expected transfer fields
+interface TransferDetailItem {
+	quantityTransferred?: number;
+}
+
+interface TransferListItemShape {
+	id?: string;
+	sourceWarehouseId?: string;
+	destinationWarehouseId?: string;
+	transferNumber?: string;
+	shipmentId?: string;
+	status?: string;
+	isCompleted?: boolean;
+	isPending?: boolean;
+	isCancelled?: boolean;
+	transferStatus?: string;
+	transferDetails?: readonly TransferDetailItem[] | TransferDetailItem[];
+	scheduledDate?: string;
+	receivedAt?: string;
+	createdAt?: string;
+	updatedAt?: string;
+	totalItems?: number;
+	transferType?: string;
+}
+
+// Type guard utilities
+const isTransferDetailArray = (
+	value: unknown,
+): value is readonly TransferDetailItem[] | TransferDetailItem[] =>
+	Array.isArray(value);
+
+const isTransferListItem = (value: unknown): value is TransferListItemShape =>
+	value !== null && typeof value === "object";
+
+const filterTransferListItems = (
+	value: unknown,
+): TransferListItemShape[] => {
+	if (!Array.isArray(value)) {
+		return [];
+	}
+	return value.filter((item): item is TransferListItemShape =>
+		isTransferListItem(item),
+	);
+};
+
+const toNumberIfNumber = (value: unknown): number | undefined =>
+	typeof value === "number" && Number.isFinite(value) ? value : undefined;
+
+const parseNumericString = (value?: string | null): number | undefined => {
+	if (!value) {
+		return;
+	}
+	const parsed = Number.parseInt(value, 10);
+	return Number.isNaN(parsed) ? undefined : parsed;
+};
+
+const normalizeWarehouseIdentifier = (value: unknown): string | undefined => {
+	if (typeof value === "string") {
+		const trimmed = value.trim();
+		return trimmed.length > 0 ? trimmed : undefined;
+	}
+	if (typeof value === "number" && Number.isFinite(value)) {
+		return String(value);
+	}
+	return undefined;
+};
+
+const toBoolean = (value: unknown): boolean => {
+	if (typeof value === "boolean") {
+		return value;
+	}
+	if (typeof value === "string") {
+		const normalized = value.trim().toLowerCase();
+		if (!normalized) {
+			return false;
+		}
+		return ["true", "1", "yes", "y", "activo", "active"].includes(normalized);
+	}
+	if (typeof value === "number") {
+		return value !== 0;
+	}
+	if (value instanceof Date) {
+		return !Number.isNaN(value.getTime());
+	}
+	return Boolean(value);
+};
+
+const isItemDeleted = (record: UnknownRecord | undefined): boolean => {
+	if (!record) {
+		return false;
+	}
+	if ("isDeleted" in record && toBoolean(record.isDeleted)) {
+		return true;
+	}
+	if ("deleted" in record && toBoolean(record.deleted)) {
+		return true;
+	}
+	if ("deletedAt" in record && record.deletedAt) {
+		return true;
+	}
+	if ("status" in record && typeof record.status === "string") {
+		const status = record.status.toLowerCase();
+		if (status.includes("delete") || status === "inactive") {
+			return true;
+		}
+	}
+	return false;
+};
+
+const isItemInUse = (record: UnknownRecord | undefined): boolean => {
+	if (!record) {
+		return false;
+	}
+	if ("isBeingUsed" in record && toBoolean(record.isBeingUsed)) {
+		return true;
+	}
+	if ("inUse" in record && toBoolean(record.inUse)) {
+		return true;
+	}
+	if ("is_in_use" in record && toBoolean(record.is_in_use)) {
+		return true;
+	}
+	return false;
+};
+
+const collectWarehouseIdentifiers = (
+	record: UnknownRecord | undefined,
+): string[] => {
+	if (!record) {
+		return [];
+	}
+
+	const candidateValues: unknown[] = [
+		(record as { warehouseId?: unknown }).warehouseId,
+		(record as { warehouse_id?: unknown }).warehouse_id,
+		(record as { currentWarehouseId?: unknown }).currentWarehouseId,
+		(record as { currentWarehouse?: unknown }).currentWarehouse,
+		(record as { sourceWarehouseId?: unknown }).sourceWarehouseId,
+		(record as { originWarehouseId?: unknown }).originWarehouseId,
+		(record as { originWarehouse?: unknown }).originWarehouse,
+		(record as { locationWarehouseId?: unknown }).locationWarehouseId,
+		(record as { warehouse?: unknown }).warehouse,
+	];
+
+	const warehouseRecord = toRecord(
+		(record as { warehouse?: unknown }).warehouse,
+	);
+	if (warehouseRecord) {
+		candidateValues.push(warehouseRecord.id);
+		candidateValues.push(
+			(warehouseRecord as { warehouseId?: unknown }).warehouseId,
+		);
+		candidateValues.push(
+			(warehouseRecord as { warehouse_id?: unknown }).warehouse_id,
+		);
+		candidateValues.push((warehouseRecord as { uuid?: unknown }).uuid);
+		candidateValues.push((warehouseRecord as { code?: unknown }).code);
+	}
+
+	const currentWarehouseRecord = toRecord(
+		(record as { currentWarehouse?: unknown }).currentWarehouse,
+	);
+	if (currentWarehouseRecord) {
+		candidateValues.push(currentWarehouseRecord.id);
+		candidateValues.push(
+			(currentWarehouseRecord as { warehouseId?: unknown }).warehouseId,
+		);
+		candidateValues.push(
+			(currentWarehouseRecord as { warehouse_id?: unknown }).warehouse_id,
+		);
+		candidateValues.push((currentWarehouseRecord as { uuid?: unknown }).uuid);
+	}
+
+	const locationRecord = toRecord((record as { location?: unknown }).location);
+	if (locationRecord) {
+		candidateValues.push(locationRecord.id);
+		candidateValues.push(
+			(locationRecord as { warehouseId?: unknown }).warehouseId,
+		);
+		candidateValues.push(
+			(locationRecord as { warehouse_id?: unknown }).warehouse_id,
+		);
+	}
+
+	const identifiers = new Set<string>();
+	for (const value of candidateValues) {
+		const normalized = normalizeWarehouseIdentifier(value);
+		if (normalized) {
+			identifiers.add(normalized);
+		}
+	}
+
+	return Array.from(identifiers);
+};
+
+const extractWarehouseItems = (root: InventoryAPIResponse): UnknownRecord[] => {
+	if (!root) {
+		return [];
+	}
+
+	if (Array.isArray(root)) {
+		return root.filter((item): item is UnknownRecord => isRecord(item));
+	}
+
+	const rootRecord = toRecord(root);
+	const dataRecord = toRecord(rootRecord?.data);
+	const warehouseCandidates: unknown[] = [];
+
+	if (rootRecord?.warehouse) {
+		warehouseCandidates.push(rootRecord.warehouse);
+	}
+	if (dataRecord?.warehouse) {
+		warehouseCandidates.push(dataRecord.warehouse);
+	}
+	if (dataRecord?.warehouseData) {
+		warehouseCandidates.push(dataRecord.warehouseData);
+	}
+	if (rootRecord?.warehouseData) {
+		warehouseCandidates.push(rootRecord.warehouseData);
+	}
+
+	const firstArray = warehouseCandidates.find((candidate) =>
+		Array.isArray(candidate),
+	);
+	if (Array.isArray(firstArray)) {
+		return firstArray.filter((item): item is UnknownRecord => isRecord(item));
+	}
+
+	return [];
+};
+
+type WarehouseMappingEntry = {
+	cabinetId: string;
+	cabinetName: string;
+	warehouseId: string;
+	warehouseName: string;
+};
+
+/**
+ * Determines whether the given value is a successful warehouse-map response.
+ *
+ * Only validates that `map` is an object with a `success` property that is `true`.
+ *
+ * @param map - The value to test
+ * @returns `true` if `map.success` is `true`, `false` otherwise
+ */
+function isWarehouseMapSuccess(map: WarehouseMap | null | undefined): map is {
+	success: true;
+	message: string;
+	data: WarehouseMappingEntry[];
+} {
+	return Boolean(
+		map && typeof map === "object" && "success" in map && map.success,
+	);
+}
+
+const createCatalogLookup = (
+	catalog: ProductCatalogResponse | null,
+): Map<number, { name: string; description: string }> => {
+	const map = new Map<number, { name: string; description: string }>();
+	if (!catalog || typeof catalog !== "object" || !catalog.success) {
+		return map;
+	}
+	const records = Array.isArray(catalog.data) ? catalog.data : [];
+	for (const recordRaw of records) {
+		const record = toRecord(recordRaw);
+		if (!record) {
+			continue;
+		}
+		const barcode =
+			toNumberIfNumber(record.barcode) ??
+			parseNumericString(toStringIfString(record.barcode)) ??
+			toNumberIfNumber(record.good_id) ??
+			parseNumericString(toStringIfString(record.good_id));
+		if (!barcode || Number.isNaN(barcode)) {
+			continue;
+		}
+		const name =
+			toStringIfString(record.title) ??
+			toStringIfString(record.name) ??
+			`Producto ${barcode}`;
+		const description =
+			toStringIfString(record.comment) ??
+			toStringIfString(record.description) ??
+			name;
+		map.set(barcode, { name, description });
+	}
+	return map;
+};
+
+type NormalizedInventoryItem = {
+	productStockId: string;
+	barcode: number;
+	productName: string;
+	productStockRecord: UnknownRecord;
+};
+
+const normalizeInventoryItem = (
+	raw: UnknownRecord,
+	index: number,
+): NormalizedInventoryItem | null => {
+	const productStockRecord = toRecord(raw.productStock) ?? raw;
+	const nestedProduct =
+		toRecord(productStockRecord.product) ??
+		toRecord(productStockRecord.productInfo) ??
+		toRecord(raw.product) ??
+		toRecord(raw.productInfo);
+
+	const productStockId =
+		toStringIfString(raw.productStockId) ||
+		toStringIfString(productStockRecord.id) ||
+		toStringIfString(productStockRecord.uuid) ||
+		toStringIfString(raw.id) ||
+		toStringIfString(raw.uuid);
+
+	if (!productStockId) {
+		return null;
+	}
+
+	const barcode =
+		toNumberIfNumber(raw.barcode) ??
+		toNumberIfNumber(productStockRecord.barcode) ??
+		(nestedProduct ? toNumberIfNumber(nestedProduct.barcode) : undefined) ??
+		0;
+
+	if (!barcode) {
+		return null;
+	}
+
+	const productName =
+		toStringIfString(raw.productName) ||
+		toStringIfString(productStockRecord.productName) ||
+		toStringIfString(productStockRecord.name) ||
+		(nestedProduct ? toStringIfString(nestedProduct.name) : undefined) ||
+		`Producto ${index + 1}`;
+
+	return {
+		productStockId,
+		barcode,
+		productName,
+		productStockRecord,
+	};
+};
+
+const createProductOptions = (
+	inventory: InventoryAPIResponse,
+	catalogLookup: Map<number, { name: string; description: string }>,
+	sourceWarehouseId?: string,
+): {
+	productGroups: ProductGroupOption[];
+	productLookup: Map<string, ProductItemOption>;
+} => {
+	const normalizedSourceWarehouseId =
+		sourceWarehouseId && sourceWarehouseId.trim().length > 0
+			? sourceWarehouseId.trim()
+			: undefined;
+	const effectiveWarehouseId =
+		normalizedSourceWarehouseId &&
+		normalizedSourceWarehouseId.toLowerCase() !== "all"
+			? normalizedSourceWarehouseId
+			: undefined;
+	const effectiveWarehouseIdLower = effectiveWarehouseId?.toLowerCase();
+
+	const shouldSkipInventorySelection = (
+		productStockId: string,
+		productStockRecord: UnknownRecord,
+		rawRecord: UnknownRecord,
+		productLookup: Map<string, ProductItemOption>,
+	): boolean => {
+		if (productLookup.has(productStockId)) {
+			return true;
+		}
+		if (isItemDeleted(productStockRecord) || isItemDeleted(rawRecord)) {
+			return true;
+		}
+		if (isItemInUse(productStockRecord) || isItemInUse(rawRecord)) {
+			return true;
+		}
+		return false;
+	};
+	const groups = new Map<number, ProductGroupOption>();
+	const lookup = new Map<string, ProductItemOption>();
+	const items = extractWarehouseItems(inventory);
+	for (const [index, inventoryRecord] of items.entries()) {
+		const normalized = normalizeInventoryItem(inventoryRecord, index);
+		if (!normalized) {
+			continue;
+		}
+		const { productStockId, barcode, productName, productStockRecord } =
+			normalized;
+		if (effectiveWarehouseId) {
+			// Skip inventory entries that do not belong to the selected source warehouse.
+			const warehouseIdentifiers = new Set<string>();
+			for (const identifier of collectWarehouseIdentifiers(
+				productStockRecord,
+			)) {
+				warehouseIdentifiers.add(identifier);
+			}
+			for (const identifier of collectWarehouseIdentifiers(inventoryRecord)) {
+				warehouseIdentifiers.add(identifier);
+			}
+			if (
+				warehouseIdentifiers.size === 0 ||
+				!Array.from(warehouseIdentifiers).some((identifier) => {
+					if (identifier === effectiveWarehouseId) {
+						return true;
+					}
+					return (
+						effectiveWarehouseIdLower &&
+						identifier.toLowerCase() === effectiveWarehouseIdLower
+					);
+				})
+			) {
+				continue;
+			}
+		}
+		if (
+			shouldSkipInventorySelection(
+				productStockId,
+				productStockRecord,
+				inventoryRecord,
+				lookup,
+			)
+		) {
+			continue;
+		}
+		const catalogInfo = catalogLookup.get(barcode);
+		const resolvedName = catalogInfo?.name ?? productName;
+		const description = catalogInfo?.description ?? resolvedName;
+
+		const itemOption: ProductItemOption = {
+			productStockId,
+			productName: resolvedName,
+			barcode,
+			description,
+		};
+
+		lookup.set(productStockId, itemOption);
+		const existingGroup = groups.get(barcode);
+		if (existingGroup) {
+			existingGroup.items.push(itemOption);
+		} else {
+			groups.set(barcode, {
+				barcode,
+				description,
+				name: resolvedName,
+				items: [itemOption],
+			});
+		}
+	}
+
+	const productGroups = Array.from(groups.values())
+		.map((group) => ({
+			...group,
+			items: group.items.sort((a, b) =>
+				a.productStockId.localeCompare(b.productStockId, "es", {
+					sensitivity: "base",
+				}),
+			),
+		}))
+		.sort((a, b) =>
+			a.description.localeCompare(b.description, "es", { sensitivity: "base" }),
+		);
+
+	return { productGroups, productLookup: lookup };
+};
+
+/**
+ * Extracts a flat array of transfer list items from various API response shapes.
+ *
+ * Accepts responses shaped as:
+ * - an array of transfer items,
+ * - an object with a `data` array,
+ * - an object with a `transfers` array,
+ * - or an object with `data.transfers`.
+ *
+ * @param root - The raw API response to inspect (may be null, an array, or nested objects)
+ * @returns A validated array of TransferListItemShape; empty array if no valid items are found
+ */
+function extractTransferItems(root: APIResponse): TransferListItemShape[] {
+	const unknownRoot: unknown = root ?? [];
+	let list: TransferListItemShape[] = [];
+
+	if (Array.isArray(unknownRoot)) {
+		list = filterTransferListItems(unknownRoot);
+	} else {
+		const withData = unknownRoot as { data?: unknown };
+		const withTransfers = unknownRoot as { transfers?: unknown };
+		list = filterTransferListItems(withData?.data);
+		if (list.length === 0) {
+			list = filterTransferListItems(withTransfers?.transfers);
+		}
+		if (list.length === 0) {
+			const maybeData = (unknownRoot as { data?: { transfers?: unknown } })
+				?.data;
+			list = filterTransferListItems(maybeData?.transfers);
+		}
+	}
+
+	return list;
+}
+
+/**
+ * Compute the total number of items for a transfer.
+ *
+ * If `explicitTotal` is provided it is returned as-is; otherwise the function sums
+ * `quantityTransferred` across `transferDetails`, treating missing or non-number quantities as `0`.
+ *
+ * @param explicitTotal - An authoritative total provided by the API; when present this value is used directly.
+ * @returns The total number of items for the transfer
+ */
+function computeTotalItems(
+	transferDetails:
+		| readonly TransferDetailItem[]
+		| TransferDetailItem[]
+		| undefined,
+	explicitTotal: number | undefined,
+): number {
+	if (typeof explicitTotal === "number") {
+		return explicitTotal;
+	}
+	const details = isTransferDetailArray(transferDetails) ? transferDetails : [];
+	return details.reduce((sum: number, d: TransferDetailItem) => {
+		const qty =
+			typeof d.quantityTransferred === "number" ? d.quantityTransferred : 0;
+		return sum + qty;
+	}, 0);
+}
+
+function selectArrivalDate(item: TransferListItemShape): string {
+	return (
+		item.scheduledDate ??
+		item.receivedAt ??
+		item.createdAt ??
+		item.updatedAt ??
+		new Date().toISOString()
+	);
+}
+
+/**
+ * Renders the receptions dashboard with metrics, a searchable/filterable list, and a dialog-driven UI for creating transfer orders.
+ *
+ * Displays dashboard metric cards (pending, completed, total items, today), a table of receptions with column and global filters, and a modal form to compose and submit transfer orders including warehouse selection, scheduling, priority, notes, and product selection from inventory.
+ *
+ * @param warehouseId - ID of the current warehouse used to scope data and prefill the source warehouse
+ * @param isEncargado - If true, show all transfers (administrative view); otherwise scope transfers to `warehouseId`
+ * @returns The React element that renders the receptions dashboard and transfer-creation UI
+ */
+export function RecepcionesPage({
+	warehouseId,
+	isEncargado,
+}: {
+	warehouseId: string;
+	isEncargado: boolean;
+}) {
+	const transferQueryParams = [isEncargado ? "all" : warehouseId];
+	const transferQueryFn = isEncargado
+		? getWarehouseTransferAll
+		: () => getWarehouseTransferAllByWarehouseId(warehouseId as string);
+	const { data: transfers } = useSuspenseQuery<APIResponse, Error, APIResponse>(
+		{
+			queryKey: createQueryKey(queryKeys.receptions, transferQueryParams),
+			queryFn: transferQueryFn,
+		},
+	);
+
+	const scopedWarehouseId =
+		typeof warehouseId === "string" && warehouseId.trim().length > 0
+			? warehouseId
+			: "unknown";
+	const inventoryScope = isEncargado ? "all" : scopedWarehouseId;
+	const inventoryQueryFn = isEncargado
+		? getAllProductStock
+		: warehouseId
+			? () => getInventoryByWarehouse(warehouseId)
+			: () => Promise.resolve(null);
+	const { data: inventory } = useSuspenseQuery<
+		InventoryAPIResponse,
+		Error,
+		InventoryAPIResponse
+	>({
+		queryKey: createQueryKey(queryKeys.inventory, [inventoryScope]),
+		queryFn: inventoryQueryFn,
+	});
+	const { data: productCatalog } = useSuspenseQuery<
+		ProductCatalogResponse | null,
+		Error,
+		ProductCatalogResponse | null
+	>({
+		queryKey: queryKeys.productCatalog,
+		queryFn: getAllProducts,
+	});
+	const { data: cabinetWarehouse } = useSuspenseQuery<
+		WarehouseMap,
+		Error,
+		WarehouseMap
+	>({
+		queryKey: queryKeys.cabinetWarehouse,
+		queryFn: getCabinetWarehouse,
+	});
+
+	// Fetch replenishment orders to check if transfers are linked to pedidos
+	const replenishmentOrdersQueryFn = isEncargado
+		? () => getReplenishmentOrders()
+		: () => getReplenishmentOrdersByWarehouse(warehouseId);
+	const { data: replenishmentOrdersResponse } = useSuspenseQuery<
+		ReplenishmentOrdersResponse | null,
+		Error,
+		ReplenishmentOrdersResponse | null
+	>({
+		queryKey: createQueryKey(queryKeys.replenishmentOrders, [
+			isEncargado ? "all" : warehouseId,
+		]),
+		queryFn: replenishmentOrdersQueryFn,
+	});
+
+	const currentUser = useAuthStore((state) => state.user);
+	const normalizedRole =
+		typeof currentUser?.role === "string"
+			? currentUser.role.toLowerCase()
+			: "";
+	const isEmployee = normalizedRole === "employee";
+	const {
+		transferDraft,
+		updateTransferDraft,
+		addDraftItem,
+		removeDraftItem,
+		setDraftItemNote,
+		resetTransferDraft,
+	} = useReceptionStore(
+		useShallow((state) => ({
+			transferDraft: state.transferDraft,
+			updateTransferDraft: state.updateTransferDraft,
+			addDraftItem: state.addDraftItem,
+			removeDraftItem: state.removeDraftItem,
+			updateDraftItemQuantity: state.updateDraftItemQuantity,
+			setDraftItemNote: state.setDraftItemNote,
+			resetTransferDraft: state.resetTransferDraft,
+		})),
+	);
+	const draftItemCount = useReceptionStore((state) =>
+		state.getDraftItemCount(),
+	);
+	const draftSummaryLabel = (() => {
+		if (draftItemCount === 0) {
+			return "Sin productos seleccionados";
+		}
+		if (draftItemCount === 1) {
+			return "1 producto seleccionado";
+		}
+		return `${draftItemCount} productos seleccionados`;
+	})();
+	const { mutateAsync: createTransferOrder, isPending: isCreatingTransfer } =
+		useCreateTransferOrder();
+
+	const [isDialogOpen, setIsDialogOpen] = useState(false);
+	const [selectedProductStockId, setSelectedProductStockId] = useState("");
+	const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
+	const [globalFilter, setGlobalFilter] = useState("");
+
+	const catalogLookup = useMemo(
+		() => createCatalogLookup(productCatalog),
+		[productCatalog],
+	);
+
+	const { productGroups, productLookup } = useMemo(() => {
+		return createProductOptions(
+			inventory,
+			catalogLookup,
+			transferDraft.sourceWarehouseId,
+		);
+	}, [catalogLookup, inventory, transferDraft.sourceWarehouseId]);
+
+	const draftedItemIds = useMemo(() => {
+		return new Set(transferDraft.items.map((item) => item.productStockId));
+	}, [transferDraft.items]);
+
+	const isProductSelectionDisabled = useMemo(() => {
+		if (productGroups.length === 0) {
+			return true;
+		}
+		return productGroups.every((group) =>
+			group.items.every((item) => draftedItemIds.has(item.productStockId)),
+		);
+	}, [draftedItemIds, productGroups]);
+
+	const selectedCabinetId = useMemo(() => {
+		const destinationId = transferDraft.destinationWarehouseId?.trim();
+		if (!destinationId) {
+			return undefined;
+		}
+		if (!isWarehouseMapSuccess(cabinetWarehouse)) {
+			return undefined;
+		}
+		const entries = Array.isArray(cabinetWarehouse.data)
+			? cabinetWarehouse.data
+			: [];
+		const matchingCabinets = entries.filter(
+			(entry) => entry.warehouseId === destinationId,
+		);
+		if (matchingCabinets.length === 0) {
+			return undefined;
+		}
+		const uniqueCabinets = Array.from(
+			new Set(
+				matchingCabinets
+					.map((entry) => entry.cabinetId)
+					.filter((id): id is string => Boolean(id?.trim())),
+			),
+		);
+		return uniqueCabinets.length === 1 ? uniqueCabinets[0] : undefined;
+	}, [cabinetWarehouse, transferDraft.destinationWarehouseId]);
+
+	const { warehouseOptions } = useMemo(
+		() => createWarehouseOptions(cabinetWarehouse),
+		[cabinetWarehouse],
+	);
+
+	const scheduledDateValue = useMemo(() => {
+		if (!transferDraft.scheduledDate) {
+			return;
+		}
+		const parsed = addDays(new Date(transferDraft.scheduledDate), 1);
+		return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+	}, [transferDraft.scheduledDate]);
+
+	const handleDateSelect = (date: Date | undefined) => {
+		if (!date) {
+			updateTransferDraft({ scheduledDate: null });
+			return;
+		}
+		const normalized = new Date(
+			Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()),
+		);
+		updateTransferDraft({ scheduledDate: normalized.toISOString() });
+	};
+
+	useEffect(() => {
+		const normalizedWarehouseId =
+			typeof warehouseId === "string" ? warehouseId.trim() : "";
+		if (!normalizedWarehouseId) {
+			return;
+		}
+		if (isEmployee) {
+			if (
+				transferDraft.sourceWarehouseId &&
+				transferDraft.sourceWarehouseId !== normalizedWarehouseId
+			) {
+				resetTransferDraft();
+				updateTransferDraft({ sourceWarehouseId: normalizedWarehouseId });
+				return;
+			}
+			if (!transferDraft.sourceWarehouseId) {
+				updateTransferDraft({ sourceWarehouseId: normalizedWarehouseId });
+			}
+			return;
+		}
+		if (!transferDraft.sourceWarehouseId) {
+			updateTransferDraft({ sourceWarehouseId: normalizedWarehouseId });
+		}
+	}, [
+		isEmployee,
+		resetTransferDraft,
+		transferDraft.sourceWarehouseId,
+		updateTransferDraft,
+		warehouseId,
+	]);
+
+	useEffect(() => {
+		if (!selectedProductStockId) {
+			return;
+		}
+		if (
+			!productLookup.has(selectedProductStockId) ||
+			draftedItemIds.has(selectedProductStockId)
+		) {
+			setSelectedProductStockId("");
+		}
+	}, [draftedItemIds, productLookup, selectedProductStockId]);
+
+	const handleSelectProduct = useCallback((product: ProductItemOption) => {
+		setSelectedProductStockId(product.productStockId);
+	}, []);
+
+	const selectedInventoryItem = selectedProductStockId
+		? productLookup.get(selectedProductStockId)
+		: undefined;
+
+	const handleAddProduct = () => {
+		if (!selectedInventoryItem) {
+			toast.error(
+				"Selecciona un producto del inventario para agregarlo al traspaso.",
+			);
+			return;
+		}
+		addDraftItem({
+			productStockId: selectedInventoryItem.productStockId,
+			productName: selectedInventoryItem.productName,
+			barcode: selectedInventoryItem.barcode,
+			quantity: 1,
+		});
+		setSelectedProductStockId("");
+		toast.success("Producto agregado al traspaso");
+	};
+
+	const handleSubmitTransfer = async (event: FormEvent<HTMLFormElement>) => {
+		event.preventDefault();
+
+		if (!transferDraft.sourceWarehouseId?.trim()) {
+			toast.error("Ingresa el almacén de origen");
+			return;
+		}
+		if (!transferDraft.destinationWarehouseId?.trim()) {
+			toast.error("Ingresa el almacén de destino");
+			return;
+		}
+		if (transferDraft.items.length === 0) {
+			toast.error("Agrega al menos un producto al traspaso");
+			return;
+		}
+		if (!currentUser?.id) {
+			toast.error(
+				"No se encontró el usuario actual. Inicia sesión nuevamente.",
+			);
+			return;
+		}
+		if (!selectedCabinetId) {
+			toast.error(
+				"No se encontró un gabinete válido para el almacén destino seleccionado.",
+			);
+			return;
+		}
+
+		const rawDate = transferDraft.scheduledDate;
+		const scheduledDate =
+			rawDate && !Number.isNaN(Date.parse(rawDate))
+				? new Date(rawDate).toISOString()
+				: undefined;
+
+		try {
+			await createTransferOrder({
+				transferNumber: `TR-${Date.now()}`,
+				transferType: "external",
+				sourceWarehouseId: transferDraft.sourceWarehouseId,
+				destinationWarehouseId: transferDraft.destinationWarehouseId,
+				initiatedBy: currentUser.id,
+				cabinetId: selectedCabinetId,
+				transferDetails: transferDraft.items.map((item) => ({
+					productStockId: item.productStockId,
+					quantityTransferred: item.quantity,
+					itemNotes: item.itemNotes || undefined,
+					goodId: item.barcode,
+					costPerUnit:
+						productCatalog?.data?.find(
+							(product: ProductCatalogItem) => product.good_id === item.barcode,
+						)?.cost ?? 0,
+				})),
+			notes: transferDraft.transferNotes || "",
+				priority: transferDraft.priority,
+				scheduledDate,
+				isCabinetToWarehouse: false,
+			});
+			resetTransferDraft();
+			setSelectedProductStockId("");
+			setIsDialogOpen(false);
+		} catch {
+			// Los mensajes de error se gestionan en la mutación.
+		}
+	};
+
+	// Create map of transfer ID to replenishment order
+	const transferToOrderMap = useMemo(() => {
+		const map = new Map<string, { orderId: string; orderNumber: string }>();
+		if (
+			!replenishmentOrdersResponse ||
+			typeof replenishmentOrdersResponse !== "object" ||
+			!("success" in replenishmentOrdersResponse) ||
+			!replenishmentOrdersResponse.success ||
+			!Array.isArray(replenishmentOrdersResponse.data)
+		) {
+			return map;
+		}
+
+		for (const order of replenishmentOrdersResponse.data) {
+			if (!order || typeof order !== "object") {
+				continue;
+			}
+			const record = order as Record<string, unknown>;
+			const orderId = typeof record.id === "string" ? record.id : "";
+			const orderNumber =
+				typeof record.orderNumber === "string" ? record.orderNumber : orderId;
+			const warehouseTransferId =
+				typeof record.warehouseTransferId === "string"
+					? record.warehouseTransferId
+					: null;
+
+			if (orderId && warehouseTransferId) {
+				map.set(warehouseTransferId, { orderId, orderNumber });
+			}
+		}
+
+		return map;
+	}, [replenishmentOrdersResponse]);
+
+	// Derive receptions list from transfers response
+	type DerivedReception = {
+		transferId: string;
+		shipmentId: string;
+		arrivalDate: string;
+		sourceWarehouseName: string | undefined;
+		destinationWarehouseName: string | undefined;
+		destinationWarehouseId: string | undefined;
+		totalItems: number;
+		isCompleted: boolean;
+		isPending: boolean;
+		isCancelled: boolean;
+		transferType: "internal" | "external";
+		updatedAt: string;
+		relatedOrderId: string | null;
+		relatedOrderNumber: string | null;
+	};
+
+	const receptions: DerivedReception[] = useMemo(() => {
+		const items = extractTransferItems(transfers);
+		const dateOnlyPattern = /^\d{4}-\d{2}-\d{2}$/;
+
+		return items.map((item) => {
+			const isCompleted = item.isCompleted ?? false;
+			const isPending = item.isPending ?? false;
+			const isCancelled = item.isCancelled ?? false;
+
+			const totalItems = computeTotalItems(
+				item.transferDetails,
+				item.totalItems,
+			);
+			const arrivalSourceRaw = selectArrivalDate(item) ?? "";
+			const arrivalSource = arrivalSourceRaw.trim();
+			const arrivalDate = dateOnlyPattern.test(arrivalSource)
+				? arrivalSource
+				: (() => {
+						if (!arrivalSource) {
+							return formatISO(new Date(), { representation: "date" });
+						}
+						const parsed = new Date(arrivalSource);
+						return Number.isNaN(parsed.getTime())
+							? formatISO(new Date(), { representation: "date" })
+							: formatISO(parsed, { representation: "date" });
+					})();
+			const shipmentId = String(
+				item.transferNumber ?? item.shipmentId ?? item.id ?? "N/A",
+			);
+			const warehouseId = toStringIfString(item.sourceWarehouseId);
+			const destinationWarehouseId = toStringIfString(
+				item.destinationWarehouseId,
+			);
+
+			const sourceWarehouseName = warehouseOptions.find(
+				(option) => option.id === warehouseId,
+			)?.name;
+			const destinationWarehouseName = warehouseOptions.find(
+				(option) => option.id === destinationWarehouseId,
+			)?.name;
+			const transferTypeRaw =
+				toStringIfString(item.transferType) ??
+				toStringIfString((item as { transfer_type?: unknown }).transfer_type);
+			const normalizedTransferType =
+				transferTypeRaw && transferTypeRaw.toLowerCase() === "internal"
+					? "internal"
+					: "external";
+			const updatedAtSource =
+				toStringIfString(item.updatedAt) ??
+				toStringIfString((item as { updated_at?: unknown }).updated_at);
+			const updatedAt = (() => {
+				const trimmed = updatedAtSource?.trim();
+				if (trimmed && dateOnlyPattern.test(trimmed)) {
+					return trimmed;
+				}
+				if (trimmed) {
+					const parsed = new Date(trimmed);
+					if (!Number.isNaN(parsed.getTime())) {
+						return formatISO(parsed, { representation: "date" });
+					}
+				}
+				return arrivalDate;
+			})();
+
+			const transferId = item.id ?? "";
+			const relatedOrder = transferToOrderMap.get(transferId);
+
+			return {
+				transferId,
+				shipmentId,
+				sourceWarehouseName,
+				destinationWarehouseName,
+				destinationWarehouseId,
+				arrivalDate,
+				totalItems,
+				isCompleted,
+				isPending,
+				isCancelled,
+				transferType: normalizedTransferType,
+				updatedAt,
+				relatedOrderId: relatedOrder?.orderId ?? null,
+				relatedOrderNumber: relatedOrder?.orderNumber ?? null,
+			};
+		});
+	}, [transfers, warehouseOptions, transferToOrderMap]);
+
+	const parseDateValue = useCallback((value: string | undefined | null) => {
+		if (!value) {
+			return null;
+		}
+		const trimmed = value.trim();
+		if (!trimmed) {
+			return null;
+		}
+		if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+			const [year, month, day] = trimmed
+				.split("-")
+				.map((part) => Number.parseInt(part, 10));
+			if ([year, month, day].some((segment) => Number.isNaN(segment))) {
+				return null;
+			}
+			return new Date(year, month - 1, day);
+		}
+		const parsed = new Date(trimmed);
+		return Number.isNaN(parsed.getTime()) ? null : parsed;
+	}, []);
+
+	const formatDate = useCallback(
+		(dateString: string) => {
+			const parsed = parseDateValue(dateString);
+			if (!parsed) {
+				return "N/A";
+			}
+			return format(parsed, "dd/MM/yyyy", { locale: es });
+		},
+		[parseDateValue],
+	);
+
+	const pendingReceptions = receptions.filter((r) => r.isPending);
+	const completedReceptions = receptions.filter((r) => r.isCompleted);
+
+	const columns = useMemo<ColumnDef<DerivedReception, unknown>[]>(
+		() => [
+			{
+				accessorKey: "shipmentId",
+				header: "Nº de envío",
+				enableSorting: false,
+				meta: {
+					headerClassName:
+						"font-medium text-[#11181C] text-transition dark:text-[#ECEDEE]",
+					cellClassName:
+						"font-mono text-[#11181C] text-sm text-transition dark:text-[#ECEDEE]",
+				} satisfies ColumnMeta,
+				cell: ({ getValue }) => {
+					const shipment = getValue<string>();
+					return (
+						<span className="font-mono text-[#11181C] text-sm text-transition dark:text-[#ECEDEE]">
+							{shipment}
+						</span>
+					);
+				},
+			},
+			{
+				accessorKey: "sourceWarehouseName",
+				header: "Almacén de origen",
+				filterFn: "equals",
+				enableGlobalFilter: false,
+				meta: {
+					headerClassName:
+						"font-medium text-[#11181C] text-transition dark:text-[#ECEDEE]",
+					cellClassName: "text-[#687076] text-transition dark:text-[#9BA1A6]",
+				} satisfies ColumnMeta,
+				cell: ({ getValue }) => {
+					const value = getValue<string>();
+					return (
+						<span className="text-[#687076] text-transition dark:text-[#9BA1A6]">
+							{value ?? "N/A"}
+						</span>
+					);
+				},
+			},
+			{
+				accessorKey: "destinationWarehouseName",
+				header: "Almacén de destino",
+				filterFn: "equals",
+				enableGlobalFilter: false,
+				meta: {
+					headerClassName:
+						"font-medium text-[#11181C] text-transition dark:text-[#ECEDEE]",
+					cellClassName: "text-[#687076] text-transition dark:text-[#9BA1A6]",
+				} satisfies ColumnMeta,
+				cell: ({ getValue }) => {
+					const value = getValue<string>();
+					return (
+						<span className="text-[#687076] text-transition dark:text-[#9BA1A6]">
+							{value ?? "N/A"}
+						</span>
+					);
+				},
+			},
+			{
+				accessorKey: "arrivalDate",
+				header: "Fecha de Creación",
+				filterFn: "equals",
+				enableGlobalFilter: false,
+				meta: {
+					headerClassName:
+						"font-medium text-[#11181C] text-transition dark:text-[#ECEDEE]",
+					cellClassName: "text-[#687076] text-transition dark:text-[#9BA1A6]",
+				} satisfies ColumnMeta,
+				cell: ({ getValue }) => {
+					const value = getValue<string>();
+					return (
+						<span className="text-[#687076] text-transition dark:text-[#9BA1A6]">
+							{formatDate(value)}
+						</span>
+					);
+				},
+			},
+			{
+				accessorKey: "updatedAt",
+				header: "Fecha de Actualización",
+				enableGlobalFilter: false,
+				meta: {
+					headerClassName:
+						"font-medium text-[#11181C] text-transition dark:text-[#ECEDEE]",
+					cellClassName: "text-[#687076] text-transition dark:text-[#9BA1A6]",
+				} satisfies ColumnMeta,
+				cell: ({ getValue }) => {
+					const value = getValue<string>();
+					return (
+						<span className="text-[#687076] text-transition dark:text-[#9BA1A6]">
+							{formatDate(value)}
+						</span>
+					);
+				},
+			},
+			{
+				accessorKey: "totalItems",
+				header: "Total de ítems",
+				enableGlobalFilter: false,
+				meta: {
+					headerClassName:
+						"font-medium text-[#11181C] text-transition dark:text-[#ECEDEE]",
+					cellClassName: "text-[#11181C] text-transition dark:text-[#ECEDEE]",
+				} satisfies ColumnMeta,
+				cell: ({ getValue }) => (
+					<span className="text-[#11181C] text-transition dark:text-[#ECEDEE]">
+						{getValue<number>()}
+					</span>
+				),
+			},
+			{
+				accessorKey: "transferType",
+				header: "Tipo",
+				filterFn: "equals",
+				enableGlobalFilter: false,
+				meta: {
+					headerClassName:
+						"font-medium text-[#11181C] text-transition dark:text-[#ECEDEE]",
+					cellClassName: "text-[#11181C] text-transition dark:text-[#ECEDEE]",
+				} satisfies ColumnMeta,
+				cell: ({ getValue }) => {
+					const type = getValue<"internal" | "external">();
+					const label = type === "internal" ? "Interno" : "Externo";
+					const badgeClass =
+						type === "internal"
+							? "theme-transition bg-[#0a7ea4]/10 text-[#0a7ea4] hover:bg-[#0a7ea4]/20 dark:bg-[#0a7ea4]/20 dark:text-[#0a7ea4]"
+							: "theme-transition bg-blue-100 text-blue-800 hover:bg-blue-200 dark:bg-blue-900/20 dark:text-blue-400";
+					return (
+						<Badge className={badgeClass} variant="secondary">
+							{label}
+						</Badge>
+					);
+				},
+			},
+			{
+				accessorKey: "isCompleted",
+				header: "Estado",
+				filterFn: "equals",
+				enableGlobalFilter: false,
+				meta: {
+					headerClassName:
+						"font-medium text-[#11181C] text-transition dark:text-[#ECEDEE]",
+					cellClassName: "text-[#11181C] text-transition dark:text-[#ECEDEE]",
+				} satisfies ColumnMeta,
+				cell: ({ getValue, row }) => {
+					const isCompleted = getValue<boolean>();
+					const isPending = row.original.isPending;
+					const relatedOrderNumber = row.original.relatedOrderNumber;
+					if (!isPending && !isCompleted) {
+						return (
+							<div className="flex items-center gap-2">
+								<Badge
+									className="theme-transition bg-gray-100 text-gray-800 hover:bg-gray-200 dark:bg-gray-900/20 dark:text-gray-400"
+									variant="secondary"
+								>
+									Sin recibir
+								</Badge>
+								{relatedOrderNumber && (
+									<Badge
+										className="theme-transition bg-purple-100 text-purple-800 hover:bg-purple-200 dark:bg-purple-900/20 dark:text-purple-400"
+										variant="secondary"
+									>
+										Pedido {relatedOrderNumber}
+									</Badge>
+								)}
+							</div>
+						);
+					}
+					const badgeClass =
+						isPending && !isCompleted
+							? "theme-transition bg-orange-100 text-orange-800 hover:bg-orange-200 dark:bg-orange-900/20 dark:text-orange-400"
+							: "theme-transition bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900/20 dark:text-green-400";
+					const variant = isPending && !isCompleted ? "secondary" : "default";
+					return (
+						<div className="flex items-center gap-2">
+							<Badge className={badgeClass} variant={variant}>
+								{isPending && !isCompleted ? "Pendiente" : "Completada"}
+							</Badge>
+							{relatedOrderNumber && (
+								<Badge
+									className="theme-transition bg-purple-100 text-purple-800 hover:bg-purple-200 dark:bg-purple-900/20 dark:text-purple-400"
+									variant="secondary"
+								>
+									Pedido {relatedOrderNumber}
+								</Badge>
+							)}
+						</div>
+					);
+				},
+			},
+			{
+				id: "actions",
+				header: "Acción",
+				enableSorting: false,
+				enableGlobalFilter: false,
+				enableColumnFilter: false,
+				meta: {
+					headerClassName:
+						"font-medium text-[#11181C] text-transition dark:text-[#ECEDEE]",
+					cellClassName: "text-[#687076] text-transition dark:text-[#9BA1A6]",
+				} satisfies ColumnMeta,
+				cell: ({ row }) => {
+					const { isCompleted, transferId, destinationWarehouseId } =
+						row.original;
+					const isNotReceivingWarehouse =
+						!isEncargado &&
+						destinationWarehouseId &&
+						destinationWarehouseId !== warehouseId;
+					if (isNotReceivingWarehouse) {
+						return (
+							<Button
+								asChild
+								className="theme-transition border-[#E5E7EB] text-[#11181C] hover:bg-[#F9FAFB] dark:border-[#2D3033] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
+								size="sm"
+								variant="secondary"
+							>
+								<Link href={`/recepciones/${transferId}`}>
+									<ArrowRight className="mr-1 h-4 w-4" />
+									Ver pedido
+								</Link>
+							</Button>
+						);
+					}
+					if (!isCompleted) {
+						return (
+							<Button
+								asChild
+								className="theme-transition bg-[#0a7ea4] text-white hover:bg-[#0a7ea4]/90"
+								size="sm"
+							>
+								<Link href={`/recepciones/${transferId}`}>
+									<ArrowRight className="mr-1 h-4 w-4" />
+									Recibir
+								</Link>
+							</Button>
+						);
+					}
+					return (
+						<Button
+							asChild
+							className="theme-transition bg-[#0a7ea4] text-white hover:bg-[#0a7ea4]/90"
+							size="sm"
+						>
+							<Link href={`/recepciones/${transferId}`}>
+								<ArrowRight className="mr-1 h-4 w-4" />
+								Ver
+							</Link>
+						</Button>
+					);
+				},
+			},
+		],
+		[formatDate, isEncargado, warehouseId],
+	);
+
+	const statusFilterOptions = useMemo(
+		() => [
+			{ value: "pendiente", label: "Pendiente" },
+			{ value: "completada", label: "Completada" },
+		],
+		[],
+	);
+
+	const transferTypeFilterOptions = useMemo(
+		() => [
+			{ value: "internal", label: "Interno" },
+			{ value: "external", label: "Externo" },
+		],
+		[],
+	);
+
+	const table = useReactTable({
+		data: receptions,
+		columns,
+		state: {
+			columnFilters,
+			globalFilter,
+		},
+		onColumnFiltersChange: setColumnFilters,
+		onGlobalFilterChange: setGlobalFilter,
+		globalFilterFn: "includesString",
+		getCoreRowModel: getCoreRowModel(),
+		getFilteredRowModel: getFilteredRowModel(),
+		getSortedRowModel: getSortedRowModel(),
+		getPaginationRowModel: getPaginationRowModel(),
+		getFacetedRowModel: getFacetedRowModel(),
+		getFacetedUniqueValues: getFacetedUniqueValues(),
+	});
+
+	const arrivalDateColumn = table.getColumn("arrivalDate");
+	const statusColumn = table.getColumn("isCompleted");
+	const transferTypeColumn = table.getColumn("transferType");
+	const sourceWarehouseNameColumn = table.getColumn("sourceWarehouseName");
+	const destinationWarehouseNameColumn = table.getColumn(
+		"destinationWarehouseName",
+	);
+	const arrivalDateFilterValue = arrivalDateColumn?.getFilterValue() as
+		| string
+		| undefined;
+	const arrivalDateFilterDate = arrivalDateFilterValue
+		? (parseDateValue(arrivalDateFilterValue) ?? undefined)
+		: undefined;
+	const handleArrivalDateFilterChange = useCallback(
+		(value?: Date) => {
+			if (!arrivalDateColumn) {
+				return;
+			}
+			if (!value) {
+				arrivalDateColumn.setFilterValue(undefined);
+				return;
+			}
+			const normalized = formatISO(value, { representation: "date" });
+			arrivalDateColumn.setFilterValue(normalized);
+		},
+		[arrivalDateColumn],
+	);
+
+	return (
+		<div className="theme-transition flex-1 space-y-6 bg-white p-4 md:p-6 dark:bg-[#151718]">
+			{/* Header */}
+			{/* Page header with title and create transfer button */}
+			<div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+				<div className="space-y-2">
+					<h1 className="font-bold text-2xl text-[#11181C] text-transition md:text-3xl dark:text-[#ECEDEE]">
+						Traspasos
+					</h1>
+					<p className="text-[#687076] text-transition dark:text-[#9BA1A6]">
+						Gestiona los traspasos desde el centro de distribución o desde una
+						sucursal a otra.
+					</p>
+				</div>
+
+				{/* Dialog for creating new transfer orders */}
+				<Dialog onOpenChange={setIsDialogOpen} open={isDialogOpen}>
+					<DialogTrigger asChild>
+						<Button
+							className="flex items-center gap-2 bg-[#0a7ea4] text-white hover:bg-[#0a7ea4]/90"
+							type="button"
+						>
+							<Plus className="h-4 w-4" />
+							Nuevo traspaso
+						</Button>
+					</DialogTrigger>
+
+					{/* Dialog content - transfer creation form */}
+					<DialogContent className="border-[#E5E7EB] bg-white sm:max-w-3xl dark:border-[#2D3033] dark:bg-[#151718]">
+						<form className="space-y-6" onSubmit={handleSubmitTransfer}>
+							<DialogHeader>
+								<DialogTitle className="text-[#11181C] dark:text-[#ECEDEE]">
+									Crear nuevo traspaso
+								</DialogTitle>
+								<DialogDescription className="text-[#687076] dark:text-[#9BA1A6]">
+									Completa los datos requeridos y agrega productos desde el
+									inventario para generar el traspaso.
+								</DialogDescription>
+							</DialogHeader>
+
+							{/* Form fields container */}
+							<div className="grid gap-6">
+								{/* Basic transfer information - responsive 2-column grid */}
+								<div className="grid gap-4 sm:grid-cols-2">
+									{/* Source warehouse selector */}
+									<div className="grid gap-2">
+										<Label
+											className="text-[#11181C] dark:text-[#ECEDEE]"
+											htmlFor="source-warehouse"
+										>
+											Almacén origen *
+										</Label>
+										<Select
+											disabled={isEmployee}
+											onValueChange={(value) =>
+												updateTransferDraft({ sourceWarehouseId: value })
+											}
+											value={transferDraft.sourceWarehouseId || undefined}
+										>
+											<SelectTrigger className="border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]">
+												<SelectValue placeholder="Selecciona el almacén de origen" />
+											</SelectTrigger>
+											<SelectContent className="border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
+												<SelectGroup>
+													<SelectLabel className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+														Almacenes
+													</SelectLabel>
+													{warehouseOptions.map((option) => (
+														<SelectItem
+															className="text-[#11181C] dark:text-[#ECEDEE]"
+															key={option.id}
+															value={option.id}
+														>
+															{option.name}
+														</SelectItem>
+													))}
+												</SelectGroup>
+											</SelectContent>
+										</Select>
+									</div>
+
+									{/* Destination warehouse selector */}
+									<div className="grid gap-2">
+										<Label
+											className="text-[#11181C] dark:text-[#ECEDEE]"
+											htmlFor="destination-warehouse"
+										>
+											Almacén destino *
+										</Label>
+										<Select
+											onValueChange={(value) =>
+												updateTransferDraft({
+													destinationWarehouseId: value,
+												})
+											}
+											value={transferDraft.destinationWarehouseId || undefined}
+										>
+											<SelectTrigger className="border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]">
+												<SelectValue placeholder="Selecciona el almacén de destino" />
+											</SelectTrigger>
+											<SelectContent className="border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
+												<SelectGroup>
+													<SelectLabel className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+														Almacenes
+													</SelectLabel>
+													{warehouseOptions.map((option) => (
+														<SelectItem
+															className="text-[#11181C] dark:text-[#ECEDEE]"
+															key={option.id}
+															value={option.id}
+														>
+															{option.name}
+														</SelectItem>
+													))}
+												</SelectGroup>
+											</SelectContent>
+										</Select>
+									</div>
+
+									{/* Scheduled date picker */}
+									<div className="grid gap-2">
+										<Label
+											className="text-[#11181C] dark:text-[#ECEDEE]"
+											htmlFor="scheduled-date"
+										>
+											Fecha programada
+										</Label>
+										<Popover>
+											<PopoverTrigger asChild>
+												<Button
+													className={cn(
+														"w-full justify-start border-[#E5E7EB] bg-white text-left font-normal text-[#11181C] hover:bg-[#F9FAFB] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]",
+														!scheduledDateValue &&
+															"text-[#687076] dark:text-[#9BA1A6]",
+													)}
+													id="scheduled-date"
+													type="button"
+													variant="outline"
+												>
+													<CalendarIcon className="mr-2 h-4 w-4" />
+													{scheduledDateValue
+														? format(scheduledDateValue, "PPP", {
+																locale: es,
+															})
+														: "Selecciona la fecha programada"}
+												</Button>
+											</PopoverTrigger>
+											<PopoverContent
+												align="start"
+												className="w-auto border-[#E5E7EB] bg-white p-0 dark:border-[#2D3033] dark:bg-[#151718]"
+											>
+												<CalendarPicker
+													initialFocus
+													locale={es}
+													mode="single"
+													onSelect={handleDateSelect}
+													selected={scheduledDateValue}
+												/>
+											</PopoverContent>
+										</Popover>
+									</div>
+
+									{/* Priority selector */}
+									<div className="grid gap-2">
+										<Label
+											className="text-[#11181C] dark:text-[#ECEDEE]"
+											htmlFor="transfer-priority"
+										>
+											Prioridad
+										</Label>
+										<Select
+											onValueChange={(value) =>
+												updateTransferDraft({
+													priority: value as "normal" | "high" | "urgent",
+												})
+											}
+											value={transferDraft.priority}
+										>
+											<SelectTrigger className="border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]">
+												<SelectValue placeholder="Selecciona prioridad" />
+											</SelectTrigger>
+											<SelectContent className="border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
+												<SelectItem
+													className="text-[#11181C] dark:text-[#ECEDEE]"
+													value="normal"
+												>
+													Normal
+												</SelectItem>
+												<SelectItem
+													className="text-[#11181C] dark:text-[#ECEDEE]"
+													value="high"
+												>
+													Alta
+												</SelectItem>
+												<SelectItem
+													className="text-[#11181C] dark:text-[#ECEDEE]"
+													value="urgent"
+												>
+													Urgente
+												</SelectItem>
+											</SelectContent>
+										</Select>
+									</div>
+
+									{/* Transfer notes - spans full width */}
+									<div className="grid gap-2 sm:col-span-2">
+										<Label
+											className="text-[#11181C] dark:text-[#ECEDEE]"
+											htmlFor="transfer-notes"
+										>
+											Notas
+										</Label>
+										<Textarea
+											className="border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]"
+											id="transfer-notes"
+											onChange={(event) =>
+												updateTransferDraft({
+													transferNotes: event.target.value,
+												})
+											}
+											placeholder="Detalles adicionales del traspaso"
+											rows={3}
+											value={transferDraft.transferNotes}
+										/>
+									</div>
+								</div>
+
+								{/* Product selection section */}
+								<div className="grid gap-2">
+									<Label
+										className="text-[#11181C] dark:text-[#ECEDEE]"
+										htmlFor="inventory-product"
+									>
+										Agregar productos
+									</Label>
+
+									<div className="space-y-2">
+										<GroupedProductCombobox
+											disabled={isProductSelectionDisabled}
+											draftedIds={draftedItemIds}
+											groups={productGroups}
+											onSelect={handleSelectProduct}
+											placeholder={
+												isProductSelectionDisabled
+													? "No hay productos disponibles"
+													: "Buscar por nombre y elegir un ID único..."
+											}
+											selectedId={selectedProductStockId}
+										/>
+										{selectedInventoryItem ? (
+											<p className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+												ID seleccionado:{" "}
+												<span className="font-medium">
+													{selectedInventoryItem.productStockId}
+												</span>{" "}
+												• Código: {selectedInventoryItem.barcode || "—"}
+											</p>
+										) : (
+											<p className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+												Selecciona un producto disponible para agregarlo.
+											</p>
+										)}
+									</div>
+
+									<Button
+										className="flex w-[100px] items-center gap-2 bg-[#0a7ea4] text-white hover:bg-[#0a7ea4]/90"
+										disabled={
+											isProductSelectionDisabled || !selectedInventoryItem
+										}
+										onClick={handleAddProduct}
+										type="button"
+									>
+										<Plus className="h-4 w-4" />
+										Agregar
+									</Button>
+
+									{/* Helper text */}
+									<p className="text-[#687076] text-xs dark:text-[#9BA1A6]">
+										Los productos listados pertenecen al inventario del almacén
+										actual.
+									</p>
+								</div>
+
+								{/* Selected products table */}
+								<div className="rounded-md border border-[#E5E7EB] dark:border-[#2D3033]">
+									<Table>
+										<TableHeader>
+											<TableRow className="border-[#E5E7EB] border-b bg-[#F9FAFB] dark:border-[#2D3033] dark:bg-[#1E1F20]">
+												<TableHead className="text-[#11181C] dark:text-[#ECEDEE]">
+													Producto
+												</TableHead>
+												<TableHead className="text-[#11181C] dark:text-[#ECEDEE]">
+													Código
+												</TableHead>
+												<TableHead className="text-[#11181C] dark:text-[#ECEDEE]">
+													Nota
+												</TableHead>
+												<TableHead className="text-right text-[#11181C] dark:text-[#ECEDEE]">
+													Acciones
+												</TableHead>
+											</TableRow>
+										</TableHeader>
+										<TableBody>
+											{transferDraft.items.length === 0 ? (
+												<TableRow>
+													<TableCell
+														className="py-10 text-center text-[#687076] dark:text-[#9BA1A6]"
+														colSpan={5}
+													>
+														No hay productos seleccionados.
+													</TableCell>
+												</TableRow>
+											) : (
+												transferDraft.items.map((item) => (
+													<TableRow
+														className="border-[#E5E7EB] border-b last:border-b-0 dark:border-[#2D3033]"
+														key={item.productStockId}
+													>
+														<TableCell className="font-medium text-[#11181C] dark:text-[#ECEDEE]">
+															{item.productName}
+														</TableCell>
+														<TableCell className="font-mono text-[#687076] text-sm dark:text-[#9BA1A6]">
+															{item.barcode || "—"}
+														</TableCell>
+														<TableCell>
+															<Input
+																className="border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]"
+																onChange={(event) =>
+																	setDraftItemNote(
+																		item.productStockId,
+																		event.target.value,
+																	)
+																}
+																placeholder="Notas opcionales"
+																value={item.itemNotes ?? ""}
+															/>
+														</TableCell>
+														<TableCell className="text-right">
+															<Button
+																className="text-[#b91c1c] hover:text-[#7f1d1d]"
+																onClick={() =>
+																	removeDraftItem(item.productStockId)
+																}
+																type="button"
+																variant="ghost"
+															>
+																<Trash2 className="h-4 w-4" />
+															</Button>
+														</TableCell>
+													</TableRow>
+												))
+											)}
+										</TableBody>
+									</Table>
+								</div>
+							</div>
+
+							{/* Dialog footer with summary and action buttons */}
+							<DialogFooter className="flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+								{/* Item count summary */}
+								<span className="text-[#687076] text-sm dark:text-[#9BA1A6]">
+									{draftSummaryLabel}
+								</span>
+
+								{/* Action buttons - responsive flex layout */}
+								<div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+									<Button
+										className="border-[#E5E7EB] text-[#11181C] hover:bg-[#F9FAFB] dark:border-[#2D3033] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
+										onClick={() => setIsDialogOpen(false)}
+										type="button"
+										variant="outline"
+									>
+										Cancelar
+									</Button>
+									<Button
+										className="bg-[#0a7ea4] text-white hover:bg-[#0a7ea4]/90"
+										disabled={isCreatingTransfer}
+										type="submit"
+									>
+										{isCreatingTransfer ? "Creando..." : "Crear traspaso"}
+									</Button>
+								</div>
+							</DialogFooter>
+						</form>
+					</DialogContent>
+				</Dialog>
+			</div>
+
+			{/* Dashboard metrics cards - displays key statistics */}
+			<div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+				{/* Pending transfers card */}
+				<Card className="card-transition border-[#E5E7EB] bg-[#F9FAFB] dark:border-[#2D3033] dark:bg-[#1E1F20]">
+					<CardContent className="p-6">
+						<div className="flex items-center space-x-4">
+							<div className="rounded-lg bg-orange-500/10 p-2">
+								<Clock className="h-6 w-6 text-orange-600" />
+							</div>
+							<div className="flex-1 space-y-1">
+								<p className="font-medium text-[#687076] text-sm text-transition dark:text-[#9BA1A6]">
+									Pendientes
+								</p>
+								<p className="font-bold text-2xl text-[#11181C] text-transition dark:text-[#ECEDEE]">
+									{pendingReceptions.length}
+								</p>
+							</div>
+						</div>
+					</CardContent>
+				</Card>
+
+				{/* Completed transfers card */}
+				<Card className="card-transition border-[#E5E7EB] bg-[#F9FAFB] dark:border-[#2D3033] dark:bg-[#1E1F20]">
+					<CardContent className="p-6">
+						<div className="flex items-center space-x-4">
+							<div className="rounded-lg bg-green-500/10 p-2">
+								<CheckCircle className="h-6 w-6 text-green-600" />
+							</div>
+							<div className="flex-1 space-y-1">
+								<p className="font-medium text-[#687076] text-sm text-transition dark:text-[#9BA1A6]">
+									Completadas
+								</p>
+								<p className="font-bold text-2xl text-[#11181C] text-transition dark:text-[#ECEDEE]">
+									{completedReceptions.length}
+								</p>
+							</div>
+						</div>
+					</CardContent>
+				</Card>
+
+				{/* Total items card */}
+				<Card className="card-transition border-[#E5E7EB] bg-[#F9FAFB] dark:border-[#2D3033] dark:bg-[#1E1F20]">
+					<CardContent className="p-6">
+						<div className="flex items-center space-x-4">
+							<div className="rounded-lg bg-[#0a7ea4]/10 p-2">
+								<Package className="h-6 w-6 text-[#0a7ea4]" />
+							</div>
+							<div className="flex-1 space-y-1">
+								<p className="font-medium text-[#687076] text-sm text-transition dark:text-[#9BA1A6]">
+									Total items
+								</p>
+								<p className="font-bold text-2xl text-[#11181C] text-transition dark:text-[#ECEDEE]">
+									{receptions.reduce((sum, rec) => sum + rec.totalItems, 0)}
+								</p>
+							</div>
+						</div>
+					</CardContent>
+				</Card>
+
+				{/* Today's transfers card */}
+				<Card className="card-transition border-[#E5E7EB] bg-[#F9FAFB] dark:border-[#2D3033] dark:bg-[#1E1F20]">
+					<CardContent className="p-6">
+						<div className="flex items-center space-x-4">
+							<div className="rounded-lg bg-blue-500/10 p-2">
+								<Calendar className="h-6 w-6 text-blue-600" />
+							</div>
+							<div className="flex-1 space-y-1">
+								<p className="font-medium text-[#687076] text-sm text-transition dark:text-[#9BA1A6]">
+									Hoy
+								</p>
+								<p className="font-bold text-2xl text-[#11181C] text-transition dark:text-[#ECEDEE]">
+									{
+										receptions.filter((rec) => {
+											const recDate = parseDateValue(rec.arrivalDate);
+											if (!recDate) {
+												return false;
+											}
+											const today = new Date();
+											return recDate.toDateString() === today.toDateString();
+										}).length
+									}
+								</p>
+							</div>
+						</div>
+					</CardContent>
+				</Card>
+			</div>
+
+			{/* Main data table card */}
+			<Card className="card-transition border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
+				<CardHeader>
+					<CardTitle className="text-[#11181C] text-transition dark:text-[#ECEDEE]">
+						Lista de recepciones
+					</CardTitle>
+				</CardHeader>
+				<CardContent>
+					{/* Filters section - search and column filters */}
+					<div className="flex flex-col gap-3 pb-4">
+						{/* Global search input for shipment number */}
+						<Input
+							className="border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] w-full max-w-md"
+							placeholder="Buscar Nº de envío"
+							type="search"
+							value={globalFilter ?? ""}
+							onChange={(event) => table.setGlobalFilter(event.target.value)}
+						/>
+
+						{/* Column filters - responsive grid layout */}
+						<div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
+							{/* Arrival date filter */}
+							<Popover>
+								<PopoverTrigger asChild>
+									<Button
+										className={cn(
+											"w-full justify-start border-[#E5E7EB] bg-white text-left font-normal text-[#11181C] hover:bg-[#F9FAFB] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]",
+											!arrivalDateFilterDate &&
+												"text-[#687076] dark:text-[#9BA1A6]",
+										)}
+										data-empty={!arrivalDateFilterDate}
+										variant="outline"
+									>
+										<CalendarIcon className="mr-2 h-4 w-4" />
+										{arrivalDateFilterDate ? (
+											format(arrivalDateFilterDate, "PPP", { locale: es })
+										) : (
+											<span>Fecha de llegada</span>
+										)}
+									</Button>
+								</PopoverTrigger>
+								<PopoverContent className="w-auto border-[#E5E7EB] bg-white p-0 dark:border-[#2D3033] dark:bg-[#151718]">
+									<CalendarPicker
+										locale={es}
+										mode="single"
+										onSelect={handleArrivalDateFilterChange}
+										selected={arrivalDateFilterDate}
+									/>
+									<div className="flex justify-end border-t border-[#E5E7EB] p-2 dark:border-[#2D3033]">
+										<Button
+											className="text-[#687076] hover:text-[#11181C] dark:text-[#9BA1A6] dark:hover:text-[#ECEDEE]"
+											onClick={() => handleArrivalDateFilterChange(undefined)}
+											size="sm"
+											variant="ghost"
+										>
+											Limpiar
+										</Button>
+									</div>
+								</PopoverContent>
+							</Popover>
+
+							{/* Source warehouse filter */}
+							<Select
+								value={
+									(sourceWarehouseNameColumn?.getFilterValue() as
+										| string
+										| undefined) ?? "all"
+								}
+								onValueChange={(value) =>
+									sourceWarehouseNameColumn?.setFilterValue(
+										value === "all" ? undefined : value,
+									)
+								}
+							>
+								<SelectTrigger className="border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]">
+									<SelectValue placeholder="Almacén origen" />
+								</SelectTrigger>
+								<SelectContent className="border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
+									<SelectItem
+										className="text-[#11181C] dark:text-[#ECEDEE]"
+										value="all"
+									>
+										Todos los orígenes
+									</SelectItem>
+									{warehouseOptions.map((option) => (
+										<SelectItem
+											className="text-[#11181C] dark:text-[#ECEDEE]"
+											key={option.id}
+											value={option.name}
+										>
+											{option.name}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+
+							{/* Destination warehouse filter */}
+							<Select
+								value={
+									(destinationWarehouseNameColumn?.getFilterValue() as
+										| string
+										| undefined) ?? "all"
+								}
+								onValueChange={(value) =>
+									destinationWarehouseNameColumn?.setFilterValue(
+										value === "all" ? undefined : value,
+									)
+								}
+							>
+								<SelectTrigger className="border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]">
+									<SelectValue placeholder="Almacén destino" />
+								</SelectTrigger>
+								<SelectContent className="border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
+									<SelectItem
+										className="text-[#11181C] dark:text-[#ECEDEE]"
+										value="all"
+									>
+										Todos los destinos
+									</SelectItem>
+									{warehouseOptions.map((option) => (
+										<SelectItem
+											className="text-[#11181C] dark:text-[#ECEDEE]"
+											key={option.id}
+											value={option.name}
+										>
+											{option.name}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+
+							{/* Status filter (pending/completed) */}
+							<Select
+								value={
+									(statusColumn?.getFilterValue() as string | undefined) ??
+									"all"
+								}
+								onValueChange={(value) =>
+									statusColumn?.setFilterValue(
+										value === "all" ? undefined : value,
+									)
+								}
+							>
+								<SelectTrigger className="border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]">
+									<SelectValue placeholder="Filtrar por estado" />
+								</SelectTrigger>
+								<SelectContent className="border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
+									<SelectItem
+										className="text-[#11181C] dark:text-[#ECEDEE]"
+										value="all"
+									>
+										Todos los estados
+									</SelectItem>
+									{statusFilterOptions.map((option) => (
+										<SelectItem
+											className="text-[#11181C] dark:text-[#ECEDEE]"
+											key={option.value}
+											value={option.value}
+										>
+											{option.label}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+
+							{/* Transfer type filter (internal/external) */}
+							<Select
+								value={
+									(transferTypeColumn?.getFilterValue() as
+										| string
+										| undefined) ?? "all"
+								}
+								onValueChange={(value) =>
+									transferTypeColumn?.setFilterValue(
+										value === "all" ? undefined : value,
+									)
+								}
+							>
+								<SelectTrigger className="border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]">
+									<SelectValue placeholder="Filtrar por tipo" />
+								</SelectTrigger>
+								<SelectContent className="border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
+									<SelectItem
+										className="text-[#11181C] dark:text-[#ECEDEE]"
+										value="all"
+									>
+										Todos los tipos
+									</SelectItem>
+									{transferTypeFilterOptions.map((option) => (
+										<SelectItem
+											className="text-[#11181C] dark:text-[#ECEDEE]"
+											key={option.value}
+											value={option.value}
+										>
+											{option.label}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</div>
+					</div>
+
+					{/* Data table container */}
+					<div className="theme-transition rounded-md border border-[#E5E7EB] dark:border-[#2D3033]">
+						<Table>
+							{/* Table header */}
+							<TableHeader>
+								{table.getHeaderGroups().map((headerGroup) => (
+									<TableRow
+										className="border-[#E5E7EB] border-b dark:border-[#2D3033]"
+										key={headerGroup.id}
+									>
+										{headerGroup.headers.map((header) => {
+											const meta = header.column.columnDef.meta as
+												| ColumnMeta
+												| undefined;
+											const headerClassName =
+												meta?.headerClassName ??
+												"font-medium text-[#11181C] text-transition dark:text-[#ECEDEE]";
+											return (
+												<TableHead className={headerClassName} key={header.id}>
+													{header.isPlaceholder
+														? null
+														: flexRender(
+																header.column.columnDef.header,
+																header.getContext(),
+															)}
+												</TableHead>
+											);
+										})}
+									</TableRow>
+								))}
+							</TableHeader>
+
+							{/* Table body - displays reception rows or empty state */}
+							<TableBody>
+								{table.getRowModel().rows.length === 0 ? (
+									<TableRow>
+										<TableCell
+											className="py-12 text-center"
+											colSpan={table.getAllLeafColumns().length || 1}
+										>
+											<Package className="mx-auto mb-4 h-12 w-12 text-[#687076] dark:text-[#9BA1A6]" />
+											<p className="text-[#687076] text-transition dark:text-[#9BA1A6]">
+												No hay recepciones disponibles
+											</p>
+										</TableCell>
+									</TableRow>
+								) : (
+									table.getRowModel().rows.map((row) => (
+										<TableRow
+											className="theme-transition border-[#E5E7EB] border-b hover:bg-[#F9FAFB] dark:border-[#2D3033] dark:hover:bg-[#2D3033]"
+											key={row.id}
+										>
+											{row.getVisibleCells().map((cell) => {
+												const meta = cell.column.columnDef.meta as
+													| ColumnMeta
+													| undefined;
+												const cellClassName = meta?.cellClassName;
+												return (
+													<TableCell className={cellClassName} key={cell.id}>
+														{flexRender(
+															cell.column.columnDef.cell,
+															cell.getContext(),
+														)}
+													</TableCell>
+												);
+											})}
+										</TableRow>
+									))
+								)}
+							</TableBody>
+						</Table>
+					</div>
+				</CardContent>
+			</Card>
+		</div>
+	);
+}

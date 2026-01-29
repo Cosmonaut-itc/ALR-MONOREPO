@@ -1,0 +1,184 @@
+import { useMutation } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { getQueryClient } from "@/app/get-query-client";
+import type { TransferOrderType } from "@/types";
+import { client } from "../client";
+import { createQueryKey } from "../helpers";
+import { queryKeys } from "../query-keys";
+
+export const useCreateTransferOrder = () =>
+	useMutation({
+		mutationKey: ["create-transfer-order"],
+		mutationFn: async (data: TransferOrderType) => {
+			const response = await client.api.auth[
+				"warehouse-transfers"
+			].create.$post({
+				json: data,
+			});
+			const result = await response.json();
+			if (!result?.success) {
+				throw new Error(
+					result?.message || "La API devolvió éxito=false al crear el traspaso",
+				);
+			}
+			return result;
+		},
+		onMutate: () => {
+			toast.loading("Creando traspaso...", {
+				id: "create-transfer-order",
+			});
+		},
+		onSuccess: (data) => {
+			toast.success("Traspaso creado correctamente", {
+				id: "create-transfer-order",
+			});
+			// Invalidate and refetch inventory data
+			const queryClient = getQueryClient();
+			if (data.success && data.data) {
+				queryClient.invalidateQueries({
+					queryKey: createQueryKey(queryKeys.inventory, [
+						data.data.transfer.sourceWarehouseId,
+					]),
+				});
+				queryClient.invalidateQueries({
+					queryKey: createQueryKey(queryKeys.inventory, ["all"]),
+				});
+				queryClient.invalidateQueries({
+					queryKey: createQueryKey(queryKeys.receptions, [
+						data.data.transfer.sourceWarehouseId,
+					]),
+				});
+				queryClient.invalidateQueries({
+					queryKey: createQueryKey(queryKeys.receptions, ["all"]),
+				});
+			}
+		},
+		onError: (error) => {
+			toast.error("Error al crear traspaso", {
+				id: "create-transfer-order",
+			});
+			console.error(error);
+		},
+	});
+
+// =============================
+// Update transfer overall status
+// =============================
+
+export type UpdateTransferStatusPayload = {
+	transferId: string;
+	altegioTotals: {
+		goodId: number;
+		totalQuantity: number;
+		totalCost: number;
+	}[];
+	isCompleted?: boolean;
+	isPending?: boolean;
+	isCancelled?: boolean;
+	completedBy?: string;
+	notes?: string;
+	replicateToAltegio?: boolean;
+};
+
+export const useUpdateTransferStatus = () =>
+	useMutation<unknown, Error, UpdateTransferStatusPayload>({
+		mutationKey: ["update-transfer-status"],
+		mutationFn: async (data: UpdateTransferStatusPayload) => {
+			const response = await client.api.auth["warehouse-transfers"][
+				"update-status"
+			].$post({
+				json: data,
+			});
+			const result: unknown = await response.json();
+			// If API follows { success, message } pattern, attempt soft-check
+			if (
+				result &&
+				typeof result === "object" &&
+				"success" in (result as Record<string, unknown>) &&
+				(result as { success?: unknown }).success === false
+			) {
+				const message =
+					((result as { message?: unknown }).message as string | undefined) ||
+					"La API devolvió éxito=false al actualizar el estado del traspaso";
+				throw new Error(message);
+			}
+			return result;
+		},
+		onMutate: () => {
+			toast.loading("Actualizando estado del traspaso...", {
+				id: "update-transfer-status",
+			});
+		},
+		onSuccess: () => {
+			toast.success("Estado del traspaso actualizado", {
+				id: "update-transfer-status",
+			});
+			const queryClient = getQueryClient();
+			// Invalidate receptions list and any reception detail queries
+			queryClient.invalidateQueries({ queryKey: queryKeys.receptions });
+			queryClient.invalidateQueries({ queryKey: queryKeys.recepcionDetail });
+		},
+		onError: (error) => {
+			toast.error("Error al actualizar estado del traspaso", {
+				id: "update-transfer-status",
+			});
+			console.error(error);
+		},
+	});
+
+// =====================================
+// Update individual transfer item status
+// =====================================
+
+type UpdateTransferItemStatusPostOptions = Parameters<
+	(typeof client.api.auth)["warehouse-transfers"]["update-item-status"]["$post"]
+>[0];
+export type UpdateTransferItemStatusPayload =
+	UpdateTransferItemStatusPostOptions extends {
+		json: infer J;
+	}
+		? J
+		: never;
+
+export const useUpdateTransferItemStatus = () =>
+	useMutation<unknown, Error, UpdateTransferItemStatusPayload>({
+		mutationKey: ["update-transfer-item-status"],
+		mutationFn: async (data: UpdateTransferItemStatusPayload) => {
+			const response = await client.api.auth["warehouse-transfers"][
+				"update-item-status"
+			].$post({
+				json: data,
+			});
+			const result: unknown = await response.json();
+			if (
+				result &&
+				typeof result === "object" &&
+				"success" in (result as Record<string, unknown>) &&
+				(result as { success?: unknown }).success === false
+			) {
+				const message =
+					((result as { message?: unknown }).message as string | undefined) ||
+					"La API devolvió éxito=false al actualizar el estado del item";
+				throw new Error(message);
+			}
+			return result;
+		},
+		onMutate: () => {
+			toast.loading("Actualizando estado de ítem...", {
+				id: "update-transfer-item-status",
+			});
+		},
+		onSuccess: () => {
+			toast.success("Estado de ítem actualizado", {
+				id: "update-transfer-item-status",
+			});
+			const queryClient = getQueryClient();
+			queryClient.invalidateQueries({ queryKey: queryKeys.recepcionDetail });
+		},
+		onError: (error) => {
+			toast.error("Error al actualizar estado del ítem", {
+				id: "update-transfer-item-status",
+			});
+			console.error(error);
+		},
+	});
