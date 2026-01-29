@@ -3,3 +3,8 @@ dist
 .turbo
 bun.lockb
 _imports
+.env
+.env.local
+apps/api/.env
+apps/mobile/.env
+apps/web/.env.local
