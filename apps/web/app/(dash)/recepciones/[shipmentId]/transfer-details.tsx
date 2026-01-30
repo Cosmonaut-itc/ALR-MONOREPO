@@ -220,7 +220,7 @@ export function ReceptionDetailPage({
 		}
 
 		return null;
-	}, [generalTransferDetails?.id, replenishmentOrdersResponse]);
+	}, [generalTransferDetails, replenishmentOrdersResponse]);
 
 	// Fetch full order details if linked
 const { data: fullOrderResponse } = useSuspenseQuery<

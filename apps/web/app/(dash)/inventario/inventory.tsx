@@ -1057,7 +1057,7 @@ export function InventarioPage({
 							uuid: uuidv4(),
 							productName: selectedProduct.name,
 						}));
-		} catch (_error) {
+		} catch {
 			// Mutation already surfaced the error via toast; stop the flow silently.
 			return;
 		}
@@ -1114,7 +1114,7 @@ export function InventarioPage({
 					},
 				]);
 				toast.success("Código QR generado nuevamente.", { duration: 2000 });
-			} catch (_error) {
+			} catch {
 				toast.error("No se pudo generar el código QR.");
 			}
 		},

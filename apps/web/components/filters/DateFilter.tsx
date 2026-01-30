@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import type { DateRange } from "react-day-picker";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -46,41 +46,7 @@ export function DateFilter({ label, value, onChange }: DateFilterProps) {
 	);
 	const [open, setOpen] = useState(false);
 
-	useEffect(() => {
-		setMode(value?.mode ?? "on");
-		setSingleDate(value?.from ? new Date(`${value.from}T00:00:00Z`) : undefined);
-		setRange(
-			value?.mode === "between"
-				? {
-					from: value?.from ? new Date(`${value.from}T00:00:00Z`) : undefined,
-					to: value?.to ? new Date(`${value.to}T00:00:00Z`) : undefined,
-				}
-				: undefined,
-		);
-	}, [value?.mode, value?.from, value?.to]);
-
-	useEffect(() => {
-		// Emit only when we have the minimal data required per mode
-		if (!mode) {
-			onChange(null);
-			return;
-		}
-		if (mode === "between") {
-			if (range?.from && range?.to) {
-				onChange({ mode, from: toISO(range.from), to: toISO(range.to) });
-			} else {
-				onChange(null);
-			}
-			return;
-		}
-		if (singleDate) {
-			onChange({ mode, from: toISO(singleDate) });
-		} else {
-			onChange(null);
-		}
-	}, [mode, range?.from, range?.to, singleDate, onChange]);
-
-	const summary = useMemo(() => {
+	const summary = () => {
 		if (mode === "between") {
 			const from = range?.from ? toISO(range.from) : "";
 			const to = range?.to ? toISO(range.to) : "";
@@ -89,14 +55,33 @@ export function DateFilter({ label, value, onChange }: DateFilterProps) {
 		}
 		if (singleDate) return `${toISO(singleDate)}`;
 		return "Selecciona fecha";
-	}, [mode, range?.from, range?.to, singleDate]);
+	};
+
+	const handleModeChange = (newMode: DateFilterValue["mode"]) => {
+		setMode(newMode);
+		if (newMode === "between") {
+			if (range?.from && range?.to) {
+				onChange({ mode: newMode, from: toISO(range.from), to: toISO(range.to) });
+			} else {
+				onChange(null);
+			}
+			return;
+		}
+		if (singleDate) {
+			onChange({ mode: newMode, from: toISO(singleDate) });
+		} else {
+			onChange(null);
+		}
+	};
 
 	return (
 		<div className="space-y-2">
 			<Label className="text-[#11181C] dark:text-[#ECEDEE]">{label}</Label>
 			<div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-2">
 				<Select
-					onValueChange={(newMode) => setMode(newMode as DateFilterValue["mode"])}
+					onValueChange={(newMode) =>
+						handleModeChange(newMode as DateFilterValue["mode"])
+					}
 					value={mode}
 				>
 					<SelectTrigger className="w-full">
@@ -112,7 +97,7 @@ export function DateFilter({ label, value, onChange }: DateFilterProps) {
 				<Dialog open={open} onOpenChange={setOpen}>
 					<DialogTrigger asChild>
 						<Button variant="outline" className="w-full sm:w-auto sm:flex-shrink-0">
-							{summary}
+							{summary()}
 						</Button>
 					</DialogTrigger>
 					<DialogContent className="w-fit max-w-[calc(100%-2rem)] sm:max-w-[650px]">
@@ -128,8 +113,15 @@ export function DateFilter({ label, value, onChange }: DateFilterProps) {
 									onSelect={(date: DateRange | undefined) => {
 										setRange(date);
 										if (date?.from && date?.to) {
+											onChange({
+												mode: "between",
+												from: toISO(date.from),
+												to: toISO(date.to),
+											});
 											setOpen(false);
+											return;
 										}
+										onChange(null);
 									}}
 									captionLayout="dropdown"
 									className="rounded-md border"
@@ -142,8 +134,11 @@ export function DateFilter({ label, value, onChange }: DateFilterProps) {
 									onSelect={(date: Date | undefined) => {
 										setSingleDate(date ?? undefined);
 										if (date) {
+											onChange({ mode, from: toISO(date) });
 											setOpen(false);
+											return;
 										}
+										onChange(null);
 									}}
 									captionLayout="dropdown"
 									className="rounded-md border"

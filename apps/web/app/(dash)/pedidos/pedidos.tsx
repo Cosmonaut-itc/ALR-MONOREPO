@@ -9,13 +9,12 @@ import type {
 } from "@tanstack/react-table";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import {
-	type FormEvent,
-	useCallback,
-	useEffect,
-	useMemo,
-	useState,
-} from "react";
+	import {
+		type FormEvent,
+		useCallback,
+		useMemo,
+		useState,
+	} from "react";
 import { toast } from "sonner";
 import {
 	DateFilter,
@@ -292,40 +291,29 @@ export function PedidosPage({
 		[requesterWarehouses, warehouseId],
 	);
 
-	useEffect(() => {
-		if (cedisWarehouses.length >= 1) {
-			setCedisWarehouseId((prev) => {
-				if (
-					prev &&
-					cedisWarehouses.some((warehouse) => warehouse.id === prev)
-				) {
-					return prev;
-				}
-				return cedisWarehouses[0]?.id ?? prev ?? "";
-			});
+	const resolvedCedisWarehouseId = useMemo(() => {
+		if (
+			cedisWarehouseId &&
+			cedisWarehouses.some((warehouse) => warehouse.id === cedisWarehouseId)
+		) {
+			return cedisWarehouseId;
 		}
-	}, [cedisWarehouses]);
+		return cedisWarehouses[0]?.id ?? "";
+	}, [cedisWarehouseId, cedisWarehouses]);
 
-	useEffect(() => {
-		if (canManageAllWarehouses) {
-			if (requesterWarehouses.length > 0) {
-				setSourceWarehouseId((prev) => {
-					if (
-						prev &&
-						requesterWarehouses.some((warehouse) => warehouse.id === prev)
-					) {
-						return prev;
-					}
-					const fallback = requesterWarehouses.find(
-						(wh) => wh.id === warehouseId,
-					);
-					return fallback?.id ?? requesterWarehouses[0]?.id ?? prev ?? "";
-				});
-			}
-		} else {
-			setSourceWarehouseId(warehouseId);
+	const resolvedSourceWarehouseId = useMemo(() => {
+		if (!canManageAllWarehouses) {
+			return warehouseId;
 		}
-	}, [canManageAllWarehouses, requesterWarehouses, warehouseId]);
+		if (
+			sourceWarehouseId &&
+			requesterWarehouses.some((warehouse) => warehouse.id === sourceWarehouseId)
+		) {
+			return sourceWarehouseId;
+		}
+		const fallback = requesterWarehouses.find((wh) => wh.id === warehouseId);
+		return fallback?.id ?? requesterWarehouses[0]?.id ?? "";
+	}, [canManageAllWarehouses, requesterWarehouses, sourceWarehouseId, warehouseId]);
 
 	const productOptions = useMemo<ProductOption[]>(() => {
 		if (
@@ -470,24 +458,24 @@ export function PedidosPage({
 	}, [warehouses]);
 
 	const selectedCedisName = useMemo(() => {
-		if (!cedisWarehouseId) {
+		if (!resolvedCedisWarehouseId) {
 			return "";
 		}
 		return (
-			warehouseNameMap.get(cedisWarehouseId) ??
-			`Bodega ${cedisWarehouseId.slice(0, 6)}`
+			warehouseNameMap.get(resolvedCedisWarehouseId) ??
+			`Bodega ${resolvedCedisWarehouseId.slice(0, 6)}`
 		);
-	}, [cedisWarehouseId, warehouseNameMap]);
+	}, [resolvedCedisWarehouseId, warehouseNameMap]);
 
 	const selectedRequesterName = useMemo(() => {
-		if (!sourceWarehouseId) {
+		if (!resolvedSourceWarehouseId) {
 			return "";
 		}
 		return (
-			warehouseNameMap.get(sourceWarehouseId) ??
-			`Bodega ${sourceWarehouseId.slice(0, 6)}`
+			warehouseNameMap.get(resolvedSourceWarehouseId) ??
+			`Bodega ${resolvedSourceWarehouseId.slice(0, 6)}`
 		);
-	}, [sourceWarehouseId, warehouseNameMap]);
+	}, [resolvedSourceWarehouseId, warehouseNameMap]);
 
 	const requesterWarehouseLabel =
 		selectedRequesterName ||
@@ -708,14 +696,14 @@ export function PedidosPage({
 		event.preventDefault();
 
 		const effectiveSourceWarehouseId = canManageAllWarehouses
-			? sourceWarehouseId
+			? resolvedSourceWarehouseId
 			: warehouseId;
 
 		if (!effectiveSourceWarehouseId) {
 			toast.error("Selecciona la bodega solicitante antes de crear el pedido.");
 			return;
 		}
-		if (!cedisWarehouseId) {
+		if (!resolvedCedisWarehouseId) {
 			toast.error("Selecciona el CEDIS que surtirá este pedido.");
 			return;
 		}
@@ -742,7 +730,7 @@ export function PedidosPage({
 		try {
 			await mutation.mutateAsync({
 				sourceWarehouseId: effectiveSourceWarehouseId,
-				cedisWarehouseId,
+				cedisWarehouseId: resolvedCedisWarehouseId,
 				items: preparedItems,
 				notes: notes.trim().length > 0 ? notes.trim() : undefined,
 			});
@@ -780,7 +768,7 @@ export function PedidosPage({
 				<PedidoCreateDialog
 					canManageAllWarehouses={canManageAllWarehouses}
 					cedisOptions={cedisOptions}
-					cedisWarehouseId={cedisWarehouseId}
+					cedisWarehouseId={resolvedCedisWarehouseId}
 					filteredSelectedItems={filteredSelectedItems}
 					isCedisSelectDisabled={isCedisSelectDisabled}
 					isEmployee={isEmployee}
@@ -806,7 +794,7 @@ export function PedidosPage({
 					selectedCedisName={selectedCedisName}
 					selectedItems={selectedItems}
 					selectedRequesterName={selectedRequesterName}
-					sourceWarehouseId={sourceWarehouseId}
+					sourceWarehouseId={resolvedSourceWarehouseId}
 				/>
 			)}
 

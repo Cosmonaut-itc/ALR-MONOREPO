@@ -145,6 +145,27 @@ type PermissionData = {
 	name: string;
 };
 
+type ForbiddenCardProps = {
+	title: string;
+	description: string;
+};
+
+const ForbiddenCard = ({ title, description }: ForbiddenCardProps) => (
+	<Card className="card-transition border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
+		<CardContent className="px-6 flex flex-col items-center justify-center py-12">
+			<div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/20">
+				<ShieldAlert className="h-8 w-8 text-amber-600 dark:text-amber-400" />
+			</div>
+			<h3 className="mb-2 font-semibold text-[#11181C] text-lg dark:text-[#ECEDEE]">
+				{title}
+			</h3>
+			<p className="max-w-md text-center text-[#687076] text-sm dark:text-[#9BA1A6]">
+				{description}
+			</p>
+		</CardContent>
+	</Card>
+);
+
 /**
  * Render the settings page with tabs for managing users (create and, for encargados, update) and warehouses.
  *
@@ -262,28 +283,6 @@ const warehouses =
 	const [altegioWarehouseComboboxOpen, setAltegioWarehouseComboboxOpen] =
 		useState(false);
 	const isEmployeeWarehouseLocked = isEmployee;
-
-	const ForbiddenCard = ({
-		title,
-		description,
-	}: {
-		title: string;
-		description: string;
-	}) => (
-		<Card className="card-transition border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
-			<CardContent className="px-6 flex flex-col items-center justify-center py-12">
-				<div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/20">
-					<ShieldAlert className="h-8 w-8 text-amber-600 dark:text-amber-400" />
-				</div>
-				<h3 className="mb-2 font-semibold text-[#11181C] text-lg dark:text-[#ECEDEE]">
-					{title}
-				</h3>
-				<p className="max-w-md text-center text-[#687076] text-sm dark:text-[#9BA1A6]">
-					{description}
-				</p>
-			</CardContent>
-		</Card>
-	);
 
 	// Form instances for user management
 	const userForm = useForm({

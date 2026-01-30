@@ -1544,60 +1544,63 @@ export function ProductCatalogTable({
 		[],
 	);
 
-	const renderSubComponent = useMemo(
-		() =>
-			({ row }: { row: { original: ProductWithInventory } }) => {
-				const product = row.original as ProductWithInventory;
-				const selectionEnabledRef = enableSelection === true;
-				const productKey = getProductKey(product);
-				const productSelection =
-					selectedByBarcode[productKey] || new Set<string>();
-				const detailColumnCount = enableDispose ? 8 : 7;
+	const renderSubComponent = useMemo(() => {
+		const RenderSubComponent = ({
+			row,
+		}: {
+			row: { original: ProductWithInventory };
+		}) => {
+			const product = row.original as ProductWithInventory;
+			const selectionEnabledRef = enableSelection === true;
+			const productKey = getProductKey(product);
+			const productSelection =
+				selectedByBarcode[productKey] || new Set<string>();
+			const detailColumnCount = enableDispose ? 8 : 7;
 
-				type DisplayItem = {
-					key: string;
-					warehouseKey: string;
-					data: InventoryItemDisplay;
-				};
+			type DisplayItem = {
+				key: string;
+				warehouseKey: string;
+				data: InventoryItemDisplay;
+			};
 
-				const displayItems: DisplayItem[] = product.inventoryItems
-					.map((item) => {
-						const data = extractInventoryItemData(item);
-						const key = data.uuid || data.id || "";
-						const warehouseKey = getInventoryLocationKey(data);
-						return { data, key, warehouseKey };
-					})
-					.filter((item) => {
-						if (!visibleWarehouseIds || visibleWarehouseIds.size === 0) {
-							return true;
-						}
-						return (
-							isWarehouseVisible(item.warehouseKey) ||
-							isWarehouseVisible(item.data.currentWarehouse) ||
-							isWarehouseVisible(item.data.currentCabinet) ||
-							isWarehouseVisible(item.data.homeWarehouseId)
-						);
-					});
-
-				const selectedCount = displayItems.reduce((acc, item) => {
-					return item.key && productSelection.has(item.key) ? acc + 1 : acc;
-				}, 0);
-				const toggleCandidates = displayItems.filter((item) => {
-					const id = item.data.id ?? "";
-					return Boolean(id) && !id.startsWith("uuid-");
+			const displayItems: DisplayItem[] = product.inventoryItems
+				.map((item) => {
+					const data = extractInventoryItemData(item);
+					const key = data.uuid || data.id || "";
+					const warehouseKey = getInventoryLocationKey(data);
+					return { data, key, warehouseKey };
+				})
+				.filter((item) => {
+					if (!visibleWarehouseIds || visibleWarehouseIds.size === 0) {
+						return true;
+					}
+					return (
+						isWarehouseVisible(item.warehouseKey) ||
+						isWarehouseVisible(item.data.currentWarehouse) ||
+						isWarehouseVisible(item.data.currentCabinet) ||
+						isWarehouseVisible(item.data.homeWarehouseId)
+					);
 				});
-				const isToggleDisabled = toggleCandidates.length === 0 || isTogglingKit;
-				const selectedItemsForIsEmpty = displayItems.filter(
-					(item) => item.key && productSelection.has(item.key),
-				);
-				const validSelectedIds = selectedItemsForIsEmpty
-					.map((item) => item.data.id ?? "")
-					.filter((id) => Boolean(id) && !id.startsWith("uuid-"));
-				const isUpdateIsEmptyDisabled =
-					validSelectedIds.length === 0 || isUpdatingIsEmpty;
 
-				const isGroupExpanded = (key: string) =>
-					Boolean(expandedGroupsByBarcode[productKey]?.has(key));
+			const selectedCount = displayItems.reduce((acc, item) => {
+				return item.key && productSelection.has(item.key) ? acc + 1 : acc;
+			}, 0);
+			const toggleCandidates = displayItems.filter((item) => {
+				const id = item.data.id ?? "";
+				return Boolean(id) && !id.startsWith("uuid-");
+			});
+			const isToggleDisabled = toggleCandidates.length === 0 || isTogglingKit;
+			const selectedItemsForIsEmpty = displayItems.filter(
+				(item) => item.key && productSelection.has(item.key),
+			);
+			const validSelectedIds = selectedItemsForIsEmpty
+				.map((item) => item.data.id ?? "")
+				.filter((id) => Boolean(id) && !id.startsWith("uuid-"));
+			const isUpdateIsEmptyDisabled =
+				validSelectedIds.length === 0 || isUpdatingIsEmpty;
+
+			const isGroupExpanded = (key: string) =>
+				Boolean(expandedGroupsByBarcode[productKey]?.has(key));
 
 				const toggleGroupExpanded = (key: string) => {
 					setExpandedGroupsByBarcode((prev) => {
@@ -1943,7 +1946,7 @@ export function ProductCatalogTable({
 							isUsageLimit,
 						};
 					});
-				return (
+			return (
 					<div className="border-[#E5E7EB] border-b bg-[#F8FAFC] p-4 dark:border-[#374151] dark:bg-[#1A1B1C]">
 						<div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 							<h4 className="font-medium text-[#11181C] text-sm dark:text-[#ECEDEE]">
@@ -2375,9 +2378,11 @@ export function ProductCatalogTable({
 							</Table>
 						</div>
 					</div>
-				);
-			},
-		[
+			);
+		};
+		RenderSubComponent.displayName = "ProductCatalogSubComponent";
+		return RenderSubComponent;
+	}, [
 			copyToClipboard,
 			enableSelection,
 			onAddToTransfer,
@@ -2404,7 +2409,6 @@ export function ProductCatalogTable({
 			warehouseFilterOptions,
 			isWarehouseVisible,
 			visibleWarehouseIds,
-			visibleWarehouseIds?.size,
 		],
 	);
 

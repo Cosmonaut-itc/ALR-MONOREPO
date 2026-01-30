@@ -78,23 +78,16 @@ export default async function SettingsPage() {
 		);
 
 		await Promise.all(prefetches);
-
-		return (
-			<HydrationBoundary state={dehydrate(queryClient)}>
-				<GenericBoundaryWrapper fallbackComponent={<SkeletonAjustesPage />}>
-					<AjustesPage role={role} />
-				</GenericBoundaryWrapper>
-			</HydrationBoundary>
-		);
 	} catch (error) {
 		console.error(error);
 		console.error("Error prefetching settings data");
-		return (
-			<HydrationBoundary state={dehydrate(queryClient)}>
-				<GenericBoundaryWrapper fallbackComponent={<SkeletonAjustesPage />}>
-					<AjustesPage role={role} />
-				</GenericBoundaryWrapper>
-			</HydrationBoundary>
-		);
 	}
+
+	return (
+		<HydrationBoundary state={dehydrate(queryClient)}>
+			<GenericBoundaryWrapper fallbackComponent={<SkeletonAjustesPage />}>
+				<AjustesPage role={role} />
+			</GenericBoundaryWrapper>
+		</HydrationBoundary>
+	);
 }

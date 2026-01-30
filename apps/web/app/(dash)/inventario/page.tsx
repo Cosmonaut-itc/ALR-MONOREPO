@@ -89,22 +89,16 @@ export default async function AbastecimientoPage() {
 		);
 
 		await Promise.all(prefetches);
-		return (
-			<HydrationBoundary state={dehydrate(queryClient)}>
-				<GenericBoundaryWrapper fallbackComponent={<SkeletonInventoryTable />}>
-					<InventarioPage role={role} warehouseId={warehouseId} />
-				</GenericBoundaryWrapper>
-			</HydrationBoundary>
-		);
 	} catch (error) {
 		console.error(error);
 		console.error("Error prefetching abastecimiento data");
-		return (
-			<HydrationBoundary state={dehydrate(queryClient)}>
-				<GenericBoundaryWrapper fallbackComponent={<SkeletonInventoryTable />}>
-					<InventarioPage role={role} warehouseId={warehouseId} />
-				</GenericBoundaryWrapper>
-			</HydrationBoundary>
-		);
 	}
+
+	return (
+		<HydrationBoundary state={dehydrate(queryClient)}>
+			<GenericBoundaryWrapper fallbackComponent={<SkeletonInventoryTable />}>
+				<InventarioPage role={role} warehouseId={warehouseId} />
+			</GenericBoundaryWrapper>
+		</HydrationBoundary>
+	);
 }

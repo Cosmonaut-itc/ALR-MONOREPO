@@ -4,7 +4,7 @@
 import { Moon, Sun } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useThemeStore } from "@/stores/theme-store"
-import { useEffect, useState } from "react"
+import { useSyncExternalStore } from "react"
 import { useShallow } from "zustand/shallow"
 
 export function ThemeToggle() {
@@ -14,13 +14,13 @@ export function ThemeToggle() {
       toggleTheme: state.toggleTheme,
     }))
   )
-  const [mounted, setMounted] = useState(false)
+  const isHydrated = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  )
 
-  useEffect(() => {
-    setMounted(true)
-  }, [])
-
-  if (!mounted) {
+  if (!isHydrated) {
     return (
       <Button variant="ghost" size="icon" className="h-9 w-9 theme-transition">
         <Sun className="h-4 w-4 icon-transition" />

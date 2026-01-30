@@ -613,7 +613,7 @@ export function PedidoDetailsPage({
 			return candidate.name;
 		}
 		return `Almacén ${parsedOrder.sourceWarehouseId.slice(0, 6)}`;
-	}, [parsedOrder?.sourceWarehouseId, warehousesMap]);
+	}, [parsedOrder, warehousesMap]);
 
 	const cedisWarehouseName = useMemo(() => {
 		if (!parsedOrder?.cedisWarehouseId) {
@@ -624,7 +624,7 @@ export function PedidoDetailsPage({
 			return candidate.name;
 		}
 		return `CEDIS ${parsedOrder.cedisWarehouseId.slice(0, 6)}`;
-	}, [parsedOrder?.cedisWarehouseId, warehousesMap]);
+	}, [parsedOrder, warehousesMap]);
 
 	const toggleSelection = useCallback(
 		(detailId: string, stockId: string, requested: number) => {
@@ -1060,7 +1060,7 @@ export function PedidoDetailsPage({
 	}, [
 		parsedOrder,
 		isEncargado,
-		currentUser?.id,
+		currentUser,
 		cabinetMap,
 		selectedItems,
 		transferNotes,

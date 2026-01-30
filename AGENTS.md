@@ -63,6 +63,11 @@
 - Follow the local Biome configuration (tabs width 4, 100-character lines, trailing commas).
 - React components use PascalCase; hooks camelCase; Zustand stores end with `Store`.
 - Centralize constants (API in `src/constants.ts`) and avoid embedding secrets in route logic/tests.
+- Be strict with TypeScript: avoid `any` and prefer explicit, safe types.
+
+## Commenting
+- Use JSDoc for any comments you add or update.
+- Add comments only when they clarify non-obvious logic; keep them concise and current.
 
 ## Commit & Pull Request Guidelines
 - Use Conventional Commits (`feat:`, `fix:`, `chore:`) mirroring existing history.
@@ -72,3 +77,4 @@
 # Additional Agent Requirements
 - When working on a branch with API changes, create a context file under `apps/api/documentation/` named after the branch.
 - Prefer JSDoc for new exported functions and complex helpers.
+- After finishing work, run `bun run typecheck` and `bun run lint`, then report results.

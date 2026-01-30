@@ -101,7 +101,7 @@ export const useKitsStore = create<KitsState>()(
 				});
 			},
 
-			markAllReturned: (_kitId) => {
+			markAllReturned: () => {
 				set((state) => ({
 					inspectionItems: state.inspectionItems.map((item) => ({
 						...item,

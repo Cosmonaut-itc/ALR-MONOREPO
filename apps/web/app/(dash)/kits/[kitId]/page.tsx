@@ -51,8 +51,8 @@ export default async function Page({
 	const warehouseId = auth.user?.warehouseId ?? "";
 	const { kitId } = await params;
 
+	let kitEmployeeId: string | null = null;
 	try {
-		let kitEmployeeId: string | null = null;
 		const kitDetails = await queryClient.fetchQuery({
 			queryKey: createQueryKey(queryKeys.kits, [kitId]),
 			queryFn: () => fetchKitDetailsServer(kitId),
@@ -105,26 +105,19 @@ export default async function Page({
 				notFound();
 			}
 		}
-
-		return (
-			<HydrationBoundary state={dehydrate(queryClient)}>
-				<GenericBoundaryWrapper fallbackComponent={<SkeletonKitsPage />}>
-					<KitInspectionPage params={{ kitId }} />
-				</GenericBoundaryWrapper>
-			</HydrationBoundary>
-		);
 	} catch (error) {
 		console.error(error);
 		console.error("Error prefetching kit details");
 		if (!canManageAllWarehouses) {
 			notFound();
 		}
-		return (
-			<HydrationBoundary state={dehydrate(queryClient)}>
-				<GenericBoundaryWrapper fallbackComponent={<SkeletonKitsPage />}>
-					<KitInspectionPage params={{ kitId }} />
-				</GenericBoundaryWrapper>
-			</HydrationBoundary>
-		);
 	}
+
+	return (
+		<HydrationBoundary state={dehydrate(queryClient)}>
+			<GenericBoundaryWrapper fallbackComponent={<SkeletonKitsPage />}>
+				<KitInspectionPage params={{ kitId }} />
+			</GenericBoundaryWrapper>
+		</HydrationBoundary>
+	);
 }
