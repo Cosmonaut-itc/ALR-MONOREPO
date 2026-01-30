@@ -18,6 +18,8 @@ export default [
 	...compat.extends("@alr/eslint-config"),
 	{
 		rules: {
+			// Disabled due to false positives with TanStack Query/Form and other compatible libraries
+			// that work correctly with React hooks but trigger this rule incorrectly
 			"react-hooks/incompatible-library": "off",
 		},
 	},
