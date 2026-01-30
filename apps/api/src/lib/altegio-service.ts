@@ -636,7 +636,6 @@ const executeAltegioArrival = async ({
 		const resolvedTimeZone = details.timeZone ?? warehouse.timeZone ?? DEFAULT_TIME_ZONE;
 		const documentComment =
 			details.documentComment ?? `Arrival for product ${barcode} (Auto-replicated)`;
-		const _operationComment = details.operationComment ?? `Arrival for product ${barcode}`;
 		const documentRequest: AltegioStorageDocumentRequest = {
 			typeId: ALTEGIO_DOCUMENT_TYPE_ARRIVAL,
 			comment: documentComment,

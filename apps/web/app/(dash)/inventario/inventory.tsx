@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Check, ChevronsUpDown, X } from "lucide-react";
 import { toast } from "sonner";
 import { v4 as uuidv4 } from "uuid";
+import { useShallow } from "zustand/shallow";
 import { RoleGuard } from "@/components/auth-guard";
 import { ProductCatalogTable } from "@/components/inventory/ProductCatalogTable";
 import { ProductCombobox } from "@/components/inventory/ProductCombobox";
@@ -472,7 +473,14 @@ export function InventarioPage({
 	} = useCreateAltegioProduct();
 
 	const { addToTransfer, transferList, removeFromTransfer, approveTransfer } =
-		useTransferStore();
+		useTransferStore(
+			useShallow((state) => ({
+				addToTransfer: state.addToTransfer,
+				transferList: state.transferList,
+				removeFromTransfer: state.removeFromTransfer,
+				approveTransfer: state.approveTransfer,
+			})),
+		);
 	const [isListOpen, setIsListOpen] = useState(false);
 	const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
 	const [isCreateAltegioDialogOpen, setIsCreateAltegioDialogOpen] =
@@ -1049,7 +1057,7 @@ export function InventarioPage({
 							uuid: uuidv4(),
 							productName: selectedProduct.name,
 						}));
-		} catch (_error) {
+		} catch {
 			// Mutation already surfaced the error via toast; stop the flow silently.
 			return;
 		}
@@ -1106,7 +1114,7 @@ export function InventarioPage({
 					},
 				]);
 				toast.success("Código QR generado nuevamente.", { duration: 2000 });
-			} catch (_error) {
+			} catch {
 				toast.error("No se pudo generar el código QR.");
 			}
 		},

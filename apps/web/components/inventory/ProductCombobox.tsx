@@ -2,7 +2,7 @@
 
 import Fuse from "fuse.js";
 import { Check, ChevronsUpDown, Search } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
 	Command,
@@ -58,11 +58,12 @@ export function ProductCombobox<T extends ProductCatalogItem = ProductCatalogIte
 	const [open, setOpen] = useState(false);
 	const [query, setQuery] = useState("");
 
-	useEffect(() => {
-		if (!open) {
+	const handleOpenChange = (nextOpen: boolean) => {
+		setOpen(nextOpen);
+		if (!nextOpen) {
 			setQuery("");
 		}
-	}, [open]);
+	};
 
 	const searchableProducts = useMemo(() => {
 		return products
@@ -140,7 +141,7 @@ export function ProductCombobox<T extends ProductCatalogItem = ProductCatalogIte
 	});
 
 	return (
-		<Popover onOpenChange={setOpen} open={open}>
+		<Popover onOpenChange={handleOpenChange} open={open}>
 			<PopoverTrigger asChild>
 				<Button
 					aria-expanded={open}

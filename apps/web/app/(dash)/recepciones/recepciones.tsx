@@ -23,9 +23,9 @@ import {
 	Clock,
 	Package,
 	Plus,
-	Trash2,
 } from "lucide-react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import {
 	type FormEvent,
 	useCallback,
@@ -35,22 +35,11 @@ import {
 } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/shallow";
-import { GroupedProductCombobox } from "@/components/recepciones/GroupedProductCombobox";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-	Dialog,
-	DialogContent,
-	DialogDescription,
-	DialogFooter,
-	DialogHeader,
-	DialogTitle,
-	DialogTrigger,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
 	Popover,
 	PopoverContent,
@@ -59,9 +48,7 @@ import {
 import {
 	Select,
 	SelectContent,
-	SelectGroup,
 	SelectItem,
-	SelectLabel,
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
@@ -73,7 +60,6 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
-import { Textarea } from "@/components/ui/textarea";
 import {
 	getAllProductStock,
 	getAllProducts,
@@ -130,6 +116,14 @@ type ProductItemOption = {
 	barcode: number;
 	description: string;
 };
+
+const TransferCreateDialog = dynamic(
+	() =>
+		import("./transfer-create-dialog").then(
+			(mod) => mod.TransferCreateDialog,
+		),
+	{ ssr: false },
+);
 
 type ColumnMeta = {
 	headerClassName?: string;
@@ -1512,377 +1506,38 @@ export function RecepcionesPage({
 					</p>
 				</div>
 
-				{/* Dialog for creating new transfer orders */}
-				<Dialog onOpenChange={setIsDialogOpen} open={isDialogOpen}>
-					<DialogTrigger asChild>
-						<Button
-							className="flex items-center gap-2 bg-[#0a7ea4] text-white hover:bg-[#0a7ea4]/90"
-							type="button"
-						>
-							<Plus className="h-4 w-4" />
-							Nuevo traspaso
-						</Button>
-					</DialogTrigger>
-
-					{/* Dialog content - transfer creation form */}
-					<DialogContent className="border-[#E5E7EB] bg-white sm:max-w-3xl dark:border-[#2D3033] dark:bg-[#151718]">
-						<form className="space-y-6" onSubmit={handleSubmitTransfer}>
-							<DialogHeader>
-								<DialogTitle className="text-[#11181C] dark:text-[#ECEDEE]">
-									Crear nuevo traspaso
-								</DialogTitle>
-								<DialogDescription className="text-[#687076] dark:text-[#9BA1A6]">
-									Completa los datos requeridos y agrega productos desde el
-									inventario para generar el traspaso.
-								</DialogDescription>
-							</DialogHeader>
-
-							{/* Form fields container */}
-							<div className="grid gap-6">
-								{/* Basic transfer information - responsive 2-column grid */}
-								<div className="grid gap-4 sm:grid-cols-2">
-									{/* Source warehouse selector */}
-									<div className="grid gap-2">
-										<Label
-											className="text-[#11181C] dark:text-[#ECEDEE]"
-											htmlFor="source-warehouse"
-										>
-											Almacén origen *
-										</Label>
-										<Select
-											disabled={isEmployee}
-											onValueChange={(value) =>
-												updateTransferDraft({ sourceWarehouseId: value })
-											}
-											value={transferDraft.sourceWarehouseId || undefined}
-										>
-											<SelectTrigger className="border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]">
-												<SelectValue placeholder="Selecciona el almacén de origen" />
-											</SelectTrigger>
-											<SelectContent className="border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
-												<SelectGroup>
-													<SelectLabel className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-														Almacenes
-													</SelectLabel>
-													{warehouseOptions.map((option) => (
-														<SelectItem
-															className="text-[#11181C] dark:text-[#ECEDEE]"
-															key={option.id}
-															value={option.id}
-														>
-															{option.name}
-														</SelectItem>
-													))}
-												</SelectGroup>
-											</SelectContent>
-										</Select>
-									</div>
-
-									{/* Destination warehouse selector */}
-									<div className="grid gap-2">
-										<Label
-											className="text-[#11181C] dark:text-[#ECEDEE]"
-											htmlFor="destination-warehouse"
-										>
-											Almacén destino *
-										</Label>
-										<Select
-											onValueChange={(value) =>
-												updateTransferDraft({
-													destinationWarehouseId: value,
-												})
-											}
-											value={transferDraft.destinationWarehouseId || undefined}
-										>
-											<SelectTrigger className="border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]">
-												<SelectValue placeholder="Selecciona el almacén de destino" />
-											</SelectTrigger>
-											<SelectContent className="border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
-												<SelectGroup>
-													<SelectLabel className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-														Almacenes
-													</SelectLabel>
-													{warehouseOptions.map((option) => (
-														<SelectItem
-															className="text-[#11181C] dark:text-[#ECEDEE]"
-															key={option.id}
-															value={option.id}
-														>
-															{option.name}
-														</SelectItem>
-													))}
-												</SelectGroup>
-											</SelectContent>
-										</Select>
-									</div>
-
-									{/* Scheduled date picker */}
-									<div className="grid gap-2">
-										<Label
-											className="text-[#11181C] dark:text-[#ECEDEE]"
-											htmlFor="scheduled-date"
-										>
-											Fecha programada
-										</Label>
-										<Popover>
-											<PopoverTrigger asChild>
-												<Button
-													className={cn(
-														"w-full justify-start border-[#E5E7EB] bg-white text-left font-normal text-[#11181C] hover:bg-[#F9FAFB] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]",
-														!scheduledDateValue &&
-															"text-[#687076] dark:text-[#9BA1A6]",
-													)}
-													id="scheduled-date"
-													type="button"
-													variant="outline"
-												>
-													<CalendarIcon className="mr-2 h-4 w-4" />
-													{scheduledDateValue
-														? format(scheduledDateValue, "PPP", {
-																locale: es,
-															})
-														: "Selecciona la fecha programada"}
-												</Button>
-											</PopoverTrigger>
-											<PopoverContent
-												align="start"
-												className="w-auto border-[#E5E7EB] bg-white p-0 dark:border-[#2D3033] dark:bg-[#151718]"
-											>
-												<CalendarPicker
-													initialFocus
-													locale={es}
-													mode="single"
-													onSelect={handleDateSelect}
-													selected={scheduledDateValue}
-												/>
-											</PopoverContent>
-										</Popover>
-									</div>
-
-									{/* Priority selector */}
-									<div className="grid gap-2">
-										<Label
-											className="text-[#11181C] dark:text-[#ECEDEE]"
-											htmlFor="transfer-priority"
-										>
-											Prioridad
-										</Label>
-										<Select
-											onValueChange={(value) =>
-												updateTransferDraft({
-													priority: value as "normal" | "high" | "urgent",
-												})
-											}
-											value={transferDraft.priority}
-										>
-											<SelectTrigger className="border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]">
-												<SelectValue placeholder="Selecciona prioridad" />
-											</SelectTrigger>
-											<SelectContent className="border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#1E1F20]">
-												<SelectItem
-													className="text-[#11181C] dark:text-[#ECEDEE]"
-													value="normal"
-												>
-													Normal
-												</SelectItem>
-												<SelectItem
-													className="text-[#11181C] dark:text-[#ECEDEE]"
-													value="high"
-												>
-													Alta
-												</SelectItem>
-												<SelectItem
-													className="text-[#11181C] dark:text-[#ECEDEE]"
-													value="urgent"
-												>
-													Urgente
-												</SelectItem>
-											</SelectContent>
-										</Select>
-									</div>
-
-									{/* Transfer notes - spans full width */}
-									<div className="grid gap-2 sm:col-span-2">
-										<Label
-											className="text-[#11181C] dark:text-[#ECEDEE]"
-											htmlFor="transfer-notes"
-										>
-											Notas
-										</Label>
-										<Textarea
-											className="border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]"
-											id="transfer-notes"
-											onChange={(event) =>
-												updateTransferDraft({
-													transferNotes: event.target.value,
-												})
-											}
-											placeholder="Detalles adicionales del traspaso"
-											rows={3}
-											value={transferDraft.transferNotes}
-										/>
-									</div>
-								</div>
-
-								{/* Product selection section */}
-								<div className="grid gap-2">
-									<Label
-										className="text-[#11181C] dark:text-[#ECEDEE]"
-										htmlFor="inventory-product"
-									>
-										Agregar productos
-									</Label>
-
-									<div className="space-y-2">
-										<GroupedProductCombobox
-											disabled={isProductSelectionDisabled}
-											draftedIds={draftedItemIds}
-											groups={productGroups}
-											onSelect={handleSelectProduct}
-											placeholder={
-												isProductSelectionDisabled
-													? "No hay productos disponibles"
-													: "Buscar por nombre y elegir un ID único..."
-											}
-											selectedId={selectedProductStockId}
-										/>
-										{selectedInventoryItem ? (
-											<p className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-												ID seleccionado:{" "}
-												<span className="font-medium">
-													{selectedInventoryItem.productStockId}
-												</span>{" "}
-												• Código: {selectedInventoryItem.barcode || "—"}
-											</p>
-										) : (
-											<p className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-												Selecciona un producto disponible para agregarlo.
-											</p>
-										)}
-									</div>
-
-									<Button
-										className="flex w-[100px] items-center gap-2 bg-[#0a7ea4] text-white hover:bg-[#0a7ea4]/90"
-										disabled={
-											isProductSelectionDisabled || !selectedInventoryItem
-										}
-										onClick={handleAddProduct}
-										type="button"
-									>
-										<Plus className="h-4 w-4" />
-										Agregar
-									</Button>
-
-									{/* Helper text */}
-									<p className="text-[#687076] text-xs dark:text-[#9BA1A6]">
-										Los productos listados pertenecen al inventario del almacén
-										actual.
-									</p>
-								</div>
-
-								{/* Selected products table */}
-								<div className="rounded-md border border-[#E5E7EB] dark:border-[#2D3033]">
-									<Table>
-										<TableHeader>
-											<TableRow className="border-[#E5E7EB] border-b bg-[#F9FAFB] dark:border-[#2D3033] dark:bg-[#1E1F20]">
-												<TableHead className="text-[#11181C] dark:text-[#ECEDEE]">
-													Producto
-												</TableHead>
-												<TableHead className="text-[#11181C] dark:text-[#ECEDEE]">
-													Código
-												</TableHead>
-												<TableHead className="text-[#11181C] dark:text-[#ECEDEE]">
-													Nota
-												</TableHead>
-												<TableHead className="text-right text-[#11181C] dark:text-[#ECEDEE]">
-													Acciones
-												</TableHead>
-											</TableRow>
-										</TableHeader>
-										<TableBody>
-											{transferDraft.items.length === 0 ? (
-												<TableRow>
-													<TableCell
-														className="py-10 text-center text-[#687076] dark:text-[#9BA1A6]"
-														colSpan={5}
-													>
-														No hay productos seleccionados.
-													</TableCell>
-												</TableRow>
-											) : (
-												transferDraft.items.map((item) => (
-													<TableRow
-														className="border-[#E5E7EB] border-b last:border-b-0 dark:border-[#2D3033]"
-														key={item.productStockId}
-													>
-														<TableCell className="font-medium text-[#11181C] dark:text-[#ECEDEE]">
-															{item.productName}
-														</TableCell>
-														<TableCell className="font-mono text-[#687076] text-sm dark:text-[#9BA1A6]">
-															{item.barcode || "—"}
-														</TableCell>
-														<TableCell>
-															<Input
-																className="border-[#E5E7EB] bg-white text-[#11181C] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE]"
-																onChange={(event) =>
-																	setDraftItemNote(
-																		item.productStockId,
-																		event.target.value,
-																	)
-																}
-																placeholder="Notas opcionales"
-																value={item.itemNotes ?? ""}
-															/>
-														</TableCell>
-														<TableCell className="text-right">
-															<Button
-																className="text-[#b91c1c] hover:text-[#7f1d1d]"
-																onClick={() =>
-																	removeDraftItem(item.productStockId)
-																}
-																type="button"
-																variant="ghost"
-															>
-																<Trash2 className="h-4 w-4" />
-															</Button>
-														</TableCell>
-													</TableRow>
-												))
-											)}
-										</TableBody>
-									</Table>
-								</div>
-							</div>
-
-							{/* Dialog footer with summary and action buttons */}
-							<DialogFooter className="flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-								{/* Item count summary */}
-								<span className="text-[#687076] text-sm dark:text-[#9BA1A6]">
-									{draftSummaryLabel}
-								</span>
-
-								{/* Action buttons - responsive flex layout */}
-								<div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-									<Button
-										className="border-[#E5E7EB] text-[#11181C] hover:bg-[#F9FAFB] dark:border-[#2D3033] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
-										onClick={() => setIsDialogOpen(false)}
-										type="button"
-										variant="outline"
-									>
-										Cancelar
-									</Button>
-									<Button
-										className="bg-[#0a7ea4] text-white hover:bg-[#0a7ea4]/90"
-										disabled={isCreatingTransfer}
-										type="submit"
-									>
-										{isCreatingTransfer ? "Creando..." : "Crear traspaso"}
-									</Button>
-								</div>
-							</DialogFooter>
-						</form>
-					</DialogContent>
-				</Dialog>
+				<Button
+					className="flex items-center gap-2 bg-[#0a7ea4] text-white hover:bg-[#0a7ea4]/90"
+					onClick={() => setIsDialogOpen(true)}
+					type="button"
+				>
+					<Plus className="h-4 w-4" />
+					Nuevo traspaso
+				</Button>
+				{isDialogOpen ? (
+					<TransferCreateDialog
+						draftSummaryLabel={draftSummaryLabel}
+						draftedItemIds={draftedItemIds}
+						isCreatingTransfer={isCreatingTransfer}
+						isEmployee={isEmployee}
+						isProductSelectionDisabled={isProductSelectionDisabled}
+						onAddProduct={handleAddProduct}
+						onDateSelect={handleDateSelect}
+						onOpenChange={setIsDialogOpen}
+						onRemoveDraftItem={removeDraftItem}
+						onSelectProduct={handleSelectProduct}
+						onSetDraftItemNote={setDraftItemNote}
+						onSubmit={handleSubmitTransfer}
+						onUpdateDraft={updateTransferDraft}
+						open={isDialogOpen}
+						productGroups={productGroups}
+						scheduledDateValue={scheduledDateValue}
+						selectedInventoryItem={selectedInventoryItem}
+						selectedProductStockId={selectedProductStockId}
+						transferDraft={transferDraft}
+						warehouseOptions={warehouseOptions}
+					/>
+				) : null}
 			</div>
 
 			{/* Dashboard metrics cards - displays key statistics */}

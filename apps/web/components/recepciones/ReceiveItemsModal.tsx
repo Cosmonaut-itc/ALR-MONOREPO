@@ -81,16 +81,6 @@ export function ReceiveItemsModal({ open, onOpenChange }: ReceiveItemsModalProps
 			// Simulate API call
 			await new Promise((resolve) => setTimeout(resolve, 1500));
 
-			// Prepare data (simulate submit)
-			const _data = {
-				shipmentNumber: formData.shipmentNumber,
-				arrivalDate: new Date(formData.arrivalDate).toISOString(),
-				lines: validLines.map((line) => ({
-					barcode: Number.parseInt(line.barcode, 10),
-					quantity: Number.parseInt(line.quantity, 10),
-				})),
-			};
-
 			toast('¡Éxito! Recepción guardada correctamente');
 
 			// Reset form

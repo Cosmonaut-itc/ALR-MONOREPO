@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import { Fragment, useEffect, useMemo } from "react";
 import { toast } from "sonner";
 import { v4 as uuidv4, v5 as uuidv5 } from "uuid";
+import { useShallow } from "zustand/shallow";
 import {
 	Breadcrumb,
 	BreadcrumbItem,
@@ -67,7 +68,18 @@ export function KitInspectionPage({ params }: PageProps) {
 		markAllReturned,
 		updateItemObservations,
 		getInspectionProgress,
-	} = useKitsStore();
+	} = useKitsStore(
+		useShallow((state) => ({
+			inspectionItems: state.inspectionItems,
+			inspectionLoading: state.inspectionLoading,
+			loadInspection: state.loadInspection,
+			toggleInspectionItem: state.toggleInspectionItem,
+			toggleInspectionGroup: state.toggleInspectionGroup,
+			markAllReturned: state.markAllReturned,
+			updateItemObservations: state.updateItemObservations,
+			getInspectionProgress: state.getInspectionProgress,
+		})),
+	);
 
 	const { data: details } = useSuspenseQuery<APIResponse, Error, APIResponse>({
 		queryKey: createQueryKey(queryKeys.kits, [kitId as string]),

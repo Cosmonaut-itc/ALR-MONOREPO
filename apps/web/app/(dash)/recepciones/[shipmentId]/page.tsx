@@ -97,28 +97,44 @@ export default async function Page({
 		}
 	}
 
+	// Prefetch related data in parallel
+	const prefetches: Array<Promise<unknown>> = [];
+
 	// Prefetch product catalog
-	queryClient.prefetchQuery({
-		queryKey: queryKeys.productCatalog,
-		queryFn: () => fetchAllProductsServer(),
-	});
+	prefetches.push(
+		queryClient.prefetchQuery({
+			queryKey: queryKeys.productCatalog,
+			queryFn: () => fetchAllProductsServer(),
+		}),
+	);
 
 	// Prefetch cabinet warehouse data
-	queryClient.prefetchQuery({
-		queryKey: queryKeys.cabinetWarehouse,
-		queryFn: () => fetchCabinetWarehouseServer(),
-	});
+	prefetches.push(
+		queryClient.prefetchQuery({
+			queryKey: queryKeys.cabinetWarehouse,
+			queryFn: () => fetchCabinetWarehouseServer(),
+		}),
+	);
 
 	// Prefetch replenishment orders to find linked pedido
 	const replenishmentOrdersPrefetchFn = isEncargado
 		? fetchReplenishmentOrdersServer
 		: () => fetchReplenishmentOrdersByWarehouseServer(warehouseId as string);
-	queryClient.prefetchQuery({
-		queryKey: createQueryKey(queryKeys.replenishmentOrders, [
-			isEncargado ? "all" : (warehouseId as string),
-		]),
-		queryFn: () => replenishmentOrdersPrefetchFn(),
-	});
+	prefetches.push(
+		queryClient.prefetchQuery({
+			queryKey: createQueryKey(queryKeys.replenishmentOrders, [
+				isEncargado ? "all" : (warehouseId as string),
+			]),
+			queryFn: () => replenishmentOrdersPrefetchFn(),
+		}),
+	);
+
+	try {
+		await Promise.all(prefetches);
+	} catch (error) {
+		console.error(error);
+		console.error("Error prefetching reception detail metadata");
+	}
 
 	// Note: Individual order details will be fetched on-demand when a link is found
 	// This is done client-side to avoid unnecessary prefetching

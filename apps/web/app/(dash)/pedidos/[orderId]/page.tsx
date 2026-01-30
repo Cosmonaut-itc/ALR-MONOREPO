@@ -101,40 +101,41 @@ export default async function PedidoDetailRoute({ params }: RouteProps) {
 		}
 	}
 
+	const prefetches: Array<Promise<unknown>> = [];
+
 	if (cedisWarehouseId) {
-		try {
+		prefetches.push(
 			queryClient.prefetchQuery({
 				queryKey: createQueryKey(queryKeys.inventory, [cedisWarehouseId]),
 				queryFn: () => fetchStockByWarehouseServer(cedisWarehouseId),
-			});
-		} catch (error) {
-			console.error(error);
-			console.error("Error prefetching CEDIS inventory");
-		}
+			}),
+		);
 	}
 
-	try {
+	prefetches.push(
 		queryClient.prefetchQuery({
 			queryKey: queryKeys.warehouses,
 			queryFn: () => fetchAllWarehousesServer(),
-		});
+		}),
+	);
+	prefetches.push(
 		queryClient.prefetchQuery({
 			queryKey: queryKeys.cabinetWarehouse,
 			queryFn: () => fetchCabinetWarehouseServer(),
-		});
-	} catch (error) {
-		console.error(error);
-		console.error("Error prefetching warehouse metadata for pedido");
-	}
-
-	try {
+		}),
+	);
+	prefetches.push(
 		queryClient.prefetchQuery({
 			queryKey: queryKeys.productCatalog,
 			queryFn: () => fetchAllProductsServer(),
-		});
+		}),
+	);
+
+	try {
+		await Promise.all(prefetches);
 	} catch (error) {
 		console.error(error);
-		console.error("Error prefetching product catalog for pedido");
+		console.error("Error prefetching pedido metadata");
 	}
 
 	return (

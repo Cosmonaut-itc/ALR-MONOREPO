@@ -44,6 +44,8 @@ export default async function Page() {
 	const inventoryScope = isEncargado ? "all" : (warehouseId ?? "unknown");
 
 	try {
+		const prefetches: Array<Promise<unknown>> = [];
+
 		const transferPrefetchFn = isEncargado
 			? () => fetchWarehouseTrasnferAll()
 			: () => fetchWarehouseTransferByWarehouseIdServer(warehouseId as string);
@@ -56,40 +58,52 @@ export default async function Page() {
 
 		if (inventoryPrefetchFn) {
 			// Prefetch inventory data so the client query hydrates with the correct scope
-			queryClient.prefetchQuery({
-				queryKey: createQueryKey(queryKeys.inventory, [inventoryScope]),
-				queryFn: inventoryPrefetchFn,
-			});
+			prefetches.push(
+				queryClient.prefetchQuery({
+					queryKey: createQueryKey(queryKeys.inventory, [inventoryScope]),
+					queryFn: inventoryPrefetchFn,
+				}),
+			);
 		}
 
 		// Prefetch transfer/reception data
-		queryClient.prefetchQuery({
-			queryKey: createQueryKey(queryKeys.receptions, [transferKeyParam]),
-			queryFn: transferPrefetchFn,
-		});
+		prefetches.push(
+			queryClient.prefetchQuery({
+				queryKey: createQueryKey(queryKeys.receptions, [transferKeyParam]),
+				queryFn: transferPrefetchFn,
+			}),
+		);
 
 		// Prefetch product catalog data
-		queryClient.prefetchQuery({
-			queryKey: queryKeys.productCatalog,
-			queryFn: () => fetchAllProductsServer(),
-		});
+		prefetches.push(
+			queryClient.prefetchQuery({
+				queryKey: queryKeys.productCatalog,
+				queryFn: () => fetchAllProductsServer(),
+			}),
+		);
 
 		// Prefetch cabinet warehouse data
-		queryClient.prefetchQuery({
-			queryKey: queryKeys.cabinetWarehouse,
-			queryFn: () => fetchCabinetWarehouseServer(),
-		});
+		prefetches.push(
+			queryClient.prefetchQuery({
+				queryKey: queryKeys.cabinetWarehouse,
+				queryFn: () => fetchCabinetWarehouseServer(),
+			}),
+		);
 
 		// Prefetch replenishment orders to link with transfers
 		const replenishmentOrdersPrefetchFn = isEncargado
 			? () => fetchReplenishmentOrdersServer()
 			: () => fetchReplenishmentOrdersByWarehouseServer(warehouseId as string);
-		queryClient.prefetchQuery({
-			queryKey: createQueryKey(queryKeys.replenishmentOrders, [
-				isEncargado ? "all" : (warehouseId as string),
-			]),
-			queryFn: replenishmentOrdersPrefetchFn,
-		});
+		prefetches.push(
+			queryClient.prefetchQuery({
+				queryKey: createQueryKey(queryKeys.replenishmentOrders, [
+					isEncargado ? "all" : (warehouseId as string),
+				]),
+				queryFn: replenishmentOrdersPrefetchFn,
+			}),
+		);
+
+		await Promise.all(prefetches);
 	} catch (error) {
 		console.error(error);
 		console.error("Error prefetching recepciones data");

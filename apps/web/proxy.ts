@@ -1,4 +1,4 @@
-// middleware.ts
+// proxy.ts
 /** biome-ignore-all lint/suspicious/noExplicitAny: we need to use any here */
 import { type NextRequest, NextResponse } from 'next/server';
 
@@ -18,7 +18,7 @@ function isPublicPath(pathname: string) {
 	);
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
 	const { pathname, search } = request.nextUrl;
 
 	if (isPublicPath(pathname)) {

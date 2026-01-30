@@ -32,30 +32,42 @@ export default async function PedidosRoute() {
 	const scopeKey = canManageAllWarehouses ? "all" : warehouseId || "unknown";
 
 	try {
+		const prefetches: Array<Promise<unknown>> = [];
+
 		if (canManageAllWarehouses) {
-			queryClient.prefetchQuery({
-				queryKey: createQueryKey(queryKeys.replenishmentOrders, [
-					scopeKey,
-					"all",
-				]),
-				queryFn: () => fetchReplenishmentOrdersServer(),
-			});
+			prefetches.push(
+				queryClient.prefetchQuery({
+					queryKey: createQueryKey(queryKeys.replenishmentOrders, [
+						scopeKey,
+						"all",
+					]),
+					queryFn: () => fetchReplenishmentOrdersServer(),
+				}),
+			);
 		} else if (warehouseId) {
-			queryClient.prefetchQuery({
-				queryKey: createQueryKey(queryKeys.replenishmentOrders, [scopeKey]),
-				queryFn: () => fetchReplenishmentOrdersByWarehouseServer(warehouseId),
-			});
+			prefetches.push(
+				queryClient.prefetchQuery({
+					queryKey: createQueryKey(queryKeys.replenishmentOrders, [scopeKey]),
+					queryFn: () => fetchReplenishmentOrdersByWarehouseServer(warehouseId),
+				}),
+			);
 		}
 
-		queryClient.prefetchQuery({
-			queryKey: queryKeys.productCatalog,
-			queryFn: () => fetchAllProductsServer(),
-		});
+		prefetches.push(
+			queryClient.prefetchQuery({
+				queryKey: queryKeys.productCatalog,
+				queryFn: () => fetchAllProductsServer(),
+			}),
+		);
 
-		queryClient.prefetchQuery({
-			queryKey: queryKeys.warehouses,
-			queryFn: () => fetchAllWarehousesServer(),
-		});
+		prefetches.push(
+			queryClient.prefetchQuery({
+				queryKey: queryKeys.warehouses,
+				queryFn: () => fetchAllWarehousesServer(),
+			}),
+		);
+
+		await Promise.all(prefetches);
 	} catch (error) {
 		console.error(error);
 		console.error("Error prefetching pedidos list data");

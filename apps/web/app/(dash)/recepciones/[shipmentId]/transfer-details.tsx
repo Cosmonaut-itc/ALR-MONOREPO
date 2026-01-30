@@ -9,6 +9,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useCallback, useEffect, useMemo } from "react";
 import { toast } from "sonner";
+import { useShallow } from "zustand/shallow";
 import { Badge } from "@/components/ui/badge";
 import {
 	Breadcrumb,
@@ -144,9 +145,23 @@ export function ReceptionDetailPage({
 		getReceivedCount,
 		getTotalCount,
 		isAllReceived,
-	} = useReceptionStore();
+	} = useReceptionStore(
+		useShallow((state) => ({
+			items: state.items,
+			setItems: state.setItems,
+			toggleReceived: state.toggleReceived,
+			markAllReceived: state.markAllReceived,
+			getReceivedCount: state.getReceivedCount,
+			getTotalCount: state.getTotalCount,
+			isAllReceived: state.isAllReceived,
+		})),
+	);
 
-	const { user } = useAuthStore();
+	const { user } = useAuthStore(
+		useShallow((state) => ({
+			user: state.user,
+		})),
+	);
 
 	// Mutations for updating transfer and item statuses
 	const { mutateAsync: updateTransferStatus } = useUpdateTransferStatus();
@@ -205,7 +220,7 @@ export function ReceptionDetailPage({
 		}
 
 		return null;
-	}, [generalTransferDetails?.id, replenishmentOrdersResponse]);
+	}, [generalTransferDetails, replenishmentOrdersResponse]);
 
 	// Fetch full order details if linked
 const { data: fullOrderResponse } = useSuspenseQuery<

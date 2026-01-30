@@ -6,7 +6,7 @@ import { es } from "date-fns/locale";
 import { ChevronDownIcon, Download } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { RoleGuard } from "@/components/auth-guard";
 import { DashboardMetricCard } from "@/components/DashboardMetricCard";
 import { DeletedAndEmptyTable } from "@/components/inventory/DeletedAndEmptyTable";
@@ -640,11 +640,11 @@ const DateSelector = ({
 	date: Date;
 	onChange: (date: Date) => void;
 }) => {
-	const [isMounted, setIsMounted] = useState(false);
-
-	useEffect(() => {
-		setIsMounted(true);
-	}, []);
+	const isMounted = useSyncExternalStore(
+		() => () => {},
+		() => true,
+		() => false,
+	);
 
 	return (
 		<div className="flex flex-col gap-2">
@@ -1654,23 +1654,29 @@ export function EstadisticasPage({
 	const [selectedWarehouse, setSelectedWarehouse] = useState<string | null>(
 		scope === "warehouse" ? (warehouseId ?? null) : null,
 	);
-	const [dateRange, setDateRange] = useState<DateRange>(() => {
-		// Initialize with epoch date to ensure consistent SSR/client rendering
-		// Will be updated after mount with actual date
-		const epochDate = new Date(0);
-		return clampDateRange({ start: epochDate, end: epochDate });
-	});
+	const clientTodayRef = useRef<Date | null>(null);
+	const clientToday = useSyncExternalStore(
+		() => () => {},
+		() => {
+			if (!clientTodayRef.current) {
+				clientTodayRef.current = new Date();
+			}
+			return clientTodayRef.current;
+		},
+		() => new Date(0),
+	);
+	const defaultRange = useMemo(
+		() =>
+			clampDateRange({
+				start: subDays(clientToday, 30),
+				end: clientToday,
+			}),
+		[clientToday],
+	);
+	const [dateRange, setDateRange] = useState<DateRange | null>(null);
 	const [dialogType, setDialogType] = useState<
 		"pending" | "completed" | "today" | null
 	>(null);
-
-	useEffect(() => {
-		// Update date range after mount to use actual current date
-		const actualToday = new Date();
-		setDateRange(
-			clampDateRange({ start: subDays(actualToday, 30), end: actualToday }),
-		);
-	}, []);
 
 	const normalizedRole = useMemo<UserRole["role"]>(() => {
 		if (
@@ -1821,16 +1827,17 @@ export function EstadisticasPage({
 		return map;
 	}, [warehouseOptions]);
 
-	useEffect(() => {
-		if (scope === "warehouse" && !selectedWarehouse) {
-			if (warehouseId) {
-				setSelectedWarehouse(warehouseId);
-				return;
-			}
-			if (warehouseOptions.length > 0) {
-				setSelectedWarehouse(warehouseOptions[0].id);
-			}
+	const resolvedWarehouseId = useMemo(() => {
+		if (scope !== "warehouse") {
+			return null;
 		}
+		if (selectedWarehouse) {
+			return selectedWarehouse;
+		}
+		if (warehouseId) {
+			return warehouseId;
+		}
+		return warehouseOptions[0]?.id ?? null;
 	}, [scope, selectedWarehouse, warehouseId, warehouseOptions]);
 
 	const productCatalogNameMap = useMemo(
@@ -1933,8 +1940,11 @@ export function EstadisticasPage({
 	};
 
 	const effectiveWarehouseId =
-		scope === "warehouse" ? (selectedWarehouse ?? null) : null;
-	const effectiveRange = useMemo(() => clampDateRange(dateRange), [dateRange]);
+		scope === "warehouse" ? (resolvedWarehouseId ?? null) : null;
+	const effectiveRange = useMemo(
+		() => clampDateRange(dateRange ?? defaultRange),
+		[dateRange, defaultRange],
+	);
 
 	const receptionMetrics = useMemo(
 		() =>
@@ -2111,8 +2121,8 @@ export function EstadisticasPage({
 								label="Inicio"
 								date={effectiveRange.start}
 								onChange={(next) =>
-									setDateRange((prev) =>
-										clampDateRange({ start: next, end: prev.end }),
+									setDateRange(() =>
+										clampDateRange({ start: next, end: effectiveRange.end }),
 									)
 								}
 							/>
@@ -2120,8 +2130,8 @@ export function EstadisticasPage({
 								label="Fin"
 								date={effectiveRange.end}
 								onChange={(next) =>
-									setDateRange((prev) =>
-										clampDateRange({ start: prev.start, end: next }),
+									setDateRange(() =>
+										clampDateRange({ start: effectiveRange.start, end: next }),
 									)
 								}
 							/>
@@ -2132,7 +2142,7 @@ export function EstadisticasPage({
 									</Label>
 									<Select
 										onValueChange={(value) => setSelectedWarehouse(value)}
-										value={selectedWarehouse ?? undefined}
+										value={resolvedWarehouseId ?? undefined}
 									>
 										<SelectTrigger className="w-[220px]">
 											<SelectValue placeholder="Selecciona un almacén" />

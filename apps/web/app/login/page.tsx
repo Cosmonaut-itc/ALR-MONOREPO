@@ -39,7 +39,7 @@ export default function LoginPage() {
 			password: "",
 		},
 	});
-	const { login } = useAuthStore();
+	const login = useAuthStore((state) => state.login);
 	const { mutateAsync, isPending } = useLoginMutation();
 
 	const [showPassword, setShowPassword] = useState(false);
@@ -101,7 +101,17 @@ export default function LoginPage() {
 								</Label>
 								<div className="relative">
 									<form.Field
-										children={(field) => (
+										name="emailOrUsername"
+										validators={{
+											// We can choose between form-wide and field-specific validators
+											onChange: ({ value }) => {
+												return value.length > 0
+													? undefined
+													: "El campo es requerido";
+											},
+										}}
+									>
+										{(field) => (
 											<>
 												<Input
 													className="input-transition border-[#E5E7EB] bg-white text-[#11181C] placeholder:text-[#687076] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:placeholder:text-[#9BA1A6]"
@@ -122,16 +132,7 @@ export default function LoginPage() {
 												)}
 											</>
 										)}
-										name="emailOrUsername"
-										validators={{
-											// We can choose between form-wide and field-specific validators
-											onChange: ({ value }) => {
-												return value.length > 0
-													? undefined
-													: "El campo es requerido";
-											},
-										}}
-									/>
+									</form.Field>
 								</div>
 							</div>
 
@@ -144,7 +145,17 @@ export default function LoginPage() {
 								</Label>
 								<div className="relative">
 									<form.Field
-										children={(field) => (
+										name="password"
+										validators={{
+											// We can choose between form-wide and field-specific validators
+											onChange: ({ value }) => {
+												return value.length > 0
+													? undefined
+													: "El campo es requerido";
+											},
+										}}
+									>
+										{(field) => (
 											<>
 												<Input
 													className="input-transition border-[#E5E7EB] bg-white text-[#11181C] placeholder:text-[#687076] focus:border-[#0a7ea4] focus:ring-[#0a7ea4] dark:border-[#2D3033] dark:bg-[#151718] dark:text-[#ECEDEE] dark:placeholder:text-[#9BA1A6]"
@@ -165,16 +176,7 @@ export default function LoginPage() {
 												)}
 											</>
 										)}
-										name="password"
-										validators={{
-											// We can choose between form-wide and field-specific validators
-											onChange: ({ value }) => {
-												return value.length > 0
-													? undefined
-													: "El campo es requerido";
-											},
-										}}
-									/>
+									</form.Field>
 									<Button
 										className="theme-transition absolute top-0 right-0 h-full px-3 py-2 hover:bg-transparent"
 										disabled={isPending}

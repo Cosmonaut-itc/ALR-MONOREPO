@@ -9,7 +9,7 @@ import {
 	Trash2,
 	X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { v4 as uuidv4 } from "uuid";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -48,6 +48,7 @@ import type { getEmployeesByUserId } from "@/lib/fetch-functions/kits";
 import { useCreateKit, useUpdateProductStockUsage } from "@/lib/mutations/kits";
 import { cn } from "@/lib/utils";
 import { useKitsStore } from "@/stores/kits-store";
+import { useShallow } from "zustand/shallow";
 
 type EmployeesResponse = Awaited<
 	ReturnType<typeof getEmployeesByUserId>
@@ -98,7 +99,13 @@ export function AssignKitModal({
 	kitProducts,
 	todayKits = [],
 }: AssignKitModalProps) {
-	const { draft, setDraft, clearDraft } = useKitsStore();
+	const { draft, setDraft, clearDraft } = useKitsStore(
+		useShallow((state) => ({
+			draft: state.draft,
+			setDraft: state.setDraft,
+			clearDraft: state.clearDraft,
+		})),
+	);
 	const [employeeOpen, setEmployeeOpen] = useState(false);
 	const [kitId, setKitId] = useState("");
 	const [selectedProducts, setSelectedProducts] = useState<
@@ -329,26 +336,23 @@ export function AssignKitModal({
 		});
 	}, [selectedProductGroups, selectedSearchQuery]);
 
-	// Auto-expand groups that match search query
-	useEffect(() => {
-		if (searchQuery.trim()) {
-			const matchingGroups = new Set(filteredGroups.map((group) => group.key));
-			setOpenGroups(matchingGroups);
-		} else {
-			setOpenGroups(new Set());
+	const autoOpenGroups = useMemo(() => {
+		if (!searchQuery.trim()) {
+			return null;
 		}
+		return new Set(filteredGroups.map((group) => group.key));
 	}, [searchQuery, filteredGroups]);
 
-	useEffect(() => {
-		if (selectedSearchQuery.trim()) {
-			const matchingGroups = new Set(
-				filteredSelectedGroups.map((group) => group.key),
-			);
-			setSelectedOpenGroups(matchingGroups);
-		} else {
-			setSelectedOpenGroups(new Set());
+	const autoSelectedOpenGroups = useMemo(() => {
+		if (!selectedSearchQuery.trim()) {
+			return null;
 		}
+		return new Set(filteredSelectedGroups.map((group) => group.key));
 	}, [selectedSearchQuery, filteredSelectedGroups]);
+
+	const effectiveOpenGroups = autoOpenGroups ?? openGroups;
+	const effectiveSelectedOpenGroups =
+		autoSelectedOpenGroups ?? selectedOpenGroups;
 
 	/**
 	 * Toggles the open state for a product group in the available products list.
@@ -382,9 +386,8 @@ export function AssignKitModal({
 		});
 	};
 
-	// Generate new kit ID when modal opens
-	useEffect(() => {
-		if (open) {
+	const handleDialogOpenChange = (nextOpen: boolean) => {
+		if (nextOpen) {
 			setKitId(uuidv4());
 			setSelectedProducts([]);
 			setSearchQuery("");
@@ -392,7 +395,22 @@ export function AssignKitModal({
 			setSelectedSearchQuery("");
 			setSelectedOpenGroups(new Set());
 		}
-	}, [open]);
+		onOpenChange(nextOpen);
+	};
+
+	const handleSearchChange = (value: string) => {
+		setSearchQuery(value);
+		if (!value.trim()) {
+			setOpenGroups(new Set());
+		}
+	};
+
+	const handleSelectedSearchChange = (value: string) => {
+		setSelectedSearchQuery(value);
+		if (!value.trim()) {
+			setSelectedOpenGroups(new Set());
+		}
+	};
 
 	const selectedEmployee = employees.find((emp) => emp.id === draft.employeeId);
 
@@ -534,7 +552,7 @@ export function AssignKitModal({
 	};
 
 	return (
-		<Dialog onOpenChange={onOpenChange} open={open}>
+		<Dialog onOpenChange={handleDialogOpenChange} open={open}>
 			<DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
 				<DialogHeader>
 					<DialogTitle>Asignar Kit Diario</DialogTitle>
@@ -673,7 +691,7 @@ export function AssignKitModal({
 									<Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
 									<Input
 										className="pl-9"
-										onChange={(e) => setSearchQuery(e.target.value)}
+										onChange={(e) => handleSearchChange(e.target.value)}
 										placeholder="Buscar por nombre o código de barras..."
 										type="search"
 										value={searchQuery}
@@ -691,7 +709,7 @@ export function AssignKitModal({
 										</div>
 									) : (
 										filteredGroups.map((group) => {
-											const isOpen = openGroups.has(group.key);
+											const isOpen = effectiveOpenGroups.has(group.key);
 											const selectedCount = group.products.filter((product) =>
 												selectedProducts.some(
 													(sp) => sp.productId === product.id,
@@ -903,7 +921,7 @@ export function AssignKitModal({
 								<Input
 									className="pl-9"
 									onChange={(event) =>
-										setSelectedSearchQuery(event.target.value)
+										handleSelectedSearchChange(event.target.value)
 									}
 									placeholder="Buscar dentro de los seleccionados..."
 									type="search"
@@ -919,7 +937,8 @@ export function AssignKitModal({
 									</div>
 								) : (
 									filteredSelectedGroups.map((group) => {
-										const isOpen = selectedOpenGroups.has(group.key);
+										const isOpen =
+											effectiveSelectedOpenGroups.has(group.key);
 										const groupProductIds = group.products.map(
 											(product) => product.id,
 										);

@@ -47,50 +47,58 @@ export default async function AbastecimientoPage() {
 		: () => fetchStockLimitsByWarehouseServer(warehouseId);
 
 	try {
+		const prefetches: Array<Promise<unknown>> = [];
+
 		// Prefetch inventory data so the client query hydrates
-		queryClient.prefetchQuery({
-			queryKey: createQueryKey(queryKeys.inventory, [inventoryKeyParam]),
-			queryFn: inventoryPrefetchFn,
-		});
+		prefetches.push(
+			queryClient.prefetchQuery({
+				queryKey: createQueryKey(queryKeys.inventory, [inventoryKeyParam]),
+				queryFn: inventoryPrefetchFn,
+			}),
+		);
 
 		// Prefetch product catalog data
-		queryClient.prefetchQuery({
-			queryKey: queryKeys.productCatalog,
-			queryFn: () => fetchAllProductsServer(),
-		});
+		prefetches.push(
+			queryClient.prefetchQuery({
+				queryKey: queryKeys.productCatalog,
+				queryFn: () => fetchAllProductsServer(),
+			}),
+		);
 
 		// Prefetch cabinet warehouse data
-		queryClient.prefetchQuery({
-			queryKey: queryKeys.cabinetWarehouse,
-			queryFn: () => fetchCabinetWarehouseServer(),
-		});
+		prefetches.push(
+			queryClient.prefetchQuery({
+				queryKey: queryKeys.cabinetWarehouse,
+				queryFn: () => fetchCabinetWarehouseServer(),
+			}),
+		);
 
 		// Prefetch stock limits
-		queryClient.prefetchQuery({
-			queryKey: createQueryKey(queryKeys.stockLimits, [stockLimitsScope]),
-			queryFn: stockLimitsPrefetchFn,
-		});
-		// Prefetch warehouses (needed for Altegio location selection)
-		queryClient.prefetchQuery({
-			queryKey: queryKeys.warehouses,
-			queryFn: () => fetchAllWarehousesServer(),
-		});
-		return (
-			<HydrationBoundary state={dehydrate(queryClient)}>
-				<GenericBoundaryWrapper fallbackComponent={<SkeletonInventoryTable />}>
-					<InventarioPage role={role} warehouseId={warehouseId} />
-				</GenericBoundaryWrapper>
-			</HydrationBoundary>
+		prefetches.push(
+			queryClient.prefetchQuery({
+				queryKey: createQueryKey(queryKeys.stockLimits, [stockLimitsScope]),
+				queryFn: stockLimitsPrefetchFn,
+			}),
 		);
+		// Prefetch warehouses (needed for Altegio location selection)
+		prefetches.push(
+			queryClient.prefetchQuery({
+				queryKey: queryKeys.warehouses,
+				queryFn: () => fetchAllWarehousesServer(),
+			}),
+		);
+
+		await Promise.all(prefetches);
 	} catch (error) {
 		console.error(error);
 		console.error("Error prefetching abastecimiento data");
-		return (
-			<HydrationBoundary state={dehydrate(queryClient)}>
-				<GenericBoundaryWrapper fallbackComponent={<SkeletonInventoryTable />}>
-					<InventarioPage role={role} warehouseId={warehouseId} />
-				</GenericBoundaryWrapper>
-			</HydrationBoundary>
-		);
 	}
+
+	return (
+		<HydrationBoundary state={dehydrate(queryClient)}>
+			<GenericBoundaryWrapper fallbackComponent={<SkeletonInventoryTable />}>
+				<InventarioPage role={role} warehouseId={warehouseId} />
+			</GenericBoundaryWrapper>
+		</HydrationBoundary>
+	);
 }

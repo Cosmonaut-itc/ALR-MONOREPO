@@ -1,7 +1,7 @@
 "use client";
 
 import Fuse from "fuse.js";
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 import { Check, ChevronsUpDown, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -61,11 +61,12 @@ export function GroupedProductCombobox({
 	const [query, setQuery] = useState("");
 	const deferredQuery = useDeferredValue(query);
 
-	useEffect(() => {
-		if (!open) {
+	const handleOpenChange = (nextOpen: boolean) => {
+		setOpen(nextOpen);
+		if (!nextOpen) {
 			setQuery("");
 		}
-	}, [open]);
+	};
 
 	const searchableGroups = useMemo<SearchableGroup[]>(() => {
 		return groups.map((group) => ({
@@ -96,7 +97,29 @@ export function GroupedProductCombobox({
 		return fuse.search(normalizedQuery, { limit: 150 }).map((result) => result.item);
 	}, [deferredQuery, fuse, searchableGroups]);
 
-	const selectedItem = useMemo(() => {
+	const limitedGroups = useMemo(() => {
+		let remaining = ITEM_RENDER_LIMIT;
+		const results: ProductGroupOption[] = [];
+		for (const group of filteredGroups) {
+			if (remaining <= 0) {
+				break;
+			}
+			const items: ProductItemOption[] = [];
+			for (const item of group.items) {
+				if (remaining <= 0 || items.length >= ITEM_RENDER_LIMIT) {
+					break;
+				}
+				items.push(item);
+				remaining -= 1;
+			}
+			if (items.length > 0) {
+				results.push({ ...group, items });
+			}
+		}
+		return results;
+	}, [filteredGroups, ITEM_RENDER_LIMIT]);
+
+	const selectedItem = (() => {
 		for (const group of groups) {
 			const found = group.items.find(
 				(item) => item.productStockId === selectedId,
@@ -106,7 +129,7 @@ export function GroupedProductCombobox({
 			}
 		}
 		return null;
-	}, [groups, selectedId]);
+	})();
 
 	const allItemsDisabled =
 		disabled ||
@@ -116,7 +139,7 @@ export function GroupedProductCombobox({
 			));
 
 	return (
-		<Popover onOpenChange={setOpen} open={open}>
+		<Popover onOpenChange={handleOpenChange} open={open}>
 			<PopoverTrigger asChild>
 				<Button
 					aria-expanded={open}
@@ -150,77 +173,60 @@ export function GroupedProductCombobox({
 						<CommandEmpty className="py-6 text-center text-[#687076] text-sm dark:text-[#9BA1A6]">
 							{emptyMessage}
 						</CommandEmpty>
-						{(() => {
-							let totalRendered = 0;
-							return filteredGroups.map((group) => {
-								if (totalRendered >= ITEM_RENDER_LIMIT) {
-									return null;
+						{limitedGroups.map((group) => (
+							<CommandGroup
+								heading={
+									<div className="px-2 py-1 text-sm font-semibold text-[#11181C] dark:text-[#ECEDEE]">
+										{group.name}
+									</div>
 								}
-								let renderedInGroup = 0;
-								return (
-									<CommandGroup
-										heading={
-											<div className="px-2 py-1 text-sm font-semibold text-[#11181C] dark:text-[#ECEDEE]">
-												{group.name}
-										</div>
-									}
-									key={group.barcode}
-									>
-										{group.description && (
-											<p className="px-2 pb-2 text-[#687076] text-xs dark:text-[#9BA1A6]">
-												{group.description}
-											</p>
-										)}
-										{group.items.map((item) => {
-											if (totalRendered >= ITEM_RENDER_LIMIT) {
-												return null;
-											}
-											if (renderedInGroup >= ITEM_RENDER_LIMIT) {
-												return null;
-											}
-										const isDisabled = draftedIds?.has(item.productStockId);
-										const isSelected = selectedId === item.productStockId;
-											totalRendered += 1;
-											renderedInGroup += 1;
-										return (
-											<CommandItem
-												className="cursor-pointer text-[#11181C] hover:bg-[#F9FAFB] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
-												disabled={isDisabled}
-												key={item.productStockId}
-												onSelect={() => {
-													if (isDisabled) {
-														return;
-													}
-													onSelect(item);
-													setOpen(false);
-													setQuery("");
-												}}
-												value={item.productStockId}
-											>
-												<div className="flex w-full items-center justify-between gap-2">
-													<span className="font-mono text-sm">
-														{item.productStockId}
+								key={group.barcode}
+							>
+								{group.description && (
+									<p className="px-2 pb-2 text-[#687076] text-xs dark:text-[#9BA1A6]">
+										{group.description}
+									</p>
+								)}
+								{group.items.map((item) => {
+									const isDisabled = draftedIds?.has(item.productStockId);
+									const isSelected = selectedId === item.productStockId;
+									return (
+										<CommandItem
+											className="cursor-pointer text-[#11181C] hover:bg-[#F9FAFB] dark:text-[#ECEDEE] dark:hover:bg-[#2D3033]"
+											disabled={isDisabled}
+											key={item.productStockId}
+											onSelect={() => {
+												if (isDisabled) {
+													return;
+												}
+												onSelect(item);
+												setOpen(false);
+												setQuery("");
+											}}
+											value={item.productStockId}
+										>
+											<div className="flex w-full items-center justify-between gap-2">
+												<span className="font-mono text-sm">
+													{item.productStockId}
+												</span>
+												{isDisabled ? (
+													<span className="text-[#9BA1A6] text-xs dark:text-[#71767B]">
+														En traspaso
 													</span>
-													{isDisabled ? (
-														<span className="text-[#9BA1A6] text-xs dark:text-[#71767B]">
-															En traspaso
-														</span>
-													) : (
-														<Check
-															className={cn(
-																"h-4 w-4 text-[#0a7ea4]",
-																isSelected ? "opacity-100" : "opacity-0",
-															)}
-														/>
-													)}
-												</div>
-											</CommandItem>
-										);
-									})}
-								</CommandGroup>
-							);
-							});
-						})()}
+												) : (
+													<Check
+														className={cn(
+															"h-4 w-4 text-[#0a7ea4]",
+															isSelected ? "opacity-100" : "opacity-0",
+														)}
+													/>
+												)}
+											</div>
+										</CommandItem>
+									);
+								})}
+							</CommandGroup>
+						))}
 						</CommandList>
 					</div>
 				</Command>

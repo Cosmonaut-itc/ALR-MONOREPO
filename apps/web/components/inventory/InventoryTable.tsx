@@ -61,7 +61,7 @@ interface InventoryTableProps {
 }
 
 export function InventoryTable({ items }: InventoryTableProps) {
-	const { show: showDisposeDialog } = useDisposalStore();
+	const showDisposeDialog = useDisposalStore((state) => state.show);
 
 	// State for table features
 	const [sorting, setSorting] = useState<SortingState>([]);

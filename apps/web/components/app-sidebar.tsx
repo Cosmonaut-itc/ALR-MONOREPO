@@ -17,6 +17,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type * as React from "react";
 import { toast } from "sonner";
+import { useShallow } from "zustand/shallow";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
 	DropdownMenu,
@@ -82,7 +83,12 @@ const navigationItems = [
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 	const router = useRouter();
-	const { user, logout } = useAuthStore();
+	const { user, logout } = useAuthStore(
+		useShallow((state) => ({
+			user: state.user,
+			logout: state.logout,
+		})),
+	);
 	const normalizedRole =
 		typeof user?.role === "string" ? user.role.toLowerCase() : "";
 	const isEmployee = normalizedRole === "employee";

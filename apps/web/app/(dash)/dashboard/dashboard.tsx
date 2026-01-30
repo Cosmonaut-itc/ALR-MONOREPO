@@ -6,7 +6,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { addDays, differenceInCalendarDays, format } from "date-fns";
 import { es } from "date-fns/locale";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { DataTable } from "@/components/table/DataTable";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -626,6 +626,386 @@ const withinLastDays = (value: string, days: number) => {
 	}
 	return Math.abs(differenceInCalendarDays(new Date(), date)) <= days;
 };
+
+type DashboardHeaderProps = {
+	formattedDate: string;
+};
+
+const DashboardHeader = memo(function DashboardHeader({
+	formattedDate,
+}: DashboardHeaderProps) {
+	return (
+		<header className="flex flex-col gap-1">
+			<h1 className="text-2xl font-bold text-[#11181C] dark:text-[#ECEDEE]">
+				Panel general
+			</h1>
+			<p className="text-sm text-[#687076] dark:text-[#9BA1A6]">
+				{formattedDate}
+			</p>
+		</header>
+	);
+});
+
+type SummaryCardsProps = {
+	stockLimitsTotal: number;
+	stockLimitsWarehouses: number;
+	totalUsage: number;
+	usageRowCount: number;
+	pendingOrdersCount: number;
+	pendingTransfersCount: number;
+};
+
+const SummaryCards = memo(function SummaryCards({
+	stockLimitsTotal,
+	stockLimitsWarehouses,
+	totalUsage,
+	usageRowCount,
+	pendingOrdersCount,
+	pendingTransfersCount,
+}: SummaryCardsProps) {
+	return (
+		<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+			<Card className="card-transition border-[#E5E7EB] bg-[#F9FAFB] dark:border-[#2D3033] dark:bg-[#1E1F20]">
+				<CardHeader>
+					<CardTitle className="text-sm font-semibold text-[#11181C] dark:text-[#ECEDEE]">
+						Limites de stock
+					</CardTitle>
+				</CardHeader>
+				<CardContent className="space-y-1">
+					<p className="text-3xl font-bold text-[#0a7ea4]">
+						{stockLimitsTotal}
+					</p>
+					<p className="text-sm text-[#687076] dark:text-[#9BA1A6]">
+						{stockLimitsTotal > 0 ? (
+							<>
+								Config. en {stockLimitsWarehouses}{" "}
+								{stockLimitsWarehouses === 1 ? "bodega" : "bodegas"}
+							</>
+						) : (
+							"No hay limites definidos"
+						)}
+					</p>
+				</CardContent>
+			</Card>
+
+			<Card className="card-transition border-[#E5E7EB] bg-[#F9FAFB] dark:border-[#2D3033] dark:bg-[#1E1F20]">
+				<CardHeader>
+					<CardTitle className="text-sm font-semibold text-[#11181C] dark:text-[#ECEDEE]">
+						Articulos en uso
+					</CardTitle>
+				</CardHeader>
+				<CardContent className="space-y-1">
+					<p className="text-3xl font-bold text-[#0a7ea4]">{totalUsage}</p>
+					<p className="text-sm text-[#687076] dark:text-[#9BA1A6]">
+						{usageRowCount}{" "}
+						{usageRowCount === 1
+							? "colaborador activo"
+							: "colaboradores activos"}
+					</p>
+				</CardContent>
+			</Card>
+
+			<Card className="card-transition border-[#E5E7EB] bg-[#F9FAFB] dark:border-[#2D3033] dark:bg-[#1E1F20]">
+				<CardHeader>
+					<CardTitle className="text-sm font-semibold text-[#11181C] dark:text-[#ECEDEE]">
+						Pedidos por atender
+					</CardTitle>
+				</CardHeader>
+				<CardContent className="space-y-1">
+					<p className="text-3xl font-bold text-[#0a7ea4]">
+						{pendingOrdersCount}
+					</p>
+					<p className="text-sm text-[#687076] dark:text-[#9BA1A6]">
+						Ultimos 14 dias
+					</p>
+				</CardContent>
+			</Card>
+
+			<Card className="card-transition border-[#E5E7EB] bg-[#F9FAFB] dark:border-[#2D3033] dark:bg-[#1E1F20]">
+				<CardHeader>
+					<CardTitle className="text-sm font-semibold text-[#11181C] dark:text-[#ECEDEE]">
+						Recepciones pendientes
+					</CardTitle>
+				</CardHeader>
+				<CardContent className="space-y-1">
+					<p className="text-3xl font-bold text-[#0a7ea4]">
+						{pendingTransfersCount}
+					</p>
+					<p className="text-sm text-[#687076] dark:text-[#9BA1A6]">
+						En transito o sin recibir
+					</p>
+				</CardContent>
+			</Card>
+		</div>
+	);
+});
+
+type StockLimitsCardProps = {
+	stockLimitSearch: string;
+	onSearchChange: (value: string) => void;
+	quantityGroupCount: number;
+	usageGroupCount: number;
+	quantityColumns: ColumnDef<QuantityLimitRow>[];
+	usageColumns: ColumnDef<UsageLimitRow>[];
+	quantityRows: QuantityLimitRow[];
+	usageRowsTable: UsageLimitRow[];
+};
+
+const StockLimitsCard = memo(function StockLimitsCard({
+	stockLimitSearch,
+	onSearchChange,
+	quantityGroupCount,
+	usageGroupCount,
+	quantityColumns,
+	usageColumns,
+	quantityRows,
+	usageRowsTable,
+}: StockLimitsCardProps) {
+	return (
+		<Card className="card-transition border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#151718]">
+			<CardHeader>
+				<CardTitle className="text-base font-semibold text-[#11181C] dark:text-[#ECEDEE]">
+					Detalle de limites
+				</CardTitle>
+				<div className="mt-2">
+					<Input
+						className="max-w-sm"
+						onChange={(event) => onSearchChange(event.target.value)}
+						placeholder="Buscar producto o barcode"
+						value={stockLimitSearch}
+					/>
+				</div>
+			</CardHeader>
+			<CardContent>
+				<Tabs defaultValue="quantity" className="w-full">
+					<TabsList className="mb-4">
+						<TabsTrigger value="quantity">
+							Por cantidad ({quantityGroupCount})
+						</TabsTrigger>
+						<TabsTrigger value="usage">
+							Por uso ({usageGroupCount})
+						</TabsTrigger>
+					</TabsList>
+					<TabsContent value="quantity">
+						<DataTable
+							columns={quantityColumns}
+							data={quantityRows}
+							enableFiltering={false}
+							globalFilterPlaceholder="Buscar producto o almacén..."
+							pageSizeOptions={[10, 20, 50]}
+						/>
+					</TabsContent>
+					<TabsContent value="usage">
+						<DataTable
+							columns={usageColumns}
+							data={usageRowsTable}
+							enableFiltering={false}
+							globalFilterPlaceholder="Buscar producto o almacén..."
+							pageSizeOptions={[10, 20, 50]}
+						/>
+					</TabsContent>
+				</Tabs>
+			</CardContent>
+		</Card>
+	);
+});
+
+type UsageByEmployeeCardProps = {
+	usageRows: UsageRow[];
+};
+
+const UsageByEmployeeCard = memo(function UsageByEmployeeCard({
+	usageRows,
+}: UsageByEmployeeCardProps) {
+	return (
+		<Card className="card-transition border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#151718]">
+			<CardHeader>
+				<CardTitle className="text-base font-semibold text-[#11181C] dark:text-[#ECEDEE]">
+					Uso por colaborador
+				</CardTitle>
+			</CardHeader>
+			<CardContent className="space-y-3">
+				{usageRows.length > 0 ? (
+					usageRows.map((row) => (
+						<div
+							className="flex items-center justify-between rounded-lg border border-transparent bg-[#F3F4F6] px-3 py-2 dark:bg-[#1E1F20]"
+							key={row.id}
+						>
+							<div>
+								<p className="text-sm font-medium text-[#11181C] dark:text-[#ECEDEE]">
+									{row.name}
+								</p>
+								{row.id !== "unassigned" ? (
+									<p className="text-xs text-[#687076] dark:text-[#9BA1A6]">
+										ID {row.id.slice(0, 8)}
+									</p>
+								) : (
+									<p className="text-xs text-[#687076] dark:text-[#9BA1A6]">
+										Sin responsable asignado
+									</p>
+								)}
+							</div>
+							<Badge className="bg-[#0a7ea4] text-white">{row.count}</Badge>
+						</div>
+					))
+				) : (
+					<p className="text-sm text-[#687076] dark:text-[#9BA1A6]">
+						No hay articulos en uso.
+					</p>
+				)}
+			</CardContent>
+		</Card>
+	);
+});
+
+type KitsOfDayCardProps = {
+	todayKits: KitData[];
+	employeeNameById: Map<string, string>;
+};
+
+const KitsOfDayCard = memo(function KitsOfDayCard({
+	todayKits,
+	employeeNameById,
+}: KitsOfDayCardProps) {
+	return (
+		<Card className="card-transition border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#151718]">
+			<CardHeader>
+				<CardTitle className="text-base font-semibold text-[#11181C] dark:text-[#ECEDEE]">
+					Kits del dia
+				</CardTitle>
+			</CardHeader>
+			<CardContent className="space-y-3">
+				{todayKits.length > 0 ? (
+					todayKits.map((kit) => {
+						const kitId = toStringSafe(kit.id);
+						const assignedEmployeeId = toStringSafe(kit.assignedEmployee);
+						const employeeName =
+							employeeNameById.get(assignedEmployeeId) ??
+							(assignedEmployeeId
+								? `Empleado ${assignedEmployeeId.slice(0, 6)}`
+								: "Sin asignar");
+						return (
+							<Link
+								className="flex items-center justify-between rounded-lg border border-[#E5E7EB] px-3 py-2 text-sm text-[#11181C] transition hover:bg-[#EEF2FF] dark:border-[#2D3033] dark:text-[#ECEDEE] dark:hover:bg-[#1F2937]"
+								href={`/kits/${encodeURIComponent(kitId)}`}
+								key={kitId}
+							>
+								<div className="flex flex-col">
+									<span className="font-medium">
+										Kit {kitId.slice(0, 8)}
+									</span>
+									<span className="text-xs text-[#687076] dark:text-[#9BA1A6]">
+										{employeeName}
+									</span>
+								</div>
+								<Badge variant="secondary">{kit.numProducts} items</Badge>
+							</Link>
+						);
+					})
+				) : (
+					<p className="text-sm text-[#687076] dark:text-[#9BA1A6]">
+						No hay kits asignados para hoy.
+					</p>
+				)}
+			</CardContent>
+		</Card>
+	);
+});
+
+type PendingOrdersCardProps = {
+	pendingOrders: PendingOrderRow[];
+};
+
+const PendingOrdersCard = memo(function PendingOrdersCard({
+	pendingOrders,
+}: PendingOrdersCardProps) {
+	return (
+		<Card className="card-transition border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#151718]">
+			<CardHeader>
+				<CardTitle className="text-base font-semibold text-[#11181C] dark:text-[#ECEDEE]">
+					Pedidos pendientes
+				</CardTitle>
+			</CardHeader>
+			<CardContent className="space-y-3">
+				{pendingOrders.length > 0 ? (
+					pendingOrders.map((order) => (
+						<Link
+							className="flex items-center justify-between rounded-lg border border-[#E5E7EB] px-3 py-2 text-sm text-[#11181C] transition hover:bg-[#F3F4F6] dark:border-[#2D3033] dark:text-[#ECEDEE] dark:hover:bg-[#1E1F20]"
+							href={`/pedidos/${encodeURIComponent(order.id)}`}
+							key={order.id}
+						>
+							<div>
+								<p className="font-medium">{order.orderNumber}</p>
+								<p className="text-xs text-[#687076] dark:text-[#9BA1A6]">
+									{formatDateSafe(order.createdAt)}
+								</p>
+							</div>
+							<Badge
+								className={
+									order.status === "sent"
+										? "bg-[#F59E0B] text-white"
+										: "bg-[#0a7ea4] text-white"
+								}
+							>
+								{order.status === "sent" ? "Enviado" : "Abierto"}
+							</Badge>
+						</Link>
+					))
+				) : (
+					<p className="text-sm text-[#687076] dark:text-[#9BA1A6]">
+						No hay pedidos abiertos o enviados recientes.
+					</p>
+				)}
+			</CardContent>
+		</Card>
+	);
+});
+
+type PendingTransfersCardProps = {
+	pendingTransfers: TransferSummary[];
+};
+
+const PendingTransfersCard = memo(function PendingTransfersCard({
+	pendingTransfers,
+}: PendingTransfersCardProps) {
+	return (
+		<Card className="card-transition border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#151718]">
+			<CardHeader>
+				<CardTitle className="text-base font-semibold text-[#11181C] dark:text-[#ECEDEE]">
+					Recepciones en progreso
+				</CardTitle>
+			</CardHeader>
+			<CardContent className="space-y-3">
+				{pendingTransfers.length > 0 ? (
+					pendingTransfers.map((transfer) => (
+						<Link
+							className="flex items-center justify-between rounded-lg border border-[#E5E7EB] px-3 py-2 text-sm text-[#11181C] transition hover:bg-[#F3F4F6] dark:border-[#2D3033] dark:text-[#ECEDEE] dark:hover:bg-[#1E1F20]"
+							href={`/recepciones/${encodeURIComponent(transfer.linkId)}`}
+							key={transfer.linkId}
+						>
+							<div>
+								<p className="font-medium">
+									Recepcion {transfer.linkId.slice(0, 8)}
+								</p>
+								<p className="text-xs text-[#687076] dark:text-[#9BA1A6]">
+									Programada:{" "}
+									{formatDateSafe(
+										transfer.scheduledDate ?? transfer.createdAt ?? "",
+									)}
+								</p>
+							</div>
+							<Badge className="bg-[#F59E0B] text-white">Pendiente</Badge>
+						</Link>
+					))
+				) : (
+					<p className="text-sm text-[#687076] dark:text-[#9BA1A6]">
+						No hay recepciones pendientes.
+					</p>
+				)}
+			</CardContent>
+		</Card>
+	);
+});
 
 export default function DashboardPageClient({
 	warehouseId,
@@ -1444,292 +1824,36 @@ export default function DashboardPageClient({
 
 	return (
 		<div className="flex flex-1 flex-col gap-6 p-4 md:p-6">
-			<header className="flex flex-col gap-1">
-				<h1 className="text-2xl font-bold text-[#11181C] dark:text-[#ECEDEE]">
-					Panel general
-				</h1>
-				<p className="text-sm text-[#687076] dark:text-[#9BA1A6]">
-					{formattedDate}
-				</p>
-			</header>
-
-			<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-				<Card className="card-transition border-[#E5E7EB] bg-[#F9FAFB] dark:border-[#2D3033] dark:bg-[#1E1F20]">
-					<CardHeader>
-						<CardTitle className="text-sm font-semibold text-[#11181C] dark:text-[#ECEDEE]">
-							Limites de stock
-						</CardTitle>
-					</CardHeader>
-					<CardContent className="space-y-1">
-						<p className="text-3xl font-bold text-[#0a7ea4]">
-							{totalStockLimits.total}
-						</p>
-						<p className="text-sm text-[#687076] dark:text-[#9BA1A6]">
-							{totalStockLimits.total > 0 ? (
-								<>
-									Config. en {totalStockLimits.warehouses}{" "}
-									{totalStockLimits.warehouses === 1 ? "bodega" : "bodegas"}
-								</>
-							) : (
-								"No hay limites definidos"
-							)}
-						</p>
-					</CardContent>
-				</Card>
-
-				<Card className="card-transition border-[#E5E7EB] bg-[#F9FAFB] dark:border-[#2D3033] dark:bg-[#1E1F20]">
-					<CardHeader>
-						<CardTitle className="text-sm font-semibold text-[#11181C] dark:text-[#ECEDEE]">
-							Articulos en uso
-						</CardTitle>
-					</CardHeader>
-					<CardContent className="space-y-1">
-						<p className="text-3xl font-bold text-[#0a7ea4]">{totalUsage}</p>
-						<p className="text-sm text-[#687076] dark:text-[#9BA1A6]">
-							{usageRows.length}{" "}
-							{usageRows.length === 1
-								? "colaborador activo"
-								: "colaboradores activos"}
-						</p>
-					</CardContent>
-				</Card>
-
-				<Card className="card-transition border-[#E5E7EB] bg-[#F9FAFB] dark:border-[#2D3033] dark:bg-[#1E1F20]">
-					<CardHeader>
-						<CardTitle className="text-sm font-semibold text-[#11181C] dark:text-[#ECEDEE]">
-							Pedidos por atender
-						</CardTitle>
-					</CardHeader>
-					<CardContent className="space-y-1">
-						<p className="text-3xl font-bold text-[#0a7ea4]">
-							{pendingOrdersCount}
-						</p>
-						<p className="text-sm text-[#687076] dark:text-[#9BA1A6]">
-							Ultimos 14 dias
-						</p>
-					</CardContent>
-				</Card>
-
-				<Card className="card-transition border-[#E5E7EB] bg-[#F9FAFB] dark:border-[#2D3033] dark:bg-[#1E1F20]">
-					<CardHeader>
-						<CardTitle className="text-sm font-semibold text-[#11181C] dark:text-[#ECEDEE]">
-							Recepciones pendientes
-						</CardTitle>
-					</CardHeader>
-					<CardContent className="space-y-1">
-						<p className="text-3xl font-bold text-[#0a7ea4]">
-							{pendingTransfersCount}
-						</p>
-						<p className="text-sm text-[#687076] dark:text-[#9BA1A6]">
-							En transito o sin recibir
-						</p>
-					</CardContent>
-				</Card>
-			</div>
-
+			<DashboardHeader formattedDate={formattedDate} />
+			<SummaryCards
+				pendingOrdersCount={pendingOrdersCount}
+				pendingTransfersCount={pendingTransfersCount}
+				stockLimitsTotal={totalStockLimits.total}
+				stockLimitsWarehouses={totalStockLimits.warehouses}
+				totalUsage={totalUsage}
+				usageRowCount={usageRows.length}
+			/>
 			<div className="grid gap-4 xl:grid-cols-2">
-				<Card className="card-transition border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#151718]">
-					<CardHeader>
-						<CardTitle className="text-base font-semibold text-[#11181C] dark:text-[#ECEDEE]">
-							Detalle de limites
-						</CardTitle>
-						<div className="mt-2">
-							<Input
-								className="max-w-sm"
-								onChange={(event) => setStockLimitSearch(event.target.value)}
-								placeholder="Buscar producto o barcode"
-								value={stockLimitSearch}
-							/>
-						</div>
-					</CardHeader>
-					<CardContent>
-						<Tabs defaultValue="quantity" className="w-full">
-							<TabsList className="mb-4">
-								<TabsTrigger value="quantity">
-									Por cantidad ({filteredQuantityGroups.length})
-								</TabsTrigger>
-								<TabsTrigger value="usage">
-									Por uso ({filteredUsageGroups.length})
-								</TabsTrigger>
-							</TabsList>
-							<TabsContent value="quantity">
-								<DataTable
-									columns={quantityColumns}
-									data={quantityRows}
-									enableFiltering={false}
-									globalFilterPlaceholder="Buscar producto o almacén..."
-									pageSizeOptions={[10, 20, 50]}
-								/>
-							</TabsContent>
-							<TabsContent value="usage">
-								<DataTable
-									columns={usageColumns}
-									data={usageRowsTable}
-									enableFiltering={false}
-									globalFilterPlaceholder="Buscar producto o almacén..."
-									pageSizeOptions={[10, 20, 50]}
-								/>
-							</TabsContent>
-						</Tabs>
-					</CardContent>
-				</Card>
-
-				<Card className="card-transition border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#151718]">
-					<CardHeader>
-						<CardTitle className="text-base font-semibold text-[#11181C] dark:text-[#ECEDEE]">
-							Uso por colaborador
-						</CardTitle>
-					</CardHeader>
-					<CardContent className="space-y-3">
-						{usageRows.length > 0 ? (
-							usageRows.map((row) => (
-								<div
-									className="flex items-center justify-between rounded-lg border border-transparent bg-[#F3F4F6] px-3 py-2 dark:bg-[#1E1F20]"
-									key={row.id}
-								>
-									<div>
-										<p className="text-sm font-medium text-[#11181C] dark:text-[#ECEDEE]">
-											{row.name}
-										</p>
-										{row.id !== "unassigned" ? (
-											<p className="text-xs text-[#687076] dark:text-[#9BA1A6]">
-												ID {row.id.slice(0, 8)}
-											</p>
-										) : (
-											<p className="text-xs text-[#687076] dark:text-[#9BA1A6]">
-												Sin responsable asignado
-											</p>
-										)}
-									</div>
-									<Badge className="bg-[#0a7ea4] text-white">{row.count}</Badge>
-								</div>
-							))
-						) : (
-							<p className="text-sm text-[#687076] dark:text-[#9BA1A6]">
-								No hay articulos en uso.
-							</p>
-						)}
-					</CardContent>
-				</Card>
+				<StockLimitsCard
+					onSearchChange={setStockLimitSearch}
+					quantityColumns={quantityColumns}
+					quantityGroupCount={filteredQuantityGroups.length}
+					quantityRows={quantityRows}
+					stockLimitSearch={stockLimitSearch}
+					usageColumns={usageColumns}
+					usageGroupCount={filteredUsageGroups.length}
+					usageRowsTable={usageRowsTable}
+				/>
+				<UsageByEmployeeCard usageRows={usageRows} />
 			</div>
-
 			<div className="grid gap-4 xl:grid-cols-2">
-				<Card className="card-transition border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#151718]">
-					<CardHeader>
-						<CardTitle className="text-base font-semibold text-[#11181C] dark:text-[#ECEDEE]">
-							Kits del dia
-						</CardTitle>
-					</CardHeader>
-					<CardContent className="space-y-3">
-						{todayKits.length > 0 ? (
-							todayKits.map((kit) => {
-								const kitId = toStringSafe(kit.id);
-								const assignedEmployeeId = toStringSafe(kit.assignedEmployee);
-								const employeeName =
-									employeeNameById.get(assignedEmployeeId) ??
-									(assignedEmployeeId
-										? `Empleado ${assignedEmployeeId.slice(0, 6)}`
-										: "Sin asignar");
-								return (
-									<Link
-										className="flex items-center justify-between rounded-lg border border-[#E5E7EB] px-3 py-2 text-sm text-[#11181C] transition hover:bg-[#EEF2FF] dark:border-[#2D3033] dark:text-[#ECEDEE] dark:hover:bg-[#1F2937]"
-										href={`/kits/${encodeURIComponent(kitId)}`}
-										key={kitId}
-									>
-										<div className="flex flex-col">
-											<span className="font-medium">
-												Kit {kitId.slice(0, 8)}
-											</span>
-											<span className="text-xs text-[#687076] dark:text-[#9BA1A6]">
-												{employeeName}
-											</span>
-										</div>
-										<Badge variant="secondary">{kit.numProducts} items</Badge>
-									</Link>
-								);
-							})
-						) : (
-							<p className="text-sm text-[#687076] dark:text-[#9BA1A6]">
-								No hay kits asignados para hoy.
-							</p>
-						)}
-					</CardContent>
-				</Card>
-				<Card className="card-transition border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#151718]">
-					<CardHeader>
-						<CardTitle className="text-base font-semibold text-[#11181C] dark:text-[#ECEDEE]">
-							Pedidos pendientes
-						</CardTitle>
-					</CardHeader>
-					<CardContent className="space-y-3">
-						{pendingOrders.length > 0 ? (
-							pendingOrders.map((order) => (
-								<Link
-									className="flex items-center justify-between rounded-lg border border-[#E5E7EB] px-3 py-2 text-sm text-[#11181C] transition hover:bg-[#F3F4F6] dark:border-[#2D3033] dark:text-[#ECEDEE] dark:hover:bg-[#1E1F20]"
-									href={`/pedidos/${encodeURIComponent(order.id)}`}
-									key={order.id}
-								>
-									<div>
-										<p className="font-medium">{order.orderNumber}</p>
-										<p className="text-xs text-[#687076] dark:text-[#9BA1A6]">
-											{formatDateSafe(order.createdAt)}
-										</p>
-									</div>
-									<Badge
-										className={
-											order.status === "sent"
-												? "bg-[#F59E0B] text-white"
-												: "bg-[#0a7ea4] text-white"
-										}
-									>
-										{order.status === "sent" ? "Enviado" : "Abierto"}
-									</Badge>
-								</Link>
-							))
-						) : (
-							<p className="text-sm text-[#687076] dark:text-[#9BA1A6]">
-								No hay pedidos abiertos o enviados recientes.
-							</p>
-						)}
-					</CardContent>
-				</Card>
+				<KitsOfDayCard
+					employeeNameById={employeeNameById}
+					todayKits={todayKits}
+				/>
+				<PendingOrdersCard pendingOrders={pendingOrders} />
 			</div>
-
-			<Card className="card-transition border-[#E5E7EB] bg-white dark:border-[#2D3033] dark:bg-[#151718]">
-				<CardHeader>
-					<CardTitle className="text-base font-semibold text-[#11181C] dark:text-[#ECEDEE]">
-						Recepciones en progreso
-					</CardTitle>
-				</CardHeader>
-				<CardContent className="space-y-3">
-					{pendingTransfers.length > 0 ? (
-						pendingTransfers.map((transfer) => (
-							<Link
-								className="flex items-center justify-between rounded-lg border border-[#E5E7EB] px-3 py-2 text-sm text-[#11181C] transition hover:bg-[#F3F4F6] dark:border-[#2D3033] dark:text-[#ECEDEE] dark:hover:bg-[#1E1F20]"
-								href={`/recepciones/${encodeURIComponent(transfer.linkId)}`}
-								key={transfer.linkId}
-							>
-								<div>
-									<p className="font-medium">
-										Recepcion {transfer.linkId.slice(0, 8)}
-									</p>
-									<p className="text-xs text-[#687076] dark:text-[#9BA1A6]">
-										Programada:{" "}
-										{formatDateSafe(
-											transfer.scheduledDate ?? transfer.createdAt ?? "",
-										)}
-									</p>
-								</div>
-								<Badge className="bg-[#F59E0B] text-white">Pendiente</Badge>
-							</Link>
-						))
-					) : (
-						<p className="text-sm text-[#687076] dark:text-[#9BA1A6]">
-							No hay recepciones pendientes.
-						</p>
-					)}
-				</CardContent>
-			</Card>
+			<PendingTransfersCard pendingTransfers={pendingTransfers} />
 		</div>
 	);
 }

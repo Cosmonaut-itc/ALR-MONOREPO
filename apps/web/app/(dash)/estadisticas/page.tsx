@@ -40,25 +40,35 @@ export default async function Page() {
 	const isEncargado = role === "encargado";
 
 	try {
-		queryClient.prefetchQuery({
-			queryKey: createQueryKey(queryKeys.inventory, ["all"]),
-			queryFn: fetchAllProductStockServer,
-		});
+		const prefetches: Array<Promise<unknown>> = [];
 
-		queryClient.prefetchQuery({
-			queryKey: queryKeys.productCatalog,
-			queryFn: fetchAllProductsServer,
-		});
+		prefetches.push(
+			queryClient.prefetchQuery({
+				queryKey: createQueryKey(queryKeys.inventory, ["all"]),
+				queryFn: fetchAllProductStockServer,
+			}),
+		);
 
-		queryClient.prefetchQuery({
-			queryKey: queryKeys.cabinetWarehouse,
-			queryFn: fetchCabinetWarehouseServer,
-		});
+		prefetches.push(
+			queryClient.prefetchQuery({
+				queryKey: queryKeys.productCatalog,
+				queryFn: fetchAllProductsServer,
+			}),
+		);
 
-		const warehousesResponse = await queryClient.fetchQuery({
+		prefetches.push(
+			queryClient.prefetchQuery({
+				queryKey: queryKeys.cabinetWarehouse,
+				queryFn: fetchCabinetWarehouseServer,
+			}),
+		);
+
+		const warehousesPromise = queryClient.fetchQuery({
 			queryKey: queryKeys.warehouses,
 			queryFn: fetchAllWarehousesServer,
 		});
+		prefetches.push(warehousesPromise);
+		const warehousesResponse = await warehousesPromise;
 
 		// Find cedis warehouse ID
 		let cedisWarehouseId: string | null = null;
@@ -90,42 +100,56 @@ export default async function Page() {
 			}
 		}
 
-		queryClient.prefetchQuery({
-			queryKey: createQueryKey(queryKeys.receptions, ["all"]),
-			queryFn: fetchWarehouseTrasnferAll,
-		});
+		prefetches.push(
+			queryClient.prefetchQuery({
+				queryKey: createQueryKey(queryKeys.receptions, ["all"]),
+				queryFn: fetchWarehouseTrasnferAll,
+			}),
+		);
 
-		queryClient.prefetchQuery({
-			queryKey: createQueryKey(queryKeys.replenishmentOrders, ["all"]),
-			queryFn: () => fetchReplenishmentOrdersServer(),
-		});
+		prefetches.push(
+			queryClient.prefetchQuery({
+				queryKey: createQueryKey(queryKeys.replenishmentOrders, ["all"]),
+				queryFn: () => fetchReplenishmentOrdersServer(),
+			}),
+		);
 
-		queryClient.prefetchQuery({
-			queryKey: createQueryKey(queryKeys.stockLimits, [
-				cedisWarehouseId ? `cedis-${cedisWarehouseId}` : "all",
-			]),
-			queryFn: () => {
-				if (cedisWarehouseId) {
-					return fetchStockLimitsByWarehouseServer(cedisWarehouseId);
-				}
-				return fetchAllStockLimitsServer();
-			},
-		});
+		prefetches.push(
+			queryClient.prefetchQuery({
+				queryKey: createQueryKey(queryKeys.stockLimits, [
+					cedisWarehouseId ? `cedis-${cedisWarehouseId}` : "all",
+				]),
+				queryFn: () => {
+					if (cedisWarehouseId) {
+						return fetchStockLimitsByWarehouseServer(cedisWarehouseId);
+					}
+					return fetchAllStockLimitsServer();
+				},
+			}),
+		);
 
-		queryClient.prefetchQuery({
-			queryKey: createQueryKey(queryKeys.kits, ["all"]),
-			queryFn: fetchAllKitsServer,
-		});
+		prefetches.push(
+			queryClient.prefetchQuery({
+				queryKey: createQueryKey(queryKeys.kits, ["all"]),
+				queryFn: fetchAllKitsServer,
+			}),
+		);
 
-		queryClient.prefetchQuery({
-			queryKey: createQueryKey(queryKeys.unfulfilledProducts, ["all"]),
-			queryFn: fetchUnfulfilledProductsServer,
-		});
+		prefetches.push(
+			queryClient.prefetchQuery({
+				queryKey: createQueryKey(queryKeys.unfulfilledProducts, ["all"]),
+				queryFn: fetchUnfulfilledProductsServer,
+			}),
+		);
 
-		queryClient.prefetchQuery({
-			queryKey: createQueryKey(queryKeys.deletedAndEmptyProductStock, ["all"]),
-			queryFn: fetchDeletedAndEmptyProductStockServer,
-		});
+		prefetches.push(
+			queryClient.prefetchQuery({
+				queryKey: createQueryKey(queryKeys.deletedAndEmptyProductStock, ["all"]),
+				queryFn: fetchDeletedAndEmptyProductStockServer,
+			}),
+		);
+
+		await Promise.all(prefetches);
 	} catch (error) {
 		console.error(error);
 		console.error("Error prefetching estadísticas data");

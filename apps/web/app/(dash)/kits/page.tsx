@@ -39,56 +39,55 @@ export default async function Page() {
 		: () => fetchStockByWarehouseServer(warehouseId);
 
 	try {
-		queryClient.prefetchQuery({
-			queryKey: createQueryKey(queryKeys.kits, []),
-			queryFn: () => fetchAllKitsServer(),
-		});
+		const prefetches: Array<Promise<unknown>> = [];
 
-		queryClient.prefetchQuery({
-			queryKey: createQueryKey(["employees"], [employeesKeyParam as string]),
-			queryFn: employeesPrefetchFn,
-		});
+		prefetches.push(
+			queryClient.prefetchQuery({
+				queryKey: createQueryKey(queryKeys.kits, []),
+				queryFn: () => fetchAllKitsServer(),
+			}),
+		);
+
+		prefetches.push(
+			queryClient.prefetchQuery({
+				queryKey: createQueryKey(["employees"], [employeesKeyParam as string]),
+				queryFn: employeesPrefetchFn,
+			}),
+		);
 
 		// Prefetch inventory data so the client query hydrates
-		queryClient.prefetchQuery({
-			queryKey: createQueryKey(queryKeys.inventory, [inventoryKeyParam]),
-			queryFn: inventoryPrefetchFn,
-		});
+		prefetches.push(
+			queryClient.prefetchQuery({
+				queryKey: createQueryKey(queryKeys.inventory, [inventoryKeyParam]),
+				queryFn: inventoryPrefetchFn,
+			}),
+		);
 
 		// Prefetch warehouses data so the client query hydrates
-		queryClient.prefetchQuery({
-			queryKey: queryKeys.warehouses,
-			queryFn: () => fetchAllWarehousesServer(),
-		});
-
-		const currentDate = new Date().toISOString();
-
-		return (
-			<HydrationBoundary state={dehydrate(queryClient)}>
-				<GenericBoundaryWrapper fallbackComponent={<SkeletonKitsPage />}>
-					<KitsPageClient
-						currentDate={currentDate}
-						isEncargado={isEncargado}
-						warehouseId={warehouseId as string}
-					/>
-				</GenericBoundaryWrapper>
-			</HydrationBoundary>
+		prefetches.push(
+			queryClient.prefetchQuery({
+				queryKey: queryKeys.warehouses,
+				queryFn: () => fetchAllWarehousesServer(),
+			}),
 		);
+
+		await Promise.all(prefetches);
 	} catch (error) {
 		console.error(error);
 		console.error("Error prefetching kits data");
-		const currentDate = new Date().toISOString();
-
-		return (
-			<HydrationBoundary state={dehydrate(queryClient)}>
-				<GenericBoundaryWrapper fallbackComponent={<SkeletonKitsPage />}>
-					<KitsPageClient
-						currentDate={currentDate}
-						isEncargado={isEncargado}
-						warehouseId={warehouseId as string}
-					/>
-				</GenericBoundaryWrapper>
-			</HydrationBoundary>
-		);
 	}
+
+	const currentDate = new Date().toISOString();
+
+	return (
+		<HydrationBoundary state={dehydrate(queryClient)}>
+			<GenericBoundaryWrapper fallbackComponent={<SkeletonKitsPage />}>
+				<KitsPageClient
+					currentDate={currentDate}
+					isEncargado={isEncargado}
+					warehouseId={warehouseId as string}
+				/>
+			</GenericBoundaryWrapper>
+		</HydrationBoundary>
+	);
 }
