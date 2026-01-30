@@ -307,12 +307,7 @@ export const replenishmentOrderUpdateSchema = z
 			.optional(),
 	})
 	.refine(
-		(value: {
-			isSent?: boolean;
-			isReceived?: boolean;
-			notes?: string;
-			items?: unknown[];
-		}) =>
+		(value) =>
 			value.isSent !== undefined ||
 			value.isReceived !== undefined ||
 			value.notes !== undefined ||

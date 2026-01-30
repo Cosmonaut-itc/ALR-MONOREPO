@@ -25,9 +25,6 @@
     "paths": {
       "@/*": [
         "./*"
-      ],
-      "ns-inventory-api-types/dist/packages/api-types/src": [
-        "../api/packages/api-types/src"
       ]
     },
     "strictNullChecks": true

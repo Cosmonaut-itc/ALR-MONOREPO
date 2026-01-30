@@ -69,13 +69,15 @@ export const getProductStock = async (cabinetId: string) => {
 }
 
 /**
- * Fetches all withdrawal order details from the API
- * @param date - The date to filter withdrawal orders by
+ * Fetches withdrawal order details from the API by employee ID
+ * @param employeeId - The employee UUID to filter withdrawal orders by
  * @returns Promise containing the withdrawal order details data or throws an error
  */
-export const getWithdrawalOrdersDetails = async (date: string) => {
+export const getWithdrawalOrdersDetails = async (employeeId: string) => {
 	try {
-		const response = await client.api.auth["withdraw-orders"].details.$get({ query: { dateWithdraw: date } });
+		const response = await client.api.auth["withdraw-orders"].details.$get({
+			query: { employeeId },
+		});
 		if (!response.ok) {
 			throw new Error(`API request failed with status: ${response.status}`);
 		}
