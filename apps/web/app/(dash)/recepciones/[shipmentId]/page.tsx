@@ -129,12 +129,10 @@ export default async function Page({
 		}),
 	);
 
-	try {
-		await Promise.all(prefetches);
-	} catch (error) {
+	void Promise.all(prefetches).catch((error) => {
 		console.error(error);
 		console.error("Error prefetching reception detail metadata");
-	}
+	});
 
 	// Note: Individual order details will be fetched on-demand when a link is found
 	// This is done client-side to avoid unnecessary prefetching

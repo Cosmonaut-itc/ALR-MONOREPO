@@ -9,6 +9,7 @@ import { db } from '../db/index'; // your drizzle instance
 
 // Define the options to ensure proper type inference
 const options = {
+	baseURL: process.env.BETTER_AUTH_BASE_URL ?? 'http://localhost:3000',
 	database: drizzleAdapter(db, {
 		provider: 'pg',
 	}),

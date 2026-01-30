@@ -42,46 +42,44 @@ export default async function SettingsPage() {
 		? fetchAllEmployeesServer
 		: () => fetchEmployeesByWarehouseIdServer(warehouseId as string);
 
-	try {
-		const prefetches: Array<Promise<unknown>> = [];
+	const prefetches: Array<Promise<unknown>> = [];
 
-		// Prefetch users data so the client query hydrates
-		prefetches.push(
-			queryClient.prefetchQuery({
-				queryKey: queryKeys.users,
-				queryFn: () => fetchAllUsersServer(),
-			}),
-		);
+	// Prefetch users data so the client query hydrates
+	prefetches.push(
+		queryClient.prefetchQuery({
+			queryKey: queryKeys.users,
+			queryFn: () => fetchAllUsersServer(),
+		}),
+	);
 
-		// Prefetch warehouses data so the client query hydrates
-		prefetches.push(
-			queryClient.prefetchQuery({
-				queryKey: queryKeys.warehouses,
-				queryFn: () => fetchAllWarehousesServer(),
-			}),
-		);
+	// Prefetch warehouses data so the client query hydrates
+	prefetches.push(
+		queryClient.prefetchQuery({
+			queryKey: queryKeys.warehouses,
+			queryFn: () => fetchAllWarehousesServer(),
+		}),
+	);
 
-		// Prefetch employees data so the client query hydrates
-		prefetches.push(
-			queryClient.prefetchQuery({
-				queryKey: createQueryKey(["employees"], employeesQueryParams as string[]),
-				queryFn: employeesPrefetchFn,
-			}),
-		);
+	// Prefetch employees data so the client query hydrates
+	prefetches.push(
+		queryClient.prefetchQuery({
+			queryKey: createQueryKey(["employees"], employeesQueryParams as string[]),
+			queryFn: employeesPrefetchFn,
+		}),
+	);
 
-		// Prefetch permissions data so the client query hydrates
-		prefetches.push(
-			queryClient.prefetchQuery({
-				queryKey: createQueryKey(["permissions"], []),
-				queryFn: () => fetchAllPermissionsServer(),
-			}),
-		);
+	// Prefetch permissions data so the client query hydrates
+	prefetches.push(
+		queryClient.prefetchQuery({
+			queryKey: createQueryKey(["permissions"], []),
+			queryFn: () => fetchAllPermissionsServer(),
+		}),
+	);
 
-		await Promise.all(prefetches);
-	} catch (error) {
+	void Promise.all(prefetches).catch((error) => {
 		console.error(error);
 		console.error("Error prefetching settings data");
-	}
+	});
 
 	return (
 		<HydrationBoundary state={dehydrate(queryClient)}>

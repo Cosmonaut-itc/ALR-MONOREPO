@@ -131,12 +131,10 @@ export default async function PedidoDetailRoute({ params }: RouteProps) {
 		}),
 	);
 
-	try {
-		await Promise.all(prefetches);
-	} catch (error) {
+	void Promise.all(prefetches).catch((error) => {
 		console.error(error);
 		console.error("Error prefetching pedido metadata");
-	}
+	});
 
 	return (
 		<HydrationBoundary state={dehydrate(queryClient)}>
