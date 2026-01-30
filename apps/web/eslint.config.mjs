@@ -16,4 +16,9 @@ const compat = new FlatCompat({
 export default [
 	...nextCoreWebVitals,
 	...compat.extends("@alr/eslint-config"),
+	{
+		rules: {
+			"react-hooks/incompatible-library": "off",
+		},
+	},
 ];
