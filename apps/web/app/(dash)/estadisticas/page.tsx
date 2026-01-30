@@ -149,10 +149,7 @@ export default async function Page() {
 			}),
 		);
 
-		void Promise.all(prefetches).catch((error) => {
-			console.error(error);
-			console.error("Error prefetching estadísticas data");
-		});
+		await Promise.all(prefetches);
 	} catch (error) {
 		console.error(error);
 		console.error("Error prefetching estadísticas data");
