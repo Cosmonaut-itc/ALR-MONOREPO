@@ -52,115 +52,113 @@ export default async function DashboardPage() {
 	const employeeScope = scopeKey;
 	const currentDate = new Date().toISOString();
 
-	try {
-		const prefetches: Array<Promise<unknown>> = [];
+	const prefetches: Array<Promise<unknown>> = [];
 
-		const inventoryPrefetchFn = isEncargado
-			? fetchAllProductStockServer
-			: warehouseId
-				? () => fetchStockByWarehouseServer(warehouseId)
-				: undefined;
-		if (inventoryPrefetchFn) {
-			prefetches.push(
-				queryClient.prefetchQuery({
-					queryKey: createQueryKey(queryKeys.inventory, [scopeKey]),
-					queryFn: inventoryPrefetchFn,
-				}),
-			);
-		}
-
+	const inventoryPrefetchFn = isEncargado
+		? fetchAllProductStockServer
+		: warehouseId
+			? () => fetchStockByWarehouseServer(warehouseId)
+			: undefined;
+	if (inventoryPrefetchFn) {
 		prefetches.push(
 			queryClient.prefetchQuery({
-				queryKey: queryKeys.cabinetWarehouse,
-				queryFn: () => fetchCabinetWarehouseServer(),
+				queryKey: createQueryKey(queryKeys.inventory, [scopeKey]),
+				queryFn: inventoryPrefetchFn,
 			}),
 		);
+	}
 
-		const stockLimitsPrefetchFn = isEncargado
-			? fetchAllStockLimitsServer
-			: warehouseId
-				? () => fetchStockLimitsByWarehouseServer(warehouseId)
-				: undefined;
-		if (stockLimitsPrefetchFn) {
-			prefetches.push(
-				queryClient.prefetchQuery({
-					queryKey: createQueryKey(queryKeys.stockLimits, [stockLimitsScope]),
-					queryFn: stockLimitsPrefetchFn,
-				}),
-			);
-		}
+	prefetches.push(
+		queryClient.prefetchQuery({
+			queryKey: queryKeys.cabinetWarehouse,
+			queryFn: () => fetchCabinetWarehouseServer(),
+		}),
+	);
 
+	const stockLimitsPrefetchFn = isEncargado
+		? fetchAllStockLimitsServer
+		: warehouseId
+			? () => fetchStockLimitsByWarehouseServer(warehouseId)
+			: undefined;
+	if (stockLimitsPrefetchFn) {
 		prefetches.push(
 			queryClient.prefetchQuery({
-				queryKey: createQueryKey(queryKeys.kits, []),
-				queryFn: () => fetchAllKitsServer(),
+				queryKey: createQueryKey(queryKeys.stockLimits, [stockLimitsScope]),
+				queryFn: stockLimitsPrefetchFn,
 			}),
 		);
+	}
 
-		const employeesPrefetchFn = isEncargado
-			? fetchAllEmployeesServer
-			: warehouseId
-				? () => fetchEmployeesByWarehouseIdServer(warehouseId)
-				: undefined;
-		if (employeesPrefetchFn) {
-			prefetches.push(
-				queryClient.prefetchQuery({
-					queryKey: createQueryKey(["employees"], [employeeScope]),
-					queryFn: employeesPrefetchFn,
-				}),
-			);
-		}
+	prefetches.push(
+		queryClient.prefetchQuery({
+			queryKey: createQueryKey(queryKeys.kits, []),
+			queryFn: () => fetchAllKitsServer(),
+		}),
+	);
 
+	const employeesPrefetchFn = isEncargado
+		? fetchAllEmployeesServer
+		: warehouseId
+			? () => fetchEmployeesByWarehouseIdServer(warehouseId)
+			: undefined;
+	if (employeesPrefetchFn) {
 		prefetches.push(
 			queryClient.prefetchQuery({
-				queryKey: queryKeys.productCatalog,
-				queryFn: () => fetchAllProductsServer(),
+				queryKey: createQueryKey(["employees"], [employeeScope]),
+				queryFn: employeesPrefetchFn,
 			}),
 		);
+	}
 
+	prefetches.push(
+		queryClient.prefetchQuery({
+			queryKey: queryKeys.productCatalog,
+			queryFn: () => fetchAllProductsServer(),
+		}),
+	);
+
+	prefetches.push(
+		queryClient.prefetchQuery({
+			queryKey: queryKeys.warehouses,
+			queryFn: () => fetchAllWarehousesServer(),
+		}),
+	);
+
+	const ordersPrefetchFn = canManageAllWarehouses
+		? () => fetchReplenishmentOrdersServer()
+		: warehouseId
+			? () => fetchReplenishmentOrdersByWarehouseServer(warehouseId)
+			: undefined;
+	if (ordersPrefetchFn) {
+		const ordersKey = canManageAllWarehouses
+			? createQueryKey(queryKeys.replenishmentOrders, [scopeKey, "all"])
+			: createQueryKey(queryKeys.replenishmentOrders, [scopeKey]);
 		prefetches.push(
 			queryClient.prefetchQuery({
-				queryKey: queryKeys.warehouses,
-				queryFn: () => fetchAllWarehousesServer(),
+				queryKey: ordersKey,
+				queryFn: ordersPrefetchFn,
 			}),
 		);
+	}
 
-		const ordersPrefetchFn = canManageAllWarehouses
-			? () => fetchReplenishmentOrdersServer()
-			: warehouseId
-				? () => fetchReplenishmentOrdersByWarehouseServer(warehouseId)
-				: undefined;
-		if (ordersPrefetchFn) {
-			const ordersKey = canManageAllWarehouses
-				? createQueryKey(queryKeys.replenishmentOrders, [scopeKey, "all"])
-				: createQueryKey(queryKeys.replenishmentOrders, [scopeKey]);
-			prefetches.push(
-				queryClient.prefetchQuery({
-					queryKey: ordersKey,
-					queryFn: ordersPrefetchFn,
-				}),
-			);
-		}
+	const recepcionesPrefetchFn = isEncargado
+		? () => fetchWarehouseTrasnferAll()
+		: warehouseId
+			? () => fetchWarehouseTransferByWarehouseIdServer(warehouseId)
+			: undefined;
+	if (recepcionesPrefetchFn) {
+		prefetches.push(
+			queryClient.prefetchQuery({
+				queryKey: createQueryKey(queryKeys.receptions, [scopeKey]),
+				queryFn: recepcionesPrefetchFn,
+			}),
+		);
+	}
 
-		const recepcionesPrefetchFn = isEncargado
-			? () => fetchWarehouseTrasnferAll()
-			: warehouseId
-				? () => fetchWarehouseTransferByWarehouseIdServer(warehouseId)
-				: undefined;
-		if (recepcionesPrefetchFn) {
-			prefetches.push(
-				queryClient.prefetchQuery({
-					queryKey: createQueryKey(queryKeys.receptions, [scopeKey]),
-					queryFn: recepcionesPrefetchFn,
-				}),
-			);
-		}
-
-		await Promise.all(prefetches);
-	} catch (error) {
+	void Promise.all(prefetches).catch((error) => {
 		console.error(error);
 		console.error("Error prefetching dashboard data");
-	}
+	});
 
 	return (
 		<HydrationBoundary state={dehydrate(queryClient)}>

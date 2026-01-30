@@ -43,71 +43,69 @@ export default async function Page() {
 	const transferKeyParam = isEncargado ? "all" : (warehouseId as string);
 	const inventoryScope = isEncargado ? "all" : (warehouseId ?? "unknown");
 
-	try {
-		const prefetches: Array<Promise<unknown>> = [];
+	const prefetches: Array<Promise<unknown>> = [];
 
-		const transferPrefetchFn = isEncargado
-			? () => fetchWarehouseTrasnferAll()
-			: () => fetchWarehouseTransferByWarehouseIdServer(warehouseId as string);
+	const transferPrefetchFn = isEncargado
+		? () => fetchWarehouseTrasnferAll()
+		: () => fetchWarehouseTransferByWarehouseIdServer(warehouseId as string);
 
-		const inventoryPrefetchFn = isEncargado
-			? () => fetchAllProductStockServer()
-			: warehouseId
-				? () => fetchStockByWarehouseServer(warehouseId as string)
-				: undefined;
+	const inventoryPrefetchFn = isEncargado
+		? () => fetchAllProductStockServer()
+		: warehouseId
+			? () => fetchStockByWarehouseServer(warehouseId as string)
+			: undefined;
 
-		if (inventoryPrefetchFn) {
-			// Prefetch inventory data so the client query hydrates with the correct scope
-			prefetches.push(
-				queryClient.prefetchQuery({
-					queryKey: createQueryKey(queryKeys.inventory, [inventoryScope]),
-					queryFn: inventoryPrefetchFn,
-				}),
-			);
-		}
-
-		// Prefetch transfer/reception data
+	if (inventoryPrefetchFn) {
+		// Prefetch inventory data so the client query hydrates with the correct scope
 		prefetches.push(
 			queryClient.prefetchQuery({
-				queryKey: createQueryKey(queryKeys.receptions, [transferKeyParam]),
-				queryFn: transferPrefetchFn,
+				queryKey: createQueryKey(queryKeys.inventory, [inventoryScope]),
+				queryFn: inventoryPrefetchFn,
 			}),
 		);
+	}
 
-		// Prefetch product catalog data
-		prefetches.push(
-			queryClient.prefetchQuery({
-				queryKey: queryKeys.productCatalog,
-				queryFn: () => fetchAllProductsServer(),
-			}),
-		);
+	// Prefetch transfer/reception data
+	prefetches.push(
+		queryClient.prefetchQuery({
+			queryKey: createQueryKey(queryKeys.receptions, [transferKeyParam]),
+			queryFn: transferPrefetchFn,
+		}),
+	);
 
-		// Prefetch cabinet warehouse data
-		prefetches.push(
-			queryClient.prefetchQuery({
-				queryKey: queryKeys.cabinetWarehouse,
-				queryFn: () => fetchCabinetWarehouseServer(),
-			}),
-		);
+	// Prefetch product catalog data
+	prefetches.push(
+		queryClient.prefetchQuery({
+			queryKey: queryKeys.productCatalog,
+			queryFn: () => fetchAllProductsServer(),
+		}),
+	);
 
-		// Prefetch replenishment orders to link with transfers
-		const replenishmentOrdersPrefetchFn = isEncargado
-			? () => fetchReplenishmentOrdersServer()
-			: () => fetchReplenishmentOrdersByWarehouseServer(warehouseId as string);
-		prefetches.push(
-			queryClient.prefetchQuery({
-				queryKey: createQueryKey(queryKeys.replenishmentOrders, [
-					isEncargado ? "all" : (warehouseId as string),
-				]),
-				queryFn: replenishmentOrdersPrefetchFn,
-			}),
-		);
+	// Prefetch cabinet warehouse data
+	prefetches.push(
+		queryClient.prefetchQuery({
+			queryKey: queryKeys.cabinetWarehouse,
+			queryFn: () => fetchCabinetWarehouseServer(),
+		}),
+	);
 
-		await Promise.all(prefetches);
-	} catch (error) {
+	// Prefetch replenishment orders to link with transfers
+	const replenishmentOrdersPrefetchFn = isEncargado
+		? () => fetchReplenishmentOrdersServer()
+		: () => fetchReplenishmentOrdersByWarehouseServer(warehouseId as string);
+	prefetches.push(
+		queryClient.prefetchQuery({
+			queryKey: createQueryKey(queryKeys.replenishmentOrders, [
+				isEncargado ? "all" : (warehouseId as string),
+			]),
+			queryFn: replenishmentOrdersPrefetchFn,
+		}),
+	);
+
+	void Promise.all(prefetches).catch((error) => {
 		console.error(error);
 		console.error("Error prefetching recepciones data");
-	}
+	});
 
 	return (
 		<HydrationBoundary state={dehydrate(queryClient)}>

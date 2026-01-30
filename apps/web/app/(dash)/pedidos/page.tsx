@@ -31,47 +31,42 @@ export default async function PedidosRoute() {
 		normalizedRole === "encargado" || normalizedRole === "admin";
 	const scopeKey = canManageAllWarehouses ? "all" : warehouseId || "unknown";
 
-	try {
-		const prefetches: Array<Promise<unknown>> = [];
+	const prefetches: Array<Promise<unknown>> = [];
 
-		if (canManageAllWarehouses) {
-			prefetches.push(
-				queryClient.prefetchQuery({
-					queryKey: createQueryKey(queryKeys.replenishmentOrders, [
-						scopeKey,
-						"all",
-					]),
-					queryFn: () => fetchReplenishmentOrdersServer(),
-				}),
-			);
-		} else if (warehouseId) {
-			prefetches.push(
-				queryClient.prefetchQuery({
-					queryKey: createQueryKey(queryKeys.replenishmentOrders, [scopeKey]),
-					queryFn: () => fetchReplenishmentOrdersByWarehouseServer(warehouseId),
-				}),
-			);
-		}
-
+	if (canManageAllWarehouses) {
 		prefetches.push(
 			queryClient.prefetchQuery({
-				queryKey: queryKeys.productCatalog,
-				queryFn: () => fetchAllProductsServer(),
+				queryKey: createQueryKey(queryKeys.replenishmentOrders, [scopeKey, "all"]),
+				queryFn: () => fetchReplenishmentOrdersServer(),
 			}),
 		);
-
+	} else if (warehouseId) {
 		prefetches.push(
 			queryClient.prefetchQuery({
-				queryKey: queryKeys.warehouses,
-				queryFn: () => fetchAllWarehousesServer(),
+				queryKey: createQueryKey(queryKeys.replenishmentOrders, [scopeKey]),
+				queryFn: () => fetchReplenishmentOrdersByWarehouseServer(warehouseId),
 			}),
 		);
+	}
 
-		await Promise.all(prefetches);
-	} catch (error) {
+	prefetches.push(
+		queryClient.prefetchQuery({
+			queryKey: queryKeys.productCatalog,
+			queryFn: () => fetchAllProductsServer(),
+		}),
+	);
+
+	prefetches.push(
+		queryClient.prefetchQuery({
+			queryKey: queryKeys.warehouses,
+			queryFn: () => fetchAllWarehousesServer(),
+		}),
+	);
+
+	void Promise.all(prefetches).catch((error) => {
 		console.error(error);
 		console.error("Error prefetching pedidos list data");
-	}
+	});
 
 	return (
 		<HydrationBoundary state={dehydrate(queryClient)}>
