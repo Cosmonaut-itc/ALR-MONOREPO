@@ -453,9 +453,11 @@ export type AppType = typeof route;
  * Configures the server port and exports the fetch handler
  * for handling incoming HTTP requests
  */
+const port = Number(process.env.PORT ?? 3000);
+
 export default {
 	/** Server port - defaults to 3000 for development */
-	port: 3000,
+	port,
 	/** Fetch handler for processing HTTP requests */
 	fetch: app.fetch,
 } satisfies {
