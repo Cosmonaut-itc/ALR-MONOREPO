@@ -8,3 +8,5 @@ _imports
 apps/api/.env
 apps/mobile/.env
 apps/web/.env.local
+.vercel
+.env*.local

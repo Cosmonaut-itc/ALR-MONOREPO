@@ -57,10 +57,3 @@ export async function proxy(request: NextRequest) {
 
 	return NextResponse.next();
 }
-
-export const config = {
-	// Note: Node.js middleware runtime requires Next.js 15.2+. If you're on <15.2,
-	// remove runtime or use edge-compatible code.
-	runtime: 'nodejs',
-	matcher: ['/((?!api|_next|favicon.ico|robots.txt|sitemap.xml|login).*)'],
-};
