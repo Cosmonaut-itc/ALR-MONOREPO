@@ -1,4 +1,4 @@
-export const authAllowedOrigins = [
+const baseAuthAllowedOrigins = [
 	'http://localhost:3000',
 	'http://localhost:3001',
 	'https://localhost:3000',
@@ -11,6 +11,21 @@ export const authAllowedOrigins = [
 	'exp://192.168.0.205:8081',
 	'nsinventorymngmt://',
 ];
+
+const normalizeOrigin = (origin: string) => origin.replace(/\/+$/, '');
+
+const envAuthAllowedOrigins = (process.env.BETTER_AUTH_TRUSTED_ORIGINS ?? '')
+	.split(',')
+	.map((origin) => origin.trim())
+	.filter(Boolean);
+
+export const authAllowedOrigins = Array.from(
+	new Set(
+		[...baseAuthAllowedOrigins, ...envAuthAllowedOrigins]
+			.map((origin) => normalizeOrigin(origin))
+			.filter(Boolean),
+	),
+);
 
 export const MAIN_ACCOUNT_EMAIL = 'felixddhs@outlook.com';
 
