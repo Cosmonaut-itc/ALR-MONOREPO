@@ -2,7 +2,16 @@
 /** biome-ignore-all lint/suspicious/noExplicitAny: we need to use any here */
 import { type NextRequest, NextResponse } from 'next/server';
 
-const PUBLIC_PATHS = ['/login', '/_next', '/favicon.ico', '/robots.txt', '/sitemap.xml', '/signup'];
+const PUBLIC_PATHS = [
+	'/login',
+	'/_next',
+	'/favicon.ico',
+	'/robots.txt',
+	'/sitemap.xml',
+	'/signup',
+	'/api',
+	'/api/auth',
+];
 
 /**
  * Determines whether a URL pathname corresponds to a configured public route.
