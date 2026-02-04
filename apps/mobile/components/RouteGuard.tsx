@@ -21,12 +21,12 @@ export function RouteGuard({
     useEffect(() => {
         if (!isPending) {
             if (requireAuth && !session) {
-                router.replace("/")
+                router.replace(redirectTo)
             } else if (!requireAuth && session) {
                 router.replace("/(tabs)")
             }
         }
-    }, [session, isPending, requireAuth, redirectTo])
+    }, [session, isPending, requireAuth, redirectTo, router])
 
     if (isPending) {
         return (

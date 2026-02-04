@@ -130,21 +130,17 @@ export default function Login() {
                                     {t.emailLabel}
                                 </ThemedText>
 
-                                {/* biome-ignore lint/correctness/noChildrenProp: <explanation> */}
-                                <form.AppField name={'email'} children={(field) => {
-                                    return (
-                                        <>
-                                            <field.TextInputForm placeholder={t.emailPlaceholder}
-                                                value={field.state.value}
-                                                onChangeText={field.handleChange}
-                                                keyboardType="email-address"
-                                                autoCapitalize="none" />
-                                        </>
-                                    )
-                                }
-                                }
-
-                                />
+                                <form.AppField name={"email"}>
+                                    {(field) => (
+                                        <field.TextInputForm
+                                            placeholder={t.emailPlaceholder}
+                                            value={field.state.value}
+                                            onChangeText={field.handleChange}
+                                            keyboardType="email-address"
+                                            autoCapitalize="none"
+                                        />
+                                    )}
+                                </form.AppField>
 
 
                             </ThemedView>
@@ -154,14 +150,16 @@ export default function Login() {
                                     {t.passwordLabel}
                                 </ThemedText>
 
-                                {/* biome-ignore lint/correctness/noChildrenProp: <explanation> */}
-                                <form.AppField name={'password'} children={(field) =>
-                                    <field.TextInputForm placeholder={t.passwordPlaceholder}
-                                        value={field.state.value}
-                                        onChangeText={field.handleChange}
-                                        secureTextEntry />
-                                }
-                                />
+                                <form.AppField name={"password"}>
+                                    {(field) => (
+                                        <field.TextInputForm
+                                            placeholder={t.passwordPlaceholder}
+                                            value={field.state.value}
+                                            onChangeText={field.handleChange}
+                                            secureTextEntry
+                                        />
+                                    )}
+                                </form.AppField>
 
                             </ThemedView>
 

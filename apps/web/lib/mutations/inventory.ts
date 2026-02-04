@@ -160,6 +160,52 @@ export const useDeleteInventoryItem = () =>
 		},
 	});
 
+export const usePurgeNonCedisProductStock = () =>
+	useMutation({
+		mutationKey: ["purge-non-cedis-product-stock"],
+		mutationFn: async () => {
+			const response =
+				await client.api.auth["product-stock"]["purge-non-cedis"].$post();
+			const result = await response.json();
+			if (!result?.success) {
+				throw new Error(
+					result?.message ||
+						"La API devolvió éxito=false al purgar el stock no-CEDIS",
+				);
+			}
+			return result;
+		},
+		onMutate: () => {
+			toast.loading("Purgando stock no-CEDIS...", {
+				id: "purge-non-cedis-product-stock",
+			});
+		},
+		onSuccess: () => {
+			toast.success("Stock no-CEDIS purgado correctamente", {
+				id: "purge-non-cedis-product-stock",
+			});
+			const queryClient = getQueryClient();
+			queryClient.invalidateQueries({
+				queryKey: queryKeys.inventory,
+			});
+			queryClient.invalidateQueries({
+				queryKey: queryKeys.kits,
+			});
+			queryClient.invalidateQueries({
+				queryKey: queryKeys.receptions,
+			});
+			queryClient.invalidateQueries({
+				queryKey: queryKeys.deletedAndEmptyProductStock,
+			});
+		},
+		onError: (error) => {
+			toast.error("Error al purgar el stock no-CEDIS", {
+				id: "purge-non-cedis-product-stock",
+			});
+			console.error(error);
+		},
+	});
+
 export const useSyncInventory = () =>
 	useMutation({
 		mutationKey: ["sync-inventory"],

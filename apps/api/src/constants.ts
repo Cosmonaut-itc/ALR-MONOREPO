@@ -11,6 +11,8 @@ export const authAllowedOrigins = [
 	'nsinventorymngmt://',
 ];
 
+export const MAIN_ACCOUNT_EMAIL = 'felixddhs@outlook.com';
+
 export const productStockData = [
 	// Barcode 12345 - Multiple units
 	{

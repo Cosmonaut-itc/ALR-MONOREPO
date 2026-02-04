@@ -23,6 +23,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useMemo } from "react"
 import { toast } from "sonner-native"
 
+const EMPTY_PRODUCTS: WithdrawOrderDetailsProduct[] = []
 
 export default function OrderDetailsScreen() {
     const colorScheme = useColorScheme()
@@ -36,7 +37,7 @@ export default function OrderDetailsScreen() {
     // Fetch products from withdraw order details endpoint filtered by employee ID
     // The endpoint returns product data directly (inferred from Hono client types)
     const {
-        data: apiProductsData = [],
+        data: apiProductsData,
         isFetching,
         refetch: refetchProducts,
     } = useQuery({
@@ -53,7 +54,10 @@ export default function OrderDetailsScreen() {
     })
 
     // Use API products directly - they match the WithdrawOrderDetailsProduct type
-    const availableProducts: WithdrawOrderDetailsProduct[] = apiProductsData || []
+    const availableProducts = useMemo<WithdrawOrderDetailsProduct[]>(
+        () => apiProductsData ?? EMPTY_PRODUCTS,
+        [apiProductsData],
+    )
 
     /**
      * Transform WithdrawOrderDetailsProduct[] to ProductStockItem[] for use in ScannerComboboxSection

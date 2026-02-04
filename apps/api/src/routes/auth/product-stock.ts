@@ -4,7 +4,7 @@ import { and, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { ApiEnv } from '../../context';
-import { productStockData } from '../../constants';
+import { MAIN_ACCOUNT_EMAIL, productStockData } from '../../constants';
 import { db } from '../../db/index';
 import * as schemas from '../../db/schema';
 import {
@@ -1219,6 +1219,254 @@ const productStockRoutes = new Hono<ApiEnv>()
 	}
 })
 /**
+ * POST /purge-non-cedis - Physically delete non-CEDIS product stock and related records
+ *
+ * This endpoint removes all product stock assigned to non-CEDIS warehouses or their cabinets.
+ * It also purges dependent records (usage history, kit details, transfer details, withdraw order details)
+ * and recomputes parent summary counts to keep aggregates consistent.
+ *
+ * Access is restricted to the main account email configured in MAIN_ACCOUNT_EMAIL.
+ *
+ * @returns {ApiResponse} Success response with deletion and update counts
+ * @throws {401} Authentication required
+ * @throws {403} Forbidden for non-main accounts
+ * @throws {500} Unexpected database error
+ */
+.post('/purge-non-cedis', async (c) => {
+	try {
+		const user = c.get('user');
+		if (!user) {
+			return c.json(
+				{
+					success: false,
+					message: 'Authentication required',
+				} satisfies ApiResponse,
+				401,
+			);
+		}
+
+		const normalizedEmail =
+			typeof user.email === 'string' ? user.email.trim().toLowerCase() : '';
+		if (normalizedEmail !== MAIN_ACCOUNT_EMAIL) {
+			return c.json(
+				{
+					success: false,
+					message: 'Forbidden - insufficient permissions',
+				} satisfies ApiResponse,
+				403,
+			);
+		}
+
+		const nonCedisWarehouses = await db
+			.select({ id: schemas.warehouse.id })
+			.from(schemas.warehouse)
+			.where(eq(schemas.warehouse.isCedis, false));
+
+		const nonCedisWarehouseIds = nonCedisWarehouses.map((warehouse) => warehouse.id);
+
+		if (nonCedisWarehouseIds.length === 0) {
+			return c.json(
+				{
+					success: true,
+					message: 'No non-CEDIS warehouses found',
+					data: {
+						productStockDeleted: 0,
+						usageHistoryDeleted: 0,
+						transferDetailsDeleted: 0,
+						kitDetailsDeleted: 0,
+						withdrawOrderDetailsDeleted: 0,
+						kitsUpdated: 0,
+						transfersUpdated: 0,
+						withdrawOrdersUpdated: 0,
+					},
+				} satisfies ApiResponse,
+				200,
+			);
+		}
+
+		const nonCedisCabinets = await db
+			.select({ id: schemas.cabinetWarehouse.id })
+			.from(schemas.cabinetWarehouse)
+			.where(inArray(schemas.cabinetWarehouse.warehouseId, nonCedisWarehouseIds));
+
+		const nonCedisCabinetIds = nonCedisCabinets.map((cabinet) => cabinet.id);
+
+		const productStockConditions = [
+			inArray(schemas.productStock.currentWarehouse, nonCedisWarehouseIds),
+		];
+		if (nonCedisCabinetIds.length > 0) {
+			productStockConditions.push(
+				inArray(schemas.productStock.currentCabinet, nonCedisCabinetIds),
+			);
+		}
+
+		const productStockWhere =
+			productStockConditions.length === 1
+				? productStockConditions[0]
+				: or(...productStockConditions);
+
+		const productStockRows = await db
+			.select({ id: schemas.productStock.id })
+			.from(schemas.productStock)
+			.where(productStockWhere);
+
+		const productStockIds = productStockRows.map((row) => row.id);
+
+		if (productStockIds.length === 0) {
+			return c.json(
+				{
+					success: true,
+					message: 'No non-CEDIS product stock found',
+					data: {
+						productStockDeleted: 0,
+						usageHistoryDeleted: 0,
+						transferDetailsDeleted: 0,
+						kitDetailsDeleted: 0,
+						withdrawOrderDetailsDeleted: 0,
+						kitsUpdated: 0,
+						transfersUpdated: 0,
+						withdrawOrdersUpdated: 0,
+					},
+				} satisfies ApiResponse,
+				200,
+			);
+		}
+
+		const result = await db.transaction(async (tx) => {
+			const kitIdRows = await tx
+				.select({ kitId: schemas.kitsDetails.kitId })
+				.from(schemas.kitsDetails)
+				.where(inArray(schemas.kitsDetails.productId, productStockIds));
+			const transferIdRows = await tx
+				.select({ transferId: schemas.warehouseTransferDetails.transferId })
+				.from(schemas.warehouseTransferDetails)
+				.where(
+					inArray(schemas.warehouseTransferDetails.productStockId, productStockIds),
+				);
+			const withdrawOrderIdRows = await tx
+				.select({ withdrawOrderId: schemas.withdrawOrderDetails.withdrawOrderId })
+				.from(schemas.withdrawOrderDetails)
+				.where(inArray(schemas.withdrawOrderDetails.productId, productStockIds));
+
+			const kitIds = Array.from(
+				new Set(kitIdRows.map((row) => row.kitId).filter(Boolean)),
+			);
+			const transferIds = Array.from(
+				new Set(transferIdRows.map((row) => row.transferId).filter(Boolean)),
+			);
+			const withdrawOrderIds = Array.from(
+				new Set(
+					withdrawOrderIdRows
+						.map((row) => row.withdrawOrderId)
+						.filter(
+							(withdrawOrderId): withdrawOrderId is string =>
+								typeof withdrawOrderId === 'string' && withdrawOrderId.length > 0,
+						),
+				),
+			);
+
+			const usageHistoryDeleted = await tx
+				.delete(schemas.productStockUsageHistory)
+				.where(inArray(schemas.productStockUsageHistory.productStockId, productStockIds))
+				.returning({ id: schemas.productStockUsageHistory.id });
+
+			const transferDetailsDeleted = await tx
+				.delete(schemas.warehouseTransferDetails)
+				.where(
+					inArray(schemas.warehouseTransferDetails.productStockId, productStockIds),
+				)
+				.returning({ id: schemas.warehouseTransferDetails.id });
+
+			const kitDetailsDeleted = await tx
+				.delete(schemas.kitsDetails)
+				.where(inArray(schemas.kitsDetails.productId, productStockIds))
+				.returning({ id: schemas.kitsDetails.id });
+
+			const withdrawOrderDetailsDeleted = await tx
+				.delete(schemas.withdrawOrderDetails)
+				.where(inArray(schemas.withdrawOrderDetails.productId, productStockIds))
+				.returning({ id: schemas.withdrawOrderDetails.id });
+
+			const productStockDeleted = await tx
+				.delete(schemas.productStock)
+				.where(inArray(schemas.productStock.id, productStockIds))
+				.returning({ id: schemas.productStock.id });
+
+			await Promise.all(
+				kitIds.map(async (kitId) => {
+					const [{ total }] = await tx
+						.select({ total: sql<number>`count(*)` })
+						.from(schemas.kitsDetails)
+						.where(eq(schemas.kitsDetails.kitId, kitId));
+					await tx
+						.update(schemas.kits)
+						.set({ numProducts: total ?? 0 })
+						.where(eq(schemas.kits.id, kitId));
+				}),
+			);
+
+			await Promise.all(
+				transferIds.map(async (transferId) => {
+					const [{ total }] = await tx
+						.select({ total: sql<number>`count(*)` })
+						.from(schemas.warehouseTransferDetails)
+						.where(eq(schemas.warehouseTransferDetails.transferId, transferId));
+					await tx
+						.update(schemas.warehouseTransfer)
+						.set({ totalItems: total ?? 0 })
+						.where(eq(schemas.warehouseTransfer.id, transferId));
+				}),
+			);
+
+			await Promise.all(
+				withdrawOrderIds.map(async (withdrawOrderId) => {
+					const [{ total }] = await tx
+						.select({ total: sql<number>`count(*)` })
+						.from(schemas.withdrawOrderDetails)
+						.where(
+							eq(schemas.withdrawOrderDetails.withdrawOrderId, withdrawOrderId),
+						);
+					await tx
+						.update(schemas.withdrawOrder)
+						.set({ numItems: total ?? 0 })
+						.where(eq(schemas.withdrawOrder.id, withdrawOrderId));
+				}),
+			);
+
+			return {
+				productStockDeleted: productStockDeleted.length,
+				usageHistoryDeleted: usageHistoryDeleted.length,
+				transferDetailsDeleted: transferDetailsDeleted.length,
+				kitDetailsDeleted: kitDetailsDeleted.length,
+				withdrawOrderDetailsDeleted: withdrawOrderDetailsDeleted.length,
+				kitsUpdated: kitIds.length,
+				transfersUpdated: transferIds.length,
+				withdrawOrdersUpdated: withdrawOrderIds.length,
+			};
+		});
+
+		return c.json(
+			{
+				success: true,
+				message: 'Non-CEDIS product stock purged successfully',
+				data: result,
+			} satisfies ApiResponse,
+			200,
+		);
+	} catch (error) {
+		// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
+		console.error('Error purging non-CEDIS product stock:', error);
+
+		return c.json(
+			{
+				success: false,
+				message: 'Failed to purge non-CEDIS product stock',
+			} satisfies ApiResponse,
+			500,
+		);
+	}
+})
+/**
  * GET /deleted-and-empty - Retrieve product stock that are deleted or empty
  *
  * This endpoint fetches all product stock records from the database where either
@@ -1351,5 +1599,3 @@ const productStockRoutes = new Hono<ApiEnv>()
 	},
 );
 export { productStockRoutes };
-
-

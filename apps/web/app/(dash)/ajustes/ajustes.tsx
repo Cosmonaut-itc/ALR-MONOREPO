@@ -65,6 +65,7 @@ import { queryKeys } from "@/lib/query-keys";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth-store";
 import { useDeleteUserMutation } from "@/lib/mutations/auth";
+import { usePurgeNonCedisProductStock } from "@/lib/mutations/inventory";
 
 /**
  * Type definition for user data from the API
@@ -175,13 +176,26 @@ const ForbiddenCard = ({ title, description }: ForbiddenCardProps) => (
  * @param role - Current user's role; used to determine whether the update-user form is accessible
  * @returns The AjustesPage JSX element
  */
-export function AjustesPage({ role }: { role: string }) {
+export function AjustesPage({
+	role,
+	userEmail,
+}: {
+	role: string;
+	userEmail: string;
+}) {
 	const router = useRouter();
 	const normalizedRole =
 		typeof role === "string" ? role.toLowerCase() : String(role ?? "");
 	const isEncargado = normalizedRole === "encargado";
 	const isEmployee = normalizedRole === "employee";
 	const user = useAuthStore((s) => s.user);
+	const normalizedEmail =
+		typeof userEmail === "string" ? userEmail.trim().toLowerCase() : "";
+	const storeEmail =
+		typeof user?.email === "string" ? user.email.trim().toLowerCase() : "";
+	const isMainAccount =
+		normalizedEmail === "felixddhs@outlook.com" ||
+		storeEmail === "felixddhs@outlook.com";
 	const warehouseId = user?.warehouseId ?? "";
 	const employeeWarehouseId = isEmployee ? warehouseId.trim() : "";
 
@@ -238,6 +252,7 @@ const warehouses =
 
 	const [deleteUserId, setDeleteUserId] = useState<string>("");
 	const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+	const [isPurgeDialogOpen, setIsPurgeDialogOpen] = useState(false);
 	const employees = useMemo<EmployeeData[]>(() => {
 		if (employeesResponse && "data" in employeesResponse) {
 			return (employeesResponse.data || []).map(
@@ -354,6 +369,10 @@ const warehouses =
 	const { mutateAsync: createEmployee, isPending: isCreatingEmployee } =
 		useCreateEmployee();
 	const {
+		mutateAsync: purgeNonCedisProductStock,
+		isPending: isPurgingNonCedis,
+	} = usePurgeNonCedisProductStock();
+	const {
 		mutateAsync: updateWarehouseAltegioConfig,
 		isPending: isUpdatingAltegioConfig,
 	} = useUpdateWarehouseAltegioConfigMutation();
@@ -459,6 +478,15 @@ const warehouses =
 			if (error instanceof Error) {
 				toast.error(error.message);
 			}
+		}
+	};
+
+	const handlePurgeNonCedis = async () => {
+		try {
+			await purgeNonCedisProductStock();
+			setIsPurgeDialogOpen(false);
+		} catch {
+			// Error handling is done in the mutation hook
 		}
 	};
 
@@ -677,10 +705,18 @@ const warehouses =
 				</div>
 
 				<Tabs className="w-full" defaultValue="users">
-					<TabsList className="grid w-full grid-cols-3">
+					<TabsList
+						className={cn(
+							"grid w-full",
+							isMainAccount ? "grid-cols-4" : "grid-cols-3",
+						)}
+					>
 						<TabsTrigger value="users">Usuarios</TabsTrigger>
 						<TabsTrigger value="warehouses">Bodegas</TabsTrigger>
 						<TabsTrigger value="employees">Empleadas</TabsTrigger>
+						{isMainAccount ? (
+							<TabsTrigger value="maintenance">Mantenimiento</TabsTrigger>
+						) : null}
 					</TabsList>
 
 					{/* Users Tab */}
@@ -1138,6 +1174,65 @@ const warehouses =
 						/>
 					)}
 					</TabsContent>
+
+					{isMainAccount ? (
+						<TabsContent className="space-y-6" value="maintenance">
+							<Card className="card-transition border-red-200 bg-white dark:border-red-900/50 dark:bg-[#1E1F20]">
+								<CardHeader>
+									<CardTitle className="text-[#11181C] dark:text-[#ECEDEE]">
+										Purgar stock no-CEDIS
+									</CardTitle>
+									<CardDescription className="text-[#B91C1C] dark:text-[#FCA5A5]">
+										Esta acción elimina físicamente todo el stock que NO está en
+										CEDIS. También se borrarán transferencias, kits, historial de
+										uso y órdenes de retiro relacionados con esos registros.
+									</CardDescription>
+								</CardHeader>
+								<CardContent className="space-y-4">
+									<Button
+										className="bg-red-600 text-white hover:bg-red-700"
+										disabled={isPurgingNonCedis}
+										onClick={() => setIsPurgeDialogOpen(true)}
+										type="button"
+									>
+										{isPurgingNonCedis
+											? "Purgando..."
+											: "Purgar stock no-CEDIS"}
+									</Button>
+
+									<Dialog
+										open={isPurgeDialogOpen}
+										onOpenChange={setIsPurgeDialogOpen}
+									>
+										<DialogContent>
+											<DialogHeader>
+												<DialogTitle>Confirmar purga</DialogTitle>
+												<DialogDescription>
+													Esta acción no se puede deshacer. Se eliminará el stock
+													no-CEDIS y sus registros relacionados.
+												</DialogDescription>
+											</DialogHeader>
+											<DialogFooter>
+												<Button
+													onClick={() => setIsPurgeDialogOpen(false)}
+													variant="outline"
+												>
+													Cancelar
+												</Button>
+												<Button
+													className="bg-red-600 text-white hover:bg-red-700"
+													disabled={isPurgingNonCedis}
+													onClick={handlePurgeNonCedis}
+												>
+													Confirmar purga
+												</Button>
+											</DialogFooter>
+										</DialogContent>
+									</Dialog>
+								</CardContent>
+							</Card>
+						</TabsContent>
+					) : null}
 
 					{/* Warehouses Tab */}
 					<TabsContent className="space-y-6" value="warehouses">

@@ -35,6 +35,7 @@ export default async function SettingsPage() {
 	const queryClient = getQueryClient();
 	const auth = await getServerAuth();
 	const role = auth.user?.role ?? "";
+	const userEmail = auth.user?.email ?? "";
 	const warehouseId = auth.user?.warehouseId;
 	const isEncargado = role === "encargado";
 	const employeesQueryParams = [isEncargado ? "all" : warehouseId];
@@ -84,7 +85,7 @@ export default async function SettingsPage() {
 	return (
 		<HydrationBoundary state={dehydrate(queryClient)}>
 			<GenericBoundaryWrapper fallbackComponent={<SkeletonAjustesPage />}>
-				<AjustesPage role={role} />
+				<AjustesPage role={role} userEmail={userEmail} />
 			</GenericBoundaryWrapper>
 		</HydrationBoundary>
 	);
