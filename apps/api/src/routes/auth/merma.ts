@@ -57,6 +57,11 @@ type ParsedRange = {
 	end: Date;
 };
 
+type WriteoffConflict = {
+	type: 'writeoff_conflict';
+	productIds: string[];
+};
+
 function parseDateRange(startRaw: string, endRaw: string): ParsedRange | null {
 	const start = new Date(startRaw);
 	const end = new Date(endRaw);
@@ -157,6 +162,14 @@ function decodeCursor(
 	}
 }
 
+function isWriteoffConflict(error: unknown): error is WriteoffConflict {
+	if (!(typeof error === 'object' && error !== null)) {
+		return false;
+	}
+	const candidate = error as Partial<WriteoffConflict>;
+	return candidate.type === 'writeoff_conflict' && Array.isArray(candidate.productIds);
+}
+
 const mermaRoutes = new Hono<ApiEnv>()
 	.post('/writeoffs', zValidator('json', writeoffSchema), async (c) => {
 		const user = c.get('user');
@@ -217,34 +230,6 @@ const mermaRoutes = new Hono<ApiEnv>()
 			);
 		}
 
-		const duplicatedEvents = await db
-			.select({
-				productStockId: schemas.inventoryShrinkageEvent.productStockId,
-			})
-			.from(schemas.inventoryShrinkageEvent)
-			.where(
-				and(
-					eq(schemas.inventoryShrinkageEvent.source, 'manual'),
-					eq(schemas.inventoryShrinkageEvent.reason, reason),
-					inArray(schemas.inventoryShrinkageEvent.productStockId, uniqueProductIds),
-				),
-			);
-
-		if (duplicatedEvents.length > 0) {
-			return c.json(
-				{
-					success: false,
-					message: 'A write-off event already exists for one or more products with the same reason',
-					data: {
-						productIds: duplicatedEvents
-							.map((event) => event.productStockId)
-							.filter((id): id is string => Boolean(id)),
-					},
-				} satisfies ApiResponse,
-				409,
-			);
-		}
-
 		const employeeRows = await db
 			.select({ id: schemas.employee.id })
 			.from(schemas.employee)
@@ -252,62 +237,96 @@ const mermaRoutes = new Hono<ApiEnv>()
 			.limit(1);
 		const employeeId = employeeRows[0]?.id;
 
-		const createdEvents = await db.transaction(async (tx) => {
-			if (reason === 'consumido') {
-				await tx
-					.update(schemas.productStock)
-					.set({
-						isEmpty: true,
-						isBeingUsed: false,
-					})
-					.where(inArray(schemas.productStock.id, uniqueProductIds));
-			} else {
-				await tx
-					.update(schemas.productStock)
-					.set({
-						isDeleted: true,
-						isBeingUsed: false,
-					})
-					.where(inArray(schemas.productStock.id, uniqueProductIds));
-			}
+		let createdEvents: Array<{ id: string }> = [];
+		try {
+			createdEvents = await db.transaction(async (tx) => {
+				const insertedEvents = await tx
+					.insert(schemas.inventoryShrinkageEvent)
+					.values(
+						products.map((product) => ({
+							source: 'manual',
+							reason,
+							quantity: 1,
+							notes: normalizedNotes ?? null,
+							warehouseId: product.currentWarehouse,
+							productStockId: product.id,
+							productBarcode: product.barcode,
+							productDescription: product.description,
+							createdByUserId: user.id,
+						})),
+					)
+					.onConflictDoNothing()
+					.returning({
+						id: schemas.inventoryShrinkageEvent.id,
+						productStockId: schemas.inventoryShrinkageEvent.productStockId,
+					});
 
-			const insertedEvents = await tx
-				.insert(schemas.inventoryShrinkageEvent)
-				.values(
+				if (insertedEvents.length !== products.length) {
+					const insertedProductIds = new Set(
+						insertedEvents
+							.map((event) => event.productStockId)
+							.filter((id): id is string => Boolean(id)),
+					);
+					throw {
+						type: 'writeoff_conflict',
+						productIds: products
+							.map((product) => product.id)
+							.filter((id) => !insertedProductIds.has(id)),
+					} satisfies WriteoffConflict;
+				}
+
+				if (reason === 'consumido') {
+					await tx
+						.update(schemas.productStock)
+						.set({
+							isEmpty: true,
+							isBeingUsed: false,
+						})
+						.where(inArray(schemas.productStock.id, uniqueProductIds));
+				} else {
+					await tx
+						.update(schemas.productStock)
+						.set({
+							isDeleted: true,
+							isBeingUsed: false,
+						})
+						.where(inArray(schemas.productStock.id, uniqueProductIds));
+				}
+
+				await tx.insert(schemas.productStockUsageHistory).values(
 					products.map((product) => ({
-						source: 'manual',
-						reason,
-						quantity: 1,
-						notes: normalizedNotes ?? null,
-						warehouseId: product.currentWarehouse,
 						productStockId: product.id,
-						productBarcode: product.barcode,
-						productDescription: product.description,
-						createdByUserId: user.id,
+						employeeId: employeeId ?? null,
+						userId: user.id,
+						warehouseId: product.currentWarehouse,
+						movementType: 'other',
+						action: 'checkout',
+						notes: normalizedNotes
+							? `Merma manual (${reason}): ${normalizedNotes}`
+							: `Merma manual (${reason})`,
+						usageDate: new Date(),
+						previousWarehouseId: product.currentWarehouse,
 					})),
-				)
-				.returning({
-					id: schemas.inventoryShrinkageEvent.id,
-				});
+				);
 
-			await tx.insert(schemas.productStockUsageHistory).values(
-				products.map((product) => ({
-					productStockId: product.id,
-					employeeId: employeeId ?? null,
-					userId: user.id,
-					warehouseId: product.currentWarehouse,
-					movementType: 'other',
-					action: 'checkout',
-					notes: normalizedNotes
-						? `Merma manual (${reason}): ${normalizedNotes}`
-						: `Merma manual (${reason})`,
-					usageDate: new Date(),
-					previousWarehouseId: product.currentWarehouse,
-				})),
-			);
-
-			return insertedEvents;
-		});
+				return insertedEvents.map((event) => ({ id: event.id }));
+			});
+		} catch (error) {
+			if (isWriteoffConflict(error)) {
+				return c.json(
+					{
+						success: false,
+						message:
+							'A write-off event already exists for one or more products with the same reason',
+						data: {
+							productIds: error.productIds,
+						},
+					} satisfies ApiResponse,
+					409,
+				);
+			}
+			throw error;
+		}
 
 		return c.json(
 			{
@@ -960,7 +979,6 @@ const mermaRoutes = new Hono<ApiEnv>()
 					sourceWarehouseId: schemas.warehouseTransfer.sourceWarehouseId,
 					sent: sql<number>`COALESCE(SUM(${schemas.warehouseTransferDetails.quantityTransferred}), 0)`,
 					received: sql<number>`COALESCE(SUM(CASE WHEN ${schemas.warehouseTransferDetails.isReceived} THEN ${schemas.warehouseTransferDetails.quantityTransferred} ELSE 0 END), 0)`,
-					missing: sql<number>`COALESCE(SUM(CASE WHEN ${schemas.warehouseTransferDetails.isReceived} THEN 0 ELSE ${schemas.warehouseTransferDetails.quantityTransferred} END), 0)`,
 				})
 				.from(schemas.warehouseTransfer)
 				.innerJoin(
@@ -983,6 +1001,31 @@ const mermaRoutes = new Hono<ApiEnv>()
 					schemas.warehouseTransfer.sourceWarehouseId,
 				)
 				.orderBy(desc(schemas.warehouseTransfer.completedDate));
+
+			const transferIds = transferRows.map((row) => row.transferId);
+			const transferMissingRows =
+				transferIds.length > 0
+					? await db
+							.select({
+								transferId: schemas.inventoryShrinkageEvent.transferId,
+								missing: sql<number>`COALESCE(SUM(${schemas.inventoryShrinkageEvent.quantity}), 0)`,
+							})
+							.from(schemas.inventoryShrinkageEvent)
+							.where(
+								and(
+									eq(schemas.inventoryShrinkageEvent.source, 'transfer_missing'),
+									gte(schemas.inventoryShrinkageEvent.createdAt, parsedRange.start),
+									lte(schemas.inventoryShrinkageEvent.createdAt, parsedRange.end),
+									inArray(schemas.inventoryShrinkageEvent.transferId, transferIds),
+								),
+							)
+							.groupBy(schemas.inventoryShrinkageEvent.transferId)
+					: [];
+			const missingByTransferId = new Map(
+				transferMissingRows
+					.filter((row) => row.transferId)
+					.map((row) => [row.transferId as string, Number(row.missing ?? 0)]),
+			);
 
 			const sourceWarehouseIds = Array.from(
 				new Set(transferRows.map((row) => row.sourceWarehouseId)),
@@ -1008,7 +1051,7 @@ const mermaRoutes = new Hono<ApiEnv>()
 					`Almacén ${row.sourceWarehouseId.slice(0, 6)}`,
 				sent: Number(row.sent ?? 0),
 				received: Number(row.received ?? 0),
-				missing: Number(row.missing ?? 0),
+				missing: Number(missingByTransferId.get(row.transferId) ?? 0),
 			}));
 
 			return c.json(

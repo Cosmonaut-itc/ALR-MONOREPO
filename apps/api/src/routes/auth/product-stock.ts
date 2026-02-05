@@ -503,8 +503,8 @@ const productStockRoutes = new Hono<ApiEnv>()
 			cabinetId: z.string().uuid('Invalid cabinet ID'),
 			lastUsedBy: z.string(),
 		}),
-	),
-	async (c) => {
+		),
+		async (c) => {
 		try {
 			const { cabinetId, lastUsedBy } = c.req.valid('query');
 
@@ -1568,93 +1568,102 @@ const productStockRoutes = new Hono<ApiEnv>()
 				.describe('Array of product stock UUIDs to mark as empty'),
 		}),
 	),
-	async (c) => {
-		try {
-			const { productIds } = c.req.valid('json');
-			const user = c.get('user');
-			const uniqueProductIds = Array.from(new Set(productIds));
+		async (c) => {
+			try {
+				const { productIds } = c.req.valid('json');
+				const user = c.get('user');
+				if (!user) {
+					return c.json(
+						{
+							success: false,
+							message: 'Authentication required',
+						} satisfies ApiResponse,
+						401,
+					);
+				}
+				const uniqueProductIds = Array.from(new Set(productIds));
 
-			const existingProducts = await db
-				.select({
-					id: schemas.productStock.id,
-					barcode: schemas.productStock.barcode,
-					description: schemas.productStock.description,
-					currentWarehouse: schemas.productStock.currentWarehouse,
-					isEmpty: schemas.productStock.isEmpty,
-				})
-				.from(schemas.productStock)
-				.where(inArray(schemas.productStock.id, uniqueProductIds));
+				const existingProducts = await db
+					.select({
+						id: schemas.productStock.id,
+						barcode: schemas.productStock.barcode,
+						description: schemas.productStock.description,
+						currentWarehouse: schemas.productStock.currentWarehouse,
+						isEmpty: schemas.productStock.isEmpty,
+					})
+					.from(schemas.productStock)
+					.where(inArray(schemas.productStock.id, uniqueProductIds));
 
-			if (existingProducts.length === 0) {
+				if (existingProducts.length === 0) {
+					return c.json(
+						{
+							success: false,
+							message: 'No products found with the provided IDs',
+						} satisfies ApiResponse,
+						404,
+					);
+				}
+
+				const productsToUpdate = existingProducts.filter((product) => !product.isEmpty);
+				const productIdsToUpdate = productsToUpdate.map((product) => product.id);
+
+				let updatedProducts: Array<{ id: string }> = [];
+				if (productIdsToUpdate.length > 0) {
+					// Update isEmpty field to true for products that were not empty yet.
+					updatedProducts = await db
+						.update(schemas.productStock)
+						.set({
+							isEmpty: true,
+							isBeingUsed: false,
+						})
+						.where(inArray(schemas.productStock.id, productIdsToUpdate))
+						.returning({ id: schemas.productStock.id });
+				}
+
+				// Legacy compatibility: create manual shrinkage events only for state transitions.
+				if (productsToUpdate.length > 0) {
+					await db
+						.insert(schemas.inventoryShrinkageEvent)
+						.values(
+							productsToUpdate.map((product) => ({
+								source: 'manual',
+								reason: 'consumido',
+								quantity: 1,
+								notes: buildLegacyShrinkageNote('empty'),
+								warehouseId: product.currentWarehouse,
+								productStockId: product.id,
+								productBarcode: product.barcode,
+								productDescription: product.description,
+								createdByUserId: user.id,
+							})),
+						)
+						.onConflictDoNothing();
+				}
+
+				return c.json(
+					{
+						success: true,
+						message: `Successfully marked ${updatedProducts.length} product(s) as empty`,
+						data: {
+							updatedCount: updatedProducts.length,
+							productIds: updatedProducts.map((p) => p.id),
+							skippedCount: existingProducts.length - updatedProducts.length,
+						},
+					} satisfies ApiResponse,
+					200,
+				);
+			} catch (error) {
+				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
+				console.error('Error updating product stock isEmpty field:', error);
+
 				return c.json(
 					{
 						success: false,
-						message: 'No products found with the provided IDs',
+						message: 'Failed to update product stock isEmpty field',
 					} satisfies ApiResponse,
-					404,
+					500,
 				);
 			}
-
-			const productsToUpdate = existingProducts.filter((product) => !product.isEmpty);
-			const productIdsToUpdate = productsToUpdate.map((product) => product.id);
-
-			let updatedProducts: Array<{ id: string }> = [];
-			if (productIdsToUpdate.length > 0) {
-				// Update isEmpty field to true for products that were not empty yet.
-				updatedProducts = await db
-					.update(schemas.productStock)
-					.set({
-						isEmpty: true,
-						isBeingUsed: false,
-					})
-					.where(inArray(schemas.productStock.id, productIdsToUpdate))
-					.returning({ id: schemas.productStock.id });
-			}
-
-			// Legacy compatibility: create manual shrinkage events only for state transitions.
-			if (productsToUpdate.length > 0) {
-				await db
-					.insert(schemas.inventoryShrinkageEvent)
-					.values(
-						productsToUpdate.map((product) => ({
-							source: 'manual',
-							reason: 'consumido',
-							quantity: 1,
-							notes: buildLegacyShrinkageNote('empty'),
-							warehouseId: product.currentWarehouse,
-							productStockId: product.id,
-							productBarcode: product.barcode,
-							productDescription: product.description,
-							createdByUserId: user?.id ?? null,
-						})),
-					)
-					.onConflictDoNothing();
-			}
-
-			return c.json(
-				{
-					success: true,
-					message: `Successfully marked ${updatedProducts.length} product(s) as empty`,
-					data: {
-						updatedCount: updatedProducts.length,
-						productIds: updatedProducts.map((p) => p.id),
-						skippedCount: existingProducts.length - updatedProducts.length,
-					},
-				} satisfies ApiResponse,
-				200,
-			);
-		} catch (error) {
-			// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
-			console.error('Error updating product stock isEmpty field:', error);
-
-			return c.json(
-				{
-					success: false,
-					message: 'Failed to update product stock isEmpty field',
-				} satisfies ApiResponse,
-				500,
-			);
-		}
-	},
-);
+		},
+	);
 export { productStockRoutes };

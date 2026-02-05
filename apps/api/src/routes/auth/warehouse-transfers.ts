@@ -992,7 +992,7 @@ const warehouseTransfersRoutes = new Hono<ApiEnv>()
 									destinationWarehouseId: transferRow.destinationWarehouseId,
 									createdByUserId: sessionUser.id,
 								})),
-							);
+							).onConflictDoNothing();
 						}
 					}
 
