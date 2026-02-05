@@ -12,4 +12,7 @@ export const queryKeys = {
 	unfulfilledProducts: ["unfulfilledProducts"],
 	stockLimits: ["stockLimits"],
 	deletedAndEmptyProductStock: ["deletedAndEmptyProductStock"],
+	mermaWriteoffsSummary: ["mermaWriteoffsSummary"],
+	mermaWriteoffsEvents: ["mermaWriteoffsEvents"],
+	mermaMissingTransfersSummary: ["mermaMissingTransfersSummary"],
 };

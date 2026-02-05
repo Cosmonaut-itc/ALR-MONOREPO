@@ -1,11 +1,13 @@
 {
   "$schema": "https://turborepo.dev/schema.v2.json",
+  "globalEnv": ["DATABASE_URL", "DATABASE_URL_TEST"],
   "tasks": {
     "dev": {
       "cache": false,
       "persistent": true
     },
     "lint": {},
-    "typecheck": {}
+    "typecheck": {},
+    "test": {}
   }
 }

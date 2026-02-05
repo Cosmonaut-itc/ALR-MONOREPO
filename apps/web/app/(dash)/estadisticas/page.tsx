@@ -12,6 +12,10 @@ import {
 	fetchDeletedAndEmptyProductStockServer,
 } from "@/lib/server-functions/inventory";
 import { fetchAllKitsServer } from "@/lib/server-functions/kits";
+import {
+	fetchMermaMissingTransfersSummaryServer,
+	fetchMermaWriteoffsSummaryServer,
+} from "@/lib/server-functions/merma";
 import { fetchWarehouseTrasnferAll } from "@/lib/server-functions/recepciones";
 import {
 	fetchReplenishmentOrdersServer,
@@ -38,6 +42,10 @@ export default async function Page() {
 
 	const warehouseId = auth.user?.warehouseId ?? null;
 	const isEncargado = role === "encargado";
+	const mermaRangeEnd = new Date();
+	const mermaRangeStart = new Date();
+	mermaRangeStart.setDate(mermaRangeEnd.getDate() - 30);
+	const mermaScope = role === "admin" ? "global" : "warehouse";
 
 	try {
 		const prefetches: Array<Promise<unknown>> = [];
@@ -146,6 +154,46 @@ export default async function Page() {
 			queryClient.prefetchQuery({
 				queryKey: createQueryKey(queryKeys.deletedAndEmptyProductStock, ["all"]),
 				queryFn: fetchDeletedAndEmptyProductStockServer,
+			}),
+		);
+
+		prefetches.push(
+			queryClient.prefetchQuery({
+				queryKey: createQueryKey(queryKeys.mermaWriteoffsSummary, [
+					mermaScope,
+					mermaScope === "warehouse" ? (warehouseId ?? "none") : "all",
+					mermaRangeStart.toISOString(),
+					mermaRangeEnd.toISOString(),
+				]),
+				queryFn: () =>
+					fetchMermaWriteoffsSummaryServer({
+						start: mermaRangeStart.toISOString(),
+						end: mermaRangeEnd.toISOString(),
+						scope: mermaScope,
+						...(mermaScope === "warehouse" && warehouseId
+							? { warehouseId }
+							: {}),
+					}),
+			}),
+		);
+
+		prefetches.push(
+			queryClient.prefetchQuery({
+				queryKey: createQueryKey(queryKeys.mermaMissingTransfersSummary, [
+					mermaScope,
+					mermaScope === "warehouse" ? (warehouseId ?? "none") : "all",
+					mermaRangeStart.toISOString(),
+					mermaRangeEnd.toISOString(),
+				]),
+				queryFn: () =>
+					fetchMermaMissingTransfersSummaryServer({
+						start: mermaRangeStart.toISOString(),
+						end: mermaRangeEnd.toISOString(),
+						scope: mermaScope,
+						...(mermaScope === "warehouse" && warehouseId
+							? { warehouseId }
+							: {}),
+					}),
 			}),
 		);
 

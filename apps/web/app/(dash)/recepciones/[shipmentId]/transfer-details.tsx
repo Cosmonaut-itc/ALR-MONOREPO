@@ -182,7 +182,7 @@ export function ReceptionDetailPage({
 			: null;
 	}, [transferDetails]);
 	const canReceiveTransfer =
-		isEncargado ||
+		user?.role === "admin" ||
 		(warehouseId &&
 			generalTransferDetails?.destinationWarehouseId === warehouseId);
 

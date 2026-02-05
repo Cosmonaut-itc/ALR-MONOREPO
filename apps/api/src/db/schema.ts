@@ -567,6 +567,72 @@ export const productStockUsageHistory = pgTable('product_stock_usage_history', {
 		.notNull(),
 });
 
+/**
+ * Inventory shrinkage event table for immutable audit and analytics.
+ * Tracks both manual write-offs and missing items detected on completed transfers.
+ */
+export const inventoryShrinkageEvent = pgTable(
+	'inventory_shrinkage_event',
+	{
+		id: uuid('id').default(sql`gen_random_uuid()`).notNull().primaryKey(),
+		createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+		source: text('source').notNull(), // manual | transfer_missing
+		reason: text('reason').notNull(), // consumido | dañado | otro
+		quantity: integer('quantity').default(1).notNull(),
+		notes: text('notes'),
+		warehouseId: uuid('warehouse_id')
+			.notNull()
+			.references(() => warehouse.id, {
+				onUpdate: 'cascade',
+				onDelete: 'restrict',
+			}),
+		productStockId: uuid('product_stock_id').references(() => productStock.id, {
+			onUpdate: 'cascade',
+			onDelete: 'set null',
+		}),
+		productBarcode: bigint('product_barcode', { mode: 'number' }).notNull(),
+		productDescription: text('product_description'),
+		transferId: uuid('transfer_id').references(() => warehouseTransfer.id, {
+			onUpdate: 'cascade',
+			onDelete: 'set null',
+		}),
+		transferNumber: text('transfer_number'),
+		sourceWarehouseId: uuid('source_warehouse_id').references(() => warehouse.id, {
+			onUpdate: 'cascade',
+			onDelete: 'set null',
+		}),
+		destinationWarehouseId: uuid('destination_warehouse_id').references(() => warehouse.id, {
+			onUpdate: 'cascade',
+			onDelete: 'set null',
+		}),
+		createdByUserId: text('created_by_user_id').references(() => user.id, {
+			onUpdate: 'cascade',
+			onDelete: 'set null',
+		}),
+	},
+	(table) => ({
+		createdAtIdx: index('idx_shrinkage_created_at').on(table.createdAt),
+		warehouseCreatedAtIdx: index('idx_shrinkage_warehouse_created_at').on(
+			table.warehouseId,
+			table.createdAt,
+		),
+		sourceCreatedAtIdx: index('idx_shrinkage_source_created_at').on(
+			table.source,
+			table.createdAt,
+		),
+		reasonCreatedAtIdx: index('idx_shrinkage_reason_created_at').on(
+			table.reason,
+			table.createdAt,
+		),
+		transferIdIdx: index('idx_shrinkage_transfer_id').on(table.transferId),
+		productSourceReasonUnique: uniqueIndex(
+			'inventory_shrinkage_event_product_source_reason_unique',
+		)
+			.on(table.productStockId, table.source, table.reason)
+			.where(sql`${table.productStockId} IS NOT NULL`),
+	}),
+);
+
 // Relations
 export const withdrawOrderRelations = relations(withdrawOrder, ({ many }) => ({
 	details: many(withdrawOrderDetails),
@@ -630,6 +696,18 @@ export const warehouseRelations = relations(warehouse, ({ one, many }) => ({
 	usageHistoryAsNew: many(productStockUsageHistory, {
 		relationName: 'newWarehouse',
 	}),
+	// Shrinkage events attributed to this warehouse
+	shrinkageEvents: many(inventoryShrinkageEvent, {
+		relationName: 'shrinkageWarehouse',
+	}),
+	// Shrinkage events where this was the source warehouse
+	shrinkageEventsAsSource: many(inventoryShrinkageEvent, {
+		relationName: 'shrinkageSourceWarehouse',
+	}),
+	// Shrinkage events where this was the destination warehouse
+	shrinkageEventsAsDestination: many(inventoryShrinkageEvent, {
+		relationName: 'shrinkageDestinationWarehouse',
+	}),
 }));
 
 // Warehouse transfer relations
@@ -671,6 +749,8 @@ export const warehouseTransferRelations = relations(warehouseTransfer, ({ one, m
 	}),
 	// Usage history related to this transfer
 	usageHistory: many(productStockUsageHistory),
+	// Shrinkage events related to this transfer
+	shrinkageEvents: many(inventoryShrinkageEvent),
 }));
 
 export const warehouseTransferDetailsRelations = relations(warehouseTransferDetails, ({ one }) => ({
@@ -751,6 +831,8 @@ export const productStockRelations = relations(productStock, ({ one, many }) => 
 	kitDetails: many(kitsDetails),
 	// Usage history for this product
 	usageHistory: many(productStockUsageHistory),
+	// Shrinkage events for this product
+	shrinkageEvents: many(inventoryShrinkageEvent),
 }));
 
 export const stockLimitRelations = relations(stockLimit, ({ one }) => ({
@@ -835,6 +917,10 @@ export const userRelations = relations(user, ({ one, many }) => ({
 	stockLimitsCreated: many(stockLimit, {
 		relationName: 'stockLimitCreator',
 	}),
+	// Shrinkage events created by this user
+	shrinkageEventsCreated: many(inventoryShrinkageEvent, {
+		relationName: 'shrinkageCreatedByUser',
+	}),
 }));
 
 // Kits relations
@@ -904,3 +990,37 @@ export const productStockUsageHistoryRelations = relations(productStockUsageHist
 		references: [kits.id],
 	}),
 }));
+
+export const inventoryShrinkageEventRelations = relations(
+	inventoryShrinkageEvent,
+	({ one }) => ({
+		productStock: one(productStock, {
+			fields: [inventoryShrinkageEvent.productStockId],
+			references: [productStock.id],
+		}),
+		warehouse: one(warehouse, {
+			fields: [inventoryShrinkageEvent.warehouseId],
+			references: [warehouse.id],
+			relationName: 'shrinkageWarehouse',
+		}),
+		sourceWarehouse: one(warehouse, {
+			fields: [inventoryShrinkageEvent.sourceWarehouseId],
+			references: [warehouse.id],
+			relationName: 'shrinkageSourceWarehouse',
+		}),
+		destinationWarehouse: one(warehouse, {
+			fields: [inventoryShrinkageEvent.destinationWarehouseId],
+			references: [warehouse.id],
+			relationName: 'shrinkageDestinationWarehouse',
+		}),
+		transfer: one(warehouseTransfer, {
+			fields: [inventoryShrinkageEvent.transferId],
+			references: [warehouseTransfer.id],
+		}),
+		createdByUser: one(user, {
+			fields: [inventoryShrinkageEvent.createdByUserId],
+			references: [user.id],
+			relationName: 'shrinkageCreatedByUser',
+		}),
+	}),
+);

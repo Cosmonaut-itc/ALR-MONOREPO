@@ -30,6 +30,14 @@ bun run db:studio
 bun run db:generate
 ```
 
+### Testing
+Create `apps/api/.env.test` from `.env.test.example` and set `DATABASE_URL_TEST`.
+
+```sh
+# Run API integration tests against DATABASE_URL_TEST
+bun run test
+```
+
 ## Usage
 
 1. Install dependencies: `bun install`

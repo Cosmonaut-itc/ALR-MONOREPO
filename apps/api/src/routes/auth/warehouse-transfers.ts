@@ -21,7 +21,6 @@ function validateTransferStatusLogic(
 	isCompleted?: boolean,
 	isPending?: boolean,
 	isCancelled?: boolean,
-	completedBy?: string,
 ): ApiResponse | null {
 	// Transfer cannot be both completed and cancelled
 	if (isCompleted === true && isCancelled === true) {
@@ -39,14 +38,6 @@ function validateTransferStatusLogic(
 		};
 	}
 
-	// If marking as completed, completedBy is required
-	if (isCompleted === true && !completedBy) {
-		return {
-			success: false,
-			message: 'completedBy is required when marking transfer as completed',
-		};
-	}
-
 	return null; // No validation errors
 }
 
@@ -58,7 +49,7 @@ function buildTransferUpdateValues(
 	isCompleted?: boolean,
 	isPending?: boolean,
 	isCancelled?: boolean,
-	completedBy?: string,
+	completedByUserId?: string,
 	notes?: string,
 ): Record<string, unknown> {
 	const updateValues: Record<string, unknown> = {
@@ -71,7 +62,7 @@ function buildTransferUpdateValues(
 		if (isCompleted) {
 			updateValues.completedDate = new Date();
 			updateValues.isPending = false;
-			updateValues.completedBy = completedBy;
+			updateValues.completedBy = completedByUserId;
 		}
 	}
 
@@ -85,10 +76,6 @@ function buildTransferUpdateValues(
 		if (isCancelled) {
 			updateValues.isPending = false;
 		}
-	}
-
-	if (completedBy !== undefined && !updateValues.completedBy) {
-		updateValues.completedBy = completedBy;
 	}
 
 	if (notes !== undefined) {
@@ -698,50 +685,53 @@ const warehouseTransfersRoutes = new Hono<ApiEnv>()
 					}),
 				)
 				.optional(),
-		}),
-	),
-	async (c) => {
-		try {
-			const {
-				transferId,
-				isCompleted,
-				isPending,
-				isCancelled,
-				completedBy,
-				notes,
-				replicateToAltegio,
-				altegioTotals,
-			} = c.req.valid('json');
+			}),
+		),
+		async (c) => {
+			try {
+				const sessionUser = c.get('user');
+				if (!sessionUser) {
+					return c.json(
+						{
+							success: false,
+							message: 'Authentication required',
+						} satisfies ApiResponse,
+						401,
+					);
+				}
 
-			// Validate business logic constraints
-			const validationError = validateTransferStatusLogic(
-				isCompleted,
-				isPending,
-				isCancelled,
-				completedBy,
-			);
-			if (validationError) {
-				return c.json(validationError, 400);
-			}
+				const {
+					transferId,
+					isCompleted,
+					isPending,
+					isCancelled,
+					notes,
+					replicateToAltegio,
+					altegioTotals,
+				} = c.req.valid('json');
 
-			// Build update values object
-			const updateValues = buildTransferUpdateValues(
-				isCompleted,
-				isPending,
-				isCancelled,
-				completedBy,
-				notes,
-			);
+				// Validate business logic constraints
+				const validationError = validateTransferStatusLogic(
+					isCompleted,
+					isPending,
+					isCancelled,
+				);
+				if (validationError) {
+					return c.json(validationError, 400);
+				}
 
-			const existingTransfer = await db
-				.select({
-					id: schemas.warehouseTransfer.id,
-					isCompleted: schemas.warehouseTransfer.isCompleted,
-					transferType: schemas.warehouseTransfer.transferType,
-				})
-				.from(schemas.warehouseTransfer)
-				.where(eq(schemas.warehouseTransfer.id, transferId))
-				.limit(1);
+				const existingTransfer = await db
+					.select({
+						id: schemas.warehouseTransfer.id,
+						isCompleted: schemas.warehouseTransfer.isCompleted,
+						transferType: schemas.warehouseTransfer.transferType,
+						sourceWarehouseId: schemas.warehouseTransfer.sourceWarehouseId,
+						destinationWarehouseId:
+							schemas.warehouseTransfer.destinationWarehouseId,
+					})
+					.from(schemas.warehouseTransfer)
+					.where(eq(schemas.warehouseTransfer.id, transferId))
+					.limit(1);
 
 			if (existingTransfer.length === 0) {
 				return c.json(
@@ -750,20 +740,53 @@ const warehouseTransfersRoutes = new Hono<ApiEnv>()
 						message: 'Warehouse transfer not found',
 					} satisfies ApiResponse,
 					404,
-				);
-			}
+					);
+				}
 
-			const wasCompleted = existingTransfer[0].isCompleted;
-			const shouldReplicateToAltegio =
-				ENABLE_ALTEGIO_REPLICATION &&
-				replicateToAltegio !== false &&
-				isCompleted === true &&
-				wasCompleted === false &&
-				existingTransfer[0].transferType === 'external';
+				const transfer = existingTransfer[0];
+				const isStatusFlagMutation =
+					isCompleted !== undefined ||
+					isPending !== undefined ||
+					isCancelled !== undefined;
 
-			let replicationTotals:
-				| { goodId: number; totalQuantity: number; totalCost: number }[]
-				| null = null;
+				if (transfer.isCompleted && isStatusFlagMutation) {
+					return c.json(
+						{
+							success: false,
+							message:
+								'Completed transfers are locked. Only notes updates are allowed.',
+						} satisfies ApiResponse,
+						409,
+					);
+				}
+
+				if (
+					transfer.transferType === 'external' &&
+					isCompleted === true &&
+					sessionUser.role !== 'admin' &&
+					(!sessionUser.warehouseId ||
+						sessionUser.warehouseId !== transfer.destinationWarehouseId)
+				) {
+					return c.json(
+						{
+							success: false,
+							message:
+								'Only destination warehouse users can complete this external transfer',
+						} satisfies ApiResponse,
+						403,
+					);
+				}
+
+				const shouldReplicateToAltegio =
+					ENABLE_ALTEGIO_REPLICATION &&
+					replicateToAltegio !== false &&
+					isCompleted === true &&
+					transfer.isCompleted === false &&
+					transfer.transferType === 'external';
+
+				let replicationTotals:
+					| { goodId: number; totalQuantity: number; totalCost: number }[]
+					| null = null;
 
 			if (shouldReplicateToAltegio) {
 				const receivedTotals = await db
@@ -872,41 +895,130 @@ const warehouseTransfersRoutes = new Hono<ApiEnv>()
 					return accumulator;
 				}, []);
 
-				if (replicationTotals.length === 0) {
-					return c.json(
-						{
-							success: false,
+					if (replicationTotals.length === 0) {
+						return c.json(
+							{
+								success: false,
 							message: 'No received item quantities available for Altegio sync',
 						} satisfies ApiResponse,
 						400,
+						);
+					}
+				}
+
+				const updateValues = buildTransferUpdateValues(
+					isCompleted,
+					isPending,
+					isCancelled,
+					sessionUser.id,
+					notes,
+				);
+
+				const txResult = await db.transaction(async (tx) => {
+					const updatedTransferRows = await tx
+						.update(schemas.warehouseTransfer)
+						.set(updateValues)
+						.where(eq(schemas.warehouseTransfer.id, transferId))
+						.returning();
+
+					const transferRow = updatedTransferRows[0];
+					if (!transferRow) {
+						return { type: 'not_found' as const };
+					}
+
+					const transitionedToCompleted =
+						transfer.isCompleted === false && transferRow.isCompleted === true;
+
+					if (
+						transitionedToCompleted &&
+						transferRow.transferType === 'external'
+					) {
+						const missingDetails = await tx
+							.select({
+								productStockId: schemas.warehouseTransferDetails.productStockId,
+								quantityTransferred:
+									schemas.warehouseTransferDetails.quantityTransferred,
+								productBarcode: schemas.productStock.barcode,
+								productDescription: schemas.productStock.description,
+								productIsDeleted: schemas.productStock.isDeleted,
+								productIsEmpty: schemas.productStock.isEmpty,
+							})
+							.from(schemas.warehouseTransferDetails)
+							.innerJoin(
+								schemas.productStock,
+								eq(
+									schemas.productStock.id,
+									schemas.warehouseTransferDetails.productStockId,
+								),
+							)
+							.where(
+								and(
+									eq(schemas.warehouseTransferDetails.transferId, transferId),
+									eq(schemas.warehouseTransferDetails.isReceived, false),
+								),
+							);
+
+						const detailsToConvert = missingDetails.filter(
+							(detail) => !(detail.productIsDeleted || detail.productIsEmpty),
+						);
+
+						if (detailsToConvert.length > 0) {
+							await tx
+								.update(schemas.productStock)
+								.set({
+									isDeleted: true,
+									isBeingUsed: false,
+								})
+								.where(
+									inArray(
+										schemas.productStock.id,
+										detailsToConvert.map((detail) => detail.productStockId),
+									),
+								);
+
+							await tx.insert(schemas.inventoryShrinkageEvent).values(
+								detailsToConvert.map((detail) => ({
+									source: 'transfer_missing',
+									reason: 'otro',
+									quantity: detail.quantityTransferred,
+									notes: `Faltante al completar transferencia ${transferRow.transferNumber}`,
+									warehouseId: transferRow.destinationWarehouseId,
+									productStockId: detail.productStockId,
+									productBarcode: detail.productBarcode,
+									productDescription: detail.productDescription,
+									transferId: transferRow.id,
+									transferNumber: transferRow.transferNumber,
+									sourceWarehouseId: transferRow.sourceWarehouseId,
+									destinationWarehouseId: transferRow.destinationWarehouseId,
+									createdByUserId: sessionUser.id,
+								})),
+							);
+						}
+					}
+
+					return {
+						type: 'ok' as const,
+						transferRow,
+						transitionedToCompleted,
+					};
+				});
+
+				if (txResult.type === 'not_found') {
+					return c.json(
+						{
+							success: false,
+							message: 'Warehouse transfer not found',
+						} satisfies ApiResponse,
+						404,
 					);
 				}
-			}
 
-			// Update the warehouse transfer
-			const updatedTransfer = await db
-				.update(schemas.warehouseTransfer)
-				.set(updateValues)
-				.where(eq(schemas.warehouseTransfer.id, transferId))
-				.returning();
+				const transferRow = txResult.transferRow;
+				const transitionedToCompleted = txResult.transitionedToCompleted;
 
-			if (updatedTransfer.length === 0) {
-				return c.json(
-					{
-						success: false,
-						message: 'Warehouse transfer not found',
-					} satisfies ApiResponse,
-					404,
-				);
-			}
-
-			const transferRow = updatedTransfer[0];
-			const transitionedToCompleted =
-				wasCompleted === false && transferRow.isCompleted === true;
-
-			// After successful status update, optionally replicate to Altegio when completed
-			if (shouldReplicateToAltegio && transitionedToCompleted) {
-				const authHeader = process.env.AUTH_HEADER;
+				// After successful status update, optionally replicate to Altegio when completed
+				if (shouldReplicateToAltegio && transitionedToCompleted) {
+					const authHeader = process.env.AUTH_HEADER;
 				const acceptHeader = process.env.ACCEPT_HEADER;
 
 				if (!(authHeader && acceptHeader)) {
@@ -982,15 +1094,15 @@ const warehouseTransfersRoutes = new Hono<ApiEnv>()
 				}
 			}
 
-			return c.json(
-				{
-					success: true,
-					message: 'Warehouse transfer status updated successfully',
-					data: updatedTransfer[0],
-				} satisfies ApiResponse,
-				200,
-			);
-		} catch (error) {
+				return c.json(
+					{
+						success: true,
+						message: 'Warehouse transfer status updated successfully',
+						data: transferRow,
+					} satisfies ApiResponse,
+					200,
+				);
+			} catch (error) {
 			// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
 			console.error('Error updating warehouse transfer status:', error);
 
@@ -1046,99 +1158,123 @@ const warehouseTransfersRoutes = new Hono<ApiEnv>()
 			itemCondition: z.enum(['good', 'damaged', 'needs_inspection']).optional(),
 			itemNotes: z.string().max(500, 'Item notes too long').optional(),
 		}),
-	),
-	async (c) => {
-		try {
-			const { transferDetailId, isReceived, receivedBy, itemCondition, itemNotes } =
-				c.req.valid('json');
+		),
+		async (c) => {
+			try {
+				const sessionUser = c.get('user');
+				if (!sessionUser) {
+					return c.json(
+						{
+							success: false,
+							message: 'Authentication required',
+						} satisfies ApiResponse,
+						401,
+					);
+				}
 
-			// Validate business logic: if marking as received, receivedBy is required
-			if (isReceived === true && !receivedBy) {
-				return c.json(
-					{
-						success: false,
-						message: 'receivedBy is required when marking item as received',
-					} satisfies ApiResponse,
-					400,
-				);
-			}
+				const { transferDetailId, isReceived, itemCondition, itemNotes } =
+					c.req.valid('json');
 
-			// Perform the detail update and potential product stock update atomically
-			const txResult = await db.transaction(async (tx) => {
-				// Build update values
-				const updateValues: Record<string, unknown> = {
-					updatedAt: new Date(),
-				};
+				// Perform the detail update and potential product stock update atomically
+				const txResult = await db.transaction(async (tx) => {
+					const transferDetailRows = await tx
+						.select({
+							id: schemas.warehouseTransferDetails.id,
+							transferId: schemas.warehouseTransferDetails.transferId,
+							productStockId: schemas.warehouseTransferDetails.productStockId,
+							transferType: schemas.warehouseTransfer.transferType,
+							transferIsCompleted: schemas.warehouseTransfer.isCompleted,
+							destinationWarehouseId:
+								schemas.warehouseTransfer.destinationWarehouseId,
+						})
+						.from(schemas.warehouseTransferDetails)
+						.innerJoin(
+							schemas.warehouseTransfer,
+							eq(
+								schemas.warehouseTransfer.id,
+								schemas.warehouseTransferDetails.transferId,
+							),
+						)
+						.where(eq(schemas.warehouseTransferDetails.id, transferDetailId))
+						.limit(1);
 
-				if (isReceived !== undefined) {
-					updateValues.isReceived = isReceived;
-					if (isReceived) {
-						updateValues.receivedDate = new Date();
-						updateValues.receivedBy = receivedBy;
+					const transferDetail = transferDetailRows[0];
+					if (!transferDetail) {
+						return { type: 'not_found' as const };
 					}
-				}
 
-				if (itemCondition !== undefined) {
-					updateValues.itemCondition = itemCondition;
-				}
+					if (transferDetail.transferIsCompleted) {
+						return { type: 'locked' as const };
+					}
 
-				if (itemNotes !== undefined) {
-					updateValues.itemNotes = itemNotes;
-				}
+					if (
+						isReceived === true &&
+						transferDetail.transferType === 'external' &&
+						sessionUser.role !== 'admin' &&
+						(!sessionUser.warehouseId ||
+							sessionUser.warehouseId !== transferDetail.destinationWarehouseId)
+					) {
+						return { type: 'forbidden_destination' as const };
+					}
 
-				// Update the transfer detail row
-				const updatedRows = await tx
-					.update(schemas.warehouseTransferDetails)
-					.set(updateValues)
-					.where(eq(schemas.warehouseTransferDetails.id, transferDetailId))
-					.returning();
+					const updateValues: Record<string, unknown> = {
+						updatedAt: new Date(),
+					};
 
-				const updatedDetail = updatedRows[0];
-				if (!updatedDetail) {
-					return { type: 'not_found' as const };
-				}
+					if (isReceived !== undefined) {
+						updateValues.isReceived = isReceived;
+						if (isReceived) {
+							updateValues.receivedDate = new Date();
+							updateValues.receivedBy = sessionUser.id;
+						}
+					}
+					if (itemCondition !== undefined) {
+						updateValues.itemCondition = itemCondition;
+					}
+					if (itemNotes !== undefined) {
+						updateValues.itemNotes = itemNotes;
+					}
 
-				// Fetch transfer to get destination warehouse
-				const transferRows = await tx
-					.select({
-						destinationWarehouseId:
-							schemas.warehouseTransfer.destinationWarehouseId,
-					})
-					.from(schemas.warehouseTransfer)
-					.where(eq(schemas.warehouseTransfer.id, updatedDetail.transferId))
-					.limit(1);
-
-				const transfer = transferRows[0];
-				if (!transfer) {
-					return { type: 'transfer_not_found' as const };
-				}
-
-				// If received, update the product stock current warehouse
-				if (isReceived === true && receivedBy) {
-					const productStock = await tx
-						.update(schemas.productStock)
-						.set({ currentWarehouse: transfer.destinationWarehouseId })
-						.where(eq(schemas.productStock.id, updatedDetail.productStockId))
+					const updatedRows = await tx
+						.update(schemas.warehouseTransferDetails)
+						.set(updateValues)
+						.where(eq(schemas.warehouseTransferDetails.id, transferDetailId))
 						.returning();
-
-					// Create usage history record for receiving transferred item
-					if (productStock.length > 0) {
-						await tx.insert(schemas.productStockUsageHistory).values({
-							productStockId: updatedDetail.productStockId,
-							userId: receivedBy,
-							warehouseId: transfer.destinationWarehouseId,
-							warehouseTransferId: updatedDetail.transferId,
-							movementType: 'transfer',
-							action: 'checkin',
-							notes: 'Transfer item received at destination warehouse',
-							usageDate: new Date(),
-							previousWarehouseId: productStock[0].currentWarehouse,
-							newWarehouseId: transfer.destinationWarehouseId,
-						});
+					const updatedDetail = updatedRows[0];
+					if (!updatedDetail) {
+						return { type: 'not_found' as const };
 					}
-				}
 
-				return { type: 'ok' as const, updatedDetail };
+					// If received, update the product stock current warehouse
+					if (isReceived === true) {
+						const productStock = await tx
+							.update(schemas.productStock)
+							.set({
+								currentWarehouse: transferDetail.destinationWarehouseId,
+							})
+							.where(
+								eq(schemas.productStock.id, transferDetail.productStockId),
+							)
+							.returning();
+
+						// Create usage history record for receiving transferred item
+						if (productStock.length > 0) {
+							await tx.insert(schemas.productStockUsageHistory).values({
+								productStockId: transferDetail.productStockId,
+								userId: sessionUser.id,
+								warehouseId: transferDetail.destinationWarehouseId,
+								warehouseTransferId: transferDetail.transferId,
+								movementType: 'transfer',
+								action: 'checkin',
+								notes: 'Transfer item received at destination warehouse',
+								usageDate: new Date(),
+								previousWarehouseId: productStock[0].currentWarehouse,
+								newWarehouseId: transferDetail.destinationWarehouseId,
+							});
+						}
+					}
+
+					return { type: 'ok' as const, updatedDetail };
 			});
 
 			if (txResult.type === 'not_found') {
@@ -1151,13 +1287,24 @@ const warehouseTransfersRoutes = new Hono<ApiEnv>()
 				);
 			}
 
-			if (txResult.type === 'transfer_not_found') {
+			if (txResult.type === 'locked') {
 				return c.json(
 					{
 						success: false,
-						message: 'Transfer not found',
+						message: 'Transfer has already been completed and is read-only',
 					} satisfies ApiResponse,
-					404,
+					409,
+				);
+			}
+
+			if (txResult.type === 'forbidden_destination') {
+				return c.json(
+					{
+						success: false,
+						message:
+							'Only destination warehouse users can mark external items as received',
+					} satisfies ApiResponse,
+					403,
 				);
 			}
 
@@ -1178,7 +1325,7 @@ const warehouseTransfersRoutes = new Hono<ApiEnv>()
 				return c.json(
 					{
 						success: false,
-						message: 'Invalid employee ID - employee does not exist',
+						message: 'Invalid user reference - related record does not exist',
 					} satisfies ApiResponse,
 					400,
 				);
@@ -1195,5 +1342,3 @@ const warehouseTransfersRoutes = new Hono<ApiEnv>()
 	},
 );
 export { warehouseTransfersRoutes };
-
-
