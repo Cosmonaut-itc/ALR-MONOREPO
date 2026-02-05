@@ -4,6 +4,7 @@ import { cabinetWarehouseRoutes } from './cabinet-warehouse';
 import { employeeRoutes } from './employee';
 import { inventoryRoutes } from './inventory';
 import { kitsRoutes } from './kits';
+import { mermaRoutes } from './merma';
 import { permissionsRoutes } from './permissions';
 import { productsRoutes } from './products';
 import { productStockRoutes } from './product-stock';
@@ -26,6 +27,7 @@ const authRoutes = new Hono<ApiEnv>()
 	.route('/warehouse', warehousesRoutes)
 	.route('/warehouse-transfers', warehouseTransfersRoutes)
 	.route('/kits', kitsRoutes)
+	.route('/merma', mermaRoutes)
 	.route('/users', usersRoutes)
 	.route('/replenishment-orders', replenishmentOrdersRoutes);
 

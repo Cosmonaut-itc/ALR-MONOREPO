@@ -253,6 +253,13 @@
       "when": 1769649660937,
       "tag": "0035_mute_fat_cobra",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1769706300000,
+      "tag": "0036_slim_shrinkage_events",
+      "breakpoints": true
     }
   ]
 }

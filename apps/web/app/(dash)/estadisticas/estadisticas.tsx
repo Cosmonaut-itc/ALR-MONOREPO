@@ -10,6 +10,7 @@ import { useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { RoleGuard } from "@/components/auth-guard";
 import { DashboardMetricCard } from "@/components/DashboardMetricCard";
 import { DeletedAndEmptyTable } from "@/components/inventory/DeletedAndEmptyTable";
+import { MermaSection } from "@/components/stats/MermaSection";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -1649,7 +1650,7 @@ export function EstadisticasPage({
 	isEncargado,
 }: EstadisticasPageProps) {
 	const [scope, setScope] = useState<ScopeOption>(
-		isEncargado ? "global" : "warehouse",
+		isEncargado ? "warehouse" : "global",
 	);
 	const [selectedWarehouse, setSelectedWarehouse] = useState<string | null>(
 		scope === "warehouse" ? (warehouseId ?? null) : null,
@@ -2102,20 +2103,26 @@ export function EstadisticasPage({
 
 				<section className="grid gap-4 rounded-lg border border-[#E5E7EB] bg-white p-4 shadow-sm dark:border-[#2D3033] dark:bg-[#151718]">
 					<div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-						<div className="flex items-center gap-2">
-							<Button
-								onClick={() => setScope("global")}
-								variant={scope === "global" ? "default" : "outline"}
-							>
-								Global
-							</Button>
-							<Button
-								onClick={() => setScope("warehouse")}
-								variant={scope === "warehouse" ? "default" : "outline"}
-							>
-								Por almacén
-							</Button>
-						</div>
+						{isEncargado ? (
+							<div className="rounded-md border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2 text-xs text-[#687076] dark:border-[#2D3033] dark:bg-[#1E1F20] dark:text-[#9BA1A6]">
+								Vista restringida a tu almacén asignado
+							</div>
+						) : (
+							<div className="flex items-center gap-2">
+								<Button
+									onClick={() => setScope("global")}
+									variant={scope === "global" ? "default" : "outline"}
+								>
+									Global
+								</Button>
+								<Button
+									onClick={() => setScope("warehouse")}
+									variant={scope === "warehouse" ? "default" : "outline"}
+								>
+									Por almacén
+								</Button>
+							</div>
+						)}
 						<div className="grid gap-4 sm:grid-cols-2 lg:flex lg:items-end lg:gap-6">
 							<DateSelector
 								label="Inicio"
@@ -2135,7 +2142,7 @@ export function EstadisticasPage({
 									)
 								}
 							/>
-							{scope === "warehouse" ? (
+							{scope === "warehouse" && !isEncargado ? (
 								<div className="flex flex-col gap-2">
 									<Label className="text-xs uppercase tracking-wide text-[#687076] dark:text-[#9BA1A6]">
 										Almacén
@@ -2187,6 +2194,15 @@ export function EstadisticasPage({
 					transfers={transferItems}
 					warehouseNameMap={warehouseNameMap}
 					effectiveWarehouseId={effectiveWarehouseId}
+				/>
+
+				<MermaSection
+					effectiveRange={effectiveRange}
+					isEncargado={isEncargado}
+					resolvedWarehouseId={resolvedWarehouseId}
+					scope={scope}
+					userRole={userRole}
+					warehouseId={warehouseId}
 				/>
 
 				<section className="grid gap-4 xl:grid-cols-2">

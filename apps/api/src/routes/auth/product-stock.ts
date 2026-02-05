@@ -12,6 +12,7 @@ import {
 	replicateStockCreationToAltegio,
 } from '../../lib/altegio-service';
 import type { ApiResponse } from '../../lib/api-response';
+import { buildLegacyShrinkageNote } from '../../lib/shrinkage';
 
 const altegioArrivalPayloadSchema = z.object({
 	amount: z
@@ -502,8 +503,8 @@ const productStockRoutes = new Hono<ApiEnv>()
 			cabinetId: z.string().uuid('Invalid cabinet ID'),
 			lastUsedBy: z.string(),
 		}),
-	),
-	async (c) => {
+		),
+		async (c) => {
 		try {
 			const { cabinetId, lastUsedBy } = c.req.valid('query');
 
@@ -687,7 +688,7 @@ const productStockRoutes = new Hono<ApiEnv>()
 		try {
 			const { id } = c.req.valid('query');
 
-			// Authorization: only 'encargado' can delete
+			// Authorization: only 'encargado' and 'admin' can delete
 			const user = c.get('user');
 			if (!user) {
 				return c.json(
@@ -698,7 +699,7 @@ const productStockRoutes = new Hono<ApiEnv>()
 					401,
 				);
 			}
-			if (user.role !== 'encargado') {
+			if (!(user.role === 'encargado' || user.role === 'admin')) {
 				return c.json(
 					{
 						success: false,
@@ -741,6 +742,7 @@ const productStockRoutes = new Hono<ApiEnv>()
 				await db.insert(schemas.productStockUsageHistory).values({
 					productStockId: updated[0].id,
 					employeeId: employeeRecord[0].id,
+					userId: user.id,
 					warehouseId: updated[0].currentWarehouse,
 					movementType: 'other',
 					action: 'checkout',
@@ -749,6 +751,22 @@ const productStockRoutes = new Hono<ApiEnv>()
 					previousWarehouseId: updated[0].currentWarehouse,
 				});
 			}
+
+			// Legacy compatibility: register a manual shrinkage event with inferred reason and notes.
+			await db
+				.insert(schemas.inventoryShrinkageEvent)
+				.values({
+					source: 'manual',
+					reason: 'otro',
+					quantity: 1,
+					notes: buildLegacyShrinkageNote('delete'),
+					warehouseId: updated[0].currentWarehouse,
+					productStockId: updated[0].id,
+					productBarcode: updated[0].barcode,
+					productDescription: updated[0].description,
+					createdByUserId: user.id,
+				})
+				.onConflictDoNothing();
 
 			return c.json(
 				{
@@ -1550,52 +1568,102 @@ const productStockRoutes = new Hono<ApiEnv>()
 				.describe('Array of product stock UUIDs to mark as empty'),
 		}),
 	),
-	async (c) => {
-		try {
-			const { productIds } = c.req.valid('json');
+		async (c) => {
+			try {
+				const { productIds } = c.req.valid('json');
+				const user = c.get('user');
+				if (!user) {
+					return c.json(
+						{
+							success: false,
+							message: 'Authentication required',
+						} satisfies ApiResponse,
+						401,
+					);
+				}
+				const uniqueProductIds = Array.from(new Set(productIds));
 
-			// Update isEmpty field to true for all specified product IDs
-			const updatedProducts = await db
-				.update(schemas.productStock)
-				.set({
-					isEmpty: true,
-				})
-				.where(inArray(schemas.productStock.id, productIds))
-				.returning();
+				const existingProducts = await db
+					.select({
+						id: schemas.productStock.id,
+						barcode: schemas.productStock.barcode,
+						description: schemas.productStock.description,
+						currentWarehouse: schemas.productStock.currentWarehouse,
+						isEmpty: schemas.productStock.isEmpty,
+					})
+					.from(schemas.productStock)
+					.where(inArray(schemas.productStock.id, uniqueProductIds));
 
-			if (updatedProducts.length === 0) {
+				if (existingProducts.length === 0) {
+					return c.json(
+						{
+							success: false,
+							message: 'No products found with the provided IDs',
+						} satisfies ApiResponse,
+						404,
+					);
+				}
+
+				const productsToUpdate = existingProducts.filter((product) => !product.isEmpty);
+				const productIdsToUpdate = productsToUpdate.map((product) => product.id);
+
+				let updatedProducts: Array<{ id: string }> = [];
+				if (productIdsToUpdate.length > 0) {
+					// Update isEmpty field to true for products that were not empty yet.
+					updatedProducts = await db
+						.update(schemas.productStock)
+						.set({
+							isEmpty: true,
+							isBeingUsed: false,
+						})
+						.where(inArray(schemas.productStock.id, productIdsToUpdate))
+						.returning({ id: schemas.productStock.id });
+				}
+
+				// Legacy compatibility: create manual shrinkage events only for state transitions.
+				if (productsToUpdate.length > 0) {
+					await db
+						.insert(schemas.inventoryShrinkageEvent)
+						.values(
+							productsToUpdate.map((product) => ({
+								source: 'manual',
+								reason: 'consumido',
+								quantity: 1,
+								notes: buildLegacyShrinkageNote('empty'),
+								warehouseId: product.currentWarehouse,
+								productStockId: product.id,
+								productBarcode: product.barcode,
+								productDescription: product.description,
+								createdByUserId: user.id,
+							})),
+						)
+						.onConflictDoNothing();
+				}
+
+				return c.json(
+					{
+						success: true,
+						message: `Successfully marked ${updatedProducts.length} product(s) as empty`,
+						data: {
+							updatedCount: updatedProducts.length,
+							productIds: updatedProducts.map((p) => p.id),
+							skippedCount: existingProducts.length - updatedProducts.length,
+						},
+					} satisfies ApiResponse,
+					200,
+				);
+			} catch (error) {
+				// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
+				console.error('Error updating product stock isEmpty field:', error);
+
 				return c.json(
 					{
 						success: false,
-						message: 'No products found with the provided IDs',
+						message: 'Failed to update product stock isEmpty field',
 					} satisfies ApiResponse,
-					404,
+					500,
 				);
 			}
-
-			return c.json(
-				{
-					success: true,
-					message: `Successfully marked ${updatedProducts.length} product(s) as empty`,
-					data: {
-						updatedCount: updatedProducts.length,
-						productIds: updatedProducts.map((p) => p.id),
-					},
-				} satisfies ApiResponse,
-				200,
-			);
-		} catch (error) {
-			// biome-ignore lint/suspicious/noConsole: Error logging is essential for debugging database connectivity issues
-			console.error('Error updating product stock isEmpty field:', error);
-
-			return c.json(
-				{
-					success: false,
-					message: 'Failed to update product stock isEmpty field',
-				} satisfies ApiResponse,
-				500,
-			);
-		}
-	},
-);
+		},
+	);
 export { productStockRoutes };

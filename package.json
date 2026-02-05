@@ -15,7 +15,9 @@
     "typecheck": "turbo run typecheck",
     "typecheck:web": "turbo run typecheck --filter=./apps/web",
     "typecheck:api": "turbo run typecheck --filter=./apps/api",
-    "typecheck:mobile": "turbo run typecheck --filter=./apps/mobile"
+    "typecheck:mobile": "turbo run typecheck --filter=./apps/mobile",
+    "test": "turbo run test",
+    "test:api": "turbo run test --filter=./apps/api"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.0",

@@ -1,0 +1,22 @@
+# docker-compose.test.yaml
+services:
+  postgres-test:
+    image: postgres:16
+    container_name: myapp-postgres-test
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5433:5432"
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: ${MYAPP_PG_PASSWORD_TEST:-test_admin_password}
+      POSTGRES_DB: myapp_test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d myapp_test"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - myapp_pgdata_test:/var/lib/postgresql/data
+
+volumes:
+  myapp_pgdata_test:
