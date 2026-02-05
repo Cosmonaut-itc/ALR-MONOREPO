@@ -82,15 +82,35 @@ function isEncargado(user: SessionUser): boolean {
 	return user?.role === 'encargado';
 }
 
+async function canUseGlobalScope(user: SessionUser): Promise<boolean> {
+	if (isAdmin(user)) {
+		return true;
+	}
+
+	if (!isEncargado(user) || !user?.warehouseId) {
+		return false;
+	}
+
+	const warehouseRows = await db
+		.select({ isCedis: schemas.warehouse.isCedis })
+		.from(schemas.warehouse)
+		.where(eq(schemas.warehouse.id, user.warehouseId))
+		.limit(1);
+
+	return warehouseRows[0]?.isCedis === true;
+}
+
 function hasSessionUser(user: SessionUser): user is NonNullable<SessionUser> {
 	return Boolean(user);
 }
 
-function resolveScopeWarehouseId(args: {
+async function resolveScopeWarehouseId(args: {
 	user: SessionUser;
 	scope: 'global' | 'warehouse';
 	warehouseId: string | undefined;
-}): { ok: false; status: 400 | 403; message: string } | { ok: true; warehouseId: string | null } {
+}): Promise<
+	{ ok: false; status: 400 | 403; message: string } | { ok: true; warehouseId: string | null }
+> {
 	const { user, scope, warehouseId } = args;
 	if (isAdmin(user)) {
 		if (scope === 'global') {
@@ -115,10 +135,14 @@ function resolveScopeWarehouseId(args: {
 			};
 		}
 		if (scope === 'global') {
+			if (await canUseGlobalScope(user)) {
+				return { ok: true, warehouseId: null };
+			}
 			return {
 				ok: false,
 				status: 403,
-				message: 'Forbidden - global scope is only available for admin users',
+				message:
+					'Forbidden - global scope is only available for admin or CEDIS encargado users',
 			};
 		}
 		return { ok: true, warehouseId: user.warehouseId };
@@ -367,7 +391,7 @@ const mermaRoutes = new Hono<ApiEnv>()
 				);
 			}
 
-			const scopedWarehouse = resolveScopeWarehouseId({
+			const scopedWarehouse = await resolveScopeWarehouseId({
 				user,
 				scope,
 				warehouseId,
@@ -614,7 +638,7 @@ const mermaRoutes = new Hono<ApiEnv>()
 		}
 
 		let scopedWarehouseId: string | null = null;
-		if (isAdmin(user)) {
+		if (await canUseGlobalScope(user)) {
 			scopedWarehouseId = warehouseId ?? null;
 		} else if (isEncargado(user)) {
 			if (!user?.warehouseId) {
@@ -902,7 +926,7 @@ const mermaRoutes = new Hono<ApiEnv>()
 				);
 			}
 
-			const scopedWarehouse = resolveScopeWarehouseId({
+			const scopedWarehouse = await resolveScopeWarehouseId({
 				user,
 				scope,
 				warehouseId,
