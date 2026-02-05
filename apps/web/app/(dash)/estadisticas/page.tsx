@@ -45,7 +45,10 @@ export default async function Page() {
 	const mermaRangeEnd = new Date();
 	const mermaRangeStart = new Date();
 	mermaRangeStart.setDate(mermaRangeEnd.getDate() - 30);
-	const mermaScope = role === "admin" ? "global" : "warehouse";
+	let canViewGlobalStats = role === "admin";
+	let mermaScope: "global" | "warehouse" = canViewGlobalStats
+		? "global"
+		: "warehouse";
 
 	try {
 		const prefetches: Array<Promise<unknown>> = [];
@@ -80,6 +83,7 @@ export default async function Page() {
 
 		// Find cedis warehouse ID
 		let cedisWarehouseId: string | null = null;
+		let isAssignedWarehouseCedis = false;
 		if (
 			warehousesResponse &&
 			typeof warehousesResponse === "object" &&
@@ -101,12 +105,20 @@ export default async function Page() {
 						: typeof rawLegacyIsCedis === "boolean"
 							? rawLegacyIsCedis
 							: false;
-				if (isCedis && typeof record.id === "string") {
+				if (isCedis && typeof record.id === "string" && record.id === warehouseId) {
+					isAssignedWarehouseCedis = true;
+				}
+				if (
+					!cedisWarehouseId &&
+					isCedis &&
+					typeof record.id === "string"
+				) {
 					cedisWarehouseId = record.id;
-					break;
 				}
 			}
 		}
+		canViewGlobalStats = role === "admin" || (isEncargado && isAssignedWarehouseCedis);
+		mermaScope = canViewGlobalStats ? "global" : "warehouse";
 
 		prefetches.push(
 			queryClient.prefetchQuery({
@@ -207,9 +219,9 @@ export default async function Page() {
 		<HydrationBoundary state={dehydrate(queryClient)}>
 			<GenericBoundaryWrapper fallbackComponent={<SkeletonEstadisticasPage />}>
 				<EstadisticasPage
+					canViewGlobalStats={canViewGlobalStats}
 					userRole={role}
 					warehouseId={warehouseId}
-					isEncargado={isEncargado}
 				/>
 			</GenericBoundaryWrapper>
 		</HydrationBoundary>

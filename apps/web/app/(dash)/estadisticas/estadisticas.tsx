@@ -110,9 +110,9 @@ type StockLimitsResponse =
 type ScopeOption = "global" | "warehouse";
 
 type EstadisticasPageProps = {
+	canViewGlobalStats: boolean;
 	userRole: string;
 	warehouseId: string | null;
-	isEncargado: boolean;
 };
 
 type WarehouseOption = {
@@ -1645,12 +1645,12 @@ const TopList = ({
 );
 
 export function EstadisticasPage({
+	canViewGlobalStats,
 	userRole,
 	warehouseId,
-	isEncargado,
 }: EstadisticasPageProps) {
 	const [scope, setScope] = useState<ScopeOption>(
-		isEncargado ? "warehouse" : "global",
+		canViewGlobalStats ? "global" : "warehouse",
 	);
 	const [selectedWarehouse, setSelectedWarehouse] = useState<string | null>(
 		scope === "warehouse" ? (warehouseId ?? null) : null,
@@ -2103,11 +2103,7 @@ export function EstadisticasPage({
 
 				<section className="grid gap-4 rounded-lg border border-[#E5E7EB] bg-white p-4 shadow-sm dark:border-[#2D3033] dark:bg-[#151718]">
 					<div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-						{isEncargado ? (
-							<div className="rounded-md border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2 text-xs text-[#687076] dark:border-[#2D3033] dark:bg-[#1E1F20] dark:text-[#9BA1A6]">
-								Vista restringida a tu almacén asignado
-							</div>
-						) : (
+						{canViewGlobalStats ? (
 							<div className="flex items-center gap-2">
 								<Button
 									onClick={() => setScope("global")}
@@ -2121,6 +2117,10 @@ export function EstadisticasPage({
 								>
 									Por almacén
 								</Button>
+							</div>
+						) : (
+							<div className="rounded-md border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2 text-xs text-[#687076] dark:border-[#2D3033] dark:bg-[#1E1F20] dark:text-[#9BA1A6]">
+								Vista restringida a tu almacén asignado
 							</div>
 						)}
 						<div className="grid gap-4 sm:grid-cols-2 lg:flex lg:items-end lg:gap-6">
@@ -2142,7 +2142,7 @@ export function EstadisticasPage({
 									)
 								}
 							/>
-							{scope === "warehouse" && !isEncargado ? (
+							{scope === "warehouse" && canViewGlobalStats ? (
 								<div className="flex flex-col gap-2">
 									<Label className="text-xs uppercase tracking-wide text-[#687076] dark:text-[#9BA1A6]">
 										Almacén
@@ -2198,7 +2198,7 @@ export function EstadisticasPage({
 
 				<MermaSection
 					effectiveRange={effectiveRange}
-					isEncargado={isEncargado}
+					canViewGlobalScope={canViewGlobalStats}
 					resolvedWarehouseId={resolvedWarehouseId}
 					scope={scope}
 					userRole={userRole}

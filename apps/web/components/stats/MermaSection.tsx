@@ -55,8 +55,8 @@ type EventFilters = {
 };
 
 type MermaSectionProps = {
+	canViewGlobalScope: boolean;
 	userRole: string;
-	isEncargado: boolean;
 	scope: ScopeOption;
 	warehouseId: string | null;
 	resolvedWarehouseId: string | null;
@@ -114,14 +114,14 @@ function getWriteoffTotals(
 }
 
 export function MermaSection({
+	canViewGlobalScope,
 	userRole,
-	isEncargado,
 	scope,
 	warehouseId,
 	resolvedWarehouseId,
 	effectiveRange,
 }: MermaSectionProps) {
-	const mermaScope: MermaScope = isEncargado ? "warehouse" : scope;
+	const mermaScope: MermaScope = canViewGlobalScope ? scope : "warehouse";
 	const mermaWarehouseId =
 		mermaScope === "warehouse"
 			? (resolvedWarehouseId ?? warehouseId ?? null)

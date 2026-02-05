@@ -18,6 +18,7 @@ type SessionUser = typeof auth.$Infer.Session.user;
 
 let adminUser: SessionUser;
 let encargadoUser: SessionUser;
+let encargadoCedisUser: SessionUser;
 let employeeUser: SessionUser;
 let activeSessionUser: SessionUser;
 let sourceWarehouseId: string;
@@ -168,6 +169,7 @@ beforeAll(async () => {
 
 	const adminId = randomUUID();
 	const encargadoId = randomUUID();
+	const encargadoCedisId = randomUUID();
 	const employeeId = randomUUID();
 
 	await db.insert(user).values([
@@ -190,6 +192,17 @@ beforeAll(async () => {
 			image: null,
 			role: 'encargado',
 			warehouseId: destinationWarehouseId,
+			createdAt: now,
+			updatedAt: now,
+		},
+		{
+			id: encargadoCedisId,
+			name: 'Merma Encargado CEDIS',
+			email: `merma-encargado-cedis-${encargadoCedisId}@test.dev`,
+			emailVerified: false,
+			image: null,
+			role: 'encargado',
+			warehouseId: sourceWarehouseId,
 			createdAt: now,
 			updatedAt: now,
 		},
@@ -225,6 +238,17 @@ beforeAll(async () => {
 		image: null,
 		role: 'encargado',
 		warehouseId: destinationWarehouseId,
+		createdAt: now,
+		updatedAt: now,
+	};
+	encargadoCedisUser = {
+		id: encargadoCedisId,
+		name: 'Merma Encargado CEDIS',
+		email: `merma-encargado-cedis-${encargadoCedisId}@test.dev`,
+		emailVerified: false,
+		image: null,
+		role: 'encargado',
+		warehouseId: sourceWarehouseId,
 		createdAt: now,
 		updatedAt: now,
 	};
@@ -292,12 +316,20 @@ afterAll(async () => {
 		.where(inArray(inventoryShrinkageEvent.createdByUserId, [
 			adminUser.id,
 			encargadoUser.id,
+			encargadoCedisUser.id,
 			employeeUser.id,
 		]));
 
 	await db
 		.delete(user)
-		.where(inArray(user.id, [adminUser.id, encargadoUser.id, employeeUser.id]));
+		.where(
+			inArray(user.id, [
+				adminUser.id,
+				encargadoUser.id,
+				encargadoCedisUser.id,
+				employeeUser.id,
+			]),
+		);
 
 	await db
 		.delete(warehouse)
@@ -414,6 +446,63 @@ describe('Merma API integration', () => {
 		});
 
 		expect(response.status).toBe(403);
+	});
+
+	it('forbids global summary for non-CEDIS encargado', async () => {
+		activeSessionUser = encargadoUser;
+		const now = Date.now();
+		const start = new Date(now - 60_000).toISOString();
+		const end = new Date(now + 60_000).toISOString();
+
+		const response = await app.fetch(
+			new Request(
+				`http://localhost/api/auth/merma/writeoffs/summary?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&scope=global`,
+			),
+		);
+
+		expect(response.status).toBe(403);
+	});
+
+	it('allows global summary for encargado assigned to CEDIS warehouse', async () => {
+		activeSessionUser = encargadoCedisUser;
+		const sourceProductId = await createProductStockRecord({
+			warehouseId: sourceWarehouseId,
+			barcode: 900_010,
+			description: 'CEDIS global source',
+		});
+		const destinationProductId = await createProductStockRecord({
+			warehouseId: destinationWarehouseId,
+			barcode: 900_011,
+			description: 'CEDIS global destination',
+		});
+
+		const writeoffResponse = await requestJson('/api/auth/merma/writeoffs', {
+			method: 'POST',
+			body: JSON.stringify({
+				productIds: [sourceProductId, destinationProductId],
+				reason: 'consumido',
+			}),
+		});
+		expect(writeoffResponse.status).toBe(201);
+
+		const now = Date.now();
+		const start = new Date(now - 5 * 60_000).toISOString();
+		const end = new Date(now + 5 * 60_000).toISOString();
+		const summaryResponse = await app.fetch(
+			new Request(
+				`http://localhost/api/auth/merma/writeoffs/summary?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&scope=global`,
+			),
+		);
+
+		expect(summaryResponse.status).toBe(200);
+		const body = await summaryResponse.json();
+		expect(body.success).toBe(true);
+		expect(body.data.scope).toBe('global');
+		const rowWarehouseIds = (body.data.rows as Array<{ warehouseId: string }>).map(
+			(row) => row.warehouseId,
+		);
+		expect(rowWarehouseIds).toContain(sourceWarehouseId);
+		expect(rowWarehouseIds).toContain(destinationWarehouseId);
 	});
 
 	it('creates shrinkage events from legacy product-stock endpoints', async () => {
